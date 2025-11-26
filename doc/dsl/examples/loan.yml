@@ -1,0 +1,22 @@
+
+
+version: "0.1"
+
+pipeline:
+  - extract_applicant_profile
+  - extract_income_sources
+
+  - type: reason
+    id: applicant_llm_reasoning
+    if: "applicant.request_amount > 2000"
+
+  - include:
+      ruleset: loan_credit_rules
+
+  - aggregate:
+      method: weighted
+      weights:
+        rules: 0.5
+        llm: 0.5
+
+  - type: action

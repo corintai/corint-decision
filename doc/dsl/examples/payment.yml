@@ -1,0 +1,19 @@
+version: "0.1"
+
+pipeline:
+  - extract_payment_base
+
+  - parallel:
+      - velocity_check
+      - beneficiary_reputation
+      - llm_payment_semantics
+    merge:
+      method: all
+
+  - include:
+      ruleset: payment_risk_rules
+
+  - aggregate:
+      method: sum
+
+  - type: action

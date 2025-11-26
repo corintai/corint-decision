@@ -1,0 +1,24 @@
+version: "0.1"
+
+pipeline:
+  - extract_device
+  - extract_order_behavior
+
+  - parallel:
+      - llm_user_behavior_change
+      - device_anomaly
+      - ip_reputation_check
+    merge:
+      method: majority
+
+  - include:
+      ruleset: takeover_risk_rules
+
+  - aggregate:
+      method: weighted
+      weights:
+        device: 0.4
+        ip: 0.2
+        llm: 0.4
+
+  - type: action

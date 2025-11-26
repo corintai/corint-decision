@@ -1,0 +1,27 @@
+version: "0.1"
+
+pipeline:
+  - type: extract
+    id: extract_device
+
+  - type: extract
+    id: extract_ip
+
+  - parallel:
+      - device_fingerprint
+      - ip_reputation
+      - llm_reasoning
+    merge:
+      method: all
+
+  - include:
+      ruleset: login_risk_rules
+
+  - aggregate:
+      method: weighted
+      weights:
+        rules: 0.6
+        llm: 0.3
+        ip: 0.1
+
+  - type: action

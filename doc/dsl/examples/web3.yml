@@ -1,0 +1,18 @@
+version: "0.1"
+
+pipeline:
+  - extract_web3_wallet
+
+  - api:
+      provider: chainalysis_lookup
+
+  - type: reason
+    id: llm_wallet_analysis
+
+  - include:
+      ruleset: web3_wallet_risk
+
+  - aggregate:
+      method: max
+
+  - type: action
