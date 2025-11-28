@@ -596,42 +596,7 @@ The compilation process includes:
 
 ---
 
-## 19. Roadmap
-
-### Completed ✅
-- ✅ Core DSL syntax (Rule, Ruleset, Pipeline)
-- ✅ Expression language
-- ✅ LLM integration
-- ✅ Type system
-- ✅ Error handling framework
-- ✅ Observability infrastructure
-- ✅ Testing framework
-- ✅ Performance optimization
-
-### In Progress 🚧
-- 🚧 Static analysis
-- 🚧 Visual editor
-- 🚧 IDE plugins
-
-### Completed (v0.1 Enhancements) ✅
-- ✅ External API integration specification
-- ✅ Internal service integration specification
-- ✅ Event catalog and schema definitions
-- ✅ Dynamic thresholds for rules
-- ✅ Rule dependencies and conflict management
-- ✅ Backtesting framework
-- ✅ Feature engineering and statistical analysis
-
-### Planned 📋
-- 📋 WASM sandbox execution
-- 📋 Code generator (Rust / Python / JS / TypeScript)
-- 📋 Prebuilt rule libraries
-- 📋 Machine learning model integration
-- 📋 Real-time rule updates
-
----
-
-## 20. Summary
+## 19. Summary
 
 RDL provides a modern, explainable, AI‑augmented DSL for advanced risk engines:
 
