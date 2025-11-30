@@ -89,7 +89,7 @@ impl Default for WhenBlock {
 mod tests {
     use super::*;
     use crate::ast::operator::Operator;
-    use crate::value::Value;
+    use crate::types::Value;
 
     #[test]
     fn test_rule_creation() {

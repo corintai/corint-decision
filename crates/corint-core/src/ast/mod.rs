@@ -8,8 +8,15 @@
 
 pub mod expression;
 pub mod operator;
+pub mod pipeline;
 pub mod rule;
+pub mod ruleset;
 
 pub use expression::{Expression, UnaryOperator};
 pub use operator::Operator;
+pub use pipeline::{
+    Branch, FeatureDefinition, MergeStrategy, Pipeline, PromptTemplate, Schema, SchemaProperty,
+    Step,
+};
 pub use rule::{Rule, WhenBlock};
+pub use ruleset::{Action, DecisionRule, InferConfig, Ruleset};

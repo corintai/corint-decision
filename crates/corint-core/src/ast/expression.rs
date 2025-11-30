@@ -1,6 +1,6 @@
 //! Expression AST nodes
 
-use crate::value::Value;
+use crate::types::Value;
 use super::operator::Operator;
 use serde::{Deserialize, Serialize};
 

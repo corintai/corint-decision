@@ -6,10 +6,15 @@
 //! - IR (Intermediate Representation) definitions
 //! - Error types
 
-pub mod value;
 pub mod ast;
 pub mod error;
+pub mod ir;
+pub mod types;
+
+// Keep old path for backward compatibility
+#[doc(hidden)]
+pub use types::value;
 
 // Re-export commonly used types
-pub use value::Value;
 pub use error::CoreError;
+pub use types::Value;
