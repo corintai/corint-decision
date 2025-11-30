@@ -81,7 +81,8 @@ impl DecisionEngine {
         let mut compiler = Compiler::with_options(compiler_opts);
 
         for rule_file in &config.rule_files {
-            programs.extend(Self::load_and_compile_rules(rule_file, &mut compiler).await?);
+            let compiled = Self::load_and_compile_rules(rule_file, &mut compiler).await?;
+            programs.extend(compiled);
         }
 
         // Create executor

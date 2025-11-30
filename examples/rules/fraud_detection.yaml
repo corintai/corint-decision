@@ -7,14 +7,14 @@ ruleset:
   description: Simple fraud detection based on transaction amount
   rules: []
   decision_logic:
-    - condition: transaction_amount > 10000
+    - condition: "transaction_amount > 10000"
       action: deny
       reason: Extremely high value transaction
       terminate: true
-    - condition: transaction_amount > 1000
+    - condition: "transaction_amount > 1000"
       action: review
       reason: High value transaction
-    - condition: transaction_amount > 100
+    - condition: "transaction_amount > 100"
       action: review
       reason: Elevated transaction amount
     - default: true

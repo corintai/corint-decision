@@ -13,9 +13,18 @@ use std::collections::HashMap;
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("=== Fraud Detection Example ===\n");
 
+    // Get the current working directory to resolve the rule file path
+    let current_dir = std::env::current_dir()?;
+    let rule_path = current_dir.join("examples/rules/fraud_detection.yaml");
+
+    // Check if rule file exists
+    if !rule_path.exists() {
+        return Err(format!("Rule file not found at: {}. Please run from the project root.", rule_path.display()).into());
+    }
+
     // Build the decision engine with fraud detection rules
     let engine = DecisionEngineBuilder::new()
-        .add_rule_file("examples/rules/fraud_detection.yaml")
+        .add_rule_file(rule_path.to_str().unwrap())
         .enable_metrics(true)
         .enable_tracing(true)
         .build()
@@ -55,7 +64,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Test Case 3: Cross-border transaction
     println!("--- Test Case 3: Cross-Border Transaction ---");
-    event_data.insert("transaction_amount".to_string(), Value::Number(200.0));
+    event_data.insert("transaction_amount".to_string(), Value::Number(20000.0));
     event_data.insert("merchant_country".to_string(), Value::String("NG".to_string()));
 
     let request = DecisionRequest::new(event_data.clone())

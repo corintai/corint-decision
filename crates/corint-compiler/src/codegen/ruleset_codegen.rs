@@ -17,7 +17,8 @@ impl RulesetCompiler {
 
         // Compile decision logic
         // This evaluates conditions and executes appropriate actions
-        instructions.extend(Self::compile_decision_logic(ruleset)?);
+        let logic = Self::compile_decision_logic(ruleset)?;
+        instructions.extend(logic);
 
         // Always end with return
         instructions.push(Instruction::Return);
@@ -74,6 +75,7 @@ impl RulesetCompiler {
                 // Add the action instructions
                 instructions.extend(action_instructions);
             }
+
         }
 
         // Second pass: fix the Jump instructions to skip to the end
