@@ -2,7 +2,9 @@
 //!
 //! Compiles Expression AST nodes into IR instructions.
 
-use corint_core::ast::{Expression, Operator, UnaryOperator};
+use corint_core::ast::{Expression, Operator};
+#[cfg(test)]
+use corint_core::ast::UnaryOperator;
 use corint_core::ir::Instruction;
 use crate::error::{CompileError, Result};
 
@@ -58,7 +60,7 @@ impl ExpressionCompiler {
                 Ok(instructions)
             }
 
-            Expression::FunctionCall { name, args } => {
+            Expression::FunctionCall { name, args: _ } => {
                 // For now, we'll handle function calls as a placeholder
                 // In a real implementation, this would analyze the function
                 // and generate appropriate CallFeature or other instructions

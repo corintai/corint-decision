@@ -73,6 +73,23 @@ impl Expression {
     pub fn function_call(name: String, args: Vec<Expression>) -> Self {
         Expression::FunctionCall { name, args }
     }
+
+    /// Create a unary expression
+    pub fn unary(op: UnaryOperator, operand: Expression) -> Self {
+        Expression::Unary {
+            op,
+            operand: Box::new(operand),
+        }
+    }
+
+    /// Create a ternary expression
+    pub fn ternary(condition: Expression, true_expr: Expression, false_expr: Expression) -> Self {
+        Expression::Ternary {
+            condition: Box::new(condition),
+            true_expr: Box::new(true_expr),
+            false_expr: Box::new(false_expr),
+        }
+    }
 }
 
 #[cfg(test)]

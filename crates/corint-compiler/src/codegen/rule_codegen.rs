@@ -5,7 +5,7 @@
 use corint_core::ast::Rule;
 use corint_core::ir::{Instruction, Program, ProgramMetadata};
 use crate::error::Result;
-use crate::expression::ExpressionCompiler;
+use super::expression_codegen::ExpressionCompiler;
 
 /// Rule compiler
 pub struct RuleCompiler;
