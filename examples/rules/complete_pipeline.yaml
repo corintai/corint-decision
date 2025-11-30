@@ -1,0 +1,21 @@
+# Complete Pipeline Example
+# Demonstrates full feature set
+
+ruleset:
+  id: complete_fraud_detection
+  name: Complete Fraud Detection Pipeline
+  description: Complete fraud detection with multiple rules
+  rules:
+    - new_user_high_value
+    - cross_border_unverified
+    - high_risk_combination
+  decision_logic:
+    - condition: total_score > 70
+      action: deny
+      reason: Total risk score exceeds threshold
+      terminate: true
+    - condition: total_score > 40
+      action: review
+      reason: Elevated risk detected
+    - default: true
+      action: approve

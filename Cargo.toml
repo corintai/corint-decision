@@ -17,3 +17,26 @@ thiserror = "1.0"
 [workspace.package]
 edition = "2021"
 license = "Elastic-2.0"
+
+[package]
+name = "corint-examples"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+corint-sdk = { path = "crates/corint-sdk" }
+corint-runtime = { path = "crates/corint-runtime" }
+tokio = { version = "1.0", features = ["full"] }
+
+[[example]]
+name = "simple_rule"
+path = "examples/simple_rule.rs"
+
+[[example]]
+name = "fraud_detection"
+path = "examples/fraud_detection.rs"
+
+[[example]]
+name = "complete_pipeline"
+path = "examples/complete_pipeline.rs"

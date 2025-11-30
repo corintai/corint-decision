@@ -1,0 +1,11 @@
+# Simple Rule Example
+# Checks if transaction amount exceeds threshold
+
+rule:
+  id: high_amount_check
+  name: High Amount Check
+  description: Flag transactions over $100
+  when:
+    conditions:
+      - amount > 100
+  score: 10

@@ -72,6 +72,16 @@ impl ExecutionContext {
             return Err(RuntimeError::FieldNotFound("empty path".to_string()));
         }
 
+        // Handle special fields
+        if path.len() == 1 {
+            match path[0].as_str() {
+                "total_score" => {
+                    return Ok(Value::Number(self.result.score as f64));
+                }
+                _ => {}
+            }
+        }
+
         let mut current = self.event_data.get(&path[0]).ok_or_else(|| {
             RuntimeError::FieldNotFound(path[0].clone())
         })?;

@@ -8,7 +8,10 @@ pub mod error;
 pub mod builder;
 
 // Re-export main types
-pub use config::{EngineConfig, StorageConfig, LLMConfig, ServiceConfig};
+pub use config::{
+    EngineConfig, StorageConfig, LLMConfig, ServiceConfig,
+    LLMProvider, ServiceType, StorageType,
+};
 pub use decision_engine::{DecisionEngine, DecisionRequest, DecisionResponse};
 pub use error::{SdkError, Result};
 pub use builder::DecisionEngineBuilder;
