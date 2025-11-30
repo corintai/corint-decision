@@ -4,7 +4,8 @@
 
 use corint_core::ast::{Expression, Rule, WhenBlock};
 use crate::error::{ParseError, Result};
-use crate::expression::ExpressionParser;
+use crate::expression_parser::ExpressionParser;
+use crate::yaml_parser::YamlParser;
 use serde_yaml::Value as YamlValue;
 
 /// Rule parser
@@ -13,7 +14,7 @@ pub struct RuleParser;
 impl RuleParser {
     /// Parse a rule from YAML string
     pub fn parse(yaml_str: &str) -> Result<Rule> {
-        let yaml: YamlValue = serde_yaml::from_str(yaml_str)?;
+        let yaml = YamlParser::parse(yaml_str)?;
         Self::parse_from_yaml(&yaml)
     }
 
@@ -26,13 +27,13 @@ impl RuleParser {
                 field: "rule".to_string(),
             })?;
 
-        // Parse required fields
-        let id = Self::get_string(rule_obj, "id")?;
-        let name = Self::get_string(rule_obj, "name")?;
-        let score = Self::get_i32(rule_obj, "score")?;
+        // Parse required fields using YamlParser utilities
+        let id = YamlParser::get_string(rule_obj, "id")?;
+        let name = YamlParser::get_string(rule_obj, "name")?;
+        let score = YamlParser::get_i32(rule_obj, "score")?;
 
         // Parse optional description
-        let description = Self::get_optional_string(rule_obj, "description");
+        let description = YamlParser::get_optional_string(rule_obj, "description");
 
         // Parse when block
         let when = Self::parse_when_block(rule_obj)?;
@@ -55,8 +56,10 @@ impl RuleParser {
             })?;
 
         // Parse event type (optional)
-        let event_type = Self::get_optional_string(when_obj, "event.type")
-            .or_else(|| Self::get_optional_string(when_obj, "event_type"));
+        // Try three formats: 1) flat "event.type" key, 2) "event_type" key, 3) nested path
+        let event_type = YamlParser::get_optional_string(when_obj, "event.type")
+            .or_else(|| YamlParser::get_optional_string(when_obj, "event_type"))
+            .or_else(|| YamlParser::get_nested_string(when_obj, "event.type"));
 
         // Parse conditions
         let conditions = if let Some(cond_array) = when_obj.get("conditions").and_then(|v| v.as_sequence()) {
@@ -79,7 +82,7 @@ impl RuleParser {
         if let Some(s) = yaml.as_str() {
             // Simple string condition - parse as expression
             ExpressionParser::parse(s)
-        } else if let Some(obj) = yaml.as_mapping() {
+        } else if let Some(_obj) = yaml.as_mapping() {
             // Object-based condition (for complex conditions)
             // For now, convert to string and parse
             // TODO: Support more complex YAML-based condition syntax
@@ -95,31 +98,6 @@ impl RuleParser {
                 message: "Condition must be a string expression".to_string(),
             })
         }
-    }
-
-    /// Get a required string field
-    fn get_string(obj: &YamlValue, field: &str) -> Result<String> {
-        obj.get(field)
-            .and_then(|v| v.as_str())
-            .map(|s| s.to_string())
-            .ok_or_else(|| ParseError::MissingField {
-                field: field.to_string(),
-            })
-    }
-
-    /// Get an optional string field
-    fn get_optional_string(obj: &YamlValue, field: &str) -> Option<String> {
-        obj.get(field).and_then(|v| v.as_str()).map(|s| s.to_string())
-    }
-
-    /// Get a required i32 field
-    fn get_i32(obj: &YamlValue, field: &str) -> Result<i32> {
-        obj.get(field)
-            .and_then(|v| v.as_i64())
-            .map(|n| n as i32)
-            .ok_or_else(|| ParseError::MissingField {
-                field: field.to_string(),
-            })
     }
 }
 

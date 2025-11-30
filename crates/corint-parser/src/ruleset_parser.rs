@@ -4,7 +4,8 @@
 
 use corint_core::ast::{Action, DecisionRule, InferConfig, Ruleset};
 use crate::error::{ParseError, Result};
-use crate::expression::ExpressionParser;
+use crate::expression_parser::ExpressionParser;
+use crate::yaml_parser::YamlParser;
 use serde_yaml::Value as YamlValue;
 
 /// Ruleset parser
@@ -13,7 +14,7 @@ pub struct RulesetParser;
 impl RulesetParser {
     /// Parse a ruleset from YAML string
     pub fn parse(yaml_str: &str) -> Result<Ruleset> {
-        let yaml: YamlValue = serde_yaml::from_str(yaml_str)?;
+        let yaml = YamlParser::parse(yaml_str)?;
         Self::parse_from_yaml(&yaml)
     }
 
@@ -26,11 +27,11 @@ impl RulesetParser {
                 field: "ruleset".to_string(),
             })?;
 
-        // Parse required fields
-        let id = Self::get_string(ruleset_obj, "id")?;
+        // Parse required fields using YamlParser
+        let id = YamlParser::get_string(ruleset_obj, "id")?;
 
         // Parse optional fields
-        let name = Self::get_optional_string(ruleset_obj, "name");
+        let name = YamlParser::get_optional_string(ruleset_obj, "name");
 
         // Parse rules array
         let rules = if let Some(rules_array) = ruleset_obj.get("rules").and_then(|v| v.as_sequence()) {
@@ -63,26 +64,22 @@ impl RulesetParser {
     /// Parse a decision rule
     fn parse_decision_rule(yaml: &YamlValue) -> Result<DecisionRule> {
         // Parse condition (optional)
-        let condition = Self::get_optional_string(yaml, "condition")
+        let condition = YamlParser::get_optional_string(yaml, "condition")
             .map(|s| ExpressionParser::parse(&s))
             .transpose()?;
 
         // Parse default flag
-        let default = yaml
-            .get("default")
-            .and_then(|v| v.as_bool())
+        let default = YamlParser::get_optional_bool(yaml, "default")
             .unwrap_or(false);
 
         // Parse action
         let action = Self::parse_action(yaml)?;
 
         // Parse reason (optional)
-        let reason = Self::get_optional_string(yaml, "reason");
+        let reason = YamlParser::get_optional_string(yaml, "reason");
 
         // Parse terminate flag
-        let terminate = yaml
-            .get("terminate")
-            .and_then(|v| v.as_bool())
+        let terminate = YamlParser::get_optional_bool(yaml, "terminate")
             .unwrap_or(false);
 
         Ok(DecisionRule {
@@ -96,7 +93,7 @@ impl RulesetParser {
 
     /// Parse an action
     fn parse_action(yaml: &YamlValue) -> Result<Action> {
-        let action_str = Self::get_string(yaml, "action")?;
+        let action_str = YamlParser::get_string(yaml, "action")?;
 
         match action_str.as_str() {
             "approve" => Ok(Action::Approve),
@@ -132,21 +129,6 @@ impl RulesetParser {
         };
 
         Ok(InferConfig { data_snapshot })
-    }
-
-    /// Get a required string field
-    fn get_string(obj: &YamlValue, field: &str) -> Result<String> {
-        obj.get(field)
-            .and_then(|v| v.as_str())
-            .map(|s| s.to_string())
-            .ok_or_else(|| ParseError::MissingField {
-                field: field.to_string(),
-            })
-    }
-
-    /// Get an optional string field
-    fn get_optional_string(obj: &YamlValue, field: &str) -> Option<String> {
-        obj.get(field).and_then(|v| v.as_str()).map(|s| s.to_string())
     }
 }
 

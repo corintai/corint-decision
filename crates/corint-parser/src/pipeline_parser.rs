@@ -7,7 +7,8 @@ use corint_core::ast::{
     Step,
 };
 use crate::error::{ParseError, Result};
-use crate::expression::ExpressionParser;
+use crate::expression_parser::ExpressionParser;
+use crate::yaml_parser::YamlParser;
 use serde_yaml::Value as YamlValue;
 use std::collections::HashMap;
 
@@ -17,7 +18,7 @@ pub struct PipelineParser;
 impl PipelineParser {
     /// Parse a pipeline from YAML string
     pub fn parse(yaml_str: &str) -> Result<Pipeline> {
-        let yaml: YamlValue = serde_yaml::from_str(yaml_str)?;
+        let yaml = YamlParser::parse(yaml_str)?;
         Self::parse_from_yaml(&yaml)
     }
 
@@ -45,7 +46,7 @@ impl PipelineParser {
 
     /// Parse a single step
     fn parse_step(yaml: &YamlValue) -> Result<Step> {
-        let step_type = Self::get_string(yaml, "type")?;
+        let step_type = YamlParser::get_string(yaml, "type")?;
 
         match step_type.as_str() {
             "extract" => Self::parse_extract_step(yaml),
@@ -63,7 +64,7 @@ impl PipelineParser {
 
     /// Parse extract step
     fn parse_extract_step(yaml: &YamlValue) -> Result<Step> {
-        let id = Self::get_string(yaml, "id")?;
+        let id = YamlParser::get_string(yaml, "id")?;
 
         let features = if let Some(features_array) = yaml.get("features").and_then(|v| v.as_sequence()) {
             features_array
@@ -79,8 +80,8 @@ impl PipelineParser {
 
     /// Parse feature definition
     fn parse_feature_definition(yaml: &YamlValue) -> Result<FeatureDefinition> {
-        let name = Self::get_string(yaml, "name")?;
-        let value_str = Self::get_string(yaml, "value")?;
+        let name = YamlParser::get_string(yaml, "name")?;
+        let value_str = YamlParser::get_string(yaml, "value")?;
         let value = ExpressionParser::parse(&value_str)?;
 
         Ok(FeatureDefinition { name, value })
@@ -88,11 +89,11 @@ impl PipelineParser {
 
     /// Parse reason step
     fn parse_reason_step(yaml: &YamlValue) -> Result<Step> {
-        let id = Self::get_string(yaml, "id")?;
-        let provider = Self::get_string(yaml, "provider")?;
-        let model = Self::get_string(yaml, "model")?;
+        let id = YamlParser::get_string(yaml, "id")?;
+        let provider = YamlParser::get_string(yaml, "provider")?;
+        let model = YamlParser::get_string(yaml, "model")?;
 
-        let prompt_str = Self::get_string(yaml, "prompt")?;
+        let prompt_str = YamlParser::get_string(yaml, "prompt")?;
         let prompt = PromptTemplate {
             template: prompt_str,
         };
@@ -113,7 +114,7 @@ impl PipelineParser {
 
     /// Parse schema (simplified version)
     fn parse_schema(yaml: &YamlValue) -> Result<Schema> {
-        let schema_type = Self::get_string(yaml, "type")?;
+        let schema_type = YamlParser::get_string(yaml, "type")?;
 
         let properties = if let Some(props_obj) = yaml.get("properties").and_then(|v| v.as_mapping()) {
             let mut map = HashMap::new();
@@ -136,8 +137,8 @@ impl PipelineParser {
 
     /// Parse schema property
     fn parse_schema_property(yaml: &YamlValue) -> Result<SchemaProperty> {
-        let property_type = Self::get_string(yaml, "type")?;
-        let description = Self::get_optional_string(yaml, "description");
+        let property_type = YamlParser::get_string(yaml, "type")?;
+        let description = YamlParser::get_optional_string(yaml, "description");
 
         Ok(SchemaProperty {
             property_type,
@@ -147,9 +148,9 @@ impl PipelineParser {
 
     /// Parse service step
     fn parse_service_step(yaml: &YamlValue) -> Result<Step> {
-        let id = Self::get_string(yaml, "id")?;
-        let service = Self::get_string(yaml, "service")?;
-        let operation = Self::get_string(yaml, "operation")?;
+        let id = YamlParser::get_string(yaml, "id")?;
+        let service = YamlParser::get_string(yaml, "service")?;
+        let operation = YamlParser::get_string(yaml, "operation")?;
 
         let params = if let Some(params_obj) = yaml.get("params").and_then(|v| v.as_mapping()) {
             let mut map = HashMap::new();
@@ -176,7 +177,7 @@ impl PipelineParser {
 
     /// Parse include step
     fn parse_include_step(yaml: &YamlValue) -> Result<Step> {
-        let ruleset = Self::get_string(yaml, "ruleset")?;
+        let ruleset = YamlParser::get_string(yaml, "ruleset")?;
         Ok(Step::Include { ruleset })
     }
 
@@ -196,7 +197,7 @@ impl PipelineParser {
 
     /// Parse a single branch
     fn parse_branch(yaml: &YamlValue) -> Result<Branch> {
-        let condition_str = Self::get_string(yaml, "condition")?;
+        let condition_str = YamlParser::get_string(yaml, "condition")?;
         let condition = ExpressionParser::parse(&condition_str)?;
 
         let pipeline = if let Some(steps_array) = yaml.get("pipeline").and_then(|v| v.as_sequence()) {
@@ -225,7 +226,7 @@ impl PipelineParser {
             Vec::new()
         };
 
-        let merge_str = Self::get_string(yaml, "merge")?;
+        let merge_str = YamlParser::get_string(yaml, "merge")?;
         let merge = Self::parse_merge_strategy(&merge_str)?;
 
         Ok(Step::Parallel { steps, merge })
@@ -243,21 +244,6 @@ impl PipelineParser {
                 message: format!("Unknown merge strategy: {}", s),
             }),
         }
-    }
-
-    /// Get a required string field
-    fn get_string(obj: &YamlValue, field: &str) -> Result<String> {
-        obj.get(field)
-            .and_then(|v| v.as_str())
-            .map(|s| s.to_string())
-            .ok_or_else(|| ParseError::MissingField {
-                field: field.to_string(),
-            })
-    }
-
-    /// Get an optional string field
-    fn get_optional_string(obj: &YamlValue, field: &str) -> Option<String> {
-        obj.get(field).and_then(|v| v.as_str()).map(|s| s.to_string())
     }
 }
 
