@@ -1,0 +1,18 @@
+[package]
+name = "corint-runtime"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+description = "Runtime execution engine for CORINT Decision Engine"
+
+[dependencies]
+corint-core = { path = "../corint-core" }
+thiserror = { workspace = true }
+anyhow = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+async-trait = "0.1"
+tokio = { version = "1.0", features = ["full"] }
+
+[dev-dependencies]
+tokio = { version = "1.0", features = ["full", "test-util"] }
