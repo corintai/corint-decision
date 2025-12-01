@@ -17,8 +17,7 @@ impl RulesetCompiler {
 
         // Compile decision logic
         // This evaluates conditions and executes appropriate actions
-        let logic = Self::compile_decision_logic(ruleset)?;
-        instructions.extend(logic);
+        instructions.extend(Self::compile_decision_logic(ruleset)?);
 
         // Always end with return
         instructions.push(Instruction::Return);
@@ -69,13 +68,14 @@ impl RulesetCompiler {
                 }
 
                 // Jump past the action instructions if condition is false
-                let jump_offset = action_instructions.len() as isize + 1; // +1 for the JumpIfFalse itself
+                // Offset is relative to current instruction, so we need to skip:
+                // +1 to get past the JumpIfFalse itself, then skip all action_instructions
+                let jump_offset = (action_instructions.len() + 1) as isize;
                 instructions.push(Instruction::JumpIfFalse { offset: jump_offset });
 
                 // Add the action instructions
                 instructions.extend(action_instructions);
             }
-
         }
 
         // Second pass: fix the Jump instructions to skip to the end
@@ -84,7 +84,12 @@ impl RulesetCompiler {
         for (i, inst) in instructions.iter_mut().enumerate() {
             if let Instruction::Jump { offset } = inst {
                 if *offset == 999 {
-                    // Calculate offset to the end
+                    // Calculate offset to jump past all remaining instructions
+                    // The offset is relative to the CURRENT instruction position i
+                    // To jump past the last instruction at position (total_len - 1),
+                    // we need to reach position total_len
+                    // Offset = total_len - i
+                    // But since we want to exit the loop (pc >= total_len), we use:
                     *offset = total_len - i as isize;
                 }
             }
@@ -307,5 +312,45 @@ mod tests {
         }
 
         assert!(program.instructions.len() > 10);
+    }
+}
+#[test]
+fn test_compile_simple_ruleset() {
+    use corint_core::ast::{DecisionRule, Expression, Operator, Ruleset};
+    use corint_core::ast::Action;
+    use corint_core::Value;
+    use crate::codegen::RulesetCompiler;
+
+    let ruleset = Ruleset {
+        id: "test_ruleset".to_string(),
+        name: Some("Test Ruleset".to_string()),
+        rules: vec!["test_rule".to_string()],
+        decision_logic: vec![
+            DecisionRule {
+                condition: Some(Expression::Binary {
+                    left: Box::new(Expression::FieldAccess(vec!["total_score".to_string()])),
+                    op: Operator::Ge,
+                    right: Box::new(Expression::Literal(Value::Number(50.0))),
+                }),
+                default: false,
+                action: Action::Deny,
+                reason: None,
+                terminate: false,
+            },
+            DecisionRule {
+                condition: None,
+                default: true,
+                action: Action::Approve,
+                reason: None,
+                terminate: false,
+            },
+        ],
+    };
+
+    let program = RulesetCompiler::compile(&ruleset).unwrap();
+
+    println!("\nTest Simple Ruleset Instructions:");
+    for (i, inst) in program.instructions.iter().enumerate() {
+        println!("{}: {:?}", i, inst);
     }
 }

@@ -10,7 +10,7 @@ use crate::error::{RuntimeError, Result};
 use crate::feature::FeatureExtractor;
 use crate::llm::LLMClient;
 use crate::observability::{Metrics, MetricsCollector};
-use crate::result::DecisionResult;
+use crate::result::{DecisionResult, ExecutionResult};
 use crate::service::ServiceClient;
 use crate::storage::Storage;
 use std::collections::HashMap;
@@ -69,14 +69,29 @@ impl PipelineExecutor {
         program: &Program,
         event_data: HashMap<String, Value>,
     ) -> Result<DecisionResult> {
+        self.execute_with_result(program, event_data, ExecutionResult::new()).await
+    }
+
+    /// Execute an IR program with the given event data and existing result state
+    pub async fn execute_with_result(
+        &self,
+        program: &Program,
+        event_data: HashMap<String, Value>,
+        existing_result: ExecutionResult,
+    ) -> Result<DecisionResult> {
         let start_time = Instant::now();
         self.metrics.counter("executions_total").inc();
 
-        let mut ctx = ExecutionContext::new(event_data);
+        let mut ctx = ExecutionContext::with_result(event_data, existing_result);
         let mut pc = 0; // Program Counter
 
+        tracing::debug!("Program has {} instructions", program.instructions.len());
+        for (i, inst) in program.instructions.iter().enumerate() {
+            tracing::trace!("  [{}]: {:?}", i, inst);
+        }
         while pc < program.instructions.len() {
             let instruction = &program.instructions[pc];
+            tracing::trace!("Executing pc={}: {:?}", pc, instruction);
 
             match instruction {
                 Instruction::LoadField { path } => {
@@ -101,7 +116,9 @@ impl PipelineExecutor {
                 Instruction::Compare { op } => {
                     let right = ctx.pop()?;
                     let left = ctx.pop()?;
+                    tracing::trace!("Compare {:?} {:?} {:?}", left, op, right);
                     let result = Self::execute_compare(&left, op, &right)?;
+                    tracing::trace!("Compare result: {}", result);
                     ctx.push(Value::Bool(result));
                     pc += 1;
                 }
@@ -128,9 +145,14 @@ impl PipelineExecutor {
 
                 Instruction::JumpIfFalse { offset } => {
                     let condition = ctx.pop()?;
+                    tracing::trace!("JumpIfFalse at pc={}, condition={:?}, offset={}, is_truthy={}",
+                             pc, condition, offset, Self::is_truthy(&condition));
                     if !Self::is_truthy(&condition) {
-                        pc = (pc as isize + offset) as usize;
+                        let new_pc = (pc as isize + offset) as usize;
+                        tracing::trace!("Jumping to pc={}", new_pc);
+                        pc = new_pc;
                     } else {
+                        tracing::trace!("Not jumping, pc+=1");
                         pc += 1;
                     }
                 }
@@ -161,7 +183,9 @@ impl PipelineExecutor {
                 }
 
                 Instruction::SetAction { action } => {
+                    tracing::debug!("SetAction called with action: {:?}", action);
                     ctx.set_action(action.clone());
+                    tracing::trace!("After set_action, ctx.result.action = {:?}", ctx.result.action);
                     pc += 1;
                 }
 
@@ -328,6 +352,11 @@ impl PipelineExecutor {
             }
             (Value::String(l), Operator::EndsWith, Value::String(r)) => {
                 Ok(Value::Bool(l.ends_with(r)))
+            }
+
+            // Array operations
+            (Value::Array(arr), Operator::Contains, val) => {
+                Ok(Value::Bool(arr.iter().any(|v| v == val)))
             }
 
             // In operator

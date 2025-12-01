@@ -41,6 +41,16 @@ impl ExpressionParser {
             ));
         }
 
+        // Try to parse as binary expression with keyword operators (contains, in, not_in, etc.)
+        if let Some((left, op, right)) = Self::split_by_keyword_operator(input, &["contains", "not_in", "in", "starts_with", "ends_with", "regex"]) {
+            let op = Self::parse_operator(op)?;
+            return Ok(Expression::binary(
+                Self::parse_expression(left)?,
+                op,
+                Self::parse_expression(right)?,
+            ));
+        }
+
         // Try to parse as binary expression with comparison operators
         if let Some((left, op, right)) = Self::split_by_operator(input, &["==", "!=", "<=", ">=", "<", ">"]) {
             let op = Self::parse_operator(op)?;
@@ -188,6 +198,43 @@ impl ExpressionParser {
         None
     }
 
+    /// Split input by keyword operator (respecting parentheses and word boundaries)
+    fn split_by_keyword_operator<'a>(input: &'a str, operators: &[&str]) -> Option<(&'a str, &'a str, &'a str)> {
+        let mut paren_depth = 0;
+        let bytes = input.as_bytes();
+
+        // Scan from right to left to handle left-to-right associativity
+        for i in (0..input.len()).rev() {
+            let c = bytes[i] as char;
+
+            if c == ')' {
+                paren_depth += 1;
+            } else if c == '(' {
+                paren_depth -= 1;
+            }
+
+            if paren_depth == 0 {
+                for &op in operators {
+                    if i + op.len() <= input.len() && &input[i..i+op.len()] == op {
+                        // For keyword operators, check word boundaries
+                        let has_space_before = i == 0 || bytes[i-1].is_ascii_whitespace();
+                        let has_space_after = i + op.len() >= input.len() || bytes[i+op.len()].is_ascii_whitespace();
+
+                        if has_space_before && has_space_after {
+                            return Some((
+                                input[..i].trim(),
+                                &input[i..i+op.len()],
+                                input[i+op.len()..].trim(),
+                            ));
+                        }
+                    }
+                }
+            }
+        }
+
+        None
+    }
+
     /// Check if a character is part of an operator
     fn is_operator_char(c: char) -> bool {
         matches!(c, '=' | '!' | '<' | '>' | '&' | '|' | '+' | '-' | '*' | '/' | '%')
@@ -242,6 +289,12 @@ impl ExpressionParser {
             "%" => Ok(Operator::Mod),
             "&&" => Ok(Operator::And),
             "||" => Ok(Operator::Or),
+            "contains" => Ok(Operator::Contains),
+            "starts_with" => Ok(Operator::StartsWith),
+            "ends_with" => Ok(Operator::EndsWith),
+            "regex" => Ok(Operator::Regex),
+            "in" => Ok(Operator::In),
+            "not_in" => Ok(Operator::NotIn),
             _ => Err(ParseError::InvalidOperator(op.to_string())),
         }
     }

@@ -23,21 +23,35 @@ impl RuleCompiler {
         }
 
         // 2. Compile all conditions
+        // First, compile all condition expressions and calculate total instruction count
+        let mut condition_blocks = Vec::new();
         for condition in &rule.when.conditions {
-            // Compile the condition expression
             let condition_instructions = ExpressionCompiler::compile(condition)?;
-            instructions.extend(condition_instructions);
-
-            // If condition is false, skip to the end (don't trigger rule)
-            // The offset needs to account for:
-            // - SetScore instruction
-            // - MarkRuleTriggered instruction
-            // - Return instruction
-            instructions.push(Instruction::JumpIfFalse { offset: 3 });
+            condition_blocks.push(condition_instructions);
         }
 
-        // 3. If all conditions passed, set the score
-        instructions.push(Instruction::SetScore { value: rule.score });
+        // Add conditions with correct jump offsets
+        for (idx, condition_instructions) in condition_blocks.iter().enumerate() {
+            instructions.extend(condition_instructions.clone());
+
+            // Calculate how many instructions to skip if this condition is false:
+            // - All remaining condition blocks (each with its own JumpIfFalse)
+            // - SetScore instruction (1)
+            // - MarkRuleTriggered instruction (1)
+            // - Return instruction (1)
+            let mut remaining_instruction_count = 3; // SetScore + MarkRuleTriggered + Return
+
+            for remaining_block in &condition_blocks[idx + 1..] {
+                remaining_instruction_count += remaining_block.len() + 1; // +1 for JumpIfFalse
+            }
+
+            instructions.push(Instruction::JumpIfFalse {
+                offset: remaining_instruction_count as isize
+            });
+        }
+
+        // 3. If all conditions passed, add the score (累加分数而不是设置分数)
+        instructions.push(Instruction::AddScore { value: rule.score });
 
         // 4. Mark this rule as triggered
         instructions.push(Instruction::MarkRuleTriggered {
@@ -107,7 +121,7 @@ mod tests {
         ));
         assert!(matches!(
             program.instructions[5],
-            Instruction::SetScore { value: 50 }
+            Instruction::AddScore { value: 50 }
         ));
         assert!(matches!(
             program.instructions[6],

@@ -1,0 +1,169 @@
+version: "0.1"
+
+pipeline:
+  # Variables for account takeover detection
+  - vars:
+      behavior_change_threshold: 0.7
+      device_trust_threshold: 0.3
+      suspicious_countries: ["RU", "NG", "CN", "KP"]
+      
+  # Validate input
+  - type: validate
+    id: input_validation
+    schema: AccountTakeoverEventSchema
+    on_error:
+      action: fail
+      
+  # Extract device information
+  - type: extract
+    id: extract_device
+    cache:
+      enabled: true
+      ttl: 1800
+      key: "device:{event.device.id}"
+      
+  # Extract user behavior patterns
+  - type: extract
+    id: extract_order_behavior
+    
+  # Precomputed user baseline behavior
+  - type: enrich
+    id: user_baseline
+    precomputed:
+      enabled: true
+      source: redis
+      features:
+        - user_typical_order_time
+        - user_typical_order_amount
+        - user_typical_location
+        - user_device_history
+        
+  # Parallel anomaly detection checks
+  - parallel:
+      # LLM-based behavior change detection
+      - type: reason
+        id: llm_user_behavior_change
+        
+        provider: openai
+        model: gpt-4-turbo
+        
+        prompt:
+          template: |
+            Analyze this user activity for account takeover indicators:
+            
+            Current Activity:
+            - Order Amount: ${event.order.amount}
+            - Order Time: {event.order.timestamp}
+            - Location: {event.geo.country}, {event.geo.city}
+            - Device: {event.device.type}
+            
+            Historical Baseline:
+            - Typical Order Amount: ${context.user_baseline.typical_order_amount}
+            - Typical Order Time: {context.user_baseline.typical_order_time}
+            - Typical Location: {context.user_baseline.typical_location}
+            - Known Devices: {context.user_baseline.device_history}
+            
+            Assess likelihood of account takeover.
+            
+        output_schema:
+          behavior_change_score: float
+          anomaly_indicators: array<string>
+          confidence: float
+          
+        config:
+          temperature: 0.2
+          max_tokens: 500
+          timeout: 5000
+          
+        cache:
+          enabled: true
+          ttl: 600
+          
+        on_error:
+          action: fallback
+          fallback:
+            behavior_change_score: 0.5
+            anomaly_indicators: ["llm_error"]
+            confidence: 0.0
+            
+      # Device fingerprinting check
+      - type: api
+        id: device_anomaly
+        endpoint: /api/device/risk-check
+        timeout: 3000
+        cache:
+          enabled: true
+          ttl: 1800
+        retry:
+          max_attempts: 2
+        on_error:
+          action: fallback
+          fallback:
+            device_risk_score: 50
+            
+      # IP reputation check
+      - type: api
+        id: ip_reputation_check
+        endpoint: /api/ip/reputation
+        timeout: 2000
+        cache:
+          enabled: true
+          ttl: 3600
+        on_error:
+          action: fallback
+          fallback:
+            ip_risk_score: 50
+            
+    merge:
+      method: all
+      on_partial_data:
+        action: continue
+        min_required: 2
+        
+  # Include account takeover rules
+  - include:
+      ruleset: takeover_risk_rules
+      
+  # Weighted aggregation favoring device and behavior
+  - aggregate:
+      method: weighted
+      weights:
+        context.device_anomaly.device_risk_score: 0.4
+        context.ip_reputation_check.ip_risk_score: 0.2
+        context.llm_user_behavior_change.behavior_change_score: 0.4
+      output: context.takeover_risk_score
+      
+  # Final decision with enhanced observability
+  - type: action
+    id: final_decision
+    
+    # Alert on high-risk takeover attempts
+    observability:
+      log:
+        level: info
+        include:
+          - user_id: event.user.id
+          - action: context.final_decision.action
+          - risk_score: context.takeover_risk_score
+          - behavior_anomalies: context.llm_user_behavior_change.anomaly_indicators
+          
+      alert:
+        enabled: true
+        condition: context.takeover_risk_score > 80
+        severity: high
+        channels: [slack, pagerduty]
+        message: "High-risk account takeover attempt detected for user {event.user.id}"
+        
+      audit:
+        enabled: true
+        retention_days: 365
+        
+      metric:
+        - name: takeover_attempts_total
+          type: counter
+          labels:
+            action: context.final_decision.action
+            risk_level: |
+              context.takeover_risk_score > 80 ? "critical" :
+              context.takeover_risk_score > 60 ? "high" :
+              context.takeover_risk_score > 40 ? "medium" : "low"

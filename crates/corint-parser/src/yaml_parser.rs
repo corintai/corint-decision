@@ -15,6 +15,29 @@ impl YamlParser {
         serde_yaml::from_str(yaml_str).map_err(|e| ParseError::ParseError(e.to_string()))
     }
 
+    /// Parse YAML string containing multiple documents (separated by ---)
+    /// Returns a vector of YAML values, one for each document
+    pub fn parse_multi_document(yaml_str: &str) -> Result<Vec<YamlValue>> {
+        use serde::Deserialize;
+
+        let deserializer = serde_yaml::Deserializer::from_str(yaml_str);
+        let mut documents = Vec::new();
+
+        for document in deserializer {
+            let value = YamlValue::deserialize(document)
+                .map_err(|e| ParseError::ParseError(e.to_string()))?;
+            documents.push(value);
+        }
+
+        // If no documents were parsed, try parsing as single document
+        if documents.is_empty() {
+            let value = Self::parse(yaml_str)?;
+            documents.push(value);
+        }
+
+        Ok(documents)
+    }
+
     /// Get a required string field from YAML object
     pub fn get_string(obj: &YamlValue, field: &str) -> Result<String> {
         obj.get(field)

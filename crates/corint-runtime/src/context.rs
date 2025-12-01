@@ -34,6 +34,15 @@ impl ExecutionContext {
         }
     }
 
+    /// Create a new execution context with event data and existing result state
+    pub fn with_result(event_data: HashMap<String, Value>, result: ExecutionResult) -> Self {
+        Self {
+            stack: Vec::new(),
+            event_data,
+            result,
+        }
+    }
+
     /// Push a value onto the stack
     pub fn push(&mut self, value: Value) {
         self.stack.push(value);
@@ -72,17 +81,31 @@ impl ExecutionContext {
             return Err(RuntimeError::FieldNotFound("empty path".to_string()));
         }
 
-        // Handle special fields
-        if path.len() == 1 {
+        // First, try to load from event_data
+        let current = self.event_data.get(&path[0]);
+
+        // If not found in event_data and it's a single-path special field, use computed value
+        if current.is_none() && path.len() == 1 {
             match path[0].as_str() {
                 "total_score" => {
                     return Ok(Value::Number(self.result.score as f64));
+                }
+                "triggered_rules" => {
+                    return Ok(Value::Array(
+                        self.result.triggered_rules
+                            .iter()
+                            .map(|s| Value::String(s.clone()))
+                            .collect()
+                    ));
+                }
+                "triggered_count" => {
+                    return Ok(Value::Number(self.result.triggered_rules.len() as f64));
                 }
                 _ => {}
             }
         }
 
-        let mut current = self.event_data.get(&path[0]).ok_or_else(|| {
+        let mut current = current.ok_or_else(|| {
             RuntimeError::FieldNotFound(path[0].clone())
         })?;
 

@@ -1,21 +1,319 @@
-# Fraud Detection Ruleset
-# Simple ruleset with decision logic based on transaction amount
+version: "0.1"
+
+# Realistic Fraud Detection System
+# Demonstrates production-grade fraud patterns with multi-document YAML structure
+#
+# Architecture:
+# 1. Rules (below) - Each detects a specific fraud pattern and assigns a score
+# 2. Ruleset (at end) - Evaluates all rules and makes final decision based on:
+#    - Pattern combinations (triggered_rules contains "rule_id")
+#    - Total accumulated score (total_score >= threshold)
+#    - Number of triggers (triggered_count >= N)
+
+# ========================================
+# PART 1: FRAUD DETECTION RULES
+# ========================================
+
+# Rule 1: Fraud Farm Detection
+rule:
+  id: fraud_farm_pattern
+  name: Fraud Farm Detection
+  description: Detect organized fraud farms with high IP/device association
+
+  when:
+    event.type: transaction
+    conditions:
+      # Multiple devices from same IP (5h window)
+      - ip_device_count > 10
+      # And multiple users from same IP
+      - ip_user_count > 5
+
+  score: 100
+
+---
+
+# Rule 2: Account Takeover Detection
+rule:
+  id: account_takeover_pattern
+  name: Account Takeover Detection
+  description: Detect unauthorized access from new device with suspicious activity
+
+  when:
+    event.type: transaction
+    conditions:
+      # New device never seen before
+      - new_device_indicator == true
+      # Multiple failed login attempts in past hour
+      - failed_login_count_1h >= 3
+      # Geographic location changed
+      - country_changed == true
+
+  score: 85
+
+---
+
+# Rule 3: Velocity Abuse Detection
+rule:
+  id: velocity_abuse_pattern
+  name: Velocity Abuse Detection
+  description: Detect abnormally high transaction frequency
+
+  when:
+    event.type: transaction
+    conditions:
+      # Too many transactions in 24 hours OR velocity spike
+      - transaction_count_24h > 20 || velocity_ratio > 5.0
+
+  score: 70
+
+---
+
+# Rule 4: Amount Outlier Detection
+rule:
+  id: amount_outlier_pattern
+  name: Amount Outlier Detection
+  description: Detect transaction amounts that are statistical outliers
+
+  when:
+    event.type: transaction
+    conditions:
+      # Z-score exceeds 3.0 (statistical outlier)
+      - amount_zscore > 3.0
+      # AND flagged as outlier
+      - is_amount_outlier == true
+      # AND exceeds absolute threshold
+      - transaction_amount > 5000
+
+  score: 75
+
+---
+
+# Rule 5: Suspicious Geography Detection
+rule:
+  id: suspicious_geography_pattern
+  name: Suspicious Geography Detection
+  description: Detect impossible travel or high-risk locations
+
+  when:
+    event.type: transaction
+    conditions:
+      # Impossible travel OR (off-hours AND country changed) OR high-risk country
+      - (geo_distance_km / hours_since_last_login > 800) || (is_off_hours == true && country_changed == true) || country_risk_level == "high"
+
+  score: 60
+
+---
+
+# Rule 6: New User Fraud Detection
+rule:
+  id: new_user_fraud_pattern
+  name: New User Fraud Detection
+  description: Detect new accounts with immediate high-risk behavior
+
+  when:
+    event.type: transaction
+    conditions:
+      # Account created within past 7 days
+      - user_age_days < 7
+      # AND (large amount OR unverified payment)
+      - transaction_amount > 1000 || (new_payment_method == true && user_verified == false)
+
+  score: 50
+
+---
+
+# ========================================
+# PART 2: RULESET WITH DECISION LOGIC
+# ========================================
 
 ruleset:
   id: fraud_detection
-  name: Fraud Detection Ruleset
-  description: Simple fraud detection based on transaction amount
-  rules: []
+  name: Realistic Fraud Detection System
+
+  description: |
+    Production-grade fraud detection demonstrating 6 realistic fraud patterns.
+
+    Each rule detects a specific fraud pattern and contributes a score:
+    1. Fraud Farm (100pts) - High IP/device association
+    2. Account Takeover (85pts) - New device + failed logins + location change
+    3. Velocity Abuse (70pts) - Transaction frequency spikes
+    4. Amount Outlier (75pts) - Statistical anomaly
+    5. Suspicious Geography (60pts) - Impossible travel
+    6. New User Fraud (50pts) - Recent account + suspicious behavior
+
+    Decision logic uses pattern combinations and score thresholds.
+
+  # Rules to evaluate (all 6 fraud detection rules)
+  rules:
+    - fraud_farm_pattern
+    - account_takeover_pattern
+    - velocity_abuse_pattern
+    - amount_outlier_pattern
+    - suspicious_geography_pattern
+    - new_user_fraud_pattern
+
+  # Multi-layer decision logic
   decision_logic:
-    - condition: "transaction_amount > 10000"
+    # ==========================================
+    # Priority 1: Critical Patterns
+    # ==========================================
+
+    # Fraud farm is always critical - organized fraud
+    - condition: triggered_rules contains "fraud_farm_pattern"
       action: deny
-      reason: Extremely high value transaction
+      reason: "Critical: Fraud farm detected (organized fraud network)"
       terminate: true
-    - condition: "transaction_amount > 1000"
+
+    # Multiple high-severity patterns combined
+    - condition: |
+        triggered_rules contains "account_takeover_pattern" &&
+        triggered_rules contains "amount_outlier_pattern"
+      action: deny
+      reason: "Critical: Account takeover with abnormal transaction amount"
+      terminate: true
+
+    # ==========================================
+    # Priority 2: Score-Based Thresholds
+    # ==========================================
+
+    # Critical Risk >= 200 (multiple patterns)
+    - condition: total_score >= 200
+      action: deny
+      reason: "Critical risk - multiple fraud indicators (score: {total_score})"
+      terminate: true
+
+    # Very High Risk >= 150
+    - condition: total_score >= 150
+      action: deny
+      reason: "Very high risk - strong fraud pattern (score: {total_score})"
+      terminate: true
+
+    # High Risk >= 100
+    - condition: total_score >= 100
+      action: deny
+      reason: "High risk - clear fraud signals (score: {total_score})"
+      terminate: true
+
+    # Medium-High Risk >= 60
+    - condition: total_score >= 60
       action: review
-      reason: High value transaction
-    - condition: "transaction_amount > 100"
+      reason: "Medium-high risk - manual review required (score: {total_score})"
+      terminate: false
+
+    # Medium Risk >= 30
+    - condition: total_score >= 30
       action: review
-      reason: Elevated transaction amount
+      reason: "Medium risk - enhanced monitoring (score: {total_score})"
+      terminate: false
+
+    # ==========================================
+    # Priority 3: Count-Based Decisions
+    # ==========================================
+
+    # Multiple fraud signals present
+    - condition: triggered_count >= 3
+      action: review
+      reason: "Multiple fraud indicators ({triggered_count} patterns detected)"
+
+    # ==========================================
+    # Priority 4: Default Action
+    # ==========================================
+
+    # Low Risk (default)
     - default: true
       action: approve
+      reason: "Low risk - normal pattern"
+
+  metadata:
+    version: "3.0.0"
+    last_updated: "2024-12-01"
+
+    fraud_patterns:
+      fraud_farm:
+        score: 100
+        description: "Multiple devices/users from same IP"
+        detection: "ip_device_count > 10 AND ip_user_count > 5"
+        features:
+          - ip_device_count: "Devices from same IP (5h window)"
+          - ip_user_count: "Users from same IP (5h window)"
+        common_in: ["organized_fraud", "bot_networks", "credential_stuffing"]
+
+      account_takeover:
+        score: 85
+        description: "Unauthorized access from new device with suspicious activity"
+        detection: "new_device_indicator AND failed_login_count_1h >= 3 AND country_changed"
+        features:
+          - new_device_indicator: "Device never seen before"
+          - failed_login_count_1h: "Failed attempts in last hour"
+          - country_changed: "Geographic location changed"
+        common_in: ["credential_stuffing", "phishing", "malware"]
+
+      velocity_abuse:
+        score: 70
+        description: "Abnormally high transaction frequency"
+        detection: "transaction_count_24h > 20 OR velocity_ratio > 5.0"
+        features:
+          - transaction_count_24h: "Transactions in 24h"
+          - velocity_ratio: "Current vs 7-day average velocity"
+        common_in: ["carding", "automated_fraud", "bot_attacks"]
+
+      amount_outlier:
+        score: 75
+        description: "Transaction amount is statistical outlier"
+        detection: "amount_zscore > 3.0 AND is_amount_outlier AND transaction_amount > 5000"
+        features:
+          - amount_zscore: "Z-score (standard deviations from mean)"
+          - is_amount_outlier: "Exceeds 95th percentile"
+          - transaction_amount: "Absolute amount threshold"
+        common_in: ["account_takeover", "stolen_cards", "money_laundering"]
+
+      suspicious_geography:
+        score: 60
+        description: "Impossible travel or high-risk location"
+        detection: "Impossible travel OR (off_hours AND country_change) OR high_risk_country"
+        features:
+          - geo_distance_km: "Distance from last location"
+          - hours_since_last_login: "Time since last access"
+          - is_off_hours: "Unusual time for user"
+          - country_risk_level: "Country risk rating"
+        common_in: ["account_takeover", "vpn_abuse", "proxy_fraud"]
+
+      new_user_fraud:
+        score: 50
+        description: "New account with immediate high-risk behavior"
+        detection: "user_age_days < 7 AND (high_amount OR unverified_new_payment)"
+        features:
+          - user_age_days: "Account age in days"
+          - transaction_amount: "Transaction amount"
+          - new_payment_method: "First time using this payment"
+          - user_verified: "Email/phone verification status"
+        common_in: ["first_party_fraud", "synthetic_identity", "fake_accounts"]
+
+    test_scenarios:
+      - name: "Clean transaction"
+        expected_score: 0
+        expected_action: "approve"
+
+      - name: "Fraud farm"
+        expected_score: 100
+        expected_action: "deny"
+
+      - name: "Account takeover"
+        expected_score: 85
+        expected_action: "review"
+
+      - name: "Velocity abuse"
+        expected_score: 70
+        expected_action: "review"
+
+      - name: "Amount outlier"
+        expected_score: 75
+        expected_action: "review"
+
+      - name: "Multiple patterns"
+        expected_score: 245
+        expected_action: "deny"
+
+      - name: "New user suspicious"
+        expected_score: 50
+        expected_action: "review"

@@ -75,14 +75,13 @@ impl DecisionEngine {
         let compiler_opts = CompilerOpts {
             enable_semantic_analysis: config.compiler_options.enable_semantic_analysis,
             enable_constant_folding: config.compiler_options.enable_constant_folding,
-            enable_dead_code_elimination: config.compiler_options.enable_dead_code_elimination,
+            enable_dead_code_elimination: false, // TEMP: Disabled due to bug with default actions
         };
 
         let mut compiler = Compiler::with_options(compiler_opts);
 
         for rule_file in &config.rule_files {
-            let compiled = Self::load_and_compile_rules(rule_file, &mut compiler).await?;
-            programs.extend(compiled);
+            programs.extend(Self::load_and_compile_rules(rule_file, &mut compiler).await?);
         }
 
         // Create executor
@@ -102,19 +101,33 @@ impl DecisionEngine {
         path: &Path,
         compiler: &mut Compiler,
     ) -> Result<Vec<Program>> {
+        use corint_parser::YamlParser;
+
         // Read file
         let content = tokio::fs::read_to_string(path).await?;
 
         let mut programs = Vec::new();
 
-        // Try to parse as different types
-        if let Ok(rule) = RuleParser::parse(&content) {
-            programs.push(compiler.compile_rule(&rule)?);
-        } else if let Ok(ruleset) = RulesetParser::parse(&content) {
-            programs.push(compiler.compile_ruleset(&ruleset)?);
-        } else if let Ok(pipeline) = PipelineParser::parse(&content) {
-            programs.push(compiler.compile_pipeline(&pipeline)?);
-        } else {
+        // Parse multi-document YAML (supports files with --- separators)
+        let documents = YamlParser::parse_multi_document(&content)?;
+
+        // Try to parse each document
+        for (_doc_idx, doc) in documents.iter().enumerate() {
+            if let Ok(rule) = RuleParser::parse_from_yaml(doc) {
+                let prog = compiler.compile_rule(&rule)?;
+                programs.push(prog);
+            } else if let Ok(ruleset) = RulesetParser::parse_from_yaml(doc) {
+                let prog = compiler.compile_ruleset(&ruleset)?;
+                programs.push(prog);
+            } else if let Ok(pipeline) = PipelineParser::parse_from_yaml(doc) {
+                let prog = compiler.compile_pipeline(&pipeline)?;
+                programs.push(prog);
+            }
+            // Skip documents that don't match any known type
+        }
+
+        // If no valid documents were found, return error
+        if programs.is_empty() {
             return Err(SdkError::InvalidRuleFile(format!(
                 "File does not contain a valid rule, ruleset, or pipeline: {}",
                 path.display()
@@ -126,28 +139,56 @@ impl DecisionEngine {
 
     /// Execute a decision request
     pub async fn decide(&self, request: DecisionRequest) -> Result<DecisionResponse> {
+        use corint_runtime::result::ExecutionResult;
+
         let start = std::time::Instant::now();
 
-        // Execute all programs and aggregate results
+        // Separate programs into rules and rulesets/pipelines
+        // Rules execute first and accumulate state, then rulesets use that state
+        let (rule_programs, decision_programs): (Vec<_>, Vec<_>) = self.programs
+            .iter()
+            .partition(|p| p.metadata.source_type == "rule");
+
+        // Create initial execution result
+        let mut execution_result = ExecutionResult::new();
+
+        // Execute all rule programs first
+        for program in &rule_programs {
+            let result = self.executor.execute_with_result(
+                program,
+                request.event_data.clone(),
+                execution_result.clone()
+            ).await?;
+
+            // Convert DecisionResult to ExecutionResult for next iteration
+            execution_result.score = result.score;
+            execution_result.triggered_rules = result.triggered_rules;
+            execution_result.action = result.action;
+            execution_result.variables = result.context;
+        }
+
+        // Execute decision programs (rulesets/pipelines) with accumulated state
+        let execution_result_clone = execution_result.clone();
         let mut combined_result = DecisionResult {
-            action: None,
-            score: 0,
-            triggered_rules: Vec::new(),
+            action: execution_result_clone.action,
+            score: execution_result_clone.score,
+            triggered_rules: execution_result_clone.triggered_rules,
             explanation: String::new(),
-            context: HashMap::new(),
+            context: execution_result_clone.variables,
         };
 
-        for program in &self.programs {
-            let result = self.executor.execute(program, request.event_data.clone()).await?;
+        for program in &decision_programs {
+            let result = self.executor.execute_with_result(
+                program,
+                request.event_data.clone(),
+                execution_result.clone()
+            ).await?;
 
-            // Aggregate results
-            combined_result.score += result.score;
-            combined_result.triggered_rules.extend(result.triggered_rules);
-
-            // Take the most severe action
+            // Update combined result with decision from ruleset
             if result.action.is_some() {
                 combined_result.action = result.action;
             }
+            // Keep the accumulated score and triggered rules from rules
         }
 
         let processing_time_ms = start.elapsed().as_millis() as u64;

@@ -1,0 +1,184 @@
+version: "0.1"
+
+# Intelligent Inference Pipeline Example
+# This example demonstrates using the 'infer' action for complex fraud detection
+
+pipeline:
+  # Variables
+  - vars:
+      infer_threshold_low: 30
+      infer_threshold_high: 85
+      high_value_amount: 10000
+      
+  # Input validation
+  - type: validate
+    id: input_validation
+    schema: TransactionEventSchema
+    on_error:
+      action: fail
+      
+  # Feature extraction
+  - type: extract
+    id: extract_transaction_features
+    
+  - type: extract
+    id: extract_user_behavior
+    
+  # Parallel intelligence gathering
+  - parallel:
+      # Behavioral analysis
+      - type: reason
+        id: behavior_analysis
+        provider: openai
+        model: gpt-4-turbo
+        prompt:
+          template: |
+            Analyze user behavior patterns:
+            User: {event.user.id}
+            Current Transaction: ${event.transaction.amount}
+            Historical Average: ${context.user_behavior.avg_amount}
+            Recent Transactions: {context.user_behavior.recent_count}
+            
+        output_schema:
+          consistency_score: float
+          anomalies: array<string>
+          
+      # Device fingerprinting
+      - type: api
+        id: device_fingerprint
+        cache:
+          enabled: true
+          ttl: 1800
+        on_error:
+          action: fallback
+          fallback:
+            trust_score: 0.5
+            
+      # IP reputation
+      - type: api
+        id: ip_reputation
+        timeout: 2000
+        retry:
+          max_attempts: 2
+        on_error:
+          action: fallback
+          fallback:
+            risk_score: 50
+            
+    merge:
+      method: all
+      
+  # Traditional rules evaluation
+  - include:
+      ruleset: fraud_detection_rules
+      
+  # Decision routing with intelligent inference
+  - type: router
+    id: decision_router
+    
+    routes:
+      # Route 1: Clear low risk → Auto approve
+      - name: auto_approve
+        condition: context.fraud_detection_rules.score < vars.infer_threshold_low
+        action: approve
+        
+      # Route 2: Clear high risk → Auto deny
+      - name: auto_deny
+        condition: context.fraud_detection_rules.score > vars.infer_threshold_high
+        action: deny
+        
+      # Route 3: Ambiguous case → Intelligent inference 🤖
+      - name: intelligent_inference
+        condition: |
+          context.fraud_detection_rules.score >= vars.infer_threshold_low &&
+          context.fraud_detection_rules.score <= vars.infer_threshold_high
+          
+        # Temporary decision (immediate return)
+        temporary_action: review
+        
+        # Mark for AI analysis (async)
+        action: infer
+        
+        infer:
+          # Specify data to send to cognition AI
+          data_snapshot:
+            # Transaction details
+            - event.transaction.amount
+            - event.transaction.merchant
+            - event.transaction.category
+            - event.timestamp
+            
+            # User profile
+            - event.user.id
+            - event.user.tier
+            - event.user.account_age_days
+            - event.user.transaction_count
+            
+            # Device & geo
+            - event.device.type
+            - event.device.is_new
+            - event.geo.country
+            - event.geo.city
+            
+            # Rule assessment
+            - context.fraud_detection_rules.score
+            - context.fraud_detection_rules.triggered_rules
+            - context.fraud_detection_rules.triggered_count
+            
+            # Behavioral analysis
+            - context.behavior_analysis.consistency_score
+            - context.behavior_analysis.anomalies
+            
+            # Intelligence signals
+            - context.device_fingerprint.trust_score
+            - context.ip_reputation.risk_score
+            
+            # Computed features
+            - context.user_behavior.avg_amount
+            - context.user_behavior.deviation_percentage
+            
+      # Route 4: Fallback → Human review
+      - name: default_review
+        default: true
+        action: review
+        
+  # Observability
+  - type: metric
+    metrics:
+      - name: inference_decisions_total
+        type: counter
+        labels:
+          decision: context.decision_router.action
+          scenario: context.decision_router.infer.inference.scenario
+          confidence_level: |
+            context.decision_router.infer.inference.confidence > 0.9 ? "high" :
+            context.decision_router.infer.inference.confidence > 0.75 ? "medium" : "low"
+            
+      - name: inference_confidence_score
+        type: histogram
+        value: context.decision_router.infer.inference.confidence
+        buckets: [0.5, 0.6, 0.7, 0.75, 0.8, 0.85, 0.9, 0.95, 1.0]
+        
+  # Final logging
+  - type: action
+    id: log_decision
+    observability:
+      log:
+        level: info
+        include:
+          - request_id: sys.request_id
+          - user_id: event.user.id
+          - transaction_amount: event.transaction.amount
+          - final_action: context.decision_router.action
+          - inference_scenario: context.decision_router.infer.inference.scenario
+          - inference_confidence: context.decision_router.infer.inference.confidence
+          - reasoning_summary: first(context.decision_router.infer.inference.reasoning_chain, 3)
+          
+      audit:
+        enabled: true
+        retention_days: 365
+        capture:
+          - full_event
+          - inference_details
+          - decision_trace
+

@@ -64,12 +64,9 @@ impl RulesetParser {
     /// Parse a decision rule
     fn parse_decision_rule(yaml: &YamlValue) -> Result<DecisionRule> {
         // Parse condition (optional)
-        let condition = if YamlParser::has_field(yaml, "condition") {
-            let s = YamlParser::get_string(yaml, "condition")?;
-            Some(ExpressionParser::parse(&s)?)
-        } else {
-            None
-        };
+        let condition = YamlParser::get_optional_string(yaml, "condition")
+            .map(|s| ExpressionParser::parse(&s))
+            .transpose()?;
 
         // Parse default flag
         let default = YamlParser::get_optional_bool(yaml, "default")

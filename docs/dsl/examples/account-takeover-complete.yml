@@ -1,0 +1,353 @@
+version: "0.1"
+
+# Complete Account Takeover Detection Example
+# Demonstrates the three-layer architecture:
+# 1. Rules (detectors) - no actions
+# 2. Ruleset (decision maker) - with decision_logic
+# 3. Pipeline (orchestrator) - flow only
+
+# ========================================
+# RULES: Detection + Scoring (no actions)
+# ========================================
+
+# Rule 1: New Device Detection
+rule:
+  id: new_device_login
+  name: New Device Login
+  description: User logging in from a device never seen before
+  
+  when:
+    event.type: login
+    conditions:
+      - device.id not_in user.known_devices
+      - device.first_seen_hours < 24
+      
+  score: 40
+
+---
+
+# Rule 2: Unusual Geographic Location
+rule:
+  id: unusual_geo_location
+  name: Unusual Geographic Location
+  description: Login from unusual country or significant distance
+  
+  when:
+    event.type: login
+    conditions:
+      - any:
+          - geo.country != user.home_country
+          - distance(geo.location, user.home_location) > 1000
+          
+  score: 50
+
+---
+
+# Rule 3: Failed Login Attempts Spike
+rule:
+  id: failed_login_spike
+  name: Failed Login Attempts Spike
+  description: Multiple failed login attempts before success
+  
+  when:
+    event.type: login
+    conditions:
+      - count(user.failed_logins, last_1h) > 3
+      - event.login.status == "success"
+      
+  score: 35
+
+---
+
+# Rule 4: Behavioral Anomaly
+rule:
+  id: behavior_anomaly
+  name: Behavioral Anomaly Detected
+  description: User behavior pattern significantly differs from baseline
+  
+  when:
+    event.type: login
+    conditions:
+      - context.behavior_analysis.consistency_score < 0.5
+      - context.behavior_analysis.anomaly_count > 2
+      
+  score: 60
+
+---
+
+# Rule 5: Sensitive Action Attempt
+rule:
+  id: sensitive_action_attempt
+  name: Sensitive Action After Login
+  description: Attempting sensitive actions like password or email change
+  
+  when:
+    event.type: login
+    conditions:
+      - any:
+          - event.post_login_action == "password_change"
+          - event.post_login_action == "email_change"
+          - event.post_login_action == "2fa_disable"
+          
+  score: 70
+
+---
+
+# ========================================
+# RULESET: Decision Logic
+# ========================================
+
+ruleset:
+  id: account_takeover_detection
+  name: Account Takeover Detection
+  description: Comprehensive account takeover detection with pattern-based decisions
+  
+  # Rules to evaluate (order matters for some decision logic)
+  rules:
+    - new_device_login
+    - unusual_geo_location
+    - failed_login_spike
+    - behavior_anomaly
+    - sensitive_action_attempt
+    
+  # Decision logic based on rule combinations
+  decision_logic:
+    # ==========================================
+    # Priority 1: Critical Patterns (Immediate)
+    # ==========================================
+    
+    # Sensitive action + new device + unusual location = definite takeover
+    - condition: |
+        triggered_rules contains "sensitive_action_attempt" &&
+        triggered_rules contains "new_device_login" &&
+        triggered_rules contains "unusual_geo_location"
+      action: deny
+      reason: "Critical takeover pattern: sensitive action from new device in unusual location"
+      terminate: true  # Stop here, don't continue evaluation
+      
+    # ==========================================
+    # Priority 2: High-Risk Combinations
+    # ==========================================
+    
+    # Classic takeover trio: device + location + behavior
+    - condition: |
+        triggered_rules contains "new_device_login" &&
+        triggered_rules contains "unusual_geo_location" &&
+        triggered_rules contains "behavior_anomaly"
+      action: infer
+      infer:
+        data_snapshot:
+          - event.type
+          - event.user.id
+          - event.user.tier
+          - event.device
+          - event.geo
+          - context.behavior_analysis
+          - context.account_takeover_detection.triggered_rules
+          - context.account_takeover_detection.total_score
+      reason: "Classic takeover pattern detected, needs AI analysis"
+      
+    # Failed attempts + new device or unusual location
+    - condition: |
+        triggered_rules contains "failed_login_spike" &&
+        (triggered_rules contains "new_device_login" || 
+         triggered_rules contains "unusual_geo_location")
+      action: infer
+      infer:
+        data_snapshot:
+          - event.*
+          - context.account_takeover_detection.*
+      reason: "Suspicious login pattern after failed attempts"
+      
+    # ==========================================
+    # Priority 3: Score-Based Decisions
+    # ==========================================
+    
+    # Very high score threshold
+    - condition: total_score >= 150
+      action: deny
+      reason: "Critical risk score: {total_score}"
+      
+    # High score threshold
+    - condition: total_score >= 100
+      action: infer
+      infer:
+        data_snapshot:
+          - event.*
+          - context.account_takeover_detection.*
+      reason: "High risk score: {total_score}, needs AI analysis"
+      
+    # Medium score threshold
+    - condition: total_score >= 60
+      action: review
+      reason: "Medium risk score: {total_score}, manual review required"
+      
+    # ==========================================
+    # Priority 4: Count-Based Decisions
+    # ==========================================
+    
+    # Multiple signals present
+    - condition: triggered_count >= 3
+      action: review
+      reason: "Multiple risk indicators ({triggered_count} rules triggered)"
+      
+    # ==========================================
+    # Priority 5: Context-Aware Decisions
+    # ==========================================
+    
+    # VIP users: more lenient
+    - condition: |
+        event.user.tier == "vip" &&
+        total_score < 80
+      action: approve
+      reason: "VIP user, risk acceptable"
+      
+    # New users: more cautious
+    - condition: |
+        days_since(event.user.created_at) < 30 &&
+        total_score >= 50
+      action: review
+      reason: "New user account, heightened scrutiny"
+      
+    # ==========================================
+    # Priority 6: Default Action
+    # ==========================================
+    
+    - default: true
+      action: approve
+      reason: "No significant risk indicators"
+
+---
+
+# ========================================
+# PIPELINE: Orchestration Only
+# ========================================
+
+pipeline:
+  # Variables
+  - vars:
+      session_timeout: 3600
+      
+  # Step 1: Input validation
+  - type: validate
+    id: input_validation
+    schema: LoginEventSchema
+    on_error:
+      action: fail
+      
+  # Step 2: Feature extraction
+  - type: extract
+    id: extract_user_features
+    features:
+      - user.known_devices
+      - user.home_country
+      - user.home_location
+      - user.failed_logins
+      - user.tier
+      - user.created_at
+      
+  - type: extract
+    id: extract_device_features
+    features:
+      - device.id
+      - device.type
+      - device.first_seen_hours
+      
+  - type: extract
+    id: extract_geo_features
+    features:
+      - geo.country
+      - geo.location
+      - geo.ip
+      
+  # Step 3: Parallel intelligence gathering
+  - parallel:
+      # Behavioral analysis
+      - type: reason
+        id: behavior_analysis
+        provider: openai
+        model: gpt-4-turbo
+        prompt:
+          template: |
+            Analyze user behavior:
+            User: {event.user.id}
+            Current login time: {event.timestamp}
+            Typical login times: {user.typical_login_times}
+            Recent actions: {user.recent_actions}
+            
+            Output consistency score (0-1) and anomaly count.
+        output_schema:
+          consistency_score: float
+          anomaly_count: integer
+        cache:
+          enabled: true
+          ttl: 600
+        on_error:
+          action: fallback
+          fallback:
+            consistency_score: 0.5
+            anomaly_count: 0
+            
+      # Device fingerprinting
+      - type: api
+        id: device_fingerprint
+        endpoint: /api/device/fingerprint
+        timeout: 2000
+        cache:
+          enabled: true
+          ttl: 3600
+        on_error:
+          action: fallback
+          fallback:
+            trust_score: 0.5
+            
+      # IP reputation
+      - type: api
+        id: ip_reputation
+        endpoint: /api/ip/reputation
+        timeout: 2000
+        cache:
+          enabled: true
+          ttl: 3600
+        on_error:
+          action: fallback
+          fallback:
+            risk_score: 50
+            
+    merge:
+      method: all
+      on_partial_data:
+        action: continue
+        min_required: 1
+        
+  # Step 4: Execute ruleset (decision happens here!)
+  - include:
+      ruleset: account_takeover_detection
+      
+  # That's it! The ruleset's decision_logic has determined the action.
+  # Pipeline just orchestrates, ruleset decides.
+  
+  # Step 5: Observability (optional)
+  - type: log
+    level: info
+    message: "Account takeover detection completed"
+    fields:
+      user_id: event.user.id
+      final_action: context.account_takeover_detection.action
+      risk_score: context.account_takeover_detection.total_score
+      triggered_rules: context.account_takeover_detection.triggered_rules
+      
+  - type: metric
+    metrics:
+      - name: takeover_decisions_total
+        type: counter
+        labels:
+          action: context.account_takeover_detection.action
+          triggered_count: context.account_takeover_detection.triggered_count
+          
+      - name: takeover_risk_scores
+        type: histogram
+        value: context.account_takeover_detection.total_score
+        buckets: [20, 40, 60, 80, 100, 120, 150, 200]
+
+

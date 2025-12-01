@@ -68,6 +68,11 @@ impl Compiler {
         // Code generation
         let mut program = RuleCompiler::compile(rule)?;
 
+        // Optimization
+        if self.options.enable_dead_code_elimination {
+            program = self.dead_code_eliminator.optimize(&program);
+        }
+
         Ok(program)
     }
 
@@ -81,9 +86,10 @@ impl Compiler {
         // Code generation
         let mut program = RulesetCompiler::compile(ruleset)?;
 
-        // NOTE: Rule sets rely on sequential fallthrough between decision rules.
-        // Standard dead-code elimination would drop everything after the first
-        // terminating branch (e.g. Return), so we intentionally skip that pass here.
+        // Optimization
+        if self.options.enable_dead_code_elimination {
+            program = self.dead_code_eliminator.optimize(&program);
+        }
 
         Ok(program)
     }
