@@ -1,0 +1,226 @@
+version: "0.1"
+
+# Payment Risk Control Pipeline with Conditional Routing
+# This demonstrates TRUE pipeline DSL with branch-based routing
+
+# ========================================
+# SHARED RISK DETECTION RULES
+# ========================================
+
+---
+
+rule:
+  id: card_testing
+  name: Card Testing Detection
+  description: Multiple small transactions pattern
+
+  when:
+    event.type: payment
+    conditions:
+      - payment_attempts_1h >= 5
+      - payment_amount < 10
+      - unique_cards_1h >= 3
+
+  score: 80
+
+---
+
+rule:
+  id: velocity_check
+  name: Velocity Violation
+  description: High transaction frequency
+
+  when:
+    event.type: payment
+    conditions:
+      - transaction_count_24h > 20
+
+  score: 50
+
+---
+
+rule:
+  id: new_account_risk
+  name: New Account High-Value
+  description: New account with large purchase
+
+  when:
+    event.type: payment
+    conditions:
+      - account_age_days < 7
+      - payment_amount > 500
+
+  score: 60
+
+---
+
+rule:
+  id: suspicious_email
+  name: Suspicious Email Pattern
+  description: Disposable or random email
+
+  when:
+    event.type: payment
+    conditions:
+      - is_disposable_email == true
+
+  score: 35
+
+---
+
+rule:
+  id: suspicious_ip
+  name: Suspicious IP Detection
+  description: Detects IP from non-trusted countries (only US and UK are trusted)
+
+  when:
+    event.type: payment
+    conditions:
+      - context.ip_info.country != "US" && context.ip_info.country != "UK"
+
+  score: 40
+
+---
+
+# ========================================
+# HIGH-VALUE RULESET (for amount > $1000)
+# ========================================
+
+ruleset:
+  id: high_value_rules
+  name: High-Value Transaction Ruleset
+
+  description: Stricter thresholds for high-value transactions
+
+  rules:
+    - suspicious_ip
+    - card_testing
+    - velocity_check
+    - new_account_risk
+    - suspicious_email
+
+  decision_logic:
+    # Critical patterns
+    - condition: |
+        triggered_rules contains "card_testing" ||
+        triggered_rules contains "new_account_risk"
+      action: deny
+      reason: "Critical fraud pattern detected"
+      terminate: true
+
+    # High score threshold (stricter than standard)
+    - condition: total_score >= 60
+      action: deny
+      reason: "Risk score too high for large transaction"
+      terminate: true
+
+    # Multiple risk indicators
+    - condition: triggered_count >= 2
+      action: review
+      reason: "Multiple risk indicators detected"
+      terminate: true
+
+    # Single risk indicator
+    - condition: triggered_count >= 1
+      action: challenge
+      reason: "Require 3DS authentication"
+      terminate: true
+
+    # Clean high-value transaction
+    - default: true
+      action: approve
+      reason: "Clean high-value transaction"
+
+---
+
+# ========================================
+# STANDARD RULESET (for amount <= $1000)
+# ========================================
+
+ruleset:
+  id: standard_rules
+  name: Standard Transaction Ruleset
+
+  description: Balanced thresholds for standard transactions
+
+  rules:
+    - suspicious_ip
+    - card_testing
+    - velocity_check
+    - new_account_risk
+    - suspicious_email
+
+  decision_logic:
+    # Critical patterns only
+    - condition: triggered_rules contains "card_testing"
+      action: deny
+      reason: "Card testing detected"
+      terminate: true
+
+    # Very high score
+    - condition: total_score >= 100
+      action: deny
+      reason: "High fraud risk"
+      terminate: true
+
+    # Medium-high score
+    - condition: total_score >= 60
+      action: challenge
+      reason: "Require verification"
+      terminate: true
+
+    # Medium score
+    - condition: total_score >= 40
+      action: review
+      reason: "Manual review needed"
+      terminate: true
+
+    # Multiple low-risk indicators
+    - condition: triggered_count >= 3
+      action: review
+      reason: "Multiple risk signals"
+      terminate: true
+
+    # Low risk
+    - default: true
+      action: approve
+      reason: "Normal transaction"
+
+---
+
+# ========================================
+# MAIN PIPELINE WITH CONDITIONAL ROUTING
+# ========================================
+
+pipeline:
+  # Step 1: Check IP reputation via external API
+  - type: api
+    id: ip_reputation_check
+    api: ipinfo
+    endpoint: ip_lookup
+    params:
+      ip: event.ip_address
+      token: "a63066c9a63590"
+    output: context.ip_info
+    timeout: 3000
+    on_error:
+      action: fallback
+      fallback:
+        country_code: "US"
+        country: "United States"
+        continent_code: "NA"
+
+  # Step 2: Conditional branch based on payment amount
+  - branch:
+      when:
+        # High-value transactions (> $1000)
+        - condition: payment_amount > 1000
+          pipeline:
+            - include:
+                ruleset: high_value_rules
+
+        # Standard transactions (<= $1000)
+        - condition: payment_amount <= 1000
+          pipeline:
+            - include:
+                ruleset: standard_rules

@@ -3,9 +3,10 @@
 //! Parses YAML pipeline definitions into Pipeline AST nodes.
 
 use corint_core::ast::{
-    Branch, FeatureDefinition, MergeStrategy, Pipeline, PromptTemplate, Schema, SchemaProperty,
-    Step,
+    Branch, FeatureDefinition, MergeStrategy, Pipeline, PromptTemplate,
+    Schema, SchemaProperty, Step,
 };
+use corint_core::ast::pipeline::{ErrorAction, ErrorHandling};
 use crate::error::{ParseError, Result};
 use crate::expression_parser::ExpressionParser;
 use crate::yaml_parser::YamlParser;
@@ -31,8 +32,15 @@ impl PipelineParser {
                 field: "pipeline".to_string(),
             })?;
 
-        // Parse steps array
-        let steps = if let Some(steps_array) = pipeline_obj.get("steps").and_then(|v| v.as_sequence()) {
+        // Parse steps - support both array directly or object with steps
+        let steps = if let Some(steps_array) = pipeline_obj.as_sequence() {
+            // Direct array: pipeline: [...]
+            steps_array
+                .iter()
+                .map(|v| Self::parse_step(v))
+                .collect::<Result<Vec<_>>>()?
+        } else if let Some(steps_array) = pipeline_obj.get("steps").and_then(|v| v.as_sequence()) {
+            // Nested: pipeline: steps: [...]
             steps_array
                 .iter()
                 .map(|v| Self::parse_step(v))
@@ -46,12 +54,25 @@ impl PipelineParser {
 
     /// Parse a single step
     fn parse_step(yaml: &YamlValue) -> Result<Step> {
+        // Check if this is a shorthand format (branch:, include:, parallel:)
+        if let Some(branch_val) = yaml.get("branch") {
+            return Self::parse_branch_shorthand(branch_val);
+        }
+        if let Some(include_val) = yaml.get("include") {
+            return Self::parse_include_shorthand(include_val);
+        }
+        if let Some(parallel_val) = yaml.get("parallel") {
+            return Self::parse_parallel_shorthand(parallel_val, yaml);
+        }
+
+        // Otherwise expect type field
         let step_type = YamlParser::get_string(yaml, "type")?;
 
         match step_type.as_str() {
             "extract" => Self::parse_extract_step(yaml),
             "reason" => Self::parse_reason_step(yaml),
             "service" => Self::parse_service_step(yaml),
+            "api" => Self::parse_api_step(yaml),
             "include" => Self::parse_include_step(yaml),
             "branch" => Self::parse_branch_step(yaml),
             "parallel" => Self::parse_parallel_step(yaml),
@@ -167,12 +188,96 @@ impl PipelineParser {
             HashMap::new()
         };
 
+        let output = YamlParser::get_optional_string(yaml, "output");
+
         Ok(Step::Service {
             id,
             service,
             operation,
             params,
+            output,
         })
+    }
+
+    /// Parse API step (external API call)
+    fn parse_api_step(yaml: &YamlValue) -> Result<Step> {
+        let id = YamlParser::get_string(yaml, "id")?;
+        let api = YamlParser::get_string(yaml, "api")?;
+        let endpoint = YamlParser::get_string(yaml, "endpoint")?;
+        let output = YamlParser::get_string(yaml, "output")?;
+
+        let params = if let Some(params_obj) = yaml.get("params").and_then(|v| v.as_mapping()) {
+            let mut map = HashMap::new();
+            for (key, value) in params_obj {
+                if let Some(key_str) = key.as_str() {
+                    use corint_core::ast::Expression;
+                    use corint_core::Value;
+
+                    // Support both string expressions and direct values
+                    let expr = if let Some(value_str) = value.as_str() {
+                        // If string contains '.', treat as field access (e.g., "event.ip_address")
+                        // Otherwise, treat as string literal (e.g., "a63066c9a63590")
+                        if value_str.contains('.') {
+                            ExpressionParser::parse(value_str)?
+                        } else {
+                            Expression::literal(Value::String(value_str.to_string()))
+                        }
+                    } else if let Some(num) = value.as_f64() {
+                        Expression::literal(Value::Number(num))
+                    } else if let Some(bool_val) = value.as_bool() {
+                        Expression::literal(Value::Bool(bool_val))
+                    } else {
+                        continue; // Skip unsupported types
+                    };
+                    map.insert(key_str.to_string(), expr);
+                }
+            }
+            map
+        } else {
+            HashMap::new()
+        };
+
+        let timeout = yaml.get("timeout").and_then(|v| v.as_u64());
+
+        let on_error = if let Some(error_obj) = yaml.get("on_error") {
+            Some(Self::parse_error_handling(error_obj)?)
+        } else {
+            None
+        };
+
+        Ok(Step::Api {
+            id,
+            api,
+            endpoint,
+            params,
+            output,
+            timeout,
+            on_error,
+        })
+    }
+
+    /// Parse error handling configuration
+    fn parse_error_handling(yaml: &YamlValue) -> Result<ErrorHandling> {
+        let action_str = YamlParser::get_string(yaml, "action")?;
+        let action = match action_str.as_str() {
+            "fallback" => ErrorAction::Fallback,
+            "skip" => ErrorAction::Skip,
+            "fail" => ErrorAction::Fail,
+            "retry" => ErrorAction::Retry,
+            _ => {
+                return Err(ParseError::InvalidValue {
+                    field: "action".to_string(),
+                    message: format!("Unknown error action: {}", action_str),
+                })
+            }
+        };
+
+        let fallback = yaml.get("fallback").and_then(|v| {
+            // Convert YAML value to serde_json::Value
+            serde_json::to_value(v).ok()
+        });
+
+        Ok(ErrorHandling { action, fallback })
     }
 
     /// Parse include step
@@ -244,6 +349,60 @@ impl PipelineParser {
                 message: format!("Unknown merge strategy: {}", s),
             }),
         }
+    }
+
+    /// Parse branch shorthand format: - branch: when: [...]
+    fn parse_branch_shorthand(yaml: &YamlValue) -> Result<Step> {
+        // Get the "when" array
+        let when_array = yaml
+            .get("when")
+            .and_then(|v| v.as_sequence())
+            .ok_or_else(|| ParseError::MissingField {
+                field: "when".to_string(),
+            })?;
+
+        let branches = when_array
+            .iter()
+            .map(|v| Self::parse_branch(v))
+            .collect::<Result<Vec<_>>>()?;
+
+        Ok(Step::Branch { branches })
+    }
+
+    /// Parse include shorthand format: - include: ruleset: xxx
+    fn parse_include_shorthand(yaml: &YamlValue) -> Result<Step> {
+        let ruleset = YamlParser::get_string(yaml, "ruleset")?;
+        Ok(Step::Include { ruleset })
+    }
+
+    /// Parse parallel shorthand format: - parallel: [...] with merge
+    fn parse_parallel_shorthand(parallel_val: &YamlValue, parent: &YamlValue) -> Result<Step> {
+        let steps = if let Some(steps_array) = parallel_val.as_sequence() {
+            steps_array
+                .iter()
+                .map(|v| Self::parse_step(v))
+                .collect::<Result<Vec<_>>>()?
+        } else {
+            Vec::new()
+        };
+
+        // Get merge strategy from parent
+        let merge_obj = parent
+            .get("merge")
+            .ok_or_else(|| ParseError::MissingField {
+                field: "merge".to_string(),
+            })?;
+
+        let merge_str = merge_obj
+            .get("method")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| ParseError::MissingField {
+                field: "merge.method".to_string(),
+            })?;
+
+        let merge = Self::parse_merge_strategy(merge_str)?;
+
+        Ok(Step::Parallel { steps, merge })
     }
 }
 

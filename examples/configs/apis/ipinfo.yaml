@@ -1,0 +1,16 @@
+# IPInfo API Configuration
+# https://ipinfo.io/
+
+name: ipinfo
+base_url: "https://ipinfo.io"
+
+endpoints:
+  # IP Lookup endpoint
+  # Usage: GET https://ipinfo.io/{ip}?token={token}
+  ip_lookup:
+    method: GET
+    path: "/{ip}"
+    path_params:
+      ip: "ip_address"  # Maps {ip} to the ip_address parameter/field
+    query_params:
+      token: "token"    # Maps ?token= to the token parameter

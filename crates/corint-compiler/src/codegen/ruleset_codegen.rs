@@ -22,8 +22,16 @@ impl RulesetCompiler {
         // Always end with return
         instructions.push(Instruction::Return);
 
-        // Create program metadata
-        let metadata = ProgramMetadata::for_ruleset(ruleset.id.clone());
+        // Create program metadata and store the list of rules
+        let mut metadata = ProgramMetadata::for_ruleset(ruleset.id.clone());
+
+        // Store the rule IDs in custom metadata so DecisionEngine can execute them first
+        if !ruleset.rules.is_empty() {
+            metadata.custom.insert(
+                "rules".to_string(),
+                ruleset.rules.join(",")
+            );
+        }
 
         Ok(Program::new(instructions, metadata))
     }
@@ -119,6 +127,12 @@ impl RulesetCompiler {
                 // Set action to review
                 instructions.push(Instruction::SetAction {
                     action: Action::Review,
+                });
+            }
+            Action::Challenge => {
+                // Set action to challenge (require additional verification)
+                instructions.push(Instruction::SetAction {
+                    action: Action::Challenge,
                 });
             }
             Action::Infer { config } => {

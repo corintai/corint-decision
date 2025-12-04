@@ -95,7 +95,7 @@ pub enum Instruction {
         prompt: String,
     },
 
-    /// Call external service
+    /// Call external service (internal)
     CallService {
         /// Service name
         service: String,
@@ -103,6 +103,20 @@ pub enum Instruction {
         operation: String,
         /// Parameters for the call
         params: HashMap<String, Value>,
+    },
+
+    /// Call external API (third-party)
+    CallExternal {
+        /// API identifier (e.g., "ipinfo")
+        api: String,
+        /// Endpoint name
+        endpoint: String,
+        /// Parameters for the call
+        params: HashMap<String, Value>,
+        /// Timeout in milliseconds
+        timeout: Option<u64>,
+        /// Fallback value on error
+        fallback: Option<Value>,
     },
 
     // ===== Decision Making =====
@@ -128,6 +142,12 @@ pub enum Instruction {
     MarkRuleTriggered {
         /// Rule ID
         rule_id: String,
+    },
+
+    /// Call/execute a ruleset by ID
+    CallRuleset {
+        /// Ruleset ID to execute
+        ruleset_id: String,
     },
 
     // ===== Stack Operations =====

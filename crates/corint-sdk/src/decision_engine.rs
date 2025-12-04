@@ -6,7 +6,7 @@ use corint_compiler::{Compiler, CompilerOptions as CompilerOpts};
 use corint_core::ir::Program;
 use corint_core::Value;
 use corint_parser::{RuleParser, RulesetParser, PipelineParser};
-use corint_runtime::{DecisionResult, PipelineExecutor, MetricsCollector};
+use corint_runtime::{DecisionResult, PipelineExecutor, MetricsCollector, ExternalApiClient, ApiConfig};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::Path;
@@ -56,6 +56,12 @@ pub struct DecisionEngine {
     /// Compiled programs (one per rule/ruleset/pipeline)
     programs: Vec<Program>,
 
+    /// Mapping of ruleset ID to compiled program (for pipeline routing)
+    ruleset_map: HashMap<String, Program>,
+
+    /// Mapping of rule ID to compiled program
+    rule_map: HashMap<String, Program>,
+
     /// Pipeline executor
     executor: Arc<PipelineExecutor>,
 
@@ -84,12 +90,50 @@ impl DecisionEngine {
             programs.extend(Self::load_and_compile_rules(rule_file, &mut compiler).await?);
         }
 
-        // Create executor
-        let executor = Arc::new(PipelineExecutor::new());
+        // Build ruleset_map and rule_map for pipeline routing
+        let mut ruleset_map = HashMap::new();
+        let mut rule_map = HashMap::new();
+        for program in &programs {
+            match program.metadata.source_type.as_str() {
+                "ruleset" => {
+                    ruleset_map.insert(program.metadata.source_id.clone(), program.clone());
+                }
+                "rule" => {
+                    rule_map.insert(program.metadata.source_id.clone(), program.clone());
+                }
+                _ => {}
+            }
+        }
+
+        // Load external API configurations
+        let mut api_client = ExternalApiClient::new();
+
+        // Load API configs from examples/configs/apis directory
+        let api_config_dir = Path::new("examples/configs/apis");
+        if api_config_dir.exists() {
+            if let Ok(entries) = std::fs::read_dir(api_config_dir) {
+                for entry in entries.flatten() {
+                    let path = entry.path();
+                    if path.extension().and_then(|s| s.to_str()) == Some("yaml") {
+                        if let Ok(content) = std::fs::read_to_string(&path) {
+                            if let Ok(api_config) = serde_yaml::from_str::<ApiConfig>(&content) {
+                                tracing::info!("Loaded API config: {}", api_config.name);
+                                api_client.register_api(api_config);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Create executor with API client
+        let executor = Arc::new(PipelineExecutor::new().with_external_api_client(Arc::new(api_client)));
         let metrics = executor.metrics();
 
         Ok(Self {
             programs,
+            ruleset_map,
+            rule_map,
             executor,
             metrics,
             config,
@@ -113,17 +157,28 @@ impl DecisionEngine {
 
         // Try to parse each document
         for (_doc_idx, doc) in documents.iter().enumerate() {
+            // Try rule first
             if let Ok(rule) = RuleParser::parse_from_yaml(doc) {
                 let prog = compiler.compile_rule(&rule)?;
                 programs.push(prog);
-            } else if let Ok(ruleset) = RulesetParser::parse_from_yaml(doc) {
+                continue;
+            }
+
+            // Try ruleset
+            if let Ok(ruleset) = RulesetParser::parse_from_yaml(doc) {
                 let prog = compiler.compile_ruleset(&ruleset)?;
                 programs.push(prog);
-            } else if let Ok(pipeline) = PipelineParser::parse_from_yaml(doc) {
+                continue;
+            }
+
+            // Try pipeline
+            if let Ok(pipeline) = PipelineParser::parse_from_yaml(doc) {
                 let prog = compiler.compile_pipeline(&pipeline)?;
                 programs.push(prog);
+                continue;
             }
-            // Skip documents that don't match any known type
+
+            // Skip documents that don't match any known type (e.g., metadata sections)
         }
 
         // If no valid documents were found, return error
@@ -143,52 +198,141 @@ impl DecisionEngine {
 
         let start = std::time::Instant::now();
 
-        // Separate programs into rules and rulesets/pipelines
-        // Rules execute first and accumulate state, then rulesets use that state
-        let (rule_programs, decision_programs): (Vec<_>, Vec<_>) = self.programs
-            .iter()
-            .partition(|p| p.metadata.source_type == "rule");
+        // Separate programs into rules, rulesets, and pipelines
+        let mut rule_programs = Vec::new();
+        let mut ruleset_programs = Vec::new();
+        let mut pipeline_programs = Vec::new();
+
+        for program in &self.programs {
+            match program.metadata.source_type.as_str() {
+                "rule" => rule_programs.push(program),
+                "ruleset" => ruleset_programs.push(program),
+                "pipeline" => pipeline_programs.push(program),
+                _ => {}
+            }
+        }
 
         // Create initial execution result
         let mut execution_result = ExecutionResult::new();
 
-        // Execute all rule programs first
-        for program in &rule_programs {
-            let result = self.executor.execute_with_result(
-                program,
-                request.event_data.clone(),
-                execution_result.clone()
-            ).await?;
-
-            // Convert DecisionResult to ExecutionResult for next iteration
-            execution_result.score = result.score;
-            execution_result.triggered_rules = result.triggered_rules;
-            execution_result.action = result.action;
-            execution_result.variables = result.context;
-        }
-
-        // Execute decision programs (rulesets/pipelines) with accumulated state
-        let execution_result_clone = execution_result.clone();
         let mut combined_result = DecisionResult {
-            action: execution_result_clone.action,
-            score: execution_result_clone.score,
-            triggered_rules: execution_result_clone.triggered_rules,
+            action: None,
+            score: 0,
+            triggered_rules: Vec::new(),
             explanation: String::new(),
-            context: execution_result_clone.variables,
+            context: HashMap::new(),
         };
 
-        for program in &decision_programs {
-            let result = self.executor.execute_with_result(
-                program,
-                request.event_data.clone(),
-                execution_result.clone()
-            ).await?;
+        // Track whether pipeline routing handled rule execution
+        let mut pipeline_handled_rules = false;
 
-            // Update combined result with decision from ruleset
-            if result.action.is_some() {
-                combined_result.action = result.action;
+        // IMPORTANT: Execute pipelines FIRST to set up context (e.g., external API calls)
+        // Rules may depend on context variables set by pipelines
+        if !pipeline_programs.is_empty() {
+            for pipeline_program in &pipeline_programs {
+                // Execute the pipeline
+                let result = self.executor.execute_with_result(
+                    pipeline_program,
+                    request.event_data.clone(),
+                    execution_result.clone()
+                ).await?;
+
+                // Update execution_result with pipeline context (important for subsequent rules)
+                execution_result.variables = result.context.clone();
+
+                // Check if pipeline set a __next_ruleset__ variable
+                tracing::debug!("Pipeline result context: {:?}", result.context.keys().collect::<Vec<_>>());
+                if let Some(Value::String(ruleset_id)) = result.context.get("__next_ruleset__") {
+                    tracing::debug!("Pipeline routing to ruleset: {}", ruleset_id);
+                    // Execute the specified ruleset
+                    if let Some(ruleset_program) = self.ruleset_map.get(ruleset_id) {
+                        // IMPORTANT: Execute rules FIRST before decision logic
+                        // Get the list of rules from ruleset metadata
+                        if let Some(rules_str) = ruleset_program.metadata.custom.get("rules") {
+                            let rule_ids: Vec<&str> = rules_str.split(',').collect();
+                            tracing::debug!("Executing {} rules for ruleset {}: {:?}", rule_ids.len(), ruleset_id, rule_ids);
+
+                            // Execute each rule and accumulate results
+                            for rule_id in rule_ids {
+                                if let Some(rule_program) = self.rule_map.get(rule_id) {
+                                    let rule_result = self.executor.execute_with_result(
+                                        rule_program,
+                                        request.event_data.clone(),
+                                        execution_result.clone()
+                                    ).await?;
+
+                                    // Update execution_result with the returned state
+                                    // (execute_with_result already includes previous state + new additions)
+                                    execution_result.score = rule_result.score;
+                                    execution_result.triggered_rules = rule_result.triggered_rules;
+                                }
+                            }
+
+                            // Mark that pipeline routing handled rule execution
+                            pipeline_handled_rules = true;
+                        }
+
+                        // NOW execute the ruleset's decision logic with accumulated results
+                        let ruleset_result = self.executor.execute_with_result(
+                            ruleset_program,
+                            request.event_data.clone(),
+                            execution_result.clone()
+                        ).await?;
+
+                        // Update combined result with ruleset decision
+                        if ruleset_result.action.is_some() {
+                            combined_result.action = ruleset_result.action;
+                        }
+                        combined_result.explanation = ruleset_result.explanation;
+                        combined_result.score = execution_result.score;
+                        combined_result.triggered_rules = execution_result.triggered_rules.clone();
+                    }
+                }
+
+                // Update state from pipeline execution
+                if result.action.is_some() {
+                    combined_result.action = result.action;
+                }
             }
-            // Keep the accumulated score and triggered rules from rules
+        }
+
+        // Execute all rule programs ONLY if pipeline routing didn't handle them
+        // This prevents double execution of rules
+        if !pipeline_handled_rules {
+            for program in &rule_programs {
+                let result = self.executor.execute_with_result(
+                    program,
+                    request.event_data.clone(),
+                    execution_result.clone()
+                ).await?;
+
+                // Accumulate state
+                execution_result.score = result.score;
+                execution_result.triggered_rules = result.triggered_rules;
+                execution_result.action = result.action;
+                execution_result.variables = result.context;
+            }
+
+            // Update combined result with rule execution results
+            combined_result.score = execution_result.score;
+            combined_result.triggered_rules = execution_result.triggered_rules.clone();
+            combined_result.context = execution_result.variables.clone();
+        }
+
+        // If no pipelines, execute rulesets sequentially (old behavior)
+        if pipeline_programs.is_empty() && !ruleset_programs.is_empty() {
+            for program in &ruleset_programs {
+                let result = self.executor.execute_with_result(
+                    program,
+                    request.event_data.clone(),
+                    execution_result.clone()
+                ).await?;
+
+                // Update combined result with decision from ruleset
+                if result.action.is_some() {
+                    combined_result.action = result.action;
+                }
+            }
         }
 
         let processing_time_ms = start.elapsed().as_millis() as u64;
@@ -214,7 +358,6 @@ impl DecisionEngine {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::path::PathBuf;
 
     #[test]
     fn test_decision_request() {

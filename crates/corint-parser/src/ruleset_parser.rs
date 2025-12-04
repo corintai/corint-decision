@@ -99,6 +99,7 @@ impl RulesetParser {
             "approve" => Ok(Action::Approve),
             "deny" => Ok(Action::Deny),
             "review" => Ok(Action::Review),
+            "challenge" => Ok(Action::Challenge),
             "infer" => {
                 // Parse infer config
                 let config = if let Some(config_obj) = yaml.get("config") {

@@ -56,6 +56,9 @@ pub enum Action {
     /// Send for manual review
     Review,
 
+    /// Challenge - require additional verification (e.g., 3DS, MFA)
+    Challenge,
+
     /// Use LLM to infer decision
     Infer {
         /// Configuration for LLM inference

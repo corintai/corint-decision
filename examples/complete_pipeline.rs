@@ -1,148 +1,254 @@
-//! Complete pipeline example
+//! Multi-Ruleset Example
 //!
-//! This example demonstrates:
-//! - Full SDK API with all features
-//! - LLM integration for decision explanation
-//! - Service calls for external data
-//! - Metrics and observability
-//! - Complete ruleset and pipeline execution
+//! This example demonstrates multiple rulesets working together:
+//! - Stage 1: Risk Detection Rules (5 rules calculate scores)
+//! - Stage 2: First Ruleset (transaction_router)
+//! - Stage 3: Second Ruleset (high_value_pipeline)
+//! - Stage 4: Third Ruleset (standard_pipeline - final action wins)
+//!
+//! Key concepts:
+//! - Multiple rulesets execute sequentially
+//! - Rules execute first to accumulate scores
+//! - Last ruleset's action becomes the final decision
+//!
+//! Limitations:
+//! - No conditional routing (all rulesets always execute)
+//! - True Pipeline DSL with routing is documented but not yet implemented
 
-use corint_sdk::{
-    DecisionEngineBuilder, DecisionRequest, Value,
-    LLMConfig, LLMProvider, ServiceConfig, ServiceType,
-};
+use corint_sdk::{DecisionEngineBuilder, DecisionRequest, Value, Action};
 use corint_runtime::observability::metrics::Metrics;
 use std::collections::HashMap;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    println!("=== Complete Pipeline Example ===\n");
+    // Initialize tracing for logging
+    tracing_subscriber::fmt()
+        .with_env_filter(tracing_subscriber::EnvFilter::from_default_env()
+            .add_directive(tracing_subscriber::filter::LevelFilter::INFO.into()))
+        .init();
 
-    // Configure LLM (using mock for this example)
-    let llm_config = LLMConfig {
-        provider: LLMProvider::Mock,
-        api_key: "mock-key".to_string(),
-        default_model: "gpt-4".to_string(),
-        enable_cache: true,
-    };
+    println!("=== Complete Payment Risk Control Example ===\n");
+    println!("Multi-Ruleset Architecture (Sequential Execution):");
+    println!("  Stage 1: Risk Detection Rules (5 rules)");
+    println!("  Stage 2: First Ruleset (transaction_router)");
+    println!("  Stage 3: Second Ruleset (high_value_pipeline)");
+    println!("  Stage 4: Third Ruleset (standard_pipeline - final action)\n");
+    println!("NOTE: All rulesets execute sequentially. The last one's action wins.\n");
 
-    // Configure external service (using mock for this example)
-    let service_config = ServiceConfig {
-        service_type: ServiceType::Mock,
-        endpoint: "http://localhost:8080".to_string(),
-    };
-
-    // Build the decision engine with all features enabled
+    // Build the decision engine
+    println!("Loading multi-stage pipeline...");
     let engine = DecisionEngineBuilder::new()
         .add_rule_file("examples/rules/complete_pipeline.yaml")
-        .with_llm(llm_config)
-        .with_service(service_config)
         .enable_metrics(true)
-        .enable_tracing(true)
-        .enable_semantic_analysis(true)
-        .enable_constant_folding(true)
-        .enable_dead_code_elimination(true)
         .build()
         .await?;
+    println!("✓ Pipeline initialized with 5 rules + 3 rulesets\n");
 
-    println!("Complete pipeline engine initialized with:");
-    println!("  - LLM integration (Mock)");
-    println!("  - Service integration (Mock)");
-    println!("  - Metrics enabled");
-    println!("  - Tracing enabled");
-    println!("  - All compiler optimizations enabled\n");
+    // Test Case 1: Clean Standard Transaction
+    println!("=== Test Case 1: Clean Standard Transaction ===");
+    test_clean_standard(&engine).await?;
 
-    // Create a comprehensive event with rich data
-    let mut event_data = HashMap::new();
+    // Test Case 2: Clean High-Value Transaction
+    println!("\n=== Test Case 2: Clean High-Value Transaction ===");
+    test_clean_high_value(&engine).await?;
 
-    // Transaction data
-    event_data.insert("transaction_id".to_string(), Value::String("txn-12345".to_string()));
-    event_data.insert("amount".to_string(), Value::Number(2500.0));
-    event_data.insert("currency".to_string(), Value::String("USD".to_string()));
+    // Test Case 3: Card Testing (Critical - Blocked by Router)
+    println!("\n=== Test Case 3: Card Testing Pattern ===");
+    test_card_testing(&engine).await?;
 
-    // User data
-    event_data.insert("user_id".to_string(), Value::String("user789".to_string()));
-    event_data.insert("user_age_days".to_string(), Value::Number(45.0));
-    event_data.insert("user_country".to_string(), Value::String("US".to_string()));
-    event_data.insert("user_verified".to_string(), Value::Bool(true));
+    // Test Case 4: Standard Transaction with Medium Risk
+    println!("\n=== Test Case 4: Standard Transaction + Medium Risk ===");
+    test_standard_medium_risk(&engine).await?;
 
-    // Device data
-    event_data.insert("device_id".to_string(), Value::String("device-abc123".to_string()));
-    event_data.insert("ip_address".to_string(), Value::String("192.168.1.1".to_string()));
+    // Test Case 5: High-Value with Single Risk Indicator
+    println!("\n=== Test Case 5: High-Value + Single Risk ===");
+    test_high_value_single_risk(&engine).await?;
 
-    // Merchant data
-    event_data.insert("merchant_id".to_string(), Value::String("merchant-xyz".to_string()));
-    event_data.insert("merchant_category".to_string(), Value::String("electronics".to_string()));
-    event_data.insert("merchant_country".to_string(), Value::String("CN".to_string()));
+    // Test Case 6: High-Value with Multiple Risks
+    println!("\n=== Test Case 6: High-Value + Multiple Risks ===");
+    test_high_value_multiple_risks(&engine).await?;
 
-    let request = DecisionRequest::new(event_data)
-        .with_metadata("request_id".to_string(), "req-pipeline-001".to_string())
-        .with_metadata("source".to_string(), "api".to_string())
-        .with_metadata("version".to_string(), "1.0".to_string());
-
-    println!("Processing transaction:");
-    println!("  Transaction ID: txn-12345");
-    println!("  Amount: $2,500.00 USD");
-    println!("  User: user789 (45 days old, verified)");
-    println!("  Device: device-abc123");
-    println!("  Merchant: merchant-xyz (electronics, CN)\n");
-
-    // Execute the decision
-    println!("Executing decision pipeline...\n");
-    let start = std::time::Instant::now();
-    let response = engine.decide(request).await?;
-    let total_time = start.elapsed();
-
-    // Display comprehensive results
-    println!("=== Decision Results ===");
-    println!("Action: {:?}", response.result.action);
-    println!("Risk Score: {}", response.result.score);
-    println!("Triggered Rules: {}", response.result.triggered_rules.len());
-
-    if !response.result.triggered_rules.is_empty() {
-        println!("\nTriggered Rules:");
-        for rule in &response.result.triggered_rules {
-            println!("  - {}", rule);
-        }
-    }
-
-    if !response.result.explanation.is_empty() {
-        println!("\nExplanation:");
-        println!("  {}", response.result.explanation);
-    }
-
-    if !response.result.context.is_empty() {
-        println!("\nContext Variables:");
-        for (key, value) in &response.result.context {
-            println!("  {}: {:?}", key, value);
-        }
-    }
-
-    println!("\n=== Performance Metrics ===");
-    println!("Processing Time: {}ms", response.processing_time_ms);
-    println!("Total Time (including overhead): {}ms", total_time.as_millis());
-
-    // Display engine metrics
-    let metrics = engine.metrics();
-    println!("\n=== Engine Metrics ===");
-    println!("Total Executions: {}", metrics.counter("executions_total").get());
-
-    if metrics.counter("llm_calls_success").get() > 0 {
-        println!("Successful LLM Calls: {}", metrics.counter("llm_calls_success").get());
-    }
-
-    if metrics.counter("service_calls_success").get() > 0 {
-        println!("Successful Service Calls: {}", metrics.counter("service_calls_success").get());
-    }
+    // Display metrics
+    display_metrics(&engine);
 
     println!("\n=== Example Complete ===");
-    println!("This example demonstrated:");
-    println!("  ✓ Complete pipeline execution");
-    println!("  ✓ Rich event data processing");
-    println!("  ✓ LLM integration (mock)");
-    println!("  ✓ Service integration (mock)");
-    println!("  ✓ Metrics collection");
-    println!("  ✓ Comprehensive result handling");
+    println!("\nKey Takeaways:");
+    println!("  ✓ Multiple rulesets can work together sequentially");
+    println!("  ✓ Rules execute first to calculate scores");
+    println!("  ✓ Rulesets execute in order, last action wins");
+    println!("  ✓ This demonstrates multi-ruleset coordination");
+    println!("\nLimitations:");
+    println!("  ✗ No conditional pipeline routing (all rulesets always execute)");
+    println!("  ✗ True Pipeline DSL (with routing) is documented but not implemented");
+    println!("  ✗ See docs/dsl/pipeline.md for the full pipeline specification");
 
     Ok(())
+}
+
+/// Test Case 1: Clean standard transaction (<= $1000)
+async fn test_clean_standard(engine: &corint_sdk::DecisionEngine) -> Result<(), Box<dyn std::error::Error>> {
+    let mut event_data = HashMap::new();
+
+    event_data.insert("event.type".to_string(), Value::String("payment".to_string()));
+    event_data.insert("payment_amount".to_string(), Value::Number(250.0));  // Standard amount
+    event_data.insert("country_code".to_string(), Value::String("US".to_string()));
+    event_data.insert("payment_attempts_1h".to_string(), Value::Number(1.0));
+    event_data.insert("unique_cards_1h".to_string(), Value::Number(1.0));
+    event_data.insert("transaction_count_24h".to_string(), Value::Number(5.0));
+    event_data.insert("account_age_days".to_string(), Value::Number(180.0));
+    event_data.insert("is_disposable_email".to_string(), Value::Bool(false));
+
+    let response = engine.decide(DecisionRequest::new(event_data)).await?;
+
+    println!("Amount: $250 (Standard Pipeline)");
+    println!("Expected: APPROVE (router approves, no risks)");
+    println!("Result: {:?}", response.result.action);
+    println!("Score: {}", response.result.score);
+    println!("Triggered Rules: {:?}", response.result.triggered_rules);
+
+    assert!(matches!(response.result.action, Some(Action::Approve)));
+
+    Ok(())
+}
+
+/// Test Case 2: Clean high-value transaction (> $1000)
+async fn test_clean_high_value(engine: &corint_sdk::DecisionEngine) -> Result<(), Box<dyn std::error::Error>> {
+    let mut event_data = HashMap::new();
+
+    event_data.insert("event.type".to_string(), Value::String("payment".to_string()));
+    event_data.insert("payment_amount".to_string(), Value::Number(1500.0));  // High-value
+    event_data.insert("country_code".to_string(), Value::String("US".to_string()));
+    event_data.insert("payment_attempts_1h".to_string(), Value::Number(1.0));
+    event_data.insert("unique_cards_1h".to_string(), Value::Number(1.0));
+    event_data.insert("transaction_count_24h".to_string(), Value::Number(3.0));
+    event_data.insert("account_age_days".to_string(), Value::Number(365.0));
+    event_data.insert("is_disposable_email".to_string(), Value::Bool(false));
+
+    let response = engine.decide(DecisionRequest::new(event_data)).await?;
+
+    println!("Amount: $1500 (High-Value Pipeline)");
+    println!("Expected: APPROVE (clean high-value, all rulesets execute)");
+    println!("Result: {:?}", response.result.action);
+    println!("Score: {}", response.result.score);
+    println!("Triggered Rules: {:?}", response.result.triggered_rules);
+
+    // All rulesets execute sequentially, clean transaction approves
+    assert!(matches!(response.result.action, Some(Action::Approve)));
+
+    Ok(())
+}
+
+/// Test Case 3: Card testing pattern - blocked by router
+async fn test_card_testing(engine: &corint_sdk::DecisionEngine) -> Result<(), Box<dyn std::error::Error>> {
+    let mut event_data = HashMap::new();
+
+    event_data.insert("event.type".to_string(), Value::String("payment".to_string()));
+    event_data.insert("payment_amount".to_string(), Value::Number(5.0));  // Small amount
+    event_data.insert("payment_attempts_1h".to_string(), Value::Number(8.0));  // >= 5
+    event_data.insert("unique_cards_1h".to_string(), Value::Number(5.0));  // >= 3
+    event_data.insert("country_code".to_string(), Value::String("US".to_string()));
+    event_data.insert("transaction_count_24h".to_string(), Value::Number(15.0));
+    event_data.insert("account_age_days".to_string(), Value::Number(100.0));
+    event_data.insert("is_disposable_email".to_string(), Value::Bool(false));
+
+    let response = engine.decide(DecisionRequest::new(event_data)).await?;
+
+    println!("Amount: $5, 8 attempts, 5 cards (Card Testing)");
+    println!("Expected: DENY (router blocks immediately - score 80)");
+    println!("Result: {:?}", response.result.action);
+    println!("Score: {}", response.result.score);
+    println!("Triggered Rules: {:?}", response.result.triggered_rules);
+
+    assert!(matches!(response.result.action, Some(Action::Deny)));
+
+    Ok(())
+}
+
+/// Test Case 4: Standard transaction with medium risk
+async fn test_standard_medium_risk(engine: &corint_sdk::DecisionEngine) -> Result<(), Box<dyn std::error::Error>> {
+    let mut event_data = HashMap::new();
+
+    event_data.insert("event.type".to_string(), Value::String("payment".to_string()));
+    event_data.insert("payment_amount".to_string(), Value::Number(400.0));  // Standard
+    event_data.insert("country_code".to_string(), Value::String("NG".to_string()));  // High-risk (30 pts)
+    event_data.insert("is_disposable_email".to_string(), Value::Bool(true));  // Suspicious (35 pts)
+    event_data.insert("payment_attempts_1h".to_string(), Value::Number(2.0));
+    event_data.insert("unique_cards_1h".to_string(), Value::Number(1.0));
+    event_data.insert("transaction_count_24h".to_string(), Value::Number(8.0));
+    event_data.insert("account_age_days".to_string(), Value::Number(90.0));
+
+    let response = engine.decide(DecisionRequest::new(event_data)).await?;
+
+    println!("Amount: $400, Nigeria + disposable email");
+    println!("Expected: CHALLENGE (standard pipeline: score 65, >= 60)");
+    println!("Result: {:?}", response.result.action);
+    println!("Score: {}", response.result.score);
+    println!("Triggered Rules: {:?}", response.result.triggered_rules);
+
+    // Standard pipeline executes last, score 65 >= 60 triggers Challenge
+    assert!(matches!(response.result.action, Some(Action::Challenge)));
+
+    Ok(())
+}
+
+/// Test Case 5: High-value with single risk indicator
+async fn test_high_value_single_risk(engine: &corint_sdk::DecisionEngine) -> Result<(), Box<dyn std::error::Error>> {
+    let mut event_data = HashMap::new();
+
+    event_data.insert("event.type".to_string(), Value::String("payment".to_string()));
+    event_data.insert("payment_amount".to_string(), Value::Number(1200.0));  // High-value
+    event_data.insert("country_code".to_string(), Value::String("ID".to_string()));  // Indonesia (30 pts)
+    event_data.insert("payment_attempts_1h".to_string(), Value::Number(1.0));
+    event_data.insert("unique_cards_1h".to_string(), Value::Number(1.0));
+    event_data.insert("transaction_count_24h".to_string(), Value::Number(5.0));
+    event_data.insert("account_age_days".to_string(), Value::Number(200.0));
+    event_data.insert("is_disposable_email".to_string(), Value::Bool(false));
+
+    let response = engine.decide(DecisionRequest::new(event_data)).await?;
+
+    println!("Amount: $1200, Indonesia (single risk)");
+    println!("Expected: APPROVE (score 30, below all thresholds)");
+    println!("Result: {:?}", response.result.action);
+    println!("Score: {}", response.result.score);
+    println!("Triggered Rules: {:?}", response.result.triggered_rules);
+
+    // Score 30 is below 40/60 thresholds in all pipelines, defaults to Approve
+    assert!(matches!(response.result.action, Some(Action::Approve)));
+
+    Ok(())
+}
+
+/// Test Case 6: High-value with multiple risks
+async fn test_high_value_multiple_risks(engine: &corint_sdk::DecisionEngine) -> Result<(), Box<dyn std::error::Error>> {
+    let mut event_data = HashMap::new();
+
+    event_data.insert("event.type".to_string(), Value::String("payment".to_string()));
+    event_data.insert("payment_amount".to_string(), Value::Number(1800.0));  // High-value
+    event_data.insert("account_age_days".to_string(), Value::Number(5.0));  // New account (60 pts - triggers)
+    event_data.insert("country_code".to_string(), Value::String("NG".to_string()));  // High-risk (30 pts)
+    event_data.insert("payment_attempts_1h".to_string(), Value::Number(2.0));
+    event_data.insert("unique_cards_1h".to_string(), Value::Number(1.0));
+    event_data.insert("transaction_count_24h".to_string(), Value::Number(3.0));
+    event_data.insert("is_disposable_email".to_string(), Value::Bool(false));
+
+    let response = engine.decide(DecisionRequest::new(event_data)).await?;
+
+    println!("Amount: $1800, 5-day account + Nigeria");
+    println!("Expected: CHALLENGE (standard pipeline: score 90, >= 60)");
+    println!("Result: {:?}", response.result.action);
+    println!("Score: {}", response.result.score);
+    println!("Triggered Rules: {:?}", response.result.triggered_rules);
+
+    // Standard pipeline: score 90 >= 60 triggers Challenge
+    assert!(matches!(response.result.action, Some(Action::Challenge)));
+
+    Ok(())
+}
+
+/// Display engine metrics
+fn display_metrics(engine: &corint_sdk::DecisionEngine) {
+    let metrics = engine.metrics();
+
+    println!("\n=== Pipeline Metrics ===");
+    println!("Total Executions: {}", metrics.counter("executions_total").get());
 }

@@ -7,6 +7,7 @@ use corint_core::ir::{FeatureType, Instruction, Program};
 use corint_core::Value;
 use crate::context::ExecutionContext;
 use crate::error::{RuntimeError, Result};
+use crate::external_api::ExternalApiClient;
 use crate::feature::FeatureExtractor;
 use crate::llm::LLMClient;
 use crate::observability::{Metrics, MetricsCollector};
@@ -22,6 +23,7 @@ pub struct PipelineExecutor {
     feature_extractor: Option<Arc<FeatureExtractor>>,
     llm_client: Option<Arc<dyn LLMClient>>,
     service_client: Option<Arc<dyn ServiceClient>>,
+    external_api_client: Arc<ExternalApiClient>,
     metrics: Arc<MetricsCollector>,
 }
 
@@ -32,6 +34,7 @@ impl PipelineExecutor {
             feature_extractor: None,
             llm_client: None,
             service_client: None,
+            external_api_client: Arc::new(ExternalApiClient::new()),
             metrics: Arc::new(MetricsCollector::new()),
         }
     }
@@ -42,6 +45,7 @@ impl PipelineExecutor {
             feature_extractor: Some(Arc::new(FeatureExtractor::new(storage))),
             llm_client: None,
             service_client: None,
+            external_api_client: Arc::new(ExternalApiClient::new()),
             metrics: Arc::new(MetricsCollector::new()),
         }
     }
@@ -55,6 +59,12 @@ impl PipelineExecutor {
     /// Set service client
     pub fn with_service_client(mut self, client: Arc<dyn ServiceClient>) -> Self {
         self.service_client = Some(client);
+        self
+    }
+
+    /// Set external API client
+    pub fn with_external_api_client(mut self, client: Arc<ExternalApiClient>) -> Self {
+        self.external_api_client = client;
         self
     }
 
@@ -131,7 +141,9 @@ impl PipelineExecutor {
                 }
 
                 Instruction::Jump { offset } => {
-                    pc = (pc as isize + offset) as usize;
+                    let new_pc = (pc as isize + offset) as usize;
+                    tracing::trace!("Jump at pc={}, offset={}, jumping to pc={}", pc, offset, new_pc);
+                    pc = new_pc;
                 }
 
                 Instruction::JumpIfTrue { offset } => {
@@ -194,6 +206,14 @@ impl PipelineExecutor {
                     pc += 1;
                 }
 
+                Instruction::CallRuleset { ruleset_id } => {
+                    // Store the ruleset ID to be executed
+                    // The actual execution will be handled by the DecisionEngine
+                    tracing::debug!("CallRuleset: {}", ruleset_id);
+                    ctx.store_variable("__next_ruleset__".to_string(), Value::String(ruleset_id.clone()));
+                    pc += 1;
+                }
+
                 Instruction::Return => {
                     break;
                 }
@@ -217,7 +237,38 @@ impl PipelineExecutor {
                 // Variable operations
                 Instruction::Store { name } => {
                     let value = ctx.pop()?;
-                    ctx.store_variable(name.clone(), value);
+
+                    // Handle nested paths like "context.ip_info"
+                    if name.contains('.') {
+                        let parts: Vec<&str> = name.split('.').collect();
+                        if parts.len() == 2 {
+                            // Two-level nesting: context.ip_info
+                            let root = parts[0];
+                            let key = parts[1];
+
+                            // Get or create the root object
+                            let mut root_obj = match ctx.load_variable(root) {
+                                Ok(val) => {
+                                    if let Value::Object(map) = val {
+                                        map
+                                    } else {
+                                        HashMap::new()
+                                    }
+                                }
+                                Err(_) => HashMap::new(),
+                            };
+
+                            // Set the nested value
+                            root_obj.insert(key.to_string(), value);
+                            ctx.store_variable(root.to_string(), Value::Object(root_obj));
+                        } else {
+                            // For deeper nesting, just use the full path as key for now
+                            ctx.store_variable(name.clone(), value);
+                        }
+                    } else {
+                        // Simple variable name
+                        ctx.store_variable(name.clone(), value);
+                    }
                     pc += 1;
                 }
 
@@ -270,7 +321,7 @@ impl PipelineExecutor {
                     pc += 1;
                 }
 
-                // Service calls
+                // Service calls (internal)
                 Instruction::CallService { service, operation, params } => {
                     let service_start = Instant::now();
                     let value = if let Some(ref client) = self.service_client {
@@ -294,6 +345,37 @@ impl PipelineExecutor {
                         Value::Null
                     };
                     self.metrics.record_execution_time("service_call", service_start.elapsed());
+                    ctx.push(value);
+                    pc += 1;
+                }
+
+                // External API calls
+                Instruction::CallExternal {
+                    api,
+                    endpoint,
+                    params,
+                    timeout,
+                    fallback,
+                } => {
+                    let api_start = Instant::now();
+
+                    // Call external API using the generic client
+                    let value = match self.external_api_client.call(api, endpoint, params, *timeout, &ctx).await {
+                        Ok(result) => {
+                            tracing::debug!("External API {}::{} succeeded", api, endpoint);
+                            result
+                        }
+                        Err(e) => {
+                            tracing::warn!("External API {}::{} failed: {}, using fallback", api, endpoint, e);
+                            if let Some(fallback_val) = fallback {
+                                fallback_val.clone()
+                            } else {
+                                Value::Null
+                            }
+                        }
+                    };
+
+                    self.metrics.record_execution_time("external_api_call", api_start.elapsed());
                     ctx.push(value);
                     pc += 1;
                 }

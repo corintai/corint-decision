@@ -40,7 +40,7 @@ pub enum Step {
         output_schema: Option<Schema>,
     },
 
-    /// Call external service
+    /// Call external service (internal)
     Service {
         /// Step identifier
         id: String,
@@ -50,6 +50,30 @@ pub enum Step {
         operation: String,
         /// Parameters for the service call
         params: HashMap<String, Expression>,
+        /// Output variable path (e.g., "context.result")
+        #[serde(skip_serializing_if = "Option::is_none")]
+        output: Option<String>,
+    },
+
+    /// Call external API (third-party)
+    #[serde(rename = "api")]
+    Api {
+        /// Step identifier
+        id: String,
+        /// API identifier (e.g., "ipinfo", "chainalysis")
+        api: String,
+        /// Endpoint name
+        endpoint: String,
+        /// Parameters for the API call
+        params: HashMap<String, Expression>,
+        /// Output variable path (e.g., "context.ip_info")
+        output: String,
+        /// Timeout in milliseconds
+        #[serde(skip_serializing_if = "Option::is_none")]
+        timeout: Option<u64>,
+        /// Error handling strategy
+        #[serde(skip_serializing_if = "Option::is_none")]
+        on_error: Option<ErrorHandling>,
     },
 
     /// Include a ruleset
@@ -132,6 +156,30 @@ pub enum MergeStrategy {
     Fastest,
     /// Use majority voting
     Majority,
+}
+
+/// Error handling configuration for external API calls
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ErrorHandling {
+    /// Action to take on error
+    pub action: ErrorAction,
+    /// Fallback value if action is "fallback"
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub fallback: Option<serde_json::Value>,
+}
+
+/// Action to take when API call fails
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ErrorAction {
+    /// Use fallback value
+    Fallback,
+    /// Skip this step
+    Skip,
+    /// Fail the entire pipeline
+    Fail,
+    /// Retry the call
+    Retry,
 }
 
 impl Pipeline {
@@ -326,6 +374,7 @@ mod tests {
             service: "blacklist_service".to_string(),
             operation: "check".to_string(),
             params,
+            output: Some("context.result".to_string()),
         };
 
         if let Step::Service {
@@ -333,14 +382,59 @@ mod tests {
             service,
             operation,
             params,
+            output,
         } = step
         {
             assert_eq!(id, "check_blacklist");
             assert_eq!(service, "blacklist_service");
             assert_eq!(operation, "check");
             assert_eq!(params.len(), 1);
+            assert_eq!(output, Some("context.result".to_string()));
         } else {
             panic!("Expected Service step");
+        }
+    }
+
+    #[test]
+    fn test_api_step() {
+        let mut params = HashMap::new();
+        params.insert(
+            "ip".to_string(),
+            Expression::field_access(vec!["event".to_string(), "ip_address".to_string()]),
+        );
+
+        let step = Step::Api {
+            id: "ip_check".to_string(),
+            api: "ipinfo".to_string(),
+            endpoint: "ip_lookup".to_string(),
+            params,
+            output: "context.ip_info".to_string(),
+            timeout: Some(3000),
+            on_error: Some(ErrorHandling {
+                action: ErrorAction::Fallback,
+                fallback: Some(serde_json::json!({"country_code": "US"})),
+            }),
+        };
+
+        if let Step::Api {
+            id,
+            api,
+            endpoint,
+            params,
+            output,
+            timeout,
+            on_error,
+        } = step
+        {
+            assert_eq!(id, "ip_check");
+            assert_eq!(api, "ipinfo");
+            assert_eq!(endpoint, "ip_lookup");
+            assert_eq!(params.len(), 1);
+            assert_eq!(output, "context.ip_info");
+            assert_eq!(timeout, Some(3000));
+            assert!(on_error.is_some());
+        } else {
+            panic!("Expected Api step");
         }
     }
 

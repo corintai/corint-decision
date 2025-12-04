@@ -29,6 +29,10 @@ pub enum RuntimeError {
     #[error("Program counter out of bounds: {0}")]
     PCOutOfBounds(usize),
 
+    /// External API call failed
+    #[error("External API call failed: {0}")]
+    ExternalCallFailed(String),
+
     /// Generic runtime error
     #[error("Runtime error: {0}")]
     RuntimeError(String),

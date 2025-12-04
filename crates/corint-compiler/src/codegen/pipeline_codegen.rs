@@ -68,25 +68,136 @@ impl PipelineCompiler {
                 service,
                 operation,
                 params: _,
+                output,
             } => {
-                // External service call
+                // Internal service call
                 instructions.push(Instruction::CallService {
                     service: service.clone(),
                     operation: operation.clone(),
                     params: HashMap::new(), // TODO: Compile params
                 });
+
+                // If output is specified, store the result
+                if let Some(output_path) = output {
+                    instructions.push(Instruction::Store {
+                        name: output_path.clone(),
+                    });
+                }
             }
 
-            Step::Include { ruleset: _ } => {
-                // Include another ruleset
-                // This would typically load and execute the referenced ruleset
-                // For now, this is a placeholder
+            Step::Api {
+                id: _,
+                api,
+                endpoint,
+                params,
+                output,
+                timeout,
+                on_error,
+            } => {
+                // External API call
+                use corint_core::Value;
+
+                // Extract fallback value if present
+                let fallback = on_error.as_ref().and_then(|eh| {
+                    eh.fallback.as_ref().map(|f| {
+                        // Convert serde_json::Value to corint_core::Value
+                        serde_json::from_value(f.clone()).unwrap_or(Value::Null)
+                    })
+                });
+
+                // Compile params - for now, only handle literal expressions
+                let mut compiled_params = HashMap::new();
+                for (key, expr) in params {
+                    // Extract literal values from expressions
+                    if let corint_core::ast::Expression::Literal(value) = expr {
+                        compiled_params.insert(key.clone(), value.clone());
+                    }
+                    // TODO: Support field access expressions by emitting LoadField instructions
+                }
+
+                instructions.push(Instruction::CallExternal {
+                    api: api.clone(),
+                    endpoint: endpoint.clone(),
+                    params: compiled_params,
+                    timeout: *timeout,
+                    fallback,
+                });
+
+                // Store the result to the output variable
+                instructions.push(Instruction::Store {
+                    name: output.clone(),
+                });
             }
 
-            Step::Branch { branches: _ } => {
+            Step::Include { ruleset } => {
+                // Include a ruleset - mark it for execution
+                // We use a special instruction to indicate which ruleset to execute
+                instructions.push(Instruction::CallRuleset {
+                    ruleset_id: ruleset.clone(),
+                });
+            }
+
+            Step::Branch { branches } => {
                 // Conditional branching
-                // TODO: Compile branch condition and pipeline
-                // For now, this is a placeholder
+                // Two-pass compilation: first compile all branches, then calculate jump offsets
+                use crate::codegen::expression_codegen::ExpressionCompiler;
+
+                // First pass: compile all branch conditions and bodies
+                struct CompiledBranch {
+                    condition: Vec<Instruction>,
+                    body: Vec<Instruction>,
+                }
+
+                let mut compiled_branches = Vec::new();
+                for branch in branches {
+                    let condition = ExpressionCompiler::compile(&branch.condition)?;
+                    let mut body = Vec::new();
+                    for step in &branch.pipeline {
+                        body.extend(Self::compile_step(step)?);
+                    }
+                    compiled_branches.push(CompiledBranch { condition, body });
+                }
+
+                // Second pass: assemble with correct jump offsets
+                for (i, compiled) in compiled_branches.iter().enumerate() {
+                    // Add condition instructions
+                    instructions.extend(compiled.condition.clone());
+
+                    if i < compiled_branches.len() - 1 {
+                        // Not the last branch: need JumpIfFalse to next branch AND Jump to end
+                        // JumpIfFalse offset = length of body + 1 (for the Jump instruction) + 1 (to skip past JumpIfFalse itself)
+                        let jump_if_false_offset = (compiled.body.len() + 1 + 1) as isize;
+                        instructions.push(Instruction::JumpIfFalse {
+                            offset: jump_if_false_offset
+                        });
+
+                        // Add branch body
+                        instructions.extend(compiled.body.clone());
+
+                        // Calculate jump to end: skip all remaining branches
+                        let mut remaining_size = 0;
+                        for j in (i + 1)..compiled_branches.len() {
+                            remaining_size += compiled_branches[j].condition.len();
+                            remaining_size += compiled_branches[j].body.len();
+                            remaining_size += 1; // JumpIfFalse instruction
+                            if j < compiled_branches.len() - 1 {
+                                remaining_size += 1; // Jump instruction (except for last branch)
+                            }
+                        }
+
+                        // +1 to skip past the Jump instruction itself
+                        instructions.push(Instruction::Jump {
+                            offset: (remaining_size + 1) as isize
+                        });
+                    } else {
+                        // Last branch: just JumpIfFalse and body
+                        // +1 to skip past the JumpIfFalse instruction itself
+                        instructions.push(Instruction::JumpIfFalse {
+                            offset: (compiled.body.len() + 1) as isize
+                        });
+                        instructions.extend(compiled.body.clone());
+                    }
+                }
             }
 
             Step::Parallel { steps, merge: _ } => {
@@ -164,14 +275,20 @@ mod tests {
             service: "fraud_db".to_string(),
             operation: "check".to_string(),
             params: std::collections::HashMap::new(),
+            output: Some("context.result".to_string()),
         };
 
         let instructions = PipelineCompiler::compile_step(&step).unwrap();
 
-        assert!(!instructions.is_empty());
+        // Should generate CallService + Store
+        assert_eq!(instructions.len(), 2);
         assert!(matches!(
             instructions[0],
             Instruction::CallService { .. }
+        ));
+        assert!(matches!(
+            instructions[1],
+            Instruction::Store { .. }
         ));
     }
 
@@ -183,8 +300,12 @@ mod tests {
 
         let instructions = PipelineCompiler::compile_step(&step).unwrap();
 
-        // Include step currently produces no instructions (placeholder)
-        assert_eq!(instructions.len(), 0);
+        // Include step produces one CallRuleset instruction
+        assert_eq!(instructions.len(), 1);
+        assert!(matches!(
+            instructions[0],
+            Instruction::CallRuleset { .. }
+        ));
     }
 
     #[test]

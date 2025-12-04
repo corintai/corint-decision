@@ -9,3 +9,4 @@ description = "AST to IR compiler for CORINT Decision Engine"
 corint-core = { path = "../corint-core" }
 thiserror = { workspace = true }
 anyhow = { workspace = true }
+serde_json = { workspace = true }

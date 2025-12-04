@@ -82,9 +82,14 @@ impl ExecutionContext {
         }
 
         // First, try to load from event_data
-        let current = self.event_data.get(&path[0]);
+        let mut current = self.event_data.get(&path[0]);
 
-        // If not found in event_data and it's a single-path special field, use computed value
+        // If not found in event_data, try variables (stored context)
+        if current.is_none() {
+            current = self.result.variables.get(&path[0]);
+        }
+
+        // If still not found and it's a single-path special field, use computed value
         if current.is_none() && path.len() == 1 {
             match path[0].as_str() {
                 "total_score" => {
