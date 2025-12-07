@@ -75,6 +75,14 @@ pub struct DecisionEngine {
 impl DecisionEngine {
     /// Create a new decision engine from configuration
     pub async fn new(config: EngineConfig) -> Result<Self> {
+        Self::new_with_feature_executor(config, None).await
+    }
+
+    /// Create a new decision engine with optional feature executor
+    pub async fn new_with_feature_executor(
+        config: EngineConfig,
+        feature_executor: Option<Arc<corint_runtime::feature::FeatureExecutor>>,
+    ) -> Result<Self> {
         let mut programs = Vec::new();
 
         // Compile all rule files
@@ -127,7 +135,14 @@ impl DecisionEngine {
         }
 
         // Create executor with API client
-        let executor = Arc::new(PipelineExecutor::new().with_external_api_client(Arc::new(api_client)));
+        let mut pipeline_executor = PipelineExecutor::new().with_external_api_client(Arc::new(api_client));
+        
+        // Set feature executor if provided (for lazy feature calculation)
+        if let Some(feature_executor) = feature_executor {
+            pipeline_executor = pipeline_executor.with_feature_executor(feature_executor);
+        }
+        
+        let executor = Arc::new(pipeline_executor);
         let metrics = executor.metrics();
 
         Ok(Self {

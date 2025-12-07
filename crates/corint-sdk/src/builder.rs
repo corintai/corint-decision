@@ -3,11 +3,14 @@
 use crate::config::{EngineConfig, LLMConfig, ServiceConfig, StorageConfig};
 use crate::decision_engine::DecisionEngine;
 use crate::error::Result;
+use corint_runtime::feature::FeatureExecutor;
 use std::path::PathBuf;
+use std::sync::Arc;
 
 /// Builder for DecisionEngine
 pub struct DecisionEngineBuilder {
     config: EngineConfig,
+    feature_executor: Option<Arc<FeatureExecutor>>,
 }
 
 impl DecisionEngineBuilder {
@@ -15,6 +18,7 @@ impl DecisionEngineBuilder {
     pub fn new() -> Self {
         Self {
             config: EngineConfig::new(),
+            feature_executor: None,
         }
     }
 
@@ -78,9 +82,15 @@ impl DecisionEngineBuilder {
         self
     }
 
+    /// Set feature executor for lazy feature calculation
+    pub fn with_feature_executor(mut self, executor: Arc<FeatureExecutor>) -> Self {
+        self.feature_executor = Some(executor);
+        self
+    }
+
     /// Build the decision engine
     pub async fn build(self) -> Result<DecisionEngine> {
-        DecisionEngine::new(self.config).await
+        DecisionEngine::new_with_feature_executor(self.config, self.feature_executor).await
     }
 }
 

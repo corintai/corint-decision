@@ -8,7 +8,7 @@ use corint_core::Value;
 use crate::context::ExecutionContext;
 use crate::error::{RuntimeError, Result};
 use crate::external_api::ExternalApiClient;
-use crate::feature::FeatureExtractor;
+use crate::feature::{FeatureExtractor, FeatureExecutor};
 use crate::llm::LLMClient;
 use crate::observability::{Metrics, MetricsCollector};
 use crate::result::{DecisionResult, ExecutionResult};
@@ -21,6 +21,7 @@ use std::time::Instant;
 /// Pipeline executor for async IR execution
 pub struct PipelineExecutor {
     feature_extractor: Option<Arc<FeatureExtractor>>,
+    feature_executor: Option<Arc<FeatureExecutor>>,
     llm_client: Option<Arc<dyn LLMClient>>,
     service_client: Option<Arc<dyn ServiceClient>>,
     external_api_client: Arc<ExternalApiClient>,
@@ -32,6 +33,7 @@ impl PipelineExecutor {
     pub fn new() -> Self {
         Self {
             feature_extractor: None,
+            feature_executor: None,
             llm_client: None,
             service_client: None,
             external_api_client: Arc::new(ExternalApiClient::new()),
@@ -43,11 +45,18 @@ impl PipelineExecutor {
     pub fn with_storage(storage: Arc<dyn Storage>) -> Self {
         Self {
             feature_extractor: Some(Arc::new(FeatureExtractor::new(storage))),
+            feature_executor: None,
             llm_client: None,
             service_client: None,
             external_api_client: Arc::new(ExternalApiClient::new()),
             metrics: Arc::new(MetricsCollector::new()),
         }
+    }
+
+    /// Set feature executor for lazy feature calculation
+    pub fn with_feature_executor(mut self, executor: Arc<FeatureExecutor>) -> Self {
+        self.feature_executor = Some(executor);
+        self
     }
 
     /// Set LLM client
@@ -105,7 +114,51 @@ impl PipelineExecutor {
 
             match instruction {
                 Instruction::LoadField { path } => {
-                    let value = ctx.load_field(path)?;
+                    // Try to load field from event_data or variables
+                    let value_result = ctx.load_field(path);
+                    
+                    let value = match value_result {
+                        Ok(v) => v,
+                        Err(RuntimeError::FieldNotFound(ref field_name)) => {
+                            // Field not found - check if it's a registered feature
+                            if path.len() == 1 {
+                                let field_name = &path[0];
+                                
+                                // Check if this is a registered feature
+                                if let Some(ref feature_executor) = self.feature_executor {
+                                    // Check if feature is registered
+                                    if feature_executor.has_feature(field_name) {
+                                        tracing::debug!("Feature '{}' not in event_data, calculating from data source", field_name);
+                                        
+                                        // Calculate feature on-demand
+                                        match feature_executor.execute_feature(field_name, &ctx).await {
+                                            Ok(feature_value) => {
+                                                // Cache the result in event_data for subsequent accesses
+                                                ctx.event_data.insert(field_name.clone(), feature_value.clone());
+                                                tracing::debug!("Feature '{}' calculated: {:?}", field_name, feature_value);
+                                                feature_value
+                                            }
+                                            Err(e) => {
+                                                tracing::warn!("Failed to calculate feature '{}': {}", field_name, e);
+                                                Value::Null
+                                            }
+                                        }
+                                    } else {
+                                        // Not a feature, return error
+                                        return Err(RuntimeError::FieldNotFound(field_name.clone()));
+                                    }
+                                } else {
+                                    // No feature executor, return error
+                                    return Err(RuntimeError::FieldNotFound(field_name.clone()));
+                                }
+                            } else {
+                                // Multi-path field access, return error
+                                return Err(RuntimeError::FieldNotFound(path.join(".")));
+                            }
+                        }
+                        Err(e) => return Err(e),
+                    };
+                    
                     ctx.push(value);
                     pc += 1;
                 }

@@ -145,7 +145,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     event_data.insert("event.event_type".to_string(), event_type);
     event_data.insert("event.amount".to_string(), amount);
     
-    let context = ExecutionContext::new(event_data);
+    // Clone event_data for context (context takes ownership)
+    let context = ExecutionContext::new(event_data.clone());
     
     println!("✓ Execution context created");
     println!("  user_id: user_001");
@@ -216,7 +217,122 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     println!();
 
-    // Step 7: Display statistics (if available)
+    // Step 7: Execute complete pipeline with ruleset
+    println!("{}", "=".repeat(80));
+    println!("Step 7: Executing Complete Pipeline with Ruleset");
+    println!("{}", "=".repeat(80));
+    println!();
+    
+    println!("Pipeline Overview:");
+    println!("  1. Rules execute and reference features by name (e.g., transaction_sum_7d > 5000)");
+    println!("  2. Features are automatically calculated from Supabase when rules access them");
+    println!("  3. Feature values are cached in event_data for subsequent accesses");
+    println!("  4. Ruleset evaluates rule conditions using feature values");
+    println!("  5. Decision logic determines action based on rule scores");
+    println!();
+
+    // Add event.type for rule matching
+    event_data.insert("event.type".to_string(), Value::String("transaction".to_string()));
+
+    // Initialize DecisionEngine with ruleset and FeatureExecutor
+    println!("Initializing DecisionEngine with ruleset and FeatureExecutor...");
+    use corint_sdk::{DecisionEngineBuilder, DecisionRequest};
+    use std::sync::Arc;
+    
+    // Wrap FeatureExecutor in Arc for sharing
+    let feature_executor_arc = Arc::new(executor);
+    
+    let decision_engine = DecisionEngineBuilder::new()
+        .add_rule_file("examples/rules/supabase_feature_ruleset.yaml")
+        .enable_metrics(true)
+        .with_feature_executor(feature_executor_arc.clone())
+        .build()
+        .await
+        .map_err(|e| format!("Failed to build DecisionEngine: {}", e))?;
+    
+    println!("✓ DecisionEngine initialized");
+    println!("  Ruleset: supabase_risk_assessment");
+    println!("  Rules: high_transaction_volume, multiple_devices, high_value_transaction, rapid_transactions, suspicious_device_pattern");
+    println!("  FeatureExecutor: Integrated (features will be calculated on-demand)");
+    println!();
+    println!("Note: Features will be calculated from Supabase automatically when rules reference them");
+    println!();
+
+    // Execute decision pipeline
+    // Features will be calculated automatically when rules access them via LoadField instruction
+    println!("Executing decision pipeline...");
+    println!("  Rules will reference features, triggering automatic calculation from Supabase");
+    println!();
+
+    // Create event_data WITHOUT pre-calculated features
+    // Features will be calculated on-demand during rule execution
+    let decision_request = DecisionRequest::new(event_data);
+    let decision_response = decision_engine.decide(decision_request).await
+        .map_err(|e| format!("Failed to execute decision: {}", e))?;
+
+    println!("✓ Decision completed");
+    println!();
+    println!("Decision Result:");
+    println!("  Action: {:?}", decision_response.result.action);
+    println!("  Score: {}", decision_response.result.score);
+    println!("  Triggered Rules: {:?}", decision_response.result.triggered_rules);
+    if !decision_response.result.explanation.is_empty() {
+        println!("  Reason: {}", decision_response.result.explanation);
+    }
+    println!("  Processing Time: {} ms", decision_response.processing_time_ms);
+    println!();
+    println!("Note: Features were calculated from Supabase during rule execution");
+    println!();
+
+    // Test Case 2: High-risk scenario with actual Supabase data
+    // To trigger rules, we would need to insert high-risk events into Supabase
+    // For this example, we'll use a different user_id that might have different feature values
+    println!("{}", "=".repeat(80));
+    println!("Test Case 2: Testing with Different User (user_003)");
+    println!("{}", "=".repeat(80));
+    println!();
+    println!("Note: Features will be calculated from Supabase when rules reference them");
+    println!();
+    
+    // Create event_data for a different user (without pre-calculated features)
+    let mut test_event_data = HashMap::new();
+    test_event_data.insert("user_id".to_string(), Value::String("user_003".to_string()));
+    test_event_data.insert("device_id".to_string(), Value::String("device_003".to_string()));
+    test_event_data.insert("ip_address".to_string(), Value::String("203.0.113.3".to_string()));
+    test_event_data.insert("event.type".to_string(), Value::String("transaction".to_string()));
+    
+    // Add event.* prefixed keys
+    test_event_data.insert("event.user_id".to_string(), Value::String("user_003".to_string()));
+    test_event_data.insert("event.device_id".to_string(), Value::String("device_003".to_string()));
+    test_event_data.insert("event.ip_address".to_string(), Value::String("203.0.113.3".to_string()));
+    test_event_data.insert("event.event_type".to_string(), Value::String("transaction".to_string()));
+    
+    println!("Event Data:");
+    println!("  user_id: user_003");
+    println!("  device_id: device_003");
+    println!("  event.type: transaction");
+    println!();
+    println!("Executing decision pipeline...");
+    println!("  Features will be calculated from Supabase when rules reference them");
+    println!();
+    
+    let test_request = DecisionRequest::new(test_event_data);
+    let test_response = decision_engine.decide(test_request).await
+        .map_err(|e| format!("Failed to execute decision: {}", e))?;
+    
+    println!("✓ Decision completed");
+    println!();
+    println!("Decision Result:");
+    println!("  Action: {:?}", test_response.result.action);
+    println!("  Score: {}", test_response.result.score);
+    println!("  Triggered Rules: {:?}", test_response.result.triggered_rules);
+    if !test_response.result.explanation.is_empty() {
+        println!("  Reason: {}", test_response.result.explanation);
+    }
+    println!("  Processing Time: {} ms", test_response.processing_time_ms);
+    println!();
+
+    // Step 8: Display statistics (if available)
     println!("{}", "=".repeat(80));
     println!("Execution Statistics");
     println!("{}", "=".repeat(80));
@@ -226,6 +342,27 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("{}", "=".repeat(80));
     println!("✓ Example completed successfully!");
     println!("{}", "=".repeat(80));
+    println!();
+    println!("Summary:");
+    println!("  ✓ Features calculated from Supabase PostgreSQL (on-demand during rule execution)");
+    println!("  ✓ Rules evaluated using feature values");
+    println!("  ✓ Risk decision made based on ruleset logic");
+    println!("  ✓ Test Case 1 (user_001): {:?} - Score: {}", 
+             decision_response.result.action, decision_response.result.score);
+    println!("  ✓ Test Case 2 (user_003): {:?} - Score: {} ({} rules triggered)", 
+             test_response.result.action, test_response.result.score, 
+             test_response.result.triggered_rules.len());
+    println!();
+    println!("Pipeline Flow:");
+    println!("  1. Rules execute and reference features by name (e.g., transaction_sum_7d > 5000)");
+    println!("  2. PipelineExecutor's LoadField instruction checks if field exists in event_data");
+    println!("  3. If not found, checks if it's a registered feature name");
+    println!("  4. If it's a feature, FeatureExecutor calculates it from Supabase on-demand");
+    println!("  5. Feature value is cached in event_data for subsequent accesses");
+    println!("  6. Ruleset evaluates rule conditions using feature values");
+    println!("  7. Decision logic determines action based on rule scores");
+    println!();
+    println!("✓ Features are now calculated lazily during rule execution from Supabase!");
     println!();
 
     Ok(())

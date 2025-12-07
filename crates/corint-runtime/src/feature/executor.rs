@@ -128,6 +128,11 @@ impl FeatureExecutor {
         Ok(())
     }
 
+    /// Check if a feature is registered
+    pub fn has_feature(&self, feature_name: &str) -> bool {
+        self.features.contains_key(feature_name)
+    }
+
     /// Execute a single feature by name
     pub fn execute_feature<'a>(
         &'a self,
