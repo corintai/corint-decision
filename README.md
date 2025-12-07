@@ -193,6 +193,19 @@ Clean separation of concerns:
 
 ## 🚀 Quick Start
 
+### Running the Server
+
+The CORINT Decision Engine includes an HTTP/REST API server for production use:
+
+```bash
+# Run the server locally
+cargo run -p corint-server
+
+# Server will start on http://127.0.0.1:8080
+```
+
+For detailed server documentation, see [Server Quick Start Guide](crates/corint-server/QUICKSTART.md).
+
 ### Simple Login Risk Detection Example
 
 ```yaml
@@ -266,6 +279,200 @@ See the [`examples/`](doc/dsl/examples/) directory for complete, real-world exam
 - [Statistical Analysis](doc/dsl/examples/statistical-analysis.yml) - Advanced feature engineering
 - [Intelligent Inference](doc/dsl/examples/intelligent-inference.yml) - LLM-powered decisions
 - [Loan Application](doc/dsl/examples/loan.yml) - Credit risk assessment
+
+---
+
+## 🌐 Server API
+
+CORINT Decision Engine includes a production-ready HTTP/REST API server (`corint-server`).
+
+### Quick Start
+
+```bash
+# Start the server
+cargo run -p corint-server
+
+# Health check
+curl http://localhost:8080/health
+
+# Make a decision
+curl -X POST http://localhost:8080/v1/decide \
+  -H "Content-Type: application/json" \
+  -d '{
+    "event_data": {
+      "user_id": "user_001",
+      "event.type": "transaction"
+    }
+  }'
+```
+
+### API Endpoints
+
+#### Health Check
+
+**GET** `/health`
+
+Returns server health status.
+
+**Response:**
+```json
+{
+  "status": "healthy",
+  "version": "0.1.0"
+}
+```
+
+#### Make Decision
+
+**POST** `/v1/decide`
+
+Execute decision rules with event data.
+
+**Request:**
+```json
+{
+  "event_data": {
+    "user_id": "user_001",
+    "device_id": "device_001",
+    "event.type": "transaction",
+    "event.user_id": "user_001"
+  }
+}
+```
+
+**Response:**
+```json
+{
+  "action": "Approve",
+  "score": 35,
+  "triggered_rules": ["high_value_transaction"],
+  "explanation": "Transaction approved with moderate risk",
+  "processing_time_ms": 125
+}
+```
+
+### Server Features
+
+- ✅ **REST API**: Execute decision rules via HTTP endpoints
+- ✅ **Auto Rule Loading**: Automatically loads rules from configured directory
+- ✅ **Lazy Feature Calculation**: Features are calculated on-demand from data sources during rule execution
+- ✅ **Feature Caching**: Calculated feature values are cached for performance
+- ✅ **Health Check**: Health check endpoint for monitoring
+- ✅ **CORS Support**: Cross-origin resource sharing enabled
+- ✅ **Request Tracing**: Built-in request/response tracing
+
+### Configuration
+
+The server can be configured via:
+
+1. **Environment Variables** (prefix: `CORINT_`)
+2. **Config File** (`config/server.yaml`)
+3. **Default Values**
+
+**Environment Variables:**
+```bash
+CORINT_HOST=127.0.0.1
+CORINT_PORT=8080
+CORINT_RULES_DIR=examples/rules
+CORINT_ENABLE_METRICS=true
+CORINT_ENABLE_TRACING=true
+CORINT_LOG_LEVEL=info
+```
+
+**Config File Example** (`config/server.yaml`):
+```yaml
+host: "127.0.0.1"
+port: 8080
+rules_dir: "examples/rules"
+enable_metrics: true
+enable_tracing: true
+log_level: "info"
+```
+
+### Integration with Supabase
+
+The server supports on-demand feature calculation from Supabase PostgreSQL:
+
+1. **Prerequisites:**
+   - Supabase database configured with test data (see `docs/schema/postgres-examples.sql`)
+   - Data source configured (`examples/configs/datasources/supabase_events.yaml`)
+   - Rules reference features (e.g., `examples/rules/supabase_feature_ruleset.yaml`)
+
+2. **Workflow:**
+   - Start the server: `cargo run -p corint-server`
+   - Send decision requests via `/v1/decide`
+   - When rules reference features (e.g., `transaction_sum_7d > 5000`), the server automatically queries Supabase to calculate features
+   - Feature values are cached for subsequent rule evaluations
+   - Decision result is returned
+
+3. **Feature Calculation Logs:**
+```
+INFO corint_runtime::datasource::client: Executing PostgreSQL query: 
+  SELECT SUM((attributes->>'amount')::numeric) AS sum 
+  FROM events 
+  WHERE user_id = 'user_003' AND event_type = 'transaction' 
+  AND event_timestamp >= NOW() - INTERVAL '604800 seconds'
+
+DEBUG corint_runtime::engine::pipeline_executor: 
+  Feature 'transaction_sum_7d' calculated: Number(8000.0)
+```
+
+### Performance Optimization
+
+- **Lazy Feature Calculation**: Features are only calculated when referenced by rules, avoiding unnecessary database queries
+- **Feature Caching**: Calculated feature values are cached in `event_data` for subsequent rule accesses within the same request
+- **Async I/O**: All database queries and external API calls are non-blocking, supporting high concurrency
+- **Connection Pooling**: Database connections are managed via connection pools to reduce connection overhead
+
+### Logging
+
+```bash
+# Basic log levels
+RUST_LOG=info cargo run -p corint-server      # Info (default)
+RUST_LOG=debug cargo run -p corint-server     # Debug (detailed)
+RUST_LOG=trace cargo run -p corint-server     # Trace (all details)
+
+# Module-level logging
+RUST_LOG=info,corint_server=debug cargo run -p corint-server
+RUST_LOG=corint_runtime::datasource=debug cargo run -p corint-server  # SQL queries
+RUST_LOG=corint_runtime::feature=debug cargo run -p corint-server    # Feature calculation
+```
+
+### Production Deployment
+
+For detailed production deployment instructions, including:
+- Step-by-step deployment guide
+- Systemd service configuration
+- Nginx reverse proxy setup
+- HTTPS configuration
+- Monitoring and logging
+- Security recommendations
+- Troubleshooting
+
+See [Server Quick Start Guide](crates/corint-server/QUICKSTART.md).
+
+### Troubleshooting
+
+**Server won't start:**
+- Check if port is in use: `lsof -i :8080`
+- Verify rules directory exists: `ls -la examples/rules`
+- View detailed logs: `RUST_LOG=debug cargo run -p corint-server`
+
+**Rules not loading:**
+- Ensure rule files have `.yaml` or `.yml` extension
+- Check rule file syntax
+- View server startup logs for rule loading information
+
+**Feature calculation fails:**
+- Verify Supabase database connection
+- Check data source configuration (`examples/configs/datasources/supabase_events.yaml`)
+- View SQL queries and errors: `RUST_LOG=corint_runtime::datasource=debug cargo run -p corint-server`
+- Verify test data exists in database
+
+**API returns 500 error:**
+- Check server logs for error stack traces
+- Verify request body format is correct
+- Ensure `event_data` contains all required fields
 
 ---
 
@@ -452,6 +659,65 @@ pipeline:
 └─────────────────────────────────────────────────────────────┘
 ```
 
+### Server Architecture
+
+The HTTP server (`corint-server`) architecture:
+
+```
+┌─────────────────────────────────────────┐
+│         HTTP Request                     │
+│  POST /v1/decide                         │
+│  { "event_data": {...} }                │
+└─────────────────┬───────────────────────┘
+                  │
+                  ▼
+┌─────────────────────────────────────────┐
+│    Axum Router + Middleware             │
+│    - CORS Layer                         │
+│    - Trace Layer                        │
+└─────────────────┬───────────────────────┘
+                  │
+                  ▼
+┌─────────────────────────────────────────┐
+│       REST API Handler                  │
+│    - Parse JSON                         │
+│    - Convert to DecisionRequest         │
+└─────────────────┬───────────────────────┘
+                  │
+                  ▼
+┌─────────────────────────────────────────┐
+│      Decision Engine (SDK)              │
+│    - Load compiled rules                │
+│    - Execute ruleset                    │
+└─────────────────┬───────────────────────┘
+                  │
+                  ▼
+┌─────────────────────────────────────────┐
+│    Pipeline Executor (Runtime)          │
+│    - Execute IR instructions            │
+│    - LoadField: check event_data        │
+└─────────────────┬───────────────────────┘
+                  │
+                  ▼ (field not found)
+┌─────────────────────────────────────────┐
+│      Feature Executor                   │
+│    - Check if registered feature        │
+│    - Build SQL query                    │
+│    - Query Supabase                     │
+│    - Calculate feature value            │
+│    - Cache in event_data                │
+└─────────────────┬───────────────────────┘
+                  │
+                  ▼
+┌─────────────────────────────────────────┐
+│         HTTP Response                   │
+│  { "action": "Approve",                 │
+│    "score": 35,                         │
+│    "triggered_rules": [...],            │
+│    "processing_time_ms": 125 }          │
+└─────────────────────────────────────────┘
+```
+
 ### Execution Flow
 
 ```
@@ -489,6 +755,9 @@ Event → Pipeline → Extract Features → Evaluate Rules → Decision Logic �
 - 🚧 Feature Store integration (Feast compatibility)
 - 🚧 Visual rule editor
 - 🚧 Real-time rule updates (hot reload)
+- ✅ HTTP/REST API server (`corint-server`)
+- ✅ Supabase PostgreSQL integration
+- ✅ Lazy feature calculation
 
 ### Planned 📋
 
