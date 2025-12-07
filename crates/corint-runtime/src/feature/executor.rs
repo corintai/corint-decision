@@ -138,7 +138,7 @@ impl FeatureExecutor {
         &'a self,
         feature_name: &'a str,
         context: &'a ExecutionContext,
-    ) -> Pin<Box<dyn Future<Output = Result<Value>> + 'a>> {
+    ) -> Pin<Box<dyn Future<Output = Result<Value>> + Send + 'a>> {
         Box::pin(async move {
             self.execute_feature_impl(feature_name, context).await
         })

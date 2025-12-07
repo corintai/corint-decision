@@ -1,0 +1,21 @@
+# CORINT Decision Engine Server Configuration
+
+# Server host (127.0.0.1 for localhost only, 0.0.0.0 for all interfaces)
+host: "127.0.0.1"
+
+# Server port
+port: 8080
+
+# Rules directory
+# All .yaml and .yml files in this directory will be loaded automatically
+rules_dir: "examples/rules"
+
+# Enable metrics collection
+enable_metrics: true
+
+# Enable distributed tracing
+enable_tracing: true
+
+# Log level (trace, debug, info, warn, error)
+log_level: "info"
+

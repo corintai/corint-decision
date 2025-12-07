@@ -1,0 +1,45 @@
+[package]
+name = "corint-server"
+version = "0.1.0"
+edition = "2021"
+license = "Elastic-2.0"
+
+[dependencies]
+# Core dependencies
+corint-sdk = { path = "../corint-sdk" }
+corint-runtime = { path = "../corint-runtime" }
+corint-core = { path = "../corint-core" }
+
+# Async runtime
+tokio = { version = "1.35", features = ["full"] }
+async-trait = "0.1"
+
+# Web framework
+axum = { version = "0.7", features = ["macros"] }
+tower = { version = "0.4", features = ["full"] }
+tower-http = { version = "0.5", features = ["cors", "trace"] }
+
+# Serialization
+serde = { workspace = true }
+serde_json = { workspace = true }
+serde_yaml = { workspace = true }
+
+# Error handling
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+
+# Logging & Observability
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+
+# Configuration
+config = "0.14"
+dotenv = "0.15"
+
+# Other
+uuid = { version = "1.6", features = ["v4", "serde"] }
+chrono = { version = "0.4", features = ["serde"] }
+
+[[bin]]
+name = "corint-server"
+path = "src/main.rs"
