@@ -4,6 +4,7 @@
 //! compiled IR programs.
 
 pub mod context;
+pub mod datasource;
 pub mod engine;
 pub mod error;
 pub mod executor;
@@ -17,6 +18,11 @@ pub mod storage;
 
 // Re-export main types
 pub use context::ExecutionContext;
+pub use datasource::{
+    Aggregation, AggregationType, DataSourceClient, DataSourceConfig, DataSourceType, Filter,
+    FilterOperator, Query, QueryResult, QueryType, RelativeWindow, TimeUnit, TimeWindow,
+    TimeWindowType,
+};
 pub use engine::PipelineExecutor;
 pub use error::{RuntimeError, Result};
 pub use executor::Executor;

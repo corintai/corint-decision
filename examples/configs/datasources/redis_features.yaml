@@ -1,0 +1,20 @@
+# Redis Feature Store Configuration
+# This feature store contains pre-computed user behavioral features
+
+name: redis_feature_store
+type: feature_store
+provider: redis
+connection_string: "redis://localhost:6379/0"
+namespace: "user_features"
+default_ttl: 3600  # 1 hour
+
+# Connection pool settings
+pool_size: 20
+timeout_ms: 5000
+pooling_enabled: true
+
+# Optional configuration
+options:
+  max_connections: "50"
+  min_idle: "5"
+  connection_timeout: "30"

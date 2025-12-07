@@ -1,0 +1,180 @@
+# Feature Configuration with Explicit Data Sources
+#
+# This example demonstrates how to explicitly specify data sources for features.
+
+features:
+  # ==========================================================================
+  # ClickHouse Features (Real-time Event Data)
+  # ==========================================================================
+
+  - name: user_login_count_1h
+    description: "User login count in last 1 hour from Supabase"
+    operator: count
+    datasource: supabase_events    # ← Supabase data source
+    entity: user_events              # ← Supabase table
+    dimension: user_id
+    dimension_value: "{event.user_id}"
+    window:
+      value: 1
+      unit: hours
+    filters:
+      - field: event_type
+        operator: eq
+        value: "login"
+    cache:
+      enabled: true
+      ttl: 60
+      backend: local
+
+  - name: user_transaction_sum_24h
+    description: "Total transaction amount in last 24 hours from Supabase"
+    operator: sum
+    datasource: supabase_events
+    entity: user_events
+    dimension: user_id
+    dimension_value: "{event.user_id}"
+    field: amount
+    window:
+      value: 24
+      unit: hours
+    filters:
+      - field: event_type
+        operator: eq
+        value: "transaction"
+    cache:
+      enabled: true
+      ttl: 300
+      backend: redis
+
+  - name: device_unique_users_7d
+    description: "Number of distinct users on this device in last 7 days"
+    operator: count_distinct
+    datasource: supabase_events
+    entity: user_events
+    dimension: device_id
+    dimension_value: "{event.device_id}"
+    distinct_field: user_id
+    window:
+      value: 7
+      unit: days
+    cache:
+      enabled: true
+      ttl: 600
+
+  # ==========================================================================
+  # Supabase Features (User Profile Data)
+  # ==========================================================================
+
+  - name: user_kyc_status
+    description: "User KYC verification status from Supabase"
+    operator: profile_lookup
+    datasource: supabase_events  # ← Supabase data source
+    table: user_profiles             # ← Supabase table
+    dimension: user_id
+    dimension_value: "{event.user_id}"
+    field: kyc_status
+
+  - name: user_is_verified
+    description: "Is user identity verified?"
+    operator: profile_lookup
+    datasource: supabase_events
+    table: user_profiles
+    dimension: user_id
+    dimension_value: "{event.user_id}"
+    field: is_verified
+
+  - name: user_account_type
+    description: "User account type (individual/business)"
+    operator: profile_lookup
+    datasource: supabase_events
+    table: user_profiles
+    dimension: user_id
+    dimension_value: "{event.user_id}"
+    field: account_type
+
+  - name: device_is_suspicious
+    description: "Is device marked as suspicious in registry?"
+    operator: profile_lookup
+    datasource: supabase_events
+    table: device_registry
+    dimension: device_id
+    dimension_value: "{event.device_id}"
+    field: is_suspicious
+
+  # ==========================================================================
+  # Supabase Features (Pre-computed Feature Store)
+  # ==========================================================================
+
+  - name: user_risk_score
+    description: "Pre-computed user risk score from Supabase feature store"
+    operator: feature_store_lookup
+    datasource: supabase_events       # ← Supabase feature store
+    key: "user_features:{event.user_id}:risk_score"
+    fallback: 0.0
+
+  - name: user_lifetime_transaction_avg
+    description: "User's historical average transaction amount"
+    operator: feature_store_lookup
+    datasource: supabase_events
+    key: "user_stats:{event.user_id}:avg_transaction"
+    fallback: 0.0
+
+  - name: device_trust_score
+    description: "Device trust score from feature store"
+    operator: feature_store_lookup
+    datasource: supabase_events
+    key: "device_features:{event.device_id}:trust_score"
+    fallback: 50.0
+
+  # ==========================================================================
+  # Features Using Default Data Source (No datasource specified)
+  # ==========================================================================
+
+  - name: ip_event_count_1h
+    description: "Events from this IP in last 1 hour (uses default datasource)"
+    operator: count
+    # datasource not specified, will use "default"
+    entity: user_events
+    dimension: ip_address
+    dimension_value: "{event.ip_address}"
+    window:
+      value: 1
+      unit: hours
+    cache:
+      enabled: true
+      ttl: 60
+
+  # ==========================================================================
+  # Velocity Features
+  # ==========================================================================
+
+  - name: exceeds_login_velocity
+    description: "Does user exceed login velocity threshold?"
+    operator: velocity
+    datasource: supabase_events
+    entity: user_events
+    dimension: user_id
+    dimension_value: "{event.user_id}"
+    window:
+      value: 1
+      unit: hours
+    threshold: 10
+    filters:
+      - field: event_type
+        operator: eq
+        value: "login"
+    cache:
+      enabled: true
+      ttl: 60
+
+  # ==========================================================================
+  # Composite Example: Multiple Data Sources
+  # ==========================================================================
+  # In a real rule, you might combine features from different sources:
+  #
+  # IF user_risk_score > 80                    (from Supabase)
+  #    AND user_is_verified = false            (from Supabase)
+  #    AND user_transaction_sum_24h > 10000    (from Supabase)
+  # THEN
+  #    action: block
+  #    reason: "High risk unverified user with large transactions"

@@ -1,0 +1,21 @@
+# ClickHouse OLAP Database Configuration
+# Stores historical user events for real-time aggregation queries
+
+name: clickhouse_events
+type: olap
+provider: clickhouse
+connection_string: "http://localhost:8123"
+database: "risk_events"
+events_table: "user_events"
+
+# Connection settings
+pool_size: 15
+timeout_ms: 10000
+pooling_enabled: true
+
+# ClickHouse-specific options
+options:
+  database: "risk_events"
+  user: "default"
+  compression: "lz4"
+  max_execution_time: "30"

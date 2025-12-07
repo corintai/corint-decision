@@ -1,0 +1,322 @@
+# User Feature Definitions
+#
+# This file defines features computed for user risk assessment.
+# Features are computed using operators with parameterized dimensions and windows.
+
+features:
+  # ============================================================================
+  # Basic Count Features
+  # ============================================================================
+
+  - name: login_count_24h
+    description: "Number of login events in last 24 hours"
+    operator: count
+    datasource: supabase_events  # Explicitly specify data source
+    entity: events
+    dimension: user_id
+    dimension_value: "{event.user_id}"
+    window:
+      value: 24
+      unit: hours
+    filters:
+      - field: event_type
+        operator: eq
+        value: "login"
+    cache:
+      enabled: true
+      ttl: 300
+      backend: redis
+
+  - name: login_count_1h
+    description: "Number of login events in last 1 hour"
+    operator: count
+    entity: events
+    dimension: user_id
+    dimension_value: "{event.user_id}"
+    window:
+      value: 1
+      unit: hours
+    filters:
+      - field: event_type
+        operator: eq
+        value: "login"
+    cache:
+      enabled: true
+      ttl: 60
+      backend: local
+
+  - name: failed_login_count_1h
+    description: "Number of failed login attempts in last 1 hour"
+    operator: count
+    entity: events
+    dimension: user_id
+    dimension_value: "{event.user_id}"
+    window:
+      value: 1
+      unit: hours
+    filters:
+      - field: event_type
+        operator: eq
+        value: "login"
+      - field: status
+        operator: eq
+        value: "failed"
+    cache:
+      enabled: true
+      ttl: 60
+
+  - name: transaction_count_24h
+    description: "Number of transactions in last 24 hours"
+    operator: count
+    entity: events
+    dimension: user_id
+    dimension_value: "{event.user_id}"
+    window:
+      value: 24
+      unit: hours
+    filters:
+      - field: event_type
+        operator: eq
+        value: "transaction"
+    cache:
+      enabled: true
+      ttl: 300
+
+  # ============================================================================
+  # Aggregation Features (Sum, Avg, Max, Min)
+  # ============================================================================
+
+  - name: transaction_sum_24h
+    description: "Total transaction amount in last 24 hours"
+    operator: sum
+    entity: events
+    dimension: user_id
+    dimension_value: "{event.user_id}"
+    field: amount
+    window:
+      value: 24
+      unit: hours
+    filters:
+      - field: event_type
+        operator: eq
+        value: "transaction"
+    cache:
+      enabled: true
+      ttl: 300
+
+  - name: transaction_sum_7d
+    description: "Total transaction amount in last 7 days"
+    operator: sum
+    entity: events
+    dimension: user_id
+    dimension_value: "{event.user_id}"
+    field: amount
+    window:
+      value: 7
+      unit: days
+    filters:
+      - field: event_type
+        operator: eq
+        value: "transaction"
+    cache:
+      enabled: true
+      ttl: 3600
+
+  - name: avg_transaction_30d
+    description: "Average transaction amount in last 30 days"
+    operator: avg
+    entity: events
+    dimension: user_id
+    dimension_value: "{event.user_id}"
+    field: amount
+    window:
+      value: 30
+      unit: days
+    filters:
+      - field: event_type
+        operator: eq
+        value: "transaction"
+    cache:
+      enabled: true
+      ttl: 3600
+
+  - name: max_transaction_7d
+    description: "Maximum transaction amount in last 7 days"
+    operator: max
+    entity: events
+    dimension: user_id
+    dimension_value: "{event.user_id}"
+    field: amount
+    window:
+      value: 7
+      unit: days
+    filters:
+      - field: event_type
+        operator: eq
+        value: "transaction"
+    cache:
+      enabled: true
+      ttl: 600
+
+  # ============================================================================
+  # Count Distinct Features
+  # ============================================================================
+
+  - name: unique_devices_7d
+    description: "Number of distinct devices used in last 7 days"
+    operator: count_distinct
+    entity: events
+    dimension: user_id
+    dimension_value: "{event.user_id}"
+    distinct_field: device_id
+    window:
+      value: 7
+      unit: days
+    cache:
+      enabled: true
+      ttl: 600
+
+  - name: unique_devices_30d
+    description: "Number of distinct devices used in last 30 days"
+    operator: count_distinct
+    entity: events
+    dimension: user_id
+    dimension_value: "{event.user_id}"
+    distinct_field: device_id
+    window:
+      value: 30
+      unit: days
+    cache:
+      enabled: true
+      ttl: 3600
+
+  - name: unique_ips_24h
+    description: "Number of distinct IP addresses in last 24 hours"
+    operator: count_distinct
+    entity: events
+    dimension: user_id
+    dimension_value: "{event.user_id}"
+    distinct_field: ip_address
+    window:
+      value: 24
+      unit: hours
+    cache:
+      enabled: true
+      ttl: 300
+
+  - name: unique_cities_30d
+    description: "Number of distinct cities accessed from in last 30 days"
+    operator: count_distinct
+    entity: events
+    dimension: user_id
+    dimension_value: "{event.user_id}"
+    distinct_field: city
+    window:
+      value: 30
+      unit: days
+    cache:
+      enabled: true
+      ttl: 3600
+
+  # ============================================================================
+  # Temporal Features
+  # ============================================================================
+
+  - name: account_first_seen
+    description: "Timestamp of first user event"
+    operator: first_seen
+    entity: events
+    dimension: user_id
+    dimension_value: "{event.user_id}"
+
+  - name: last_login_at
+    description: "Timestamp of last login"
+    operator: last_seen
+    entity: events
+    dimension: user_id
+    dimension_value: "{event.user_id}"
+    filters:
+      - field: event_type
+        operator: eq
+        value: "login"
+
+  - name: account_age_days
+    description: "Days since account creation"
+    operator: time_since
+    entity: events
+    dimension: user_id
+    dimension_value: "{event.user_id}"
+    filters:
+      - field: event_type
+        operator: eq
+        value: "register"
+    unit: days
+
+  # ============================================================================
+  # Velocity Features
+  # ============================================================================
+
+  - name: exceeds_login_velocity
+    description: "Does user exceed maximum login velocity (> 10 per hour)?"
+    operator: velocity
+    entity: events
+    dimension: user_id
+    dimension_value: "{event.user_id}"
+    window:
+      value: 1
+      unit: hours
+    threshold: 10
+    filters:
+      - field: event_type
+        operator: eq
+        value: "login"
+    cache:
+      enabled: true
+      ttl: 60
+
+  - name: exceeds_transaction_velocity
+    description: "Does user exceed transaction velocity (> 5 per hour)?"
+    operator: velocity
+    entity: events
+    dimension: user_id
+    dimension_value: "{event.user_id}"
+    window:
+      value: 1
+      unit: hours
+    threshold: 5
+    filters:
+      - field: event_type
+        operator: eq
+        value: "transaction"
+    cache:
+      enabled: true
+      ttl: 60
+
+  # ============================================================================
+  # Lookup Features (from Feature Store / Database)
+  # ============================================================================
+
+  - name: user_risk_score
+    description: "Pre-computed user risk score from feature store"
+    operator: feature_store_lookup
+    datasource: supabase_events
+    key: "user_features:{event.user_id}:risk_score"
+    fallback: 0.0
+
+  - name: user_kyc_status
+    description: "User KYC status from profile database"
+    operator: profile_lookup
+    datasource: supabase_events
+    table: user_profiles
+    dimension: user_id
+    dimension_value: "{event.user_id}"
+    field: kyc_status
+
+  - name: user_is_verified
+    description: "Is user identity verified?"
+    operator: profile_lookup
+    datasource: supabase_events
+    table: user_profiles
+    dimension: user_id
+    dimension_value: "{event.user_id}"
+    field: is_verified

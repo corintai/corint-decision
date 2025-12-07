@@ -1,8 +1,23 @@
-//! Feature extraction module
+//! Feature Engineering Module
 //!
-//! Provides feature extraction functionality for computing statistical features.
+//! This module provides a comprehensive feature engineering system for risk control,
+//! including:
+//! - Feature operators (count, sum, avg, count_distinct, etc.)
+//! - Feature definitions and registry
+//! - Feature execution engine with caching
+//! - Pipeline integration
 
+pub mod definition;
+pub mod executor;
 pub mod extractor;
+pub mod operator;
+pub mod registry;
 
-// Re-export for convenience
+pub use definition::{FeatureDefinition, FeatureType};
+pub use executor::FeatureExecutor;
 pub use extractor::FeatureExtractor;
+pub use operator::{
+    CacheBackend, CacheConfig, FilterConfig, FilterOp, Operator, OperatorParams, WindowConfig,
+    WindowUnit,
+};
+pub use registry::FeatureRegistry;

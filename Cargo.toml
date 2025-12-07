@@ -26,9 +26,14 @@ publish = false
 
 [dependencies]
 corint-sdk = { path = "crates/corint-sdk" }
-corint-runtime = { path = "crates/corint-runtime" }
+corint-runtime = { path = "crates/corint-runtime", features = ["sqlx"] }
 tokio = { version = "1.0", features = ["full"] }
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+serde = { workspace = true }
+serde_json = { workspace = true }
+serde_yaml = { workspace = true }
+sqlx = { version = "0.8", features = ["runtime-tokio-native-tls", "postgres", "chrono", "json"], optional = true }
+reqwest = { version = "0.11", features = ["json"], optional = true }
 
 [[example]]
 name = "simple_rule"
@@ -41,3 +46,36 @@ path = "examples/fraud_detection.rs"
 [[example]]
 name = "complete_pipeline"
 path = "examples/complete_pipeline.rs"
+
+[[example]]
+name = "feature_datasource_example"
+path = "examples/feature_datasource_example.rs"
+
+[[example]]
+name = "postgres_datasource_example"
+path = "examples/postgres_datasource_example.rs"
+
+[[example]]
+name = "postgres_query_executor"
+path = "examples/postgres_query_executor.rs"
+required-features = ["sqlx"]
+
+[[example]]
+name = "postgres_query_executor_demo"
+path = "examples/postgres_query_executor_demo.rs"
+required-features = ["sqlx"]
+
+[[example]]
+name = "test_supabase_session_pooler"
+path = "examples/test_supabase_session_pooler.rs"
+required-features = ["sqlx"]
+
+[[example]]
+name = "supabase_feature_example"
+path = "examples/supabase_feature_example.rs"
+required-features = ["sqlx"]
+
+[features]
+default = []
+sqlx = ["dep:sqlx"]
+libsql = ["dep:reqwest"]

@@ -1,0 +1,118 @@
+# IP Address Feature Definitions
+#
+# Features computed based on ip_address dimension.
+
+features:
+  # ============================================================================
+  # IP Activity Features
+  # ============================================================================
+
+  - name: ip_event_count_1h
+    description: "Total events from this IP in last 1 hour"
+    operator: count
+    entity: events
+    dimension: ip_address
+    dimension_value: "{event.ip_address}"
+    window:
+      value: 1
+      unit: hours
+    cache:
+      enabled: true
+      ttl: 60
+
+  - name: ip_login_count_24h
+    description: "Login attempts from this IP in last 24 hours"
+    operator: count
+    entity: events
+    dimension: ip_address
+    dimension_value: "{event.ip_address}"
+    window:
+      value: 24
+      unit: hours
+    filters:
+      - field: event_type
+        operator: eq
+        value: "login"
+    cache:
+      enabled: true
+      ttl: 300
+
+  # ============================================================================
+  # Cross-Dimensional Features (Association Analysis)
+  # ============================================================================
+
+  - name: devices_per_ip_5h
+    description: "Number of distinct devices from this IP in last 5 hours"
+    operator: cross_dimension_count
+    entity: events
+    primary_dimension: ip_address
+    primary_value: "{event.ip_address}"
+    secondary_dimension: device_id
+    window:
+      value: 5
+      unit: hours
+
+  - name: devices_per_ip_24h
+    description: "Number of distinct devices from this IP in last 24 hours"
+    operator: cross_dimension_count
+    entity: events
+    primary_dimension: ip_address
+    primary_value: "{event.ip_address}"
+    secondary_dimension: device_id
+    window:
+      value: 24
+      unit: hours
+
+  - name: users_per_ip_24h
+    description: "Number of distinct users from this IP in last 24 hours"
+    operator: cross_dimension_count
+    entity: events
+    primary_dimension: ip_address
+    primary_value: "{event.ip_address}"
+    secondary_dimension: user_id
+    window:
+      value: 24
+      unit: hours
+
+  - name: cities_per_ip_30d
+    description: "Number of distinct cities for this IP in last 30 days"
+    operator: count_distinct
+    entity: events
+    dimension: ip_address
+    dimension_value: "{event.ip_address}"
+    distinct_field: city
+    window:
+      value: 30
+      unit: days
+    cache:
+      enabled: true
+      ttl: 3600
+
+  # ============================================================================
+  # Velocity Features
+  # ============================================================================
+
+  - name: exceeds_ip_velocity
+    description: "Does IP exceed event velocity (> 100 per hour)?"
+    operator: velocity
+    entity: events
+    dimension: ip_address
+    dimension_value: "{event.ip_address}"
+    window:
+      value: 1
+      unit: hours
+    threshold: 100
+    cache:
+      enabled: true
+      ttl: 60
+
+  # ============================================================================
+  # Temporal Features
+  # ============================================================================
+
+  - name: ip_first_seen
+    description: "First time this IP was seen"
+    operator: first_seen
+    entity: events
+    dimension: ip_address
+    dimension_value: "{event.ip_address}"

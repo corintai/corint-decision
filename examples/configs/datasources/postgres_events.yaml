@@ -1,0 +1,28 @@
+# PostgreSQL SQL Database Configuration
+# Stores risk control events and decisions for feature calculation
+
+name: postgres_events
+type: sql
+provider: postgresql
+connection_string: "postgresql://postgres:password@localhost:5432/corint_risk"
+database: "corint_risk"
+events_table: "events"
+
+# Connection settings
+pool_size: 10
+timeout_ms: 5000
+pooling_enabled: true
+
+# PostgreSQL-specific options
+options:
+  user: "postgres"
+  password: "password"
+  # Connection pool settings
+  max_connections: "10"
+  min_connections: "2"
+  connection_timeout: "5"
+  idle_timeout: "300"
+  # Statement timeout (in seconds)
+  statement_timeout: "30"
+  # Application name for monitoring
+  application_name: "corint_decision_engine"
