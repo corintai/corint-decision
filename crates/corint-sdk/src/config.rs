@@ -9,6 +9,9 @@ pub struct EngineConfig {
     /// Rule file path(s)
     pub rule_files: Vec<PathBuf>,
 
+    /// Optional pipeline registry file path
+    pub registry_file: Option<PathBuf>,
+
     /// Storage configuration
     pub storage: Option<StorageConfig>,
 
@@ -33,6 +36,7 @@ impl EngineConfig {
     pub fn new() -> Self {
         Self {
             rule_files: Vec::new(),
+            registry_file: None,
             storage: None,
             llm: None,
             service: None,
@@ -45,6 +49,12 @@ impl EngineConfig {
     /// Add a rule file
     pub fn with_rule_file(mut self, path: PathBuf) -> Self {
         self.rule_files.push(path);
+        self
+    }
+
+    /// Set registry file
+    pub fn with_registry_file(mut self, path: PathBuf) -> Self {
+        self.registry_file = Some(path);
         self
     }
 

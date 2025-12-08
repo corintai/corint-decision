@@ -10,6 +10,22 @@ use std::collections::HashMap;
 /// A pipeline defines a sequence of processing steps
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Pipeline {
+    /// Optional unique identifier for the pipeline
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub id: Option<String>,
+    
+    /// Optional human-readable name
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    
+    /// Optional description
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    
+    /// Optional when condition - pipeline only executes if this matches
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub when: Option<super::rule::WhenBlock>,
+    
     /// The processing steps in execution order
     pub steps: Vec<Step>,
 }
@@ -185,7 +201,37 @@ pub enum ErrorAction {
 impl Pipeline {
     /// Create a new empty pipeline
     pub fn new() -> Self {
-        Self { steps: Vec::new() }
+        Self { 
+            id: None,
+            name: None,
+            description: None,
+            when: None,
+            steps: Vec::new(),
+        }
+    }
+
+    /// Set the pipeline ID
+    pub fn with_id(mut self, id: String) -> Self {
+        self.id = Some(id);
+        self
+    }
+
+    /// Set the pipeline name
+    pub fn with_name(mut self, name: String) -> Self {
+        self.name = Some(name);
+        self
+    }
+
+    /// Set the pipeline description
+    pub fn with_description(mut self, description: String) -> Self {
+        self.description = Some(description);
+        self
+    }
+
+    /// Set the when condition
+    pub fn with_when(mut self, when: super::rule::WhenBlock) -> Self {
+        self.when = Some(when);
+        self
     }
 
     /// Add a step to the pipeline

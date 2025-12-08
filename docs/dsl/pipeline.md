@@ -10,17 +10,51 @@ Pipelines orchestrate how events move through feature extraction, cognitive reas
 
 ## 1. Pipeline Structure
 
-A pipeline is a list of steps:
+### 1.1 Basic Structure
 
 ```yaml
 pipeline:
-  - <step>
-  - <step>
-  - <branch>
-  - <parallel>
-  - <aggregate>
-  - <include>
+  id: string                    # Optional unique identifier
+  name: string                  # Optional human-readable name
+  description: string           # Optional description
+  when:                         # Optional execution condition
+    event.type: string          # Event type filter
+    conditions: [...]           # Additional conditions
+  steps:                        # Processing steps
+    - <step>
+    - <step>
+    - <branch>
+    - <parallel>
+    - <aggregate>
+    - <include>
 ```
+
+### 1.2 Pipeline Metadata
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `id` | string | No | Unique identifier for the pipeline |
+| `name` | string | No | Human-readable name |
+| `description` | string | No | Detailed description of pipeline purpose |
+| `when` | object | No | Execution condition (event type filter) |
+| `steps` | array | Yes | List of processing steps |
+
+### 1.3 When Condition
+
+The `when` block controls whether the pipeline executes:
+
+```yaml
+pipeline:
+  when:
+    event.type: payment        # Only execute for payment events
+    conditions:                # Optional additional conditions
+      - amount > 100
+```
+
+If `when` condition is not met:
+- Pipeline is skipped entirely
+- No steps are executed
+- Processing continues with next pipeline/rule
 
 Each element is one of the pipeline constructs described below.
 
@@ -60,6 +94,36 @@ if: "event.amount > 1000"
 ```
 
 The step executes **only** if the condition evaluates to true.
+
+---
+
+## 2.3 Complete Pipeline Example
+
+```yaml
+version: "0.1"
+
+pipeline:
+  id: payment_risk_pipeline
+  name: Payment Risk Control Pipeline
+  description: Comprehensive payment risk assessment with routing
+  when:
+    event.type: payment         # Only execute for payment events
+  
+  steps:
+    - type: api
+      id: ip_check
+      api: ipinfo
+      endpoint: ip_lookup
+      params:
+        ip: event.ip_address
+    
+    - branch:
+        when:
+          - condition: payment_amount > 1000
+            pipeline:
+              - include:
+                  ruleset: high_value_rules
+```
 
 ---
 
@@ -165,35 +229,42 @@ Pipelines may import:
 version: "0.1"
 
 pipeline:
-  # Step 1: base feature extraction
-  - type: extract
-    id: extract_device
+  id: login_risk_pipeline
+  name: Login Risk Assessment Pipeline
+  description: Comprehensive login risk evaluation with parallel checks and LLM reasoning
+  when:
+    event.type: login
+  
+  steps:
+    # Step 1: base feature extraction
+    - type: extract
+      id: extract_device
 
-  - type: extract
-    id: extract_geo
+    - type: extract
+      id: extract_geo
 
-  # Step 2: parallel intelligence checks
-  - parallel:
-      - device_fingerprint
-      - ip_reputation
-      - llm_reasoning
-    merge:
-      method: all
+    # Step 2: parallel intelligence checks
+    - parallel:
+        - device_fingerprint
+        - ip_reputation
+        - llm_reasoning
+      merge:
+        method: all
 
-  # Step 3: execute login ruleset
-  - include:
-      ruleset: login_risk_rules
+    # Step 3: execute login ruleset
+    - include:
+        ruleset: login_risk_rules
 
-  # Step 4: score aggregation
-  - aggregate:
-      method: weighted
-      weights:
-        rules: 0.5
-        llm: 0.3
-        ip: 0.2
+    # Step 4: score aggregation
+    - aggregate:
+        method: weighted
+        weights:
+          rules: 0.5
+          llm: 0.3
+          ip: 0.2
 
-  # Step 5: final action
-  - type: action
+    # Step 5: final action
+    - type: action
 ```
 
 ---
@@ -204,8 +275,13 @@ pipeline:
 version: "0.1"
 
 pipeline:
-  - branch:
-      when:
+  id: multi_event_router
+  name: Multi-Event Type Router
+  description: Routes different event types to appropriate processing pipelines
+  
+  steps:
+    - branch:
+        when:
         - condition: "event.type == 'login'"
           pipeline:
             - extract_login

@@ -4,11 +4,33 @@ version: "0.1"
 # Demonstrates production-grade fraud patterns with multi-document YAML structure
 #
 # Architecture:
+# 0. Pipeline (entry point) - Filters transaction events with mandatory when condition
 # 1. Rules (below) - Each detects a specific fraud pattern and assigns a score
 # 2. Ruleset (at end) - Evaluates all rules and makes final decision based on:
 #    - Pattern combinations (triggered_rules contains "rule_id")
 #    - Total accumulated score (total_score >= threshold)
 #    - Number of triggers (triggered_count >= N)
+
+# ========================================
+# PART 0: PIPELINE DEFINITION
+# ========================================
+# Pipeline is the entry point with mandatory when condition
+
+pipeline:
+  id: fraud_detection_pipeline
+  name: Fraud Detection Pipeline
+  description: Production-grade fraud detection for transaction events
+  
+  # Mandatory when condition - only process transaction events
+  when:
+    event.type: transaction2
+  
+  steps:
+    # Execute the fraud detection ruleset
+    - include:
+        ruleset: fraud_detection
+
+---
 
 # ========================================
 # PART 1: FRAUD DETECTION RULES
@@ -19,15 +41,15 @@ rule:
   id: fraud_farm_pattern
   name: Fraud Farm Detection
   description: Detect organized fraud farms with high IP/device association
-
+  
+  # No need to repeat event.type here - guaranteed by pipeline
   when:
-    event.type: transaction
     conditions:
       # Multiple devices from same IP (5h window)
       - ip_device_count > 10
       # And multiple users from same IP
       - ip_user_count > 5
-
+  
   score: 100
 
 ---
@@ -37,9 +59,8 @@ rule:
   id: account_takeover_pattern
   name: Account Takeover Detection
   description: Detect unauthorized access from new device with suspicious activity
-
+  
   when:
-    event.type: transaction
     conditions:
       # New device never seen before
       - new_device_indicator == true
@@ -47,7 +68,7 @@ rule:
       - failed_login_count_1h >= 3
       # Geographic location changed
       - country_changed == true
-
+  
   score: 85
 
 ---
@@ -57,13 +78,12 @@ rule:
   id: velocity_abuse_pattern
   name: Velocity Abuse Detection
   description: Detect abnormally high transaction frequency
-
+  
   when:
-    event.type: transaction
     conditions:
       # Too many transactions in 24 hours OR velocity spike
       - transaction_count_24h > 20 || velocity_ratio > 5.0
-
+  
   score: 70
 
 ---
@@ -73,9 +93,8 @@ rule:
   id: amount_outlier_pattern
   name: Amount Outlier Detection
   description: Detect transaction amounts that are statistical outliers
-
+  
   when:
-    event.type: transaction
     conditions:
       # Z-score exceeds 3.0 (statistical outlier)
       - amount_zscore > 3.0
@@ -83,7 +102,7 @@ rule:
       - is_amount_outlier == true
       # AND exceeds absolute threshold
       - transaction_amount > 5000
-
+  
   score: 75
 
 ---
@@ -93,13 +112,12 @@ rule:
   id: suspicious_geography_pattern
   name: Suspicious Geography Detection
   description: Detect impossible travel or high-risk locations
-
+  
   when:
-    event.type: transaction
     conditions:
       # Impossible travel OR (off-hours AND country changed) OR high-risk country
       - (geo_distance_km / hours_since_last_login > 800) || (is_off_hours == true && country_changed == true) || country_risk_level == "high"
-
+  
   score: 60
 
 ---
@@ -109,15 +127,14 @@ rule:
   id: new_user_fraud_pattern
   name: New User Fraud Detection
   description: Detect new accounts with immediate high-risk behavior
-
+  
   when:
-    event.type: transaction
     conditions:
       # Account created within past 7 days
       - user_age_days < 7
       # AND (large amount OR unverified payment)
       - transaction_amount > 1000 || (new_payment_method == true && user_verified == false)
-
+  
   score: 50
 
 ---
@@ -129,10 +146,11 @@ rule:
 ruleset:
   id: fraud_detection
   name: Realistic Fraud Detection System
-
+  
   description: |
     Production-grade fraud detection demonstrating 6 realistic fraud patterns.
-
+    This ruleset is invoked by the fraud detection pipeline for transaction events.
+    
     Each rule detects a specific fraud pattern and contributes a score:
     1. Fraud Farm (100pts) - High IP/device association
     2. Account Takeover (85pts) - New device + failed logins + location change
@@ -140,7 +158,7 @@ ruleset:
     4. Amount Outlier (75pts) - Statistical anomaly
     5. Suspicious Geography (60pts) - Impossible travel
     6. New User Fraud (50pts) - Recent account + suspicious behavior
-
+    
     Decision logic uses pattern combinations and score thresholds.
 
   # Rules to evaluate (all 6 fraud detection rules)

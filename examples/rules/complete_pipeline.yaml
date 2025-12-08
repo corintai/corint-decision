@@ -1,20 +1,39 @@
 version: "0.1"
 
 # Complete Payment Risk Control Example
-# Multi-Ruleset Risk Assessment
+# Multi-Ruleset Risk Assessment with Pipeline Entry Point
 #
-# NOTE: This demonstrates multiple rulesets working together, but does NOT
-# implement true pipeline routing. All rulesets execute sequentially, with
-# the last one's action winning.
-#
-# Current Architecture (Sequential Execution):
+# Architecture (with Pipeline):
+# 0. Pipeline Entry Point - Filters payment events with mandatory when condition
 # 1. Risk Detection Rules - Calculate risk scores (5 rules execute)
 # 2. Transaction Router - First ruleset executes
 # 3. High-Value Pipeline - Second ruleset executes
 # 4. Standard Pipeline - Third ruleset executes (final action wins)
-#
-# True Pipeline DSL (with conditional routing) is documented but not yet implemented.
-# See docs/dsl/pipeline.md for the full pipeline specification.
+
+# ========================================
+# STAGE 0: PIPELINE DEFINITION
+# ========================================
+# Pipeline is the entry point with mandatory when condition
+
+pipeline:
+  id: complete_payment_pipeline
+  name: Complete Payment Risk Control Pipeline
+  description: Comprehensive multi-stage payment risk assessment with multiple rulesets
+  
+  # Mandatory when condition - only process payment events
+  when:
+    event.type: payment
+  
+  steps:
+    # Execute all three rulesets in sequence
+    - include:
+        ruleset: transaction_router
+    - include:
+        ruleset: high_value_pipeline
+    - include:
+        ruleset: standard_pipeline
+
+---
 
 # ========================================
 # STAGE 1: RISK DETECTION RULES
@@ -25,12 +44,12 @@ rule:
   id: high_risk_country
   name: High-Risk Country
   description: Geographic risk assessment
-
+  
+  # No need to repeat event.type here - guaranteed by pipeline
   when:
-    event.type: payment
     conditions:
       - country_code == "NG" || country_code == "GH" || country_code == "ID"
-
+  
   score: 30
 
 ---
@@ -40,14 +59,13 @@ rule:
   id: card_testing
   name: Card Testing Detection
   description: Multiple small transactions pattern
-
+  
   when:
-    event.type: payment
     conditions:
       - payment_attempts_1h >= 5
       - payment_amount < 10
       - unique_cards_1h >= 3
-
+  
   score: 80
 
 ---
@@ -57,12 +75,11 @@ rule:
   id: velocity_check
   name: Velocity Violation
   description: High transaction frequency
-
+  
   when:
-    event.type: payment
     conditions:
       - transaction_count_24h > 20
-
+  
   score: 50
 
 ---
@@ -72,13 +89,12 @@ rule:
   id: new_account_risk
   name: New Account High-Value
   description: New account with large purchase
-
+  
   when:
-    event.type: payment
     conditions:
       - account_age_days < 7
       - payment_amount > 500
-
+  
   score: 60
 
 ---
@@ -88,12 +104,11 @@ rule:
   id: suspicious_email
   name: Suspicious Email Pattern
   description: Disposable or random email
-
+  
   when:
-    event.type: payment
     conditions:
       - is_disposable_email == true
-
+  
   score: 35
 
 ---

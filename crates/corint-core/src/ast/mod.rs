@@ -5,10 +5,12 @@
 //! - Rules
 //! - Rulesets
 //! - Pipelines
+//! - Pipeline Registry
 
 pub mod expression;
 pub mod operator;
 pub mod pipeline;
+pub mod registry;
 pub mod rule;
 pub mod ruleset;
 
@@ -18,5 +20,6 @@ pub use pipeline::{
     Branch, FeatureDefinition, MergeStrategy, Pipeline, PromptTemplate, Schema, SchemaProperty,
     Step,
 };
+pub use registry::{PipelineRegistry, RegistryEntry};
 pub use rule::{Rule, WhenBlock};
 pub use ruleset::{Action, DecisionRule, InferConfig, Ruleset};

@@ -223,16 +223,53 @@ impl PipelineExecutor {
                 }
 
                 Instruction::CheckEventType { expected } => {
+                    // Check event_type field (only support event_type format)
                     let event_type = ctx
-                        .load_field(&[String::from("event"), String::from("type")])
-                        .or_else(|_| ctx.load_field(&[String::from("event_type")]))
+                        .load_field(&[String::from("event_type")])
                         .unwrap_or(Value::Null);
+
+                    // Get pipeline name and description for logging
+                    let pipeline_name = program.metadata.custom.get("name")
+                        .map(|s| format!(" - {}", s))
+                        .unwrap_or_default();
+                    let pipeline_desc = program.metadata.custom.get("description")
+                        .map(|s| format!(" ({})", s))
+                        .unwrap_or_default();
+
+                    tracing::debug!(
+                        "Pipeline [{}]{}{}: CheckEventType: expected={}, actual={:?}",
+                        program.metadata.source_id,
+                        pipeline_name,
+                        pipeline_desc,
+                        expected,
+                        event_type
+                    );
 
                     if let Value::String(actual) = event_type {
                         if &actual != expected {
+                            tracing::info!(
+                                "Pipeline [{}]{} skipped: event_type mismatch (expected '{}', got '{}')",
+                                program.metadata.source_id,
+                                pipeline_name,
+                                expected,
+                                actual
+                            );
                             pc = program.instructions.len();
                             continue;
+                        } else {
+                            tracing::info!(
+                                "Pipeline [{}]{}{} matched: event_type='{}' ✓",
+                                program.metadata.source_id,
+                                pipeline_name,
+                                pipeline_desc,
+                                actual
+                            );
                         }
+                    } else if event_type == Value::Null {
+                        // Event type is required but missing
+                        return Err(RuntimeError::RuntimeError(
+                            "Missing required field: event_type. Please provide event_type in your request.".to_string()
+                        ));
                     }
                     pc += 1;
                 }

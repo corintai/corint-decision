@@ -4,6 +4,27 @@ version: "0.1"
 # This ruleset demonstrates how to use calculated features in rule conditions
 
 # ========================================
+# STAGE 0: PIPELINE DEFINITION
+# ========================================
+# Pipeline is the entry point with mandatory when condition
+
+pipeline:
+  id: supabase_transaction_pipeline
+  name: Supabase Transaction Risk Pipeline
+  description: Transaction risk assessment using features calculated from Supabase PostgreSQL database
+  
+  # Mandatory when condition - only process transaction events
+  when:
+    event.type: transaction
+  
+  steps:
+    # Execute the transaction risk assessment ruleset
+    - include:
+        ruleset: supabase_risk_assessment
+
+---
+
+# ========================================
 # STAGE 1: RISK DETECTION RULES
 # ========================================
 # Rules that reference features calculated from Supabase data
@@ -13,74 +34,56 @@ rule:
   id: high_transaction_volume
   name: High Transaction Volume
   description: Detect users with unusually high transaction volume in 7 days
-
+  
+  # No need to repeat event.type here - guaranteed by pipeline
   when:
-    event.type: transaction
     conditions:
       - transaction_sum_7d > 5000
       - transaction_count_24h > 10
-
+  
   score: 50
 
 ---
 
-# Rule 2: Multiple Device Usage Detection
-rule:
-  id: multiple_devices
-  name: Multiple Device Usage
-  description: User accessing from multiple devices in short time
-
-  when:
-    event.type: login
-    conditions:
-      - unique_devices_7d >= 2
-
-  score: 40
-
----
-
-# Rule 3: High-Value Transaction Pattern
+# Rule 2: High-Value Transaction Pattern
 rule:
   id: high_value_transaction
   name: High-Value Transaction Pattern
   description: Large transaction amount detected
-
+  
   when:
-    event.type: transaction
     conditions:
-      - max_transaction_7d > 1000
-
+      - max_transaction_7d > 400
+  
   score: 35
 
 ---
 
-# Rule 4: Rapid Transaction Frequency
+# Rule 3: Rapid Transaction Frequency
 rule:
   id: rapid_transactions
   name: Rapid Transaction Frequency
   description: Too many transactions in short time window
-
+  
   when:
-    event.type: transaction
     conditions:
       - transaction_count_24h > 20
-
+  
   score: 45
 
 ---
 
-# Rule 5: Suspicious Device Pattern
+# Rule 4: Suspicious Device Pattern
 rule:
   id: suspicious_device_pattern
   name: Suspicious Device Pattern
   description: User accessing from multiple devices with high transaction volume
-
+  
   when:
-    event.type: transaction
     conditions:
       - unique_devices_7d >= 2
       - transaction_sum_7d > 3000
-
+  
   score: 60
 
 ---
@@ -88,52 +91,53 @@ rule:
 # ========================================
 # STAGE 2: DECISION RULESET
 # ========================================
+# Ruleset is a logical grouping unit, called by pipeline
 
 ruleset:
   id: supabase_risk_assessment
-  name: Supabase Feature-Based Risk Assessment
+  name: Supabase Transaction Risk Assessment
   description: |
     Risk assessment ruleset that uses features calculated from Supabase PostgreSQL database.
     Features are computed in real-time from event data stored in Supabase.
-
+    This ruleset is invoked by the transaction pipeline.
+  
   rules:
     - high_transaction_volume
-    - multiple_devices
     - high_value_transaction
     - rapid_transactions
     - suspicious_device_pattern
-
+  
   decision_logic:
     # Critical risk - immediate block
     - condition: triggered_rules contains "suspicious_device_pattern"
       action: deny
       reason: "BLOCKED: Suspicious device pattern with high transaction volume detected"
       terminate: true
-
+    
     # High risk score threshold
     - condition: total_score >= 100
       action: deny
       reason: "High risk score - transaction denied"
       terminate: true
-
+    
     # Multiple risk indicators
     - condition: triggered_count >= 3
       action: challenge
       reason: "Multiple risk indicators detected - require additional verification"
       terminate: true
-
+    
     # Medium-high risk
     - condition: total_score >= 80
       action: challenge
       reason: "Medium-high risk - require verification"
       terminate: true
-
+    
     # Medium risk
     - condition: total_score >= 35
       action: review
       reason: "Medium risk - manual review required"
       terminate: true
-
+    
     # Low risk (default)
     - default: true
       action: approve

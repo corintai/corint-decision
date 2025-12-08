@@ -1,11 +1,65 @@
+version: "0.1"
+
 # Simple Rule Example
-# Checks if transaction amount exceeds threshold
+# Demonstrates basic transaction amount check with pipeline entry point
+
+# ========================================
+# PIPELINE DEFINITION
+# ========================================
+# Pipeline is the entry point with mandatory when condition
+
+pipeline:
+  id: simple_amount_check_pipeline
+  name: Simple Amount Check Pipeline
+  description: Basic amount threshold check for transaction events
+  
+  # Mandatory when condition - only process transaction events
+  when:
+    event.type: transaction3
+  
+  steps:
+    - include:
+        ruleset: amount_check_ruleset
+
+---
+
+# ========================================
+# RULE DEFINITION
+# ========================================
 
 rule:
   id: high_amount_check
   name: High Amount Check
   description: Flag transactions over $100
+  
+  # No need to specify event.type - guaranteed by pipeline
   when:
     conditions:
       - amount > 100
+  
   score: 10
+
+---
+
+# ========================================
+# RULESET DEFINITION
+# ========================================
+# Ruleset is a logical grouping unit, called by pipeline
+
+ruleset:
+  id: amount_check_ruleset
+  name: Amount Check Ruleset
+  description: Simple ruleset for amount threshold checking
+  
+  rules:
+    - high_amount_check
+  
+  decision_logic:
+    - condition: total_score >= 10
+      action: review
+      reason: "Transaction amount exceeds threshold - review required"
+      terminate: true
+    
+    - default: true
+      action: approve
+      reason: "Amount within normal range"

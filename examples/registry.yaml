@@ -1,0 +1,35 @@
+version: "0.1"
+
+registry:
+  # Login events
+  - pipeline: login_pipeline
+    when:
+      event.type: login
+
+  # Stripe payment events (specific channel)
+  - pipeline: stripe_payment_pipeline
+    when:
+      event.type: payment
+      event.channel: stripe
+
+  # Payment events - Brazil specific
+  - pipeline: payment_br_pipeline
+    when:
+      event.type: payment
+      conditions:
+        - geo.country == "BR"
+
+  # Payment events - Main pipeline (catch-all for payment)
+  - pipeline: payment_main_pipeline
+    when:
+      event.type: payment
+
+  # Loan application events
+  - pipeline: loan_pipeline
+    when:
+      event.type: loan_application
+
+  # City-specific routing
+  - pipeline: sao_paulo_pipeline
+    when:
+      event.country.city: sao_paulo

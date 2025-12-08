@@ -6,6 +6,7 @@
 pub mod error;
 pub mod expression_parser;
 pub mod pipeline_parser;
+pub mod registry_parser;
 pub mod rule_parser;
 pub mod ruleset_parser;
 pub mod yaml_parser;
@@ -14,6 +15,7 @@ pub mod yaml_parser;
 pub use error::{ParseError, Result};
 pub use expression_parser::ExpressionParser;
 pub use pipeline_parser::PipelineParser;
+pub use registry_parser::RegistryParser;
 pub use rule_parser::RuleParser;
 pub use ruleset_parser::RulesetParser;
 pub use yaml_parser::YamlParser;

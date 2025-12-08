@@ -83,10 +83,9 @@ impl Executor {
                 }
 
                 Instruction::CheckEventType { expected } => {
-                    // Check if event.type matches expected
+                    // Check if event_type matches expected
                     let event_type = ctx
-                        .load_field(&[String::from("event"), String::from("type")])
-                        .or_else(|_| ctx.load_field(&[String::from("event_type")]))
+                        .load_field(&[String::from("event_type")])
                         .unwrap_or(Value::Null);
 
                     if let Value::String(actual) = event_type {

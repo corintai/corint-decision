@@ -4,7 +4,7 @@
 
 use corint_core::ast::{
     Branch, FeatureDefinition, MergeStrategy, Pipeline, PromptTemplate,
-    Schema, SchemaProperty, Step,
+    Schema, SchemaProperty, Step, WhenBlock,
 };
 use corint_core::ast::pipeline::{ErrorAction, ErrorHandling};
 use crate::error::{ParseError, Result};
@@ -32,6 +32,18 @@ impl PipelineParser {
                 field: "pipeline".to_string(),
             })?;
 
+        // Parse optional id, name, description
+        let id = YamlParser::get_optional_string(pipeline_obj, "id");
+        let name = YamlParser::get_optional_string(pipeline_obj, "name");
+        let description = YamlParser::get_optional_string(pipeline_obj, "description");
+
+        // Parse optional when block
+        let when = if let Some(when_obj) = pipeline_obj.get("when") {
+            Some(Self::parse_when_block(when_obj)?)
+        } else {
+            None
+        };
+
         // Parse steps - support both array directly or object with steps
         let steps = if let Some(steps_array) = pipeline_obj.as_sequence() {
             // Direct array: pipeline: [...]
@@ -49,7 +61,40 @@ impl PipelineParser {
             Vec::new()
         };
 
-        Ok(Pipeline { steps })
+        Ok(Pipeline { id, name, description, when, steps })
+    }
+
+    /// Parse when block (similar to rule when block)
+    fn parse_when_block(when_obj: &YamlValue) -> Result<WhenBlock> {
+        // Parse event type (optional)
+        // Try three formats: 1) flat "event.type" key, 2) "event_type" key, 3) nested path
+        let event_type = YamlParser::get_optional_string(when_obj, "event.type")
+            .or_else(|| YamlParser::get_optional_string(when_obj, "event_type"))
+            .or_else(|| YamlParser::get_nested_string(when_obj, "event.type"));
+
+        // Parse conditions (optional for pipeline when block)
+        let conditions = if let Some(cond_array) = when_obj.get("conditions").and_then(|v| v.as_sequence()) {
+            cond_array
+                .iter()
+                .map(|cond| {
+                    if let Some(s) = cond.as_str() {
+                        ExpressionParser::parse(s)
+                    } else {
+                        Err(ParseError::InvalidValue {
+                            field: "condition".to_string(),
+                            message: "Condition must be a string expression".to_string(),
+                        })
+                    }
+                })
+                .collect::<Result<Vec<_>>>()?
+        } else {
+            Vec::new()
+        };
+
+        Ok(WhenBlock {
+            event_type,
+            conditions,
+        })
     }
 
     /// Parse a single step

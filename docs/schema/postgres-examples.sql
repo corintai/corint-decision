@@ -463,16 +463,16 @@ HAVING COUNT(DISTINCT user_id) > 3
 ORDER BY event_count_1h DESC;
 
 -- 4.4 Calculate amount statistics for user transactions
-SELECT
-    user_id,
-    AVG((attributes->>'amount')::numeric) as avg_amount,
+    SELECT
+        user_id,
+        AVG((attributes->>'amount')::numeric) as avg_amount,
     STDDEV((attributes->>'amount')::numeric) as stddev_amount,
     MIN((attributes->>'amount')::numeric) as min_amount,
     MAX((attributes->>'amount')::numeric) as max_amount
-FROM events
-WHERE event_type = 'transaction'
-  AND event_timestamp > NOW() - INTERVAL '30 days'
-GROUP BY user_id
+    FROM events
+    WHERE event_type = 'transaction'
+      AND event_timestamp > NOW() - INTERVAL '30 days'
+    GROUP BY user_id
 ORDER BY avg_amount DESC;
 
 -- 4.5 Calculate cross-device usage pattern (multiple users per device)

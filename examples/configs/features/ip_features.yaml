@@ -10,6 +10,7 @@ features:
   - name: ip_event_count_1h
     description: "Total events from this IP in last 1 hour"
     operator: count
+    datasource: supabase_events
     entity: events
     dimension: ip_address
     dimension_value: "{event.ip_address}"
@@ -23,6 +24,7 @@ features:
   - name: ip_login_count_24h
     description: "Login attempts from this IP in last 24 hours"
     operator: count
+    datasource: supabase_events
     entity: events
     dimension: ip_address
     dimension_value: "{event.ip_address}"
@@ -44,6 +46,7 @@ features:
   - name: devices_per_ip_5h
     description: "Number of distinct devices from this IP in last 5 hours"
     operator: cross_dimension_count
+    datasource: supabase_events
     entity: events
     primary_dimension: ip_address
     primary_value: "{event.ip_address}"
@@ -55,6 +58,7 @@ features:
   - name: devices_per_ip_24h
     description: "Number of distinct devices from this IP in last 24 hours"
     operator: cross_dimension_count
+    datasource: supabase_events
     entity: events
     primary_dimension: ip_address
     primary_value: "{event.ip_address}"
@@ -66,6 +70,7 @@ features:
   - name: users_per_ip_24h
     description: "Number of distinct users from this IP in last 24 hours"
     operator: cross_dimension_count
+    datasource: supabase_events
     entity: events
     primary_dimension: ip_address
     primary_value: "{event.ip_address}"
@@ -77,6 +82,7 @@ features:
   - name: cities_per_ip_30d
     description: "Number of distinct cities for this IP in last 30 days"
     operator: count_distinct
+    datasource: supabase_events
     entity: events
     dimension: ip_address
     dimension_value: "{event.ip_address}"
@@ -95,6 +101,7 @@ features:
   - name: exceeds_ip_velocity
     description: "Does IP exceed event velocity (> 100 per hour)?"
     operator: velocity
+    datasource: supabase_events
     entity: events
     dimension: ip_address
     dimension_value: "{event.ip_address}"
@@ -113,6 +120,7 @@ features:
   - name: ip_first_seen
     description: "First time this IP was seen"
     operator: first_seen
+    datasource: supabase_events
     entity: events
     dimension: ip_address
     dimension_value: "{event.ip_address}"

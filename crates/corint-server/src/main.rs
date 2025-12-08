@@ -9,9 +9,11 @@ mod error;
 use crate::config::ServerConfig;
 use anyhow::Result;
 use corint_sdk::DecisionEngineBuilder;
+use corint_runtime::datasource::{DataSourceClient, DataSourceConfig};
+use corint_runtime::feature::{FeatureExecutor, FeatureRegistry};
 use std::sync::Arc;
 use tokio::net::TcpListener;
-use tracing::{info, error};
+use tracing::{info, error, warn};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 #[tokio::main]
@@ -64,6 +66,15 @@ async fn init_engine(config: &ServerConfig) -> Result<corint_sdk::DecisionEngine
         .enable_metrics(config.enable_metrics)
         .enable_tracing(config.enable_tracing);
 
+    // Initialize feature executor (for lazy feature calculation)
+    let feature_executor = init_feature_executor().await?;
+    if let Some(executor) = feature_executor {
+        info!("✓ Feature executor initialized");
+        builder = builder.with_feature_executor(Arc::new(executor));
+    } else {
+        warn!("Feature executor not initialized - features will not be available");
+    }
+
     // Load rule files from rules directory
     if config.rules_dir.exists() {
         info!("Loading rules from directory: {:?}", config.rules_dir);
@@ -91,4 +102,115 @@ async fn init_engine(config: &ServerConfig) -> Result<corint_sdk::DecisionEngine
     let engine = builder.build().await?;
     
     Ok(engine)
+}
+
+/// Initialize feature executor with datasources and features
+async fn init_feature_executor() -> Result<Option<FeatureExecutor>> {
+    // Check if datasource config exists
+    let datasource_dir = std::path::Path::new("examples/configs/datasources");
+    if !datasource_dir.exists() {
+        info!("Datasource directory not found: {:?}", datasource_dir);
+        return Ok(None);
+    }
+
+    // Check if feature config exists
+    let feature_dir = std::path::Path::new("examples/configs/features");
+    if !feature_dir.exists() {
+        info!("Feature directory not found: {:?}", feature_dir);
+        return Ok(None);
+    }
+
+    let mut executor = FeatureExecutor::new().with_stats();
+
+    // Load datasource configurations
+    info!("Loading datasources from: {:?}", datasource_dir);
+    let mut datasource_count = 0;
+    
+    if let Ok(entries) = std::fs::read_dir(datasource_dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.extension().and_then(|s| s.to_str()) == Some("yaml") {
+                match std::fs::read_to_string(&path) {
+                    Ok(content) => {
+                        match serde_yaml::from_str::<DataSourceConfig>(&content) {
+                            Ok(config) => {
+                                let datasource_name = config.name.clone();
+                                match DataSourceClient::new(config).await {
+                                    Ok(client) => {
+                                        executor.add_datasource(&datasource_name, client);
+                                        info!("  ✓ Loaded datasource: {}", datasource_name);
+                                        datasource_count += 1;
+                                        
+                                        // Also register as "default" if it's the first datasource
+                                        if datasource_count == 1 {
+                                            // Need to create another client for "default"
+                                            let content_clone = std::fs::read_to_string(&path)?;
+                                            let config_clone: DataSourceConfig = serde_yaml::from_str(&content_clone)?;
+                                            if let Ok(client_clone) = DataSourceClient::new(config_clone).await {
+                                                executor.add_datasource("default", client_clone);
+                                                info!("  ✓ Registered as default datasource");
+                                            }
+                                        }
+                                    }
+                                    Err(e) => {
+                                        warn!("  ✗ Failed to create datasource {}: {}", datasource_name, e);
+                                    }
+                                }
+                            }
+                            Err(e) => {
+                                warn!("  ✗ Failed to parse datasource config {:?}: {}", path, e);
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        warn!("  ✗ Failed to read datasource config {:?}: {}", path, e);
+                    }
+                }
+            }
+        }
+    }
+
+    if datasource_count == 0 {
+        info!("No datasources loaded");
+        return Ok(None);
+    }
+
+    // Load feature definitions
+    info!("Loading features from: {:?}", feature_dir);
+    let mut registry = FeatureRegistry::new();
+    let mut feature_file_count = 0;
+
+    if let Ok(entries) = std::fs::read_dir(feature_dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.extension().and_then(|s| s.to_str()) == Some("yaml") {
+                match registry.load_from_file(&path) {
+                    Ok(_) => {
+                        info!("  ✓ Loaded features from: {:?}", path.file_name());
+                        feature_file_count += 1;
+                    }
+                    Err(e) => {
+                        warn!("  ✗ Failed to load features from {:?}: {}", path, e);
+                    }
+                }
+            }
+        }
+    }
+
+    // Register features to executor
+    for feature in registry.all_features() {
+        if let Err(e) = executor.register_feature(feature.clone()) {
+            warn!("  ✗ Failed to register feature {}: {}", feature.name, e);
+        }
+    }
+
+    let feature_count = registry.count();
+    if feature_count == 0 {
+        info!("No features loaded");
+        return Ok(None);
+    }
+
+    info!("✓ Loaded {} datasources, {} features", datasource_count, feature_count);
+    
+    Ok(Some(executor))
 }

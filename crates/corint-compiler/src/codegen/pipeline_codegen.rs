@@ -15,16 +15,75 @@ impl PipelineCompiler {
     pub fn compile(pipeline: &Pipeline) -> Result<Program> {
         let mut instructions = Vec::new();
 
-        // Compile each step in the pipeline
+        // 1. Check event type if specified in when block
+        if let Some(ref when_block) = pipeline.when {
+            if let Some(ref event_type) = when_block.event_type {
+                instructions.push(Instruction::CheckEventType {
+                    expected: event_type.clone(),
+                });
+            }
+
+            // 2. Compile when conditions (if any)
+            if !when_block.conditions.is_empty() {
+                use crate::codegen::expression_codegen::ExpressionCompiler;
+                
+                // Compile all conditions
+                let mut condition_blocks = Vec::new();
+                for condition in &when_block.conditions {
+                    let condition_instructions = ExpressionCompiler::compile(condition)?;
+                    condition_blocks.push(condition_instructions);
+                }
+
+                // Calculate total instructions to skip if conditions fail
+                let mut steps_instruction_count = 0;
+                for step in &pipeline.steps {
+                    steps_instruction_count += Self::compile_step(step)?.len();
+                }
+                steps_instruction_count += 1; // +1 for Return instruction
+
+                // Add conditions with correct jump offsets
+                for (idx, condition_instructions) in condition_blocks.iter().enumerate() {
+                    instructions.extend(condition_instructions.clone());
+
+                    // Calculate how many instructions to skip if this condition is false
+                    let mut remaining_instruction_count = steps_instruction_count;
+
+                    for remaining_block in &condition_blocks[idx + 1..] {
+                        remaining_instruction_count += remaining_block.len() + 1; // +1 for JumpIfFalse
+                    }
+
+                    instructions.push(Instruction::JumpIfFalse {
+                        offset: remaining_instruction_count as isize
+                    });
+                }
+            }
+        }
+
+        // 3. Compile each step in the pipeline
         for step in &pipeline.steps {
             instructions.extend(Self::compile_step(step)?);
         }
 
-        // Add return instruction
+        // 4. Add return instruction
         instructions.push(Instruction::Return);
 
-        // Create program metadata
-        let metadata = ProgramMetadata::for_pipeline("pipeline".to_string());
+        // Create program metadata with pipeline id, name, description
+        let pipeline_id = pipeline.id.clone().unwrap_or_else(|| "pipeline".to_string());
+        let mut metadata = ProgramMetadata::for_pipeline(pipeline_id);
+        
+        // Add name and description to custom metadata
+        if let Some(ref name) = pipeline.name {
+            metadata.custom.insert("name".to_string(), name.clone());
+        }
+        if let Some(ref description) = pipeline.description {
+            metadata.custom.insert("description".to_string(), description.clone());
+        }
+        // Add event_type hint for pre-filtering pipelines at runtime
+        if let Some(ref when_block) = pipeline.when {
+            if let Some(ref event_type) = when_block.event_type {
+                metadata.custom.insert("event_type".to_string(), event_type.clone());
+            }
+        }
 
         Ok(Program::new(instructions, metadata))
     }

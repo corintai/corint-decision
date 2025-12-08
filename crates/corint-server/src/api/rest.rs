@@ -83,11 +83,28 @@ async fn decide(
     info!("Received decision request with {} event fields", payload.event_data.len());
 
     // Convert serde_json::Value to corint_core::Value
-    let event_data: HashMap<String, Value> = payload
+    let event_fields: HashMap<String, Value> = payload
         .event_data
         .into_iter()
         .map(|(k, v)| (k, json_to_value(v)))
         .collect();
+
+    // Create event_data with dual structure:
+    // 1. Original nested structure under "event" key (semantic clarity)
+    // 2. Completely flattened structure with dot notation (fast lookup)
+    let mut event_data = HashMap::new();
+    
+    // Store original nested structure
+    let event_object = Value::Object(event_fields.clone());
+    event_data.insert("event".to_string(), event_object.clone());
+    
+    // Store top-level fields for backward compatibility
+    for (key, value) in &event_fields {
+        event_data.insert(key.clone(), value.clone());
+    }
+    
+    // Flatten the entire event object recursively
+    flatten_object("event", &event_object, &mut event_data);
 
     // Create decision request
     let request = DecisionRequest::new(event_data);
@@ -136,6 +153,47 @@ fn json_to_value(v: serde_json::Value) -> Value {
     }
 }
 
+/// Recursively flatten nested objects into dot-notation keys
+/// 
+/// Example:
+/// ```
+/// event = {
+///   user: {
+///     id: "123",
+///     profile: {
+///       tier: "gold"
+///     }
+///   },
+///   amount: 1000
+/// }
+/// ```
+/// 
+/// Produces:
+/// ```
+/// event.user.id = "123"
+/// event.user.profile.tier = "gold"
+/// event.amount = 1000
+/// ```
+fn flatten_object(prefix: &str, value: &Value, result: &mut HashMap<String, Value>) {
+    match value {
+        Value::Object(map) => {
+            for (key, val) in map {
+                let new_prefix = format!("{}.{}", prefix, key);
+                // Store this level
+                result.insert(new_prefix.clone(), val.clone());
+                // Recursively flatten if it's an object
+                if matches!(val, Value::Object(_)) {
+                    flatten_object(&new_prefix, val, result);
+                }
+            }
+        }
+        _ => {
+            // For non-object values, just store as-is
+            result.insert(prefix.to_string(), value.clone());
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -159,6 +217,50 @@ mod tests {
         } else {
             panic!("Expected Object");
         }
+    }
+
+    #[test]
+    fn test_flatten_object_simple() {
+        let mut obj = HashMap::new();
+        obj.insert("user_id".to_string(), Value::String("user_001".to_string()));
+        obj.insert("amount".to_string(), Value::Number(1000.0));
+        
+        let event = Value::Object(obj);
+        let mut result = HashMap::new();
+        
+        flatten_object("event", &event, &mut result);
+        
+        assert_eq!(result.get("event.user_id"), Some(&Value::String("user_001".to_string())));
+        assert_eq!(result.get("event.amount"), Some(&Value::Number(1000.0)));
+    }
+
+    #[test]
+    fn test_flatten_object_nested() {
+        // Create nested structure: event.user.profile.tier = "gold"
+        let mut profile = HashMap::new();
+        profile.insert("tier".to_string(), Value::String("gold".to_string()));
+        profile.insert("age".to_string(), Value::Number(30.0));
+        
+        let mut user = HashMap::new();
+        user.insert("id".to_string(), Value::String("user_001".to_string()));
+        user.insert("profile".to_string(), Value::Object(profile));
+        
+        let mut event_obj = HashMap::new();
+        event_obj.insert("user".to_string(), Value::Object(user));
+        event_obj.insert("amount".to_string(), Value::Number(1000.0));
+        
+        let event = Value::Object(event_obj);
+        let mut result = HashMap::new();
+        
+        flatten_object("event", &event, &mut result);
+        
+        // Check all levels are flattened
+        assert!(result.contains_key("event.user"));
+        assert_eq!(result.get("event.user.id"), Some(&Value::String("user_001".to_string())));
+        assert!(result.contains_key("event.user.profile"));
+        assert_eq!(result.get("event.user.profile.tier"), Some(&Value::String("gold".to_string())));
+        assert_eq!(result.get("event.user.profile.age"), Some(&Value::Number(30.0)));
+        assert_eq!(result.get("event.amount"), Some(&Value::Number(1000.0)));
     }
 }
 

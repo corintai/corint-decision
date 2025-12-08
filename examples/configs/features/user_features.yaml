@@ -30,6 +30,7 @@ features:
   - name: login_count_1h
     description: "Number of login events in last 1 hour"
     operator: count
+    datasource: supabase_events
     entity: events
     dimension: user_id
     dimension_value: "{event.user_id}"
@@ -48,6 +49,7 @@ features:
   - name: failed_login_count_1h
     description: "Number of failed login attempts in last 1 hour"
     operator: count
+    datasource: supabase_events
     entity: events
     dimension: user_id
     dimension_value: "{event.user_id}"
@@ -68,6 +70,7 @@ features:
   - name: transaction_count_24h
     description: "Number of transactions in last 24 hours"
     operator: count
+    datasource: supabase_events
     entity: events
     dimension: user_id
     dimension_value: "{event.user_id}"
@@ -89,6 +92,7 @@ features:
   - name: transaction_sum_24h
     description: "Total transaction amount in last 24 hours"
     operator: sum
+    datasource: supabase_events
     entity: events
     dimension: user_id
     dimension_value: "{event.user_id}"
@@ -107,6 +111,7 @@ features:
   - name: transaction_sum_7d
     description: "Total transaction amount in last 7 days"
     operator: sum
+    datasource: supabase_events
     entity: events
     dimension: user_id
     dimension_value: "{event.user_id}"
@@ -125,6 +130,7 @@ features:
   - name: avg_transaction_30d
     description: "Average transaction amount in last 30 days"
     operator: avg
+    datasource: supabase_events
     entity: events
     dimension: user_id
     dimension_value: "{event.user_id}"
@@ -143,6 +149,7 @@ features:
   - name: max_transaction_7d
     description: "Maximum transaction amount in last 7 days"
     operator: max
+    datasource: supabase_events
     entity: events
     dimension: user_id
     dimension_value: "{event.user_id}"
@@ -165,6 +172,7 @@ features:
   - name: unique_devices_7d
     description: "Number of distinct devices used in last 7 days"
     operator: count_distinct
+    datasource: supabase_events
     entity: events
     dimension: user_id
     dimension_value: "{event.user_id}"
@@ -179,6 +187,7 @@ features:
   - name: unique_devices_30d
     description: "Number of distinct devices used in last 30 days"
     operator: count_distinct
+    datasource: supabase_events
     entity: events
     dimension: user_id
     dimension_value: "{event.user_id}"
@@ -193,6 +202,7 @@ features:
   - name: unique_ips_24h
     description: "Number of distinct IP addresses in last 24 hours"
     operator: count_distinct
+    datasource: supabase_events
     entity: events
     dimension: user_id
     dimension_value: "{event.user_id}"
@@ -207,6 +217,7 @@ features:
   - name: unique_cities_30d
     description: "Number of distinct cities accessed from in last 30 days"
     operator: count_distinct
+    datasource: supabase_events
     entity: events
     dimension: user_id
     dimension_value: "{event.user_id}"
@@ -225,6 +236,7 @@ features:
   - name: account_first_seen
     description: "Timestamp of first user event"
     operator: first_seen
+    datasource: supabase_events
     entity: events
     dimension: user_id
     dimension_value: "{event.user_id}"
@@ -232,6 +244,7 @@ features:
   - name: last_login_at
     description: "Timestamp of last login"
     operator: last_seen
+    datasource: supabase_events
     entity: events
     dimension: user_id
     dimension_value: "{event.user_id}"
@@ -243,6 +256,7 @@ features:
   - name: account_age_days
     description: "Days since account creation"
     operator: time_since
+    datasource: supabase_events
     entity: events
     dimension: user_id
     dimension_value: "{event.user_id}"
@@ -259,6 +273,7 @@ features:
   - name: exceeds_login_velocity
     description: "Does user exceed maximum login velocity (> 10 per hour)?"
     operator: velocity
+    datasource: supabase_events
     entity: events
     dimension: user_id
     dimension_value: "{event.user_id}"
@@ -277,6 +292,7 @@ features:
   - name: exceeds_transaction_velocity
     description: "Does user exceed transaction velocity (> 5 per hour)?"
     operator: velocity
+    datasource: supabase_events
     entity: events
     dimension: user_id
     dimension_value: "{event.user_id}"
