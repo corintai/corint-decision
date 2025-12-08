@@ -75,6 +75,48 @@ async fn init_engine(config: &ServerConfig) -> Result<corint_sdk::DecisionEngine
         warn!("Feature executor not initialized - features will not be available");
     }
 
+    // Initialize result writer for decision persistence (if database_url is configured)
+    #[cfg(feature = "sqlx")]
+    {
+        // Try to get database URL from config first, then fall back to environment variable
+        info!("Checking database configuration...");
+        info!("  Config database_url: {:?}", config.database_url);
+        
+        let database_url = config.database_url.clone()
+            .or_else(|| {
+                let env_url = std::env::var("DATABASE_URL").ok();
+                info!("  Environment DATABASE_URL: {:?}", env_url.is_some());
+                env_url
+            });
+        
+        if let Some(database_url) = database_url {
+            info!("Initializing decision result writer with database: {}", database_url);
+            match sqlx::postgres::PgPoolOptions::new()
+                .max_connections(5)
+                .connect(&database_url)
+                .await
+            {
+                Ok(pool) => {
+                    info!("✓ Database connection pool created");
+                    info!("Calling builder.with_result_writer()...");
+                    builder = builder.with_result_writer(pool);
+                    info!("✓ Decision result persistence enabled");
+                }
+                Err(e) => {
+                    error!("Failed to create database connection pool: {}", e);
+                    warn!("Decision result persistence will be disabled");
+                }
+            }
+        } else {
+            warn!("Database URL not configured, decision result persistence disabled");
+            warn!("  To enable persistence, set 'database_url' in config/server.yaml or DATABASE_URL environment variable");
+        }
+    }
+    #[cfg(not(feature = "sqlx"))]
+    {
+        info!("sqlx feature not enabled, decision result persistence unavailable");
+    }
+
     // Load rule files from rules directory
     if config.rules_dir.exists() {
         info!("Loading rules from directory: {:?}", config.rules_dir);

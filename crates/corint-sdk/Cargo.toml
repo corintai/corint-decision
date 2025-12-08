@@ -9,7 +9,7 @@ description = "SDK for CORINT Decision Engine - High-level API for decision maki
 corint-core = { path = "../corint-core" }
 corint-parser = { path = "../corint-parser" }
 corint-compiler = { path = "../corint-compiler" }
-corint-runtime = { path = "../corint-runtime" }
+corint-runtime = { path = "../corint-runtime", optional = false }
 thiserror = { workspace = true }
 anyhow = { workspace = true }
 serde = { workspace = true }
@@ -18,6 +18,11 @@ serde_yaml = { workspace = true }
 tokio = { version = "1.0", features = ["full"] }
 async-trait = "0.1"
 tracing = "0.1"
+sqlx = { version = "0.8", features = ["runtime-tokio-native-tls", "postgres"], optional = true }
+
+[features]
+default = []
+sqlx = ["dep:sqlx", "corint-runtime/sqlx"]
 
 [dev-dependencies]
 tokio = { version = "1.0", features = ["full", "test-util"] }

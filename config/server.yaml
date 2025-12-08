@@ -19,3 +19,9 @@ enable_tracing: true
 # Log level (trace, debug, info, warn, error)
 log_level: "info"
 
+# Database URL for decision result persistence (optional)
+# If not set, decision results will not be persisted to database
+# You can also set DATABASE_URL environment variable as an alternative
+# Example: postgresql://user:password@localhost:5432/corint_risk
+# database_url: "postgresql://postgres:password@localhost:5432/corint_risk"
+database_url: "postgresql://postgres.hfsbvqfkwbslcuvokmis:XPRozJ3DZox5KUnh@aws-1-ap-southeast-1.pooler.supabase.com:5432/postgres?sslmode=require"

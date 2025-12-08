@@ -77,6 +77,9 @@ pub struct DecisionEngine {
 
     /// Configuration
     config: EngineConfig,
+
+    /// Optional decision result writer for persisting decision results
+    pub(crate) result_writer: Option<Arc<corint_runtime::DecisionResultWriter>>,
 }
 
 impl DecisionEngine {
@@ -181,6 +184,7 @@ impl DecisionEngine {
             executor,
             metrics,
             config,
+            result_writer: None,
         })
     }
 
@@ -726,6 +730,71 @@ impl DecisionEngine {
         }
 
         let processing_time_ms = start.elapsed().as_millis() as u64;
+
+        // Persist decision result asynchronously if result writer is configured
+        tracing::debug!("Checking result_writer in DecisionEngine.decide()...");
+        tracing::debug!("  Engine has result_writer: {}", self.result_writer.is_some());
+        
+        if let Some(ref result_writer) = self.result_writer {
+            tracing::debug!("Result writer is configured, preparing to persist decision result");
+            
+            // Extract request_id and event_id from metadata
+            let request_id = request.metadata.get("request_id")
+                .cloned()
+                .unwrap_or_else(|| {
+                    // Generate a simple request ID using timestamp
+                    use std::time::{SystemTime, UNIX_EPOCH};
+                    let timestamp = SystemTime::now()
+                        .duration_since(UNIX_EPOCH)
+                        .unwrap()
+                        .as_nanos();
+                    format!("req_{}", timestamp)
+                });
+            let event_id = request.metadata.get("event_id").cloned();
+            
+            tracing::debug!("Request ID: {}, Event ID: {:?}", request_id, event_id);
+            
+            // Determine pipeline_id (use first matched pipeline or default)
+            let pipeline_id = if let Some(ref registry) = self.registry {
+                // Find the matched pipeline from registry
+                registry.registry.iter()
+                    .find(|entry| Self::evaluate_when_block(&entry.when, &request.event_data))
+                    .map(|entry| entry.pipeline.clone())
+                    .unwrap_or_else(|| "unknown".to_string())
+            } else if !self.pipeline_map.is_empty() {
+                // Use first pipeline ID
+                self.pipeline_map.keys().next().cloned().unwrap_or_else(|| "unknown".to_string())
+            } else {
+                "unknown".to_string()
+            };
+            
+            tracing::debug!("Pipeline ID: {}", pipeline_id);
+            
+            // Create decision record
+            let decision_record = corint_runtime::DecisionRecord::from_decision_result(
+                request_id.clone(),
+                event_id,
+                pipeline_id,
+                &combined_result,
+                processing_time_ms,
+                vec![], // TODO: Track individual rule executions
+            );
+            
+            tracing::info!("Queuing decision record for persistence: request_id={}, score={}, action={:?}", 
+                request_id, combined_result.score, combined_result.action);
+            
+            // Write asynchronously (non-blocking)
+            match result_writer.write_decision(decision_record) {
+                Ok(()) => {
+                    tracing::info!("Decision record queued successfully for request_id: {}", request_id);
+                }
+                Err(e) => {
+                    tracing::error!("Failed to queue decision record for request_id {}: {}", request_id, e);
+                }
+            }
+        } else {
+            tracing::debug!("Result writer not configured, skipping persistence");
+        }
 
         Ok(DecisionResponse {
             result: combined_result,

@@ -23,6 +23,11 @@ pub struct ServerConfig {
     
     /// Log level
     pub log_level: String,
+    
+    /// Database URL for decision result persistence (optional)
+    /// If not set, decision results will not be persisted to database
+    #[serde(default)]
+    pub database_url: Option<String>,
 }
 
 impl Default for ServerConfig {
@@ -34,6 +39,7 @@ impl Default for ServerConfig {
             enable_metrics: true,
             enable_tracing: true,
             log_level: "info".to_string(),
+            database_url: None,
         }
     }
 }

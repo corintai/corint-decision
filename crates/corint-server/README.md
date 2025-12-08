@@ -10,6 +10,7 @@ HTTP/REST API server for CORINT Decision Engine.
 - **CORS Support**: Cross-origin resource sharing enabled
 - **Request Tracing**: Built-in request/response tracing
 - **Lazy Feature Calculation**: Features are calculated on-demand from data sources during rule execution
+- **Decision Result Persistence**: Automatically saves decision results to PostgreSQL database for audit and analysis
 
 ## Quick Start
 
@@ -41,6 +42,8 @@ CORINT_RULES_DIR=examples/rules
 CORINT_ENABLE_METRICS=true
 CORINT_ENABLE_TRACING=true
 CORINT_LOG_LEVEL=info
+# Optional: Database URL for decision result persistence
+DATABASE_URL=postgresql://user:password@localhost:5432/corint_risk
 ```
 
 ### Config File Example
@@ -54,13 +57,21 @@ rules_dir: "examples/rules"
 enable_metrics: true
 enable_tracing: true
 log_level: "info"
+# Optional: Database URL for decision result persistence
+# If not set, decision results will not be saved to database
+database_url: "postgresql://user:password@localhost:5432/corint_risk"
 ```
 
 ### Configuration Priority
 
-1. Environment variables (`CORINT_*`)
+1. Environment variables (`CORINT_*` and `DATABASE_URL`)
 2. Config file (`config/server.yaml`)
 3. Default values (`ServerConfig::default()`)
+
+**Note**: For `database_url`, the priority is:
+1. Config file (`database_url` field)
+2. Environment variable (`DATABASE_URL`)
+3. If neither is set, decision result persistence is disabled
 
 ## API Endpoints
 
@@ -289,6 +300,7 @@ let engine = DecisionEngineBuilder::new()
     .add_rule_file(path)
     .enable_metrics(true)
     .with_feature_executor(feature_executor)  // Lazy feature calculation
+    .with_result_writer(pool)                 // Decision result persistence
     .build()
     .await?;
 ```
@@ -471,6 +483,100 @@ RUST_LOG=corint_server=debug,corint_runtime=info cargo run -p corint-server
 - Rule execution tracing
 - Feature calculation tracing
 - Database query tracing
+- Decision result persistence tracing
+
+## Decision Result Persistence
+
+The server can automatically persist decision results to PostgreSQL database for:
+- **Problem Investigation**: Query historical decisions to troubleshoot issues
+- **Decision Review**: Review and analyze past decisions for quality assurance
+- **Audit Trail**: Maintain complete audit trail of all decisions
+- **Analytics**: Analyze decision patterns and rule performance
+
+### Configuration
+
+Configure database connection in `config/server.yaml`:
+
+```yaml
+database_url: "postgresql://user:password@localhost:5432/corint_risk"
+```
+
+Or use environment variable:
+
+```bash
+export DATABASE_URL="postgresql://user:password@localhost:5432/corint_risk"
+```
+
+**Priority**: Config file `database_url` > Environment variable `DATABASE_URL` > Disabled
+
+### Database Tables
+
+The server writes to two tables:
+
+1. **`risk_decisions`**: Main decision results
+   - `request_id`: Unique request identifier
+   - `risk_score`: Overall risk score
+   - `decision`: Decision action (approve, deny, review, etc.)
+   - `triggered_rules`: Array of triggered rule IDs
+   - `rule_scores`: Individual rule scores (JSONB)
+   - `feature_values`: Calculated feature values (JSONB)
+   - `processing_time_ms`: Decision processing time
+   - `created_at`: Timestamp
+
+2. **`rule_executions`**: Individual rule execution logs
+   - `request_id`: Links to risk_decisions
+   - `rule_id`: Rule identifier
+   - `triggered`: Whether rule was triggered
+   - `score`: Rule score (if triggered)
+   - `feature_values`: Feature values used in this rule (JSONB)
+   - `created_at`: Timestamp
+
+### Database Schema
+
+Ensure the database tables exist. See `docs/schema/postgres-schema.sql` for the complete schema.
+
+### Features
+
+- **Asynchronous Writing**: Results are written in background, non-blocking
+- **Transaction Safety**: Both tables are written in a single transaction
+- **Error Handling**: Write failures are logged but don't affect decision execution
+- **Automatic**: No code changes needed, just configure database URL
+
+### Querying Results
+
+```sql
+-- Get recent decisions
+SELECT * FROM risk_decisions 
+ORDER BY created_at DESC 
+LIMIT 10;
+
+-- Find high-risk decisions
+SELECT * FROM risk_decisions 
+WHERE risk_score > 80 
+ORDER BY created_at DESC;
+
+-- Analyze rule performance
+SELECT 
+    rule_id,
+    COUNT(*) as total_executions,
+    SUM(CASE WHEN triggered THEN 1 ELSE 0 END) as triggered_count,
+    AVG(score) as avg_score
+FROM rule_executions
+WHERE created_at >= NOW() - INTERVAL '24 hours'
+GROUP BY rule_id;
+```
+
+### Verification
+
+After starting the server with database URL configured, you should see:
+
+```
+INFO Initializing decision result writer with database: postgresql://...
+INFO ✓ Database connection pool created
+INFO ✓ Decision result persistence enabled
+```
+
+When executing decisions, results are automatically saved to the database.
 
 ## Known Issues and Limitations
 
@@ -528,8 +634,9 @@ CORINT Server successfully implements:
 2. ✅ Flexible configuration system
 3. ✅ Robust error handling
 4. ✅ Lazy feature calculation integration
-5. ✅ Complete documentation and examples
-6. ✅ Production-ready architecture
+5. ✅ Decision result persistence to database
+6. ✅ Complete documentation and examples
+7. ✅ Production-ready architecture
 
 The server is ready for development and testing environments, and can be enhanced incrementally to meet production requirements.
 
