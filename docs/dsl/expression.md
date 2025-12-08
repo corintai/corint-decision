@@ -31,6 +31,25 @@ device.fingerprint.hash
 geo.location.country
 ```
 
+**Feature Access**: All calculated features must be accessed using the `features.` namespace prefix:
+
+```yaml
+features.transaction_sum_7d
+features.login_count_24h
+features.unique_devices_7d
+```
+
+**Examples:**
+```yaml
+# Event fields (no prefix)
+- event.amount > 1000
+- user.profile.tier == "premium"
+
+# Calculated features (features. prefix required)
+- features.transaction_sum_7d > 5000
+- features.login_count_24h > 10
+```
+
 ### 2.2 Array/List Indexing
 
 ```yaml

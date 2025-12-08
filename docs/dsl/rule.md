@@ -85,8 +85,12 @@ Example:
 conditions:
   - geo.country in ["RU", "NG"]
   - device.is_new == true
-  - user.login_failed_count > 3
+  - features.login_failed_count_24h > 3  # Feature access with features. prefix
 ```
+
+**Note**: When accessing calculated features, always use the `features.` namespace prefix:
+- ✅ `features.transaction_sum_7d > 5000` - Correct
+- ❌ `transaction_sum_7d > 5000` - Incorrect (will not work)
 
 #### Supported Operators
 

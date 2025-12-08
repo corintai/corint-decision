@@ -218,6 +218,13 @@ RDL includes comprehensive feature engineering capabilities for risk control sce
   - Z-score and outlier detection
   - Moving averages and rolling windows
 
+**Feature Access**: All calculated features must be accessed using the `features.` namespace prefix:
+  ```yaml
+  conditions:
+    - features.transaction_sum_7d > 5000
+    - features.login_count_24h > 10
+  ```
+
 - **Velocity Features** - Rate of change detection
   ```yaml
   login_velocity_ratio: (count(logins, last_24h) / count(logins, last_7d)) * 7

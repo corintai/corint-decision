@@ -224,7 +224,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!();
     
     println!("Pipeline Overview:");
-    println!("  1. Rules execute and reference features by name (e.g., transaction_sum_7d > 5000)");
+    println!("  1. Rules execute and reference features using features. prefix (e.g., features.transaction_sum_7d > 5000)");
     println!("  2. Features are automatically calculated from Supabase when rules access them");
     println!("  3. Feature values are cached in event_data for subsequent accesses");
     println!("  4. Ruleset evaluates rule conditions using feature values");
@@ -354,7 +354,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
              test_response.result.triggered_rules.len());
     println!();
     println!("Pipeline Flow:");
-    println!("  1. Rules execute and reference features by name (e.g., transaction_sum_7d > 5000)");
+    println!("  1. Rules execute and reference features using features. prefix (e.g., features.transaction_sum_7d > 5000)");
     println!("  2. PipelineExecutor's LoadField instruction checks if field exists in event_data");
     println!("  3. If not found, checks if it's a registered feature name");
     println!("  4. If it's a feature, FeatureExecutor calculates it from Supabase on-demand");

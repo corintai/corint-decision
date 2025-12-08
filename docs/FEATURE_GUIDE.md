@@ -793,6 +793,99 @@ features:
 
 ---
 
+## Feature Naming and Access
+
+### Feature Naming Convention
+
+To avoid naming conflicts between features and event fields, CORINT **requires** explicit feature access using the `features.` namespace prefix.
+
+#### Feature Access Syntax (features.xxx)
+
+**All features must be accessed using the `features.` prefix:**
+
+```yaml
+rule:
+  id: high_transaction_volume
+  when:
+    conditions:
+      - features.transaction_sum_7d > 5000      # ← Feature access (required)
+      - features.transaction_count_24h > 10     # ← Feature access (required)
+      - event.amount > 1000                      # ← Regular event field
+```
+
+**Benefits:**
+- ✅ **Clear distinction**: Immediately identifies this as a calculated feature
+- ✅ **No conflicts**: Completely avoids naming collisions with event fields
+- ✅ **Better debugging**: Easy to trace where values come from
+- ✅ **Explicit intent**: Makes it clear that this requires computation
+- ✅ **Type safety**: Prevents accidental use of event fields when features are intended
+
+### Feature Lookup Priority
+
+When accessing a field, the system follows this priority order:
+
+1. **Feature Namespace** (`features.xxx`): Direct feature lookup - calculates feature on-demand
+2. **Event Data** (`event_data`): Raw event fields
+3. **Variables** (`result.variables`): Stored context variables
+4. **Special Fields**: Built-in fields like `total_score`, `triggered_rules`
+
+### Examples
+
+#### Example 1: Explicit Feature Access (Recommended)
+
+```yaml
+features:
+  - name: login_count_24h
+    operator: count
+    # ... configuration ...
+
+rule:
+  id: frequent_login
+  when:
+    conditions:
+      - features.login_count_24h > 10    # ← Explicit feature access
+      - event.user_id exists               # ← Event field
+```
+
+#### Example 2: Mixed Access Patterns
+
+```yaml
+rule:
+  id: risk_assessment
+  when:
+    conditions:
+      # Feature access (required)
+      - features.transaction_sum_7d > 5000
+      - features.unique_devices_7d >= 2
+      - features.login_count_24h > 5
+      
+      # Event fields
+      - event.amount > 100
+      - event.user_id exists
+```
+
+#### Example 3: Clear Separation
+
+```yaml
+# Event data
+event_data:
+  transaction_sum_7d: 1000  # From event (if provided)
+
+features:
+  - name: transaction_sum_7d  # Calculated feature
+    operator: sum
+    # ...
+
+# Rule - always uses calculated feature, never event field
+rule:
+  when:
+    conditions:
+      - features.transaction_sum_7d > 5000  # ← Always uses calculated feature
+      - event.amount > 100                    # ← Uses event field
+```
+
+---
+
 ## Query Execution Flow
 
 ### Complete Execution Chain

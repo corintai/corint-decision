@@ -16,6 +16,52 @@ In risk control scenarios, extensive statistical analysis computations are neede
 - **Temporal Features**: Time since last transaction, average transaction interval, etc.
 - **Aggregation Features**: Average transaction amount in the past 30 days, maximum single transaction, etc.
 
+### 1.2 Feature Access Syntax
+
+**There are two ways to access features in rule conditions:**
+
+#### Method 1: Direct Feature Access (features.xxx)
+
+**All registered features must be accessed using the `features.` namespace prefix:**
+
+```yaml
+rule:
+  id: high_transaction_volume
+  when:
+    conditions:
+      - features.transaction_sum_7d > 5000      # ✅ Direct feature access
+      - features.transaction_count_24h > 10     # ✅ Direct feature access
+      - event.amount > 1000                      # ✅ Event field (no prefix)
+```
+
+**Why use `features.` prefix?**
+- ✅ **Clear distinction**: Immediately identifies calculated features vs event fields
+- ✅ **No conflicts**: Completely avoids naming collisions
+- ✅ **Better debugging**: Easy to trace value sources
+- ✅ **Type safety**: Prevents accidental use of event fields
+
+#### Method 2: Context Feature Groups (context.feature_group.xxx)
+
+**Features extracted in pipeline steps and stored in context can be accessed via context:**
+
+```yaml
+# In pipeline
+- type: extract
+  id: statistical_features
+  output: context.statistical_features  # Store in context
+  
+# In rule
+rule:
+  when:
+    conditions:
+      - context.statistical_features.devices_per_ip_5h > 10  # ✅ Context feature group
+      - context.statistical_features.users_per_ip_5h > 5
+```
+
+**When to use which?**
+- Use `features.xxx` for **registered features** defined in feature YAML files
+- Use `context.feature_group.xxx` for **pipeline-extracted features** stored in context
+
 ### 1.2 Feature Types
 
 | Type | Description | Example |
@@ -635,21 +681,21 @@ Some features depend on other features, forming a DAG:
     
     # Level 2: Derived features (depend on level 1)
     - name: transaction_velocity_change
-      value: context.features.transaction_count_24h / context.features.transaction_count_7d * 7
+      value: features.transaction_count_24h / features.transaction_count_7d * 7
       depends_on: [transaction_count_24h, transaction_count_7d]
       level: 2
       
     - name: avg_daily_transactions
-      value: context.features.transaction_count_7d / 7
+      value: features.transaction_count_7d / 7
       depends_on: [transaction_count_7d]
       level: 2
     
     # Level 3: Higher-level features
     - name: velocity_risk_score
       value: |
-        context.features.transaction_velocity_change > 5 ? 100 :
-        context.features.transaction_velocity_change > 3 ? 60 :
-        context.features.transaction_velocity_change > 2 ? 30 : 0
+        features.transaction_velocity_change > 5 ? 100 :
+        features.transaction_velocity_change > 3 ? 60 :
+        features.transaction_velocity_change > 2 ? 30 : 0
       depends_on: [transaction_velocity_change]
       level: 3
 ```

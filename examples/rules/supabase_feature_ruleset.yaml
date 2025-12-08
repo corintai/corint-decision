@@ -38,8 +38,8 @@ rule:
   # No need to repeat event.type here - guaranteed by pipeline
   when:
     conditions:
-      - transaction_sum_7d > 5000
-      - transaction_count_24h > 10
+      - features.transaction_sum_7d > 5000
+      - features.transaction_count_24h > 10
   
   score: 50
 
@@ -53,7 +53,7 @@ rule:
   
   when:
     conditions:
-      - max_transaction_7d > 400
+      - features.max_transaction_7d > 400
   
   score: 35
 
@@ -67,7 +67,7 @@ rule:
   
   when:
     conditions:
-      - transaction_count_24h > 20
+      - features.transaction_count_24h > 20
   
   score: 45
 
@@ -81,8 +81,8 @@ rule:
   
   when:
     conditions:
-      - unique_devices_7d >= 2
-      - transaction_sum_7d > 3000
+      - features.unique_devices_7d >= 2
+      - features.transaction_sum_7d > 3000
   
   score: 60
 

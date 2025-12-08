@@ -114,49 +114,37 @@ impl PipelineExecutor {
 
             match instruction {
                 Instruction::LoadField { path } => {
-                    // Try to load field from event_data or variables
-                    let value_result = ctx.load_field(path);
-                    
-                    let value = match value_result {
-                        Ok(v) => v,
-                        Err(RuntimeError::FieldNotFound(ref field_name)) => {
-                            // Field not found - check if it's a registered feature
-                            if path.len() == 1 {
-                                let field_name = &path[0];
+                    // Check if this is a feature namespace access (features.xxx)
+                    let value = if path.len() == 2 && path[0] == "features" {
+                        // Explicit feature access: features.xxx
+                        let feature_name = &path[1];
+                        
+                        if let Some(ref feature_executor) = self.feature_executor {
+                            if feature_executor.has_feature(feature_name) {
+                                tracing::debug!("Accessing feature '{}' via features namespace", feature_name);
                                 
-                                // Check if this is a registered feature
-                                if let Some(ref feature_executor) = self.feature_executor {
-                                    // Check if feature is registered
-                                    if feature_executor.has_feature(field_name) {
-                                        tracing::debug!("Feature '{}' not in event_data, calculating from data source", field_name);
-                                        
-                                        // Calculate feature on-demand
-                                        match feature_executor.execute_feature(field_name, &ctx).await {
-                                            Ok(feature_value) => {
-                                                // Cache the result in event_data for subsequent accesses
-                                                ctx.event_data.insert(field_name.clone(), feature_value.clone());
-                                                tracing::debug!("Feature '{}' calculated: {:?}", field_name, feature_value);
-                                                feature_value
-                                            }
-                                            Err(e) => {
-                                                tracing::warn!("Failed to calculate feature '{}': {}", field_name, e);
-                                                Value::Null
-                                            }
-                                        }
-                                    } else {
-                                        // Not a feature, return error
-                                        return Err(RuntimeError::FieldNotFound(field_name.clone()));
+                                // Calculate feature on-demand
+                                match feature_executor.execute_feature(feature_name, &ctx).await {
+                                    Ok(feature_value) => {
+                                        // Cache the result in event_data for subsequent accesses
+                                        ctx.event_data.insert(feature_name.clone(), feature_value.clone());
+                                        tracing::debug!("Feature '{}' calculated: {:?}", feature_name, feature_value);
+                                        feature_value
                                     }
-                                } else {
-                                    // No feature executor, return error
-                                    return Err(RuntimeError::FieldNotFound(field_name.clone()));
+                                    Err(e) => {
+                                        tracing::warn!("Failed to calculate feature '{}': {}", feature_name, e);
+                                        Value::Null
+                                    }
                                 }
                             } else {
-                                // Multi-path field access, return error
-                                return Err(RuntimeError::FieldNotFound(path.join(".")));
+                                return Err(RuntimeError::FieldNotFound(format!("Feature '{}' not found", feature_name)));
                             }
+                        } else {
+                            return Err(RuntimeError::FieldNotFound("Feature executor not available".to_string()));
                         }
-                        Err(e) => return Err(e),
+                    } else {
+                        // Regular field access: event_data, variables, or special fields
+                        ctx.load_field(path)?
                     };
                     
                     ctx.push(value);
