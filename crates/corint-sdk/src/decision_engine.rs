@@ -89,37 +89,24 @@ impl DecisionEngine {
     /// Generate a unique request ID
     /// Format: req_YYYYMMDDHHmmss_xxx
     /// Example: req_20231209143052_a3f
+    /// 
+    /// Uses chrono to correctly handle leap years and variable month lengths
     fn generate_request_id() -> String {
-        use std::time::{SystemTime, UNIX_EPOCH};
+        use chrono::Utc;
         use std::sync::atomic::{AtomicU32, Ordering};
 
         static COUNTER: AtomicU32 = AtomicU32::new(0);
 
-        let timestamp = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
+        // Get current UTC time and format it directly - this correctly handles
+        // leap years, variable month lengths, and all date edge cases
+        let now = Utc::now();
+        let datetime_str = now.format("%Y%m%d%H%M%S").to_string();
 
-        // Convert timestamp to datetime components (UTC)
-        const SECONDS_PER_DAY: u64 = 86400;
-        const SECONDS_PER_HOUR: u64 = 3600;
-        const SECONDS_PER_MINUTE: u64 = 60;
-
-        let days_since_epoch = timestamp / SECONDS_PER_DAY;
-        let remaining_secs = timestamp % SECONDS_PER_DAY;
-        let hours = remaining_secs / SECONDS_PER_HOUR;
-        let minutes = (remaining_secs % SECONDS_PER_HOUR) / SECONDS_PER_MINUTE;
-        let seconds = remaining_secs % SECONDS_PER_MINUTE;
-
-        // Calculate year, month, day (simplified approximation)
-        let year = 1970 + (days_since_epoch / 365);
-        let day_of_year = days_since_epoch % 365;
-        let month = (day_of_year / 30) + 1;
-        let day = (day_of_year % 30) + 1;
-
-        // Generate random suffix using atomic counter and timestamp
+        // Generate random suffix using atomic counter
         let counter = COUNTER.fetch_add(1, Ordering::SeqCst);
-        let random = ((timestamp as u32) ^ counter) & 0xFFFFFF; // 6 hex digits (24 bits)
+        let random = ((now.timestamp() as u32) ^ counter) & 0xFFFFFF; // 6 hex digits (24 bits)
 
-        format!("req_{:04}{:02}{:02}{:02}{:02}{:02}_{:06x}",
-            year, month, day, hours, minutes, seconds, random)
+        format!("req_{}_{:06x}", datetime_str, random)
     }
 
     /// Create a new decision engine from configuration
@@ -484,9 +471,12 @@ impl DecisionEngine {
 
         let start = std::time::Instant::now();
 
-        // Generate request_id at the very beginning of the request (only once)
-        // If not provided in metadata, generate a new one and store it in metadata
-        // This ensures the same request_id is used throughout the entire request lifecycle
+        // Track rule executions for persistence
+        let mut rule_executions: Vec<corint_runtime::RuleExecutionRecord> = Vec::new();
+
+        // Generate request ID from metadata or create new one
+        // Generate at the very beginning of the request (only once)
+        // Store it in metadata so it's available throughout the request lifecycle
         let request_id = if let Some(existing_id) = request.metadata.get("request_id") {
             existing_id.clone()
         } else {
@@ -495,9 +485,6 @@ impl DecisionEngine {
             tracing::debug!("Generated new request_id: {}", new_id);
             new_id
         };
-
-        // Track rule executions for persistence
-        let mut rule_executions: Vec<corint_runtime::RuleExecutionRecord> = Vec::new();
 
         // Create initial execution result
         let mut execution_result = ExecutionResult::new();
