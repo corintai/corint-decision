@@ -168,13 +168,55 @@ impl ExecutionContext {
 
     /// Convert context into a DecisionResult
     pub fn into_decision_result(self) -> DecisionResult {
+        let explanation = Self::build_explanation(&self.result, &self.event_data);
+
         DecisionResult {
             action: self.result.action,
             score: self.result.score,
             triggered_rules: self.result.triggered_rules,
-            explanation: String::new(), // TODO: Build explanation from context
+            explanation,
             context: self.result.variables,
         }
+    }
+
+    /// Build explanation from execution result and event data
+    /// Focus on WHY the decision was made, not repeating data that's already in response fields
+    fn build_explanation(result: &ExecutionResult, _event_data: &HashMap<String, Value>) -> String {
+        // Build a human-readable explanation focused on the reasoning
+
+        // Case 1: No rules triggered - explain based on action
+        if result.triggered_rules.is_empty() {
+            return match result.action {
+                Some(Action::Approve) => "No risk indicators detected".to_string(),
+                Some(Action::Review) => "Sent to review based on policy thresholds".to_string(),
+                Some(Action::Deny) => "Blocked by policy rules".to_string(),
+                Some(Action::Challenge) => "Additional verification required by policy".to_string(),
+                Some(Action::Infer { .. }) => "Action to be inferred from risk score".to_string(),
+                None => "No decision action set".to_string(),
+            };
+        }
+
+        // Case 2: Rules triggered - explain based on risk level
+        let rule_count = result.triggered_rules.len();
+        let score = result.score;
+
+        // Build reason based on severity
+        let mut reason = if rule_count == 1 {
+            format!("Risk indicator detected: {}", result.triggered_rules[0])
+        } else {
+            format!("{} risk indicators detected", rule_count)
+        };
+
+        // Add context about score level if significant
+        if score >= 80 {
+            reason.push_str(" (high risk)");
+        } else if score >= 50 {
+            reason.push_str(" (medium risk)");
+        } else if score > 0 {
+            reason.push_str(" (low risk)");
+        }
+
+        reason
     }
 
     /// Get the current stack depth

@@ -25,6 +25,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Create a decision request with event data
     let mut event_data = HashMap::new();
+    event_data.insert("event_type".to_string(), Value::String("transaction3".to_string()));
     event_data.insert("amount".to_string(), Value::Number(150.0));
     event_data.insert("user_id".to_string(), Value::String("user123".to_string()));
     event_data.insert("country".to_string(), Value::String("US".to_string()));
@@ -42,6 +43,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Display the results
     println!("Decision Results:");
+    println!("  Request ID: {}", response.request_id);
     println!("  Action: {:?}", response.result.action);
     println!("  Score: {}", response.result.score);
     println!("  Triggered Rules: {:?}", response.result.triggered_rules);

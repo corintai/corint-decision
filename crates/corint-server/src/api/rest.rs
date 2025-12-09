@@ -38,18 +38,21 @@ pub struct DecideRequestPayload {
 /// Decision response payload
 #[derive(Debug, Serialize)]
 pub struct DecideResponsePayload {
+    /// Request ID (for tracking and correlation)
+    pub request_id: String,
+
     /// Action
     pub action: Option<String>,
-    
+
     /// Score
     pub score: i32,
-    
+
     /// Triggered rules
     pub triggered_rules: Vec<String>,
-    
+
     /// Explanation
     pub explanation: String,
-    
+
     /// Processing time in milliseconds
     pub processing_time_ms: u64,
 }
@@ -116,6 +119,7 @@ async fn decide(
     let action_str = response.result.action.map(|a| format!("{:?}", a));
 
     Ok(Json(DecideResponsePayload {
+        request_id: response.request_id,
         action: action_str,
         score: response.result.score,
         triggered_rules: response.result.triggered_rules,

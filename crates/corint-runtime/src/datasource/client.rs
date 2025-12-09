@@ -542,6 +542,7 @@ struct SQLClient {
 }
 
 impl SQLClient {
+    #[cfg_attr(not(feature = "sqlx"), allow(unused_variables))]
     async fn new(config: super::config::SQLConfig, pool_size: u32) -> Result<Self> {
         tracing::info!("Initializing SQL client: {:?}", config.provider);
         

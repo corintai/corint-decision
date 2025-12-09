@@ -41,6 +41,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("{}", "-".repeat(80));
 
     let mut event_data = HashMap::new();
+    event_data.insert("event_type".to_string(), Value::String("payment".to_string()));
     event_data.insert("payment_amount".to_string(), Value::Number(500.0));
     event_data.insert("ip_address".to_string(), Value::String("8.8.8.8".to_string())); // US IP (Google DNS)
     event_data.insert("payment_attempts_1h".to_string(), Value::Number(2.0));

@@ -75,12 +75,210 @@ impl SemanticAnalyzer {
     }
 
     /// Analyze a pipeline
-    pub fn analyze_pipeline(&mut self, _pipeline: &Pipeline) -> Result<()> {
-        // TODO: Analyze pipeline steps
-        // - Check for circular dependencies
-        // - Validate step references
-        // - Check data flow
+    pub fn analyze_pipeline(&mut self, pipeline: &Pipeline) -> Result<()> {
+        // 1. Validate pipeline ID
+        if let Some(ref id) = pipeline.id {
+            if id.is_empty() {
+                return Err(CompileError::InvalidExpression(
+                    "Pipeline ID cannot be empty".to_string(),
+                ));
+            }
+        }
+
+        // 2. Track all step IDs to check for duplicates
+        let mut step_ids = HashSet::new();
+
+        // 3. Track all output variables produced by steps
+        let mut produced_vars = HashSet::new();
+
+        // 4. Track all variables referenced in expressions
+        let mut referenced_vars = HashSet::new();
+
+        // 5. Analyze each step
+        for step in &pipeline.steps {
+            self.analyze_step(step, &mut step_ids, &mut produced_vars, &mut referenced_vars)?;
+        }
+
+        // 6. Check for undefined variable references
+        for var_ref in &referenced_vars {
+            // Allow references to:
+            // - Variables produced in the pipeline (features.*, etc.)
+            // - Event data fields (event.* or simple field names like "payment_amount")
+            // - Context variables (context.*)
+            let is_defined = produced_vars.contains(var_ref)
+                || var_ref.starts_with("event.")
+                || var_ref.starts_with("context.")
+                || var_ref.starts_with("features.")
+                || !var_ref.contains('.'); // Simple field names are event fields
+
+            if !is_defined {
+                return Err(CompileError::InvalidExpression(format!(
+                    "Variable '{}' is referenced but never defined in pipeline",
+                    var_ref
+                )));
+            }
+        }
+
+        // 7. Analyze when block conditions if present
+        if let Some(ref when_block) = pipeline.when {
+            for condition in &when_block.conditions {
+                self.analyze_expression(condition)?;
+            }
+        }
+
         Ok(())
+    }
+
+    /// Analyze a single pipeline step
+    fn analyze_step(
+        &mut self,
+        step: &corint_core::ast::Step,
+        step_ids: &mut HashSet<String>,
+        produced_vars: &mut HashSet<String>,
+        referenced_vars: &mut HashSet<String>,
+    ) -> Result<()> {
+        use corint_core::ast::Step;
+
+        match step {
+            Step::Extract { id, features } => {
+                // Check for duplicate step ID
+                if !step_ids.insert(id.clone()) {
+                    return Err(CompileError::InvalidExpression(format!(
+                        "Duplicate step ID: {}",
+                        id
+                    )));
+                }
+
+                // Analyze feature expressions and track produced variables
+                for feature in features {
+                    self.analyze_expression(&feature.value)?;
+                    // Features are accessible via features.{name} or context.{name}
+                    produced_vars.insert(format!("features.{}", feature.name));
+                    produced_vars.insert(feature.name.clone());
+                }
+            }
+
+            Step::Reason { id, prompt, .. } => {
+                // Check for duplicate step ID
+                if !step_ids.insert(id.clone()) {
+                    return Err(CompileError::InvalidExpression(format!(
+                        "Duplicate step ID: {}",
+                        id
+                    )));
+                }
+
+                // Validate prompt template is not empty
+                if prompt.template.is_empty() {
+                    return Err(CompileError::InvalidExpression(
+                        "LLM prompt template cannot be empty".to_string(),
+                    ));
+                }
+            }
+
+            Step::Service { id, output, params, .. } => {
+                // Check for duplicate step ID
+                if !step_ids.insert(id.clone()) {
+                    return Err(CompileError::InvalidExpression(format!(
+                        "Duplicate step ID: {}",
+                        id
+                    )));
+                }
+
+                // Analyze parameter expressions
+                for expr in params.values() {
+                    self.analyze_expression(expr)?;
+                    self.collect_variable_references(expr, referenced_vars);
+                }
+
+                // Track output variable if specified
+                if let Some(ref output_var) = output {
+                    produced_vars.insert(output_var.clone());
+                }
+            }
+
+            Step::Api { id, output, params, .. } => {
+                // Check for duplicate step ID
+                if !step_ids.insert(id.clone()) {
+                    return Err(CompileError::InvalidExpression(format!(
+                        "Duplicate step ID: {}",
+                        id
+                    )));
+                }
+
+                // Analyze parameter expressions
+                for expr in params.values() {
+                    self.analyze_expression(expr)?;
+                    self.collect_variable_references(expr, referenced_vars);
+                }
+
+                // Track output variable (required for API calls)
+                produced_vars.insert(output.clone());
+            }
+
+            Step::Include { ruleset } => {
+                // Validate ruleset reference is not empty
+                if ruleset.is_empty() {
+                    return Err(CompileError::InvalidExpression(
+                        "Ruleset reference cannot be empty".to_string(),
+                    ));
+                }
+            }
+
+            Step::Branch { branches } => {
+                // Analyze each branch
+                for branch in branches {
+                    // Analyze branch condition
+                    self.analyze_expression(&branch.condition)?;
+                    self.collect_variable_references(&branch.condition, referenced_vars);
+
+                    // Recursively analyze branch pipeline steps
+                    for branch_step in &branch.pipeline {
+                        self.analyze_step(branch_step, step_ids, produced_vars, referenced_vars)?;
+                    }
+                }
+            }
+
+            Step::Parallel { steps, .. } => {
+                // Analyze each parallel step
+                for parallel_step in steps {
+                    self.analyze_step(parallel_step, step_ids, produced_vars, referenced_vars)?;
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Collect variable references from an expression
+    fn collect_variable_references(&self, expr: &Expression, references: &mut HashSet<String>) {
+        match expr {
+            Expression::FieldAccess(path) => {
+                if !path.is_empty() {
+                    // Store the full path as a reference
+                    references.insert(path.join("."));
+                }
+            }
+            Expression::Binary { left, right, .. } => {
+                self.collect_variable_references(left, references);
+                self.collect_variable_references(right, references);
+            }
+            Expression::Unary { operand, .. } => {
+                self.collect_variable_references(operand, references);
+            }
+            Expression::FunctionCall { args, .. } => {
+                for arg in args {
+                    self.collect_variable_references(arg, references);
+                }
+            }
+            Expression::Ternary { condition, true_expr, false_expr } => {
+                self.collect_variable_references(condition, references);
+                self.collect_variable_references(true_expr, references);
+                self.collect_variable_references(false_expr, references);
+            }
+            Expression::Literal(_) => {
+                // Literals don't reference variables
+            }
+        }
     }
 
     /// Analyze an expression

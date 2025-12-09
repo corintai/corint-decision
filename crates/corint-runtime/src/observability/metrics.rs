@@ -2,11 +2,12 @@
 
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 /// Counter metric
 #[derive(Debug, Clone)]
 pub struct Counter {
+    #[allow(dead_code)]
     name: String,
     value: Arc<RwLock<u64>>,
     labels: HashMap<String, String>,
@@ -52,6 +53,7 @@ impl Counter {
 /// Histogram metric for tracking distributions
 #[derive(Debug, Clone)]
 pub struct Histogram {
+    #[allow(dead_code)]
     name: String,
     values: Arc<RwLock<Vec<f64>>>,
     labels: HashMap<String, String>,

@@ -332,6 +332,10 @@ mod tests {
         let ctx = ExecutionContext::new(HashMap::new());
 
         let url = client.build_url(&api_config, &endpoint, &params, &ctx).unwrap();
-        assert_eq!(url, "https://api.example.com/data?token=abc123&format=json");
+        // Query params may be in any order due to HashMap
+        assert!(url.starts_with("https://api.example.com/data?"));
+        assert!(url.contains("token=abc123"));
+        assert!(url.contains("format=json"));
+        assert!(url.contains("&"));
     }
 }

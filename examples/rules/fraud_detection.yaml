@@ -23,7 +23,7 @@ pipeline:
   
   # Mandatory when condition - only process transaction events
   when:
-    event.type: transaction2
+    event.type: transaction
   
   steps:
     # Execute the fraud detection ruleset

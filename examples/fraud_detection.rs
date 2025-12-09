@@ -85,7 +85,7 @@ async fn test_clean_transaction(engine: &corint_sdk::DecisionEngine) -> Result<(
     let mut event_data = HashMap::new();
 
     // Clean signals - no risk indicators
-    event_data.insert("event.type".to_string(), Value::String("transaction".to_string()));
+    event_data.insert("event_type".to_string(), Value::String("transaction".to_string()));
     event_data.insert("transaction_amount".to_string(), Value::Number(150.0));
     event_data.insert("ip_device_count".to_string(), Value::Number(2.0));
     event_data.insert("ip_user_count".to_string(), Value::Number(1.0));
@@ -122,7 +122,7 @@ async fn test_fraud_farm(engine: &corint_sdk::DecisionEngine) -> Result<(), Box<
     let mut event_data = HashMap::new();
 
     // Fraud farm signals (primary indicators for this test)
-    event_data.insert("event.type".to_string(), Value::String("transaction".to_string()));
+    event_data.insert("event_type".to_string(), Value::String("transaction".to_string()));
     event_data.insert("ip_device_count".to_string(), Value::Number(15.0));  // > 10
     event_data.insert("ip_user_count".to_string(), Value::Number(8.0));     // > 5
     event_data.insert("transaction_amount".to_string(), Value::Number(500.0));
@@ -161,7 +161,7 @@ async fn test_account_takeover(engine: &corint_sdk::DecisionEngine) -> Result<()
     let mut event_data = HashMap::new();
 
     // Account takeover signals (primary indicators for this test)
-    event_data.insert("event.type".to_string(), Value::String("transaction".to_string()));
+    event_data.insert("event_type".to_string(), Value::String("transaction".to_string()));
     event_data.insert("new_device_indicator".to_string(), Value::Bool(true));
     event_data.insert("failed_login_count_1h".to_string(), Value::Number(5.0));  // >= 3
     event_data.insert("country_changed".to_string(), Value::Bool(true));
@@ -200,7 +200,7 @@ async fn test_velocity_abuse(engine: &corint_sdk::DecisionEngine) -> Result<(), 
     let mut event_data = HashMap::new();
 
     // Velocity abuse signals (primary indicators for this test)
-    event_data.insert("event.type".to_string(), Value::String("transaction".to_string()));
+    event_data.insert("event_type".to_string(), Value::String("transaction".to_string()));
     event_data.insert("transaction_count_24h".to_string(), Value::Number(25.0));  // > 20
     event_data.insert("velocity_ratio".to_string(), Value::Number(8.0));          // > 5.0
     event_data.insert("transaction_amount".to_string(), Value::Number(200.0));
@@ -239,7 +239,7 @@ async fn test_amount_outlier(engine: &corint_sdk::DecisionEngine) -> Result<(), 
     let mut event_data = HashMap::new();
 
     // Amount outlier signals (primary indicators for this test)
-    event_data.insert("event.type".to_string(), Value::String("transaction".to_string()));
+    event_data.insert("event_type".to_string(), Value::String("transaction".to_string()));
     event_data.insert("amount_zscore".to_string(), Value::Number(4.5));           // > 3.0
     event_data.insert("is_amount_outlier".to_string(), Value::Bool(true));
     event_data.insert("transaction_amount".to_string(), Value::Number(8000.0));   // > 5000
@@ -278,7 +278,7 @@ async fn test_multiple_patterns(engine: &corint_sdk::DecisionEngine) -> Result<(
     let mut event_data = HashMap::new();
 
     // Multiple fraud signals combined
-    event_data.insert("event.type".to_string(), Value::String("transaction".to_string()));
+    event_data.insert("event_type".to_string(), Value::String("transaction".to_string()));
 
     // Fraud farm signals
     event_data.insert("ip_device_count".to_string(), Value::Number(12.0));
@@ -323,7 +323,7 @@ async fn test_new_user_fraud(engine: &corint_sdk::DecisionEngine) -> Result<(), 
     let mut event_data = HashMap::new();
 
     // New user high-risk signals (primary indicators for this test)
-    event_data.insert("event.type".to_string(), Value::String("transaction".to_string()));
+    event_data.insert("event_type".to_string(), Value::String("transaction".to_string()));
     event_data.insert("user_age_days".to_string(), Value::Number(3.0));          // < 7
     event_data.insert("transaction_amount".to_string(), Value::Number(2000.0));  // > 1000
     event_data.insert("new_payment_method".to_string(), Value::Bool(true));

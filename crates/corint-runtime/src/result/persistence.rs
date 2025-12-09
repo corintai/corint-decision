@@ -209,8 +209,15 @@ impl DecisionResultWriter {
         
         match insert_result {
             Ok(result) => {
-                tracing::info!("Inserted risk_decision for request_id: {} (rows_affected: {})", 
-                    record.request_id, result.rows_affected());
+                let rows_affected = result.rows_affected();
+                if rows_affected > 0 {
+                    tracing::info!("Inserted risk_decision for request_id: {} (rows_affected: {})", 
+                        record.request_id, rows_affected);
+                } else {
+                    // ON CONFLICT DO UPDATE may return 0 if all values are the same
+                    tracing::debug!("Updated risk_decision for request_id: {} (rows_affected: {}, likely ON CONFLICT UPDATE with no changes)", 
+                        record.request_id, rows_affected);
+                }
             }
             Err(e) => {
                 tracing::error!("Failed to insert risk_decision for request_id {}: {}", record.request_id, e);
@@ -249,8 +256,14 @@ impl DecisionResultWriter {
             
             match exec_result {
                 Ok(result) => {
-                    tracing::debug!("Inserted rule_execution for rule_id: {} (rows_affected: {})", 
-                        rule_exec.rule_id, result.rows_affected());
+                    let rows_affected = result.rows_affected();
+                    if rows_affected > 0 {
+                        tracing::debug!("Inserted rule_execution for rule_id: {} (rows_affected: {})", 
+                            rule_exec.rule_id, rows_affected);
+                    } else {
+                        tracing::warn!("rule_execution insert returned rows_affected=0 for rule_id: {} (this should not happen)", 
+                            rule_exec.rule_id);
+                    }
                 }
                 Err(e) => {
                     tracing::error!("Failed to insert rule_execution for rule_id {}: {}", rule_exec.rule_id, e);

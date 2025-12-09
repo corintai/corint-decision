@@ -79,7 +79,7 @@ pub struct FeatureExecutor {
 }
 
 #[derive(Debug, Default, Clone)]
-struct CacheStats {
+pub struct CacheStats {
     l1_hits: u64,
     l1_misses: u64,
     l2_hits: u64,
@@ -488,10 +488,11 @@ impl Default for FeatureExecutor {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::time::Duration;
 
     #[test]
     fn test_cache_entry_expiration() {
-        let entry = CacheEntry::new(Value::Integer(42), 1); // 1 second TTL
+        let entry = CacheEntry::new(Value::Number(42.0), 1); // 1 second TTL
         assert!(!entry.is_expired());
 
         std::thread::sleep(Duration::from_secs(2));

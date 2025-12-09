@@ -672,7 +672,7 @@ impl TimeSinceOperator {
             dimension_value: self.dimension_value.clone(),
         };
 
-        let first_seen = first_seen_op.execute(datasource, context).await?;
+        let _first_seen = first_seen_op.execute(datasource, context).await?;
 
         // TODO: Calculate elapsed time
         // For now, return placeholder
@@ -695,10 +695,10 @@ pub struct FeatureStoreLookupOperator {
 impl FeatureStoreLookupOperator {
     pub async fn execute(
         &self,
-        datasource: &DataSourceClient,
+        _datasource: &DataSourceClient,
         context: &HashMap<String, Value>,
     ) -> Result<Value> {
-        let key = resolve_template(&self.key, context)?;
+        let _key = resolve_template(&self.key, context)?;
 
         // TODO: Implement Redis lookup
         // For now, return fallback or null
@@ -722,10 +722,10 @@ pub struct ProfileLookupOperator {
 impl ProfileLookupOperator {
     pub async fn execute(
         &self,
-        datasource: &DataSourceClient,
+        _datasource: &DataSourceClient,
         context: &HashMap<String, Value>,
     ) -> Result<Value> {
-        let dimension_value = resolve_template(&self.dimension_value, context)?;
+        let _dimension_value = resolve_template(&self.dimension_value, context)?;
 
         // TODO: Implement SQL lookup
         // SELECT {field} FROM {table} WHERE {dimension} = {dimension_value}
@@ -780,7 +780,7 @@ pub struct ExpressionOperator {
 }
 
 impl ExpressionOperator {
-    pub async fn execute(&self, context: &HashMap<String, Value>) -> Result<Value> {
+    pub async fn execute(&self, _context: &HashMap<String, Value>) -> Result<Value> {
         // TODO: Implement expression evaluation
         // For now, return null
         Ok(Value::Null)

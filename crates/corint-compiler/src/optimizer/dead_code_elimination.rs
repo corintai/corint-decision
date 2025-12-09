@@ -15,38 +15,71 @@ impl DeadCodeEliminator {
 
     /// Optimize a program by removing dead code
     pub fn eliminate(&self, program: &Program) -> Program {
+        // IMPROVED: Use proper control flow analysis instead of naive linear scan
+        // Build a map of potentially reachable instructions
+        let reachable = self.compute_reachable_instructions(program);
+
         let mut optimized_instructions = Vec::new();
-        let mut reachable = true;
-
-        for instruction in &program.instructions {
-            // If we've hit unreachable code, skip it
-            if !reachable {
-                // Check if this is a jump target or label (not implemented yet)
-                // For now, we stop at Return
-                continue;
-            }
-
-            // Add the instruction
-            optimized_instructions.push(instruction.clone());
-
-            // Check if this instruction makes subsequent code unreachable
-            match instruction {
-                Instruction::Return => {
-                    // Everything after return is unreachable
-                    reachable = false;
-                }
-                Instruction::Jump { .. } => {
-                    // Unconditional jump makes next instruction unreachable
-                    // (unless it's a jump target)
-                    reachable = false;
-                }
-                _ => {
-                    // Other instructions don't affect reachability
-                }
+        for (i, instruction) in program.instructions.iter().enumerate() {
+            if reachable.contains(&i) {
+                optimized_instructions.push(instruction.clone());
             }
         }
 
         Program::new(optimized_instructions, program.metadata.clone())
+    }
+
+    /// Compute which instructions are reachable via control flow analysis
+    fn compute_reachable_instructions(&self, program: &Program) -> std::collections::HashSet<usize> {
+        use std::collections::{HashSet, VecDeque};
+
+        let mut reachable = HashSet::new();
+        let mut worklist = VecDeque::new();
+
+        // Start from instruction 0 (entry point)
+        if !program.instructions.is_empty() {
+            worklist.push_back(0);
+        }
+
+        while let Some(pc) = worklist.pop_front() {
+            // Skip if already processed or out of bounds
+            if pc >= program.instructions.len() || reachable.contains(&pc) {
+                continue;
+            }
+
+            // Mark as reachable
+            reachable.insert(pc);
+
+            // Determine successor instructions
+            match &program.instructions[pc] {
+                Instruction::Return => {
+                    // No successors - execution ends
+                }
+                Instruction::Jump { offset } => {
+                    // Unconditional jump - only successor is jump target
+                    let target = (pc as isize + offset) as usize;
+                    if target < program.instructions.len() {
+                        worklist.push_back(target);
+                    }
+                }
+                Instruction::JumpIfTrue { offset } | Instruction::JumpIfFalse { offset } => {
+                    // Conditional jump - two successors:
+                    // 1. Next instruction (fall-through)
+                    // 2. Jump target
+                    worklist.push_back(pc + 1);
+                    let target = (pc as isize + offset) as usize;
+                    if target < program.instructions.len() {
+                        worklist.push_back(target);
+                    }
+                }
+                _ => {
+                    // All other instructions fall through to next
+                    worklist.push_back(pc + 1);
+                }
+            }
+        }
+
+        reachable
     }
 
     /// Eliminate duplicate consecutive instructions
@@ -127,7 +160,6 @@ mod tests {
     use super::*;
     use corint_core::ast::Action;
     use corint_core::ir::ProgramMetadata;
-    use corint_core::Value;
 
     #[test]
     fn test_eliminate_code_after_return() {
@@ -366,5 +398,59 @@ mod tests {
 
         assert_eq!(optimized.instructions.len(), 3);
         assert_eq!(optimized.instructions, instructions);
+    }
+
+    #[test]
+    fn test_default_action_with_conditional_actions() {
+        // This test reproduces the bug with default actions
+        // Scenario: conditional action followed by default action
+        let eliminator = DeadCodeEliminator::new();
+
+        let instructions = vec![
+            // Conditional check
+            Instruction::LoadField {
+                path: vec!["amount".to_string()],
+            },
+            Instruction::LoadConst {
+                value: corint_core::Value::Number(1000.0),
+            },
+            Instruction::Compare {
+                op: corint_core::ast::Operator::Gt,
+            },
+            // If amount > 1000, Review (then jump to end)
+            Instruction::JumpIfFalse { offset: 3 }, // Skip Review + Jump
+            Instruction::SetAction {
+                action: Action::Review,
+            },
+            Instruction::Jump { offset: 2 }, // Jump past default action
+            // Default action - Approve (should NOT be eliminated)
+            Instruction::SetAction {
+                action: Action::Approve,
+            },
+            Instruction::Return,
+        ];
+
+        let program = Program::new(
+            instructions.clone(),
+            ProgramMetadata::for_ruleset("test".to_string()),
+        );
+
+        let optimized = eliminator.optimize(&program);
+
+        // The bug: dead code eliminator might incorrectly remove the default SetAction(Approve)
+        // because it thinks the Jump makes it unreachable
+        // But the Jump is only taken when the condition is TRUE
+        // When the condition is FALSE, we fall through to the default action
+
+        // Verify the default action is still there
+        assert!(
+            optimized.instructions.iter().any(|inst| matches!(
+                inst,
+                Instruction::SetAction {
+                    action: Action::Approve
+                }
+            )),
+            "Default action (Approve) should not be eliminated"
+        );
     }
 }

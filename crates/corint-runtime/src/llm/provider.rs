@@ -1,7 +1,7 @@
 //! LLM provider implementations
 
 use async_trait::async_trait;
-use crate::error::{RuntimeError, Result};
+use crate::error::Result;
 use crate::llm::client::{LLMClient, LLMRequest, LLMResponse};
 use crate::llm::cache::LLMCache;
 use std::sync::Arc;
@@ -63,6 +63,7 @@ impl LLMProvider for MockProvider {
 
 /// OpenAI provider (placeholder for Phase 3 full implementation)
 pub struct OpenAIProvider {
+    #[allow(dead_code)]
     api_key: String,
     cache: Option<Arc<dyn LLMCache>>,
 }
@@ -125,6 +126,7 @@ impl LLMProvider for OpenAIProvider {
 
 /// Anthropic provider (placeholder for Phase 3 full implementation)
 pub struct AnthropicProvider {
+    #[allow(dead_code)]
     api_key: String,
     cache: Option<Arc<dyn LLMCache>>,
 }

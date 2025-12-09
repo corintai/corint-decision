@@ -42,6 +42,9 @@ impl DecisionRequest {
 /// Decision response
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DecisionResponse {
+    /// Request ID (for tracking and correlation)
+    pub request_id: String,
+
     /// Decision result
     pub result: DecisionResult,
 
@@ -83,6 +86,42 @@ pub struct DecisionEngine {
 }
 
 impl DecisionEngine {
+    /// Generate a unique request ID
+    /// Format: req_YYYYMMDDHHmmss_xxx
+    /// Example: req_20231209143052_a3f
+    fn generate_request_id() -> String {
+        use std::time::{SystemTime, UNIX_EPOCH};
+        use std::sync::atomic::{AtomicU32, Ordering};
+
+        static COUNTER: AtomicU32 = AtomicU32::new(0);
+
+        let timestamp = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
+
+        // Convert timestamp to datetime components (UTC)
+        const SECONDS_PER_DAY: u64 = 86400;
+        const SECONDS_PER_HOUR: u64 = 3600;
+        const SECONDS_PER_MINUTE: u64 = 60;
+
+        let days_since_epoch = timestamp / SECONDS_PER_DAY;
+        let remaining_secs = timestamp % SECONDS_PER_DAY;
+        let hours = remaining_secs / SECONDS_PER_HOUR;
+        let minutes = (remaining_secs % SECONDS_PER_HOUR) / SECONDS_PER_MINUTE;
+        let seconds = remaining_secs % SECONDS_PER_MINUTE;
+
+        // Calculate year, month, day (simplified approximation)
+        let year = 1970 + (days_since_epoch / 365);
+        let day_of_year = days_since_epoch % 365;
+        let month = (day_of_year / 30) + 1;
+        let day = (day_of_year % 30) + 1;
+
+        // Generate random suffix using atomic counter and timestamp
+        let counter = COUNTER.fetch_add(1, Ordering::SeqCst);
+        let random = ((timestamp as u32) ^ counter) & 0xFFFFFF; // 6 hex digits (24 bits)
+
+        format!("req_{:04}{:02}{:02}{:02}{:02}{:02}_{:06x}",
+            year, month, day, hours, minutes, seconds, random)
+    }
+
     /// Create a new decision engine from configuration
     pub async fn new(config: EngineConfig) -> Result<Self> {
         Self::new_with_feature_executor(config, None).await
@@ -99,7 +138,7 @@ impl DecisionEngine {
         let compiler_opts = CompilerOpts {
             enable_semantic_analysis: config.compiler_options.enable_semantic_analysis,
             enable_constant_folding: config.compiler_options.enable_constant_folding,
-            enable_dead_code_elimination: false, // TEMP: Disabled due to bug with default actions
+            enable_dead_code_elimination: true, // FIXED: Bug with default actions resolved - now uses proper CFG analysis
         };
 
         let mut compiler = Compiler::with_options(compiler_opts);
@@ -440,10 +479,25 @@ impl DecisionEngine {
     }
 
     /// Execute a decision request
-    pub async fn decide(&self, request: DecisionRequest) -> Result<DecisionResponse> {
+    pub async fn decide(&self, mut request: DecisionRequest) -> Result<DecisionResponse> {
         use corint_runtime::result::ExecutionResult;
 
         let start = std::time::Instant::now();
+
+        // Generate request_id at the very beginning of the request (only once)
+        // If not provided in metadata, generate a new one and store it in metadata
+        // This ensures the same request_id is used throughout the entire request lifecycle
+        let request_id = if let Some(existing_id) = request.metadata.get("request_id") {
+            existing_id.clone()
+        } else {
+            let new_id = Self::generate_request_id();
+            request.metadata.insert("request_id".to_string(), new_id.clone());
+            tracing::debug!("Generated new request_id: {}", new_id);
+            new_id
+        };
+
+        // Track rule executions for persistence
+        let mut rule_executions: Vec<corint_runtime::RuleExecutionRecord> = Vec::new();
 
         // Create initial execution result
         let mut execution_result = ExecutionResult::new();
@@ -504,18 +558,33 @@ impl DecisionEngine {
                                     for rule_id in rule_ids {
                                         if let Some(rule_program) = self.rule_map.get(rule_id) {
                                             tracing::info!("Executing rule (via ruleset {}): {}", ruleset_id, rule_id);
+
+                                            let rule_start = std::time::Instant::now();
+                                            let prev_score = execution_result.score;
+
                                             let rule_result = self.executor.execute_with_result(
                                                 rule_program,
                                                 request.event_data.clone(),
                                                 execution_result.clone()
                                             ).await?;
 
+                                            let rule_time_ms = rule_start.elapsed().as_millis() as u64;
+                                            let rule_score = rule_result.score - prev_score;
+                                            let triggered = rule_result.triggered_rules.contains(&rule_id.to_string());
+
+                                            // Record rule execution
+                                            rule_executions.push(Self::create_rule_execution_record(
+                                                &request_id,
+                                                rule_id,
+                                                triggered,
+                                                rule_score,
+                                                rule_time_ms,
+                                            ));
+
                                             execution_result.score = rule_result.score;
                                             execution_result.triggered_rules = rule_result.triggered_rules;
                                         }
                                     }
-
-                                    pipeline_handled_rules = true;
                                 }
 
                                 // Execute ruleset decision logic
@@ -642,11 +711,28 @@ impl DecisionEngine {
                             for rule_id in rule_ids {
                                 if let Some(rule_program) = self.rule_map.get(rule_id) {
                                     tracing::info!("Executing rule (via ruleset {}): {}", ruleset_id, rule_id);
+
+                                    let rule_start = std::time::Instant::now();
+                                    let prev_score = execution_result.score;
+
                                     let rule_result = self.executor.execute_with_result(
                                         rule_program,
                                         request.event_data.clone(),
                                         execution_result.clone()
                                     ).await?;
+
+                                    let rule_time_ms = rule_start.elapsed().as_millis() as u64;
+                                    let rule_score = rule_result.score - prev_score;
+                                    let triggered = rule_result.triggered_rules.contains(&rule_id.to_string());
+
+                                    // Record rule execution
+                                    rule_executions.push(Self::create_rule_execution_record(
+                                        &request_id,
+                                        rule_id,
+                                        triggered,
+                                        rule_score,
+                                        rule_time_ms,
+                                    ));
 
                                     // Update execution_result with the returned state
                                     // (execute_with_result already includes previous state + new additions)
@@ -693,11 +779,29 @@ impl DecisionEngine {
                         continue;
                     }
                     tracing::info!("Executing rule (global): {}", program.metadata.source_id);
+
+                    let rule_start = std::time::Instant::now();
+                    let prev_score = execution_result.score;
+
                     let result = self.executor.execute_with_result(
                         program,
                         request.event_data.clone(),
                         execution_result.clone()
                     ).await?;
+
+                    let rule_time_ms = rule_start.elapsed().as_millis() as u64;
+                    let rule_score = result.score - prev_score;
+                    let rule_id = &program.metadata.source_id;
+                    let triggered = result.triggered_rules.contains(rule_id);
+
+                    // Record rule execution
+                    rule_executions.push(Self::create_rule_execution_record(
+                        &request_id,
+                        rule_id,
+                        triggered,
+                        rule_score,
+                        rule_time_ms,
+                    ));
 
                     // Accumulate state
                     execution_result.score = result.score;
@@ -739,17 +843,10 @@ impl DecisionEngine {
             tracing::debug!("Result writer is configured, preparing to persist decision result");
             
             // Extract request_id and event_id from metadata
+            // request_id was already generated at the beginning of decide(), so just retrieve it
             let request_id = request.metadata.get("request_id")
                 .cloned()
-                .unwrap_or_else(|| {
-                    // Generate a simple request ID using timestamp
-                    use std::time::{SystemTime, UNIX_EPOCH};
-                    let timestamp = SystemTime::now()
-                        .duration_since(UNIX_EPOCH)
-                        .unwrap()
-                        .as_nanos();
-                    format!("req_{}", timestamp)
-                });
+                .expect("request_id should have been generated at the start of decide()");
             let event_id = request.metadata.get("event_id").cloned();
             
             tracing::debug!("Request ID: {}, Event ID: {:?}", request_id, event_id);
@@ -777,7 +874,7 @@ impl DecisionEngine {
                 pipeline_id,
                 &combined_result,
                 processing_time_ms,
-                vec![], // TODO: Track individual rule executions
+                rule_executions, // Rule execution tracking implemented
             );
             
             tracing::info!("Queuing decision record for persistence: request_id={}, score={}, action={:?}", 
@@ -797,6 +894,7 @@ impl DecisionEngine {
         }
 
         Ok(DecisionResponse {
+            request_id,
             result: combined_result,
             processing_time_ms,
             metadata: request.metadata,
@@ -806,6 +904,26 @@ impl DecisionEngine {
     /// Get metrics collector
     pub fn metrics(&self) -> Arc<MetricsCollector> {
         self.metrics.clone()
+    }
+
+    /// Create a rule execution record
+    fn create_rule_execution_record(
+        request_id: &str,
+        rule_id: &str,
+        triggered: bool,
+        score: i32,
+        execution_time_ms: u64,
+    ) -> corint_runtime::RuleExecutionRecord {
+        corint_runtime::RuleExecutionRecord {
+            request_id: request_id.to_string(),
+            rule_id: rule_id.to_string(),
+            rule_name: None, // Could be enhanced to look up rule name from metadata
+            triggered,
+            score: if triggered { Some(score) } else { None },
+            execution_time_ms: Some(execution_time_ms),
+            feature_values: None, // Could be enhanced to extract from context
+            rule_conditions: None, // Could be enhanced to include rule conditions
+        }
     }
 
     /// Get configuration
@@ -843,8 +961,19 @@ mod tests {
         use crate::builder::DecisionEngineBuilder;
         use corint_core::ast::Action;
 
-        // Create a temporary YAML file
+        // Create a temporary YAML file with pipeline
         let yaml_content = r#"
+pipeline:
+  id: test_pipeline
+  name: Test Pipeline
+  when:
+    event.type: test
+  steps:
+    - include:
+        ruleset: test_execution
+
+---
+
 ruleset:
   id: test_execution
   name: Test Execution
@@ -865,6 +994,7 @@ ruleset:
             .unwrap();
 
         let mut event_data = HashMap::new();
+        event_data.insert("event_type".to_string(), Value::String("test".to_string()));
         event_data.insert("amount".to_string(), Value::Number(150.0));
 
         let request = DecisionRequest::new(event_data);
@@ -886,6 +1016,17 @@ ruleset:
 
         // Create a temporary YAML file matching fraud_detection.yaml
         let yaml_content = r#"
+pipeline:
+  id: fraud_detection_pipeline
+  name: Fraud Detection Pipeline
+  when:
+    event.type: transaction
+  steps:
+    - include:
+        ruleset: fraud_detection
+
+---
+
 ruleset:
   id: fraud_detection
   name: Fraud Detection Ruleset
@@ -916,6 +1057,7 @@ ruleset:
 
         // Test Case 1: Normal transaction (50.0) - should approve
         let mut event_data = HashMap::new();
+        event_data.insert("event_type".to_string(), Value::String("transaction".to_string()));
         event_data.insert("transaction_amount".to_string(), Value::Number(50.0));
         let request = DecisionRequest::new(event_data.clone());
         let response = engine.decide(request).await.unwrap();

@@ -375,6 +375,7 @@ mod tests {
             "test_feature",
             crate::feature::operator::Operator::Count(CountOperator {
                 params: OperatorParams {
+                    datasource: None,
                     entity: "events".to_string(),
                     dimension: "user_id".to_string(),
                     dimension_value: "{event.user_id}".to_string(),
@@ -405,6 +406,7 @@ mod tests {
             "feature_a",
             crate::feature::operator::Operator::Count(CountOperator {
                 params: OperatorParams {
+                    datasource: None,
                     entity: "events".to_string(),
                     dimension: "user_id".to_string(),
                     dimension_value: "{event.user_id}".to_string(),
@@ -420,6 +422,7 @@ mod tests {
             "feature_b",
             crate::feature::operator::Operator::Count(CountOperator {
                 params: OperatorParams {
+                    datasource: None,
                     entity: "events".to_string(),
                     dimension: "user_id".to_string(),
                     dimension_value: "{event.user_id}".to_string(),

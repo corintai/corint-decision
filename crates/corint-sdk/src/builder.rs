@@ -104,6 +104,7 @@ impl DecisionEngineBuilder {
 
     /// Build the decision engine
     pub async fn build(self) -> Result<DecisionEngine> {
+        #[cfg_attr(not(feature = "sqlx"), allow(unused_mut))]
         let mut engine = DecisionEngine::new_with_feature_executor(self.config, self.feature_executor).await?;
         
         // Set result writer if configured

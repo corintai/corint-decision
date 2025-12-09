@@ -386,6 +386,7 @@ mod tests {
     fn test_feature_definition_creation() {
         let operator = Operator::Count(CountOperator {
             params: OperatorParams {
+                datasource: None,
                 entity: "user_events".to_string(),
                 dimension: "user_id".to_string(),
                 dimension_value: "{event.user_id}".to_string(),
@@ -409,6 +410,7 @@ mod tests {
     fn test_feature_validation() {
         let operator = Operator::Count(CountOperator {
             params: OperatorParams {
+                datasource: None,
                 entity: "user_events".to_string(),
                 dimension: "user_id".to_string(),
                 dimension_value: "{event.user_id}".to_string(),
@@ -431,6 +433,7 @@ mod tests {
 
         let operator = Operator::Count(CountOperator {
             params: OperatorParams {
+                datasource: None,
                 entity: "user_events".to_string(),
                 dimension: "user_id".to_string(),
                 dimension_value: "{event.user_id}".to_string(),

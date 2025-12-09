@@ -279,7 +279,13 @@ mod tests {
 
     #[test]
     fn test_compile_empty_pipeline() {
-        let pipeline = Pipeline { steps: vec![] };
+        let pipeline = Pipeline {
+            id: Some("test_pipeline".to_string()),
+            name: None,
+            description: None,
+            when: None,
+            steps: vec![],
+        };
 
         let program = PipelineCompiler::compile(&pipeline).unwrap();
 
@@ -370,6 +376,10 @@ mod tests {
     #[test]
     fn test_compile_pipeline_with_multiple_steps() {
         let pipeline = Pipeline {
+            id: Some("multi_step_pipeline".to_string()),
+            name: None,
+            description: None,
+            when: None,
             steps: vec![
                 Step::Extract {
                     id: "extract".to_string(),
