@@ -35,7 +35,7 @@ impl Default for ServerConfig {
         Self {
             host: "127.0.0.1".to_string(),
             port: 8080,
-            rules_dir: PathBuf::from("examples/rules"),
+            rules_dir: PathBuf::from("examples/pipelines"),
             enable_metrics: true,
             enable_tracing: true,
             log_level: "info".to_string(),

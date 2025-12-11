@@ -373,7 +373,7 @@ The server can be configured via:
 ```bash
 CORINT_HOST=127.0.0.1
 CORINT_PORT=8080
-CORINT_RULES_DIR=examples/rules
+CORINT_RULES_DIR=examples/pipelines
 CORINT_ENABLE_METRICS=true
 CORINT_ENABLE_TRACING=true
 CORINT_LOG_LEVEL=info
@@ -383,7 +383,7 @@ CORINT_LOG_LEVEL=info
 ```yaml
 host: "127.0.0.1"
 port: 8080
-rules_dir: "examples/rules"
+rules_dir: "examples/pipelines"
 enable_metrics: true
 enable_tracing: true
 log_level: "info"
@@ -396,7 +396,7 @@ The server supports on-demand feature calculation from Supabase PostgreSQL:
 1. **Prerequisites:**
    - Supabase database configured with test data (see `docs/schema/postgres-examples.sql`)
    - Data source configured (`examples/configs/datasources/supabase_events.yaml`)
-   - Rules reference features (e.g., `examples/rules/supabase_feature_ruleset.yaml`)
+   - Rules reference features (e.g., `examples/pipelines/supabase_feature_ruleset.yaml`)
 
 2. **Workflow:**
    - Start the server: `cargo run -p corint-server`
@@ -455,7 +455,7 @@ See [Server Quick Start Guide](crates/corint-server/QUICKSTART.md).
 
 **Server won't start:**
 - Check if port is in use: `lsof -i :8080`
-- Verify rules directory exists: `ls -la examples/rules`
+- Verify rules directory exists: `ls -la examples/pipelines`
 - View detailed logs: `RUST_LOG=debug cargo run -p corint-server`
 
 **Rules not loading:**

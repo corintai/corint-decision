@@ -33,7 +33,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Build the decision engine
     println!("Loading fraud detection ruleset...");
     let engine = DecisionEngineBuilder::new()
-        .add_rule_file("examples/rules/fraud_detection.yaml")
+        .add_rule_file("examples/pipelines/fraud_detection.yaml")
         .enable_metrics(true)
         .build()
         .await?;

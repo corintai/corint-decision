@@ -25,7 +25,7 @@ Create `config/server.yaml`:
 ```yaml
 host: "127.0.0.1"
 port: 8080
-rules_dir: "examples/rules"
+rules_dir: "examples/pipelines"
 enable_metrics: true
 enable_tracing: true
 log_level: "info"
@@ -131,7 +131,7 @@ cp target/release/corint-server deploy/corint-server/bin/
 cp config/server.yaml deploy/corint-server/config/
 
 # Copy rule files
-cp -r examples/rules deploy/corint-server/
+cp -r examples/pipelines deploy/corint-server/
 
 # Copy data source configs (if needed)
 cp -r examples/configs deploy/corint-server/config/
@@ -602,7 +602,7 @@ lsof -i :8080
 2. Check if rules directory exists:
 
 ```bash
-ls -la examples/rules
+ls -la examples/pipelines
 ```
 
 3. View detailed logs:
@@ -622,8 +622,8 @@ RUST_LOG=debug cargo run -p corint-server
 3. View server startup logs for rule loading information:
 
 ```
-INFO corint_server: Loading rules from directory: "examples/rules"
-INFO corint_server: Loading rule file: "examples/rules/simple_rule.yaml"
+INFO corint_server: Loading rules from directory: "examples/pipelines"
+INFO corint_server: Loading rule file: "examples/pipelines/simple_rule.yaml"
 ```
 
 ### Issue 3: Feature Calculation Fails

@@ -157,7 +157,7 @@ cargo run --example complete_pipeline
 
 ## Rule Files
 
-All example rule files are located in `examples/rules/`:
+All example rule files are located in `examples/pipelines/`:
 
 - `simple_rule.yaml` - Basic amount threshold check
 - `fraud_detection.yaml` - **⭐ Comprehensive example** covering all core concepts with 6-layer decision logic and complete DSL mapping
@@ -252,7 +252,7 @@ println!("Executions: {}", metrics.counter("executions_total").value());
 
 ## Next Steps
 
-1. **Customize Rules**: Modify the YAML files in `examples/rules/` to match your use case
+1. **Customize Rules**: Modify the YAML files in `examples/pipelines/` to match your use case
 2. **Add Real Integrations**: Replace mock LLM and service providers with real implementations
 3. **Extend Examples**: Add more complex scenarios based on your requirements
 4. **Performance Testing**: Use these examples as a baseline for performance benchmarking

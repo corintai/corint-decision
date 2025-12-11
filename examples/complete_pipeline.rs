@@ -38,7 +38,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Build the decision engine
     println!("Loading multi-stage pipeline...");
     let engine = DecisionEngineBuilder::new()
-        .add_rule_file("examples/rules/complete_pipeline.yaml")
+        .add_rule_file("examples/pipelines/complete_pipeline.yaml")
         .enable_metrics(true)
         .build()
         .await?;

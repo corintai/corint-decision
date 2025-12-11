@@ -15,7 +15,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Build the decision engine with a rule file
     let engine = DecisionEngineBuilder::new()
-        .add_rule_file("examples/rules/simple_rule.yaml")
+        .add_rule_file("examples/pipelines/simple_rule.yaml")
         .enable_metrics(true)
         .enable_semantic_analysis(true)
         .build()

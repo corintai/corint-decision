@@ -38,7 +38,7 @@ The server can be configured via:
 ```bash
 CORINT_HOST=127.0.0.1
 CORINT_PORT=8080
-CORINT_RULES_DIR=examples/rules
+CORINT_RULES_DIR=examples/pipelines
 CORINT_ENABLE_METRICS=true
 CORINT_ENABLE_TRACING=true
 CORINT_LOG_LEVEL=info
@@ -53,7 +53,7 @@ Create `config/server.yaml`:
 ```yaml
 host: "127.0.0.1"
 port: 8080
-rules_dir: "examples/rules"
+rules_dir: "examples/pipelines"
 enable_metrics: true
 enable_tracing: true
 log_level: "info"

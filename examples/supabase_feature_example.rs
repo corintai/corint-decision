@@ -243,7 +243,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let feature_executor_arc = Arc::new(executor);
     
     let decision_engine = DecisionEngineBuilder::new()
-        .add_rule_file("examples/rules/supabase_feature_ruleset.yaml")
+        .add_rule_file("examples/pipelines/supabase_feature_ruleset.yaml")
         .enable_metrics(true)
         .with_feature_executor(feature_executor_arc.clone())
         .build()

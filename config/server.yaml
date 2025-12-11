@@ -8,7 +8,7 @@ port: 8080
 
 # Rules directory
 # All .yaml and .yml files in this directory will be loaded automatically
-rules_dir: "examples/rules"
+rules_dir: "examples/pipelines"
 
 # Enable metrics collection
 enable_metrics: true

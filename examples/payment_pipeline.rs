@@ -28,7 +28,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Build the decision engine with payment_pipeline.yaml
     let engine = DecisionEngineBuilder::new()
-        .add_rule_file("examples/rules/payment_pipeline.yaml")
+        .add_rule_file("examples/pipelines/payment_pipeline.yaml")
         .build()
         .await?;
 
