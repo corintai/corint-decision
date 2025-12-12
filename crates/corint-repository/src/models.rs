@@ -57,6 +57,7 @@ impl<T> CachedArtifact<T> {
     }
 
     /// Get the age of this cached entry
+    #[allow(dead_code)]
     pub fn age(&self) -> Duration {
         self.cached_at.elapsed()
     }

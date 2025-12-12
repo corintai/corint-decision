@@ -427,10 +427,10 @@ impl Repository for PostgresRepository {
 #[async_trait]
 impl CacheableRepository for PostgresRepository {
     fn clear_cache(&mut self) {
-        let rule_cache = self.rule_cache.clone();
-        let ruleset_cache = self.ruleset_cache.clone();
-        let template_cache = self.template_cache.clone();
-        let pipeline_cache = self.pipeline_cache.clone();
+        let rule_cache = Arc::clone(&self.rule_cache);
+        let ruleset_cache = Arc::clone(&self.ruleset_cache);
+        let template_cache = Arc::clone(&self.template_cache);
+        let pipeline_cache = Arc::clone(&self.pipeline_cache);
 
         tokio::spawn(async move {
             rule_cache.write().await.clear();
@@ -443,10 +443,10 @@ impl CacheableRepository for PostgresRepository {
     }
 
     fn clear_cache_entry(&mut self, identifier: &str) {
-        let rule_cache = self.rule_cache.clone();
-        let ruleset_cache = self.ruleset_cache.clone();
-        let template_cache = self.template_cache.clone();
-        let pipeline_cache = self.pipeline_cache.clone();
+        let rule_cache = Arc::clone(&self.rule_cache);
+        let ruleset_cache = Arc::clone(&self.ruleset_cache);
+        let template_cache = Arc::clone(&self.template_cache);
+        let pipeline_cache = Arc::clone(&self.pipeline_cache);
         let id = identifier.to_string();
 
         tokio::spawn(async move {

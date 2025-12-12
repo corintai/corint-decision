@@ -79,7 +79,7 @@ impl PipelineExecutor {
 
     /// Get metrics collector
     pub fn metrics(&self) -> Arc<MetricsCollector> {
-        self.metrics.clone()
+        Arc::clone(&self.metrics)
     }
 
     /// Execute an IR program with the given event data
