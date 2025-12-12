@@ -76,6 +76,8 @@ impl ExecutionContext {
     }
 
     /// Load a field value from event data
+    ///
+    /// Returns Value::Null if field is not found (graceful handling for missing fields)
     pub fn load_field(&self, path: &[String]) -> Result<Value> {
         if path.is_empty() {
             return Err(RuntimeError::FieldNotFound("empty path".to_string()));
@@ -110,22 +112,30 @@ impl ExecutionContext {
             }
         }
 
-        let mut current = current.ok_or_else(|| {
-            RuntimeError::FieldNotFound(path[0].clone())
-        })?;
+        // If field not found, return Null instead of error
+        // This allows rules to gracefully handle missing fields
+        let Some(mut current) = current else {
+            tracing::debug!("Field not found: {}, returning Null", path[0]);
+            return Ok(Value::Null);
+        };
 
         for segment in &path[1..] {
             match current {
                 Value::Object(map) => {
-                    current = map.get(segment).ok_or_else(|| {
-                        RuntimeError::FieldNotFound(segment.clone())
-                    })?;
+                    // If nested field not found, return Null
+                    let Some(next) = map.get(segment) else {
+                        tracing::debug!("Nested field not found: {}, returning Null", segment);
+                        return Ok(Value::Null);
+                    };
+                    current = next;
                 }
                 _ => {
-                    return Err(RuntimeError::TypeError(format!(
-                        "Cannot access field '{}' on non-object",
+                    // If trying to access field on non-object, return Null
+                    tracing::debug!(
+                        "Cannot access field '{}' on non-object, returning Null",
                         segment
-                    )));
+                    );
+                    return Ok(Value::Null);
                 }
             }
         }

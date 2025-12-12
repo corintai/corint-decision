@@ -369,13 +369,12 @@ mod tests {
     fn test_analyze_valid_rule() {
         let mut analyzer = SemanticAnalyzer::new();
 
-        let rule = Rule {
-            id: "test_rule".to_string(),
-            name: "Test Rule".to_string(),
-            description: None,
-            when: WhenBlock::new(),
-            score: 50,
-        };
+        let rule = Rule::new(
+            "test_rule".to_string(),
+            "Test Rule".to_string(),
+            WhenBlock::new(),
+            50,
+        );
 
         assert!(analyzer.analyze_rule(&rule).is_ok());
     }
@@ -384,13 +383,12 @@ mod tests {
     fn test_analyze_rule_empty_id() {
         let mut analyzer = SemanticAnalyzer::new();
 
-        let rule = Rule {
-            id: String::new(),
-            name: "Test Rule".to_string(),
-            description: None,
-            when: WhenBlock::new(),
-            score: 50,
-        };
+        let rule = Rule::new(
+            String::new(),
+            "Test Rule".to_string(),
+            WhenBlock::new(),
+            50,
+        );
 
         assert!(analyzer.analyze_rule(&rule).is_err());
     }
@@ -399,13 +397,12 @@ mod tests {
     fn test_analyze_rule_empty_name() {
         let mut analyzer = SemanticAnalyzer::new();
 
-        let rule = Rule {
-            id: "test_rule".to_string(),
-            name: String::new(),
-            description: None,
-            when: WhenBlock::new(),
-            score: 50,
-        };
+        let rule = Rule::new(
+            "test_rule".to_string(),
+            String::new(),
+            WhenBlock::new(),
+            50,
+        );
 
         assert!(analyzer.analyze_rule(&rule).is_err());
     }
@@ -450,12 +447,8 @@ mod tests {
     fn test_analyze_ruleset_duplicate_rules() {
         let mut analyzer = SemanticAnalyzer::new();
 
-        let ruleset = Ruleset {
-            id: "test_ruleset".to_string(),
-            name: None,
-            rules: vec!["rule1".to_string(), "rule1".to_string()], // Duplicate
-            decision_logic: vec![],
-        };
+        let ruleset = Ruleset::new("test_ruleset".to_string())
+            .with_rules(vec!["rule1".to_string(), "rule1".to_string()]); // Duplicate
 
         assert!(analyzer.analyze_ruleset(&ruleset).is_err());
     }

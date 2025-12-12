@@ -8,6 +8,9 @@ use crate::error::Result;
 use crate::codegen::{RuleCompiler, RulesetCompiler, PipelineCompiler};
 use crate::semantic::SemanticAnalyzer;
 use crate::optimizer::{ConstantFolder, DeadCodeEliminator};
+use crate::import_resolver::ImportResolver;
+use corint_parser::PipelineParser;
+use std::path::Path;
 
 /// Compiler options
 #[derive(Debug, Clone)]
@@ -18,6 +21,8 @@ pub struct CompilerOptions {
     pub enable_constant_folding: bool,
     /// Enable dead code elimination
     pub enable_dead_code_elimination: bool,
+    /// Library base path for imports (default: "repository")
+    pub library_base_path: String,
 }
 
 impl Default for CompilerOptions {
@@ -26,6 +31,7 @@ impl Default for CompilerOptions {
             enable_semantic_analysis: true,
             enable_constant_folding: true,
             enable_dead_code_elimination: true,
+            library_base_path: "repository".to_string(),
         }
     }
 }
@@ -40,6 +46,8 @@ pub struct Compiler {
     constant_folder: ConstantFolder,
     /// Dead code eliminator
     dead_code_eliminator: DeadCodeEliminator,
+    /// Import resolver
+    import_resolver: ImportResolver,
 }
 
 impl Compiler {
@@ -50,11 +58,14 @@ impl Compiler {
 
     /// Create a new compiler instance with custom options
     pub fn with_options(options: CompilerOptions) -> Self {
+        let import_resolver = ImportResolver::new(&options.library_base_path);
+
         Self {
             options,
             semantic_analyzer: SemanticAnalyzer::new(),
             constant_folder: ConstantFolder::new(),
             dead_code_eliminator: DeadCodeEliminator::new(),
+            import_resolver,
         }
     }
 
@@ -131,6 +142,62 @@ impl Compiler {
     pub fn dead_code_eliminator(&self) -> &DeadCodeEliminator {
         &self.dead_code_eliminator
     }
+
+    /// Get a reference to the import resolver
+    pub fn import_resolver(&self) -> &ImportResolver {
+        &self.import_resolver
+    }
+
+    /// Get a mutable reference to the import resolver
+    pub fn import_resolver_mut(&mut self) -> &mut ImportResolver {
+        &mut self.import_resolver
+    }
+
+    /// Compile a pipeline file with imports
+    ///
+    /// This is the main entry point for compiling pipelines that use the import system.
+    /// It:
+    /// 1. Loads the pipeline file
+    /// 2. Resolves all imports (rules and rulesets)
+    /// 3. Compiles the pipeline with the complete context
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// use corint_compiler::Compiler;
+    /// use std::path::Path;
+    ///
+    /// let mut compiler = Compiler::new();
+    /// let program = compiler.compile_pipeline_file(Path::new("repository/pipelines/fraud_detection.yaml")).unwrap();
+    /// ```
+    pub fn compile_pipeline_file(&mut self, file_path: &Path) -> Result<Program> {
+        // 1. Load the file
+        let content = std::fs::read_to_string(file_path)
+            .map_err(|e| crate::error::CompileError::ImportNotFound {
+                path: file_path.display().to_string(),
+                source: e,
+            })?;
+
+        // 2. Parse the pipeline with imports
+        let document = PipelineParser::parse_with_imports(&content)
+            .map_err(|e| crate::error::CompileError::ParseError {
+                path: file_path.display().to_string(),
+                message: e.to_string(),
+            })?;
+
+        // 3. Resolve imports
+        let _resolved = self.import_resolver.resolve_imports(&document)?;
+
+        // 4. TODO: For now, we just compile the pipeline itself
+        // In a full implementation, we would need to:
+        // - Store resolved rules and rulesets in a context
+        // - Pass this context to the compiler
+        // - The compiler would use this context when compiling ruleset references
+        // - Use `_resolved` to get the complete list of rules and rulesets
+
+        // For now, just compile the pipeline
+        self.compile_pipeline(&document.definition)
+    }
 }
 
 impl Default for Compiler {
@@ -155,13 +222,12 @@ mod tests {
             Expression::literal(Value::Number(18.0)),
         ));
 
-        let rule = Rule {
-            id: "test".to_string(),
-            name: "Test".to_string(),
-            description: None,
+        let rule = Rule::new(
+            "test".to_string(),
+            "Test".to_string(),
             when,
-            score: 50,
-        };
+            50,
+        );
 
         let program = compiler.compile_rule(&rule).unwrap();
 
@@ -181,18 +247,18 @@ mod tests {
             enable_semantic_analysis: false,
             enable_constant_folding: false,
             enable_dead_code_elimination: false,
+            library_base_path: "repository".to_string(),
         };
 
         let mut compiler = Compiler::with_options(options);
 
         let when = WhenBlock::new();
-        let rule = Rule {
-            id: "test".to_string(),
-            name: "Test".to_string(),
-            description: None,
+        let rule = Rule::new(
+            "test".to_string(),
+            "Test".to_string(),
             when,
-            score: 50,
-        };
+            50,
+        );
 
         let program = compiler.compile_rule(&rule).unwrap();
         assert_eq!(program.metadata.source_type, "rule");
@@ -203,13 +269,12 @@ mod tests {
         let mut compiler = Compiler::new();
 
         // Empty rule ID should fail semantic analysis
-        let rule = Rule {
-            id: String::new(), // Empty ID
-            name: "Test".to_string(),
-            description: None,
-            when: WhenBlock::new(),
-            score: 50,
-        };
+        let rule = Rule::new(
+            String::new(), // Empty ID
+            "Test".to_string(),
+            WhenBlock::new(),
+            50,
+        );
 
         let result = compiler.compile_rule(&rule);
         assert!(result.is_err());

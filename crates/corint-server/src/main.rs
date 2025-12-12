@@ -5,8 +5,10 @@
 mod api;
 mod config;
 mod error;
+mod repository_loader;
 
 use crate::config::ServerConfig;
+use crate::repository_loader::load_rules_from_repository;
 use anyhow::Result;
 use corint_sdk::DecisionEngineBuilder;
 use corint_runtime::datasource::{DataSourceClient, DataSourceConfig};
@@ -117,28 +119,8 @@ async fn init_engine(config: &ServerConfig) -> Result<corint_sdk::DecisionEngine
         info!("sqlx feature not enabled, decision result persistence unavailable");
     }
 
-    // Load rule files from rules directory
-    if config.rules_dir.exists() {
-        info!("Loading rules from directory: {:?}", config.rules_dir);
-        
-        // Read directory and load all YAML files
-        let entries = std::fs::read_dir(&config.rules_dir)?;
-        
-        for entry in entries {
-            let entry = entry?;
-            let path = entry.path();
-            
-            if path.extension().and_then(|s| s.to_str()) == Some("yaml")
-                || path.extension().and_then(|s| s.to_str()) == Some("yml")
-            {
-                info!("Loading rule file: {:?}", path);
-                builder = builder.add_rule_file(path);
-            }
-        }
-    } else {
-        error!("Rules directory not found: {:?}", config.rules_dir);
-        info!("Server will start without any rules loaded");
-    }
+    // Load rules based on repository configuration
+    builder = load_rules_from_repository(builder, &config.repository).await?;
 
     // Build engine
     let engine = builder.build().await?;

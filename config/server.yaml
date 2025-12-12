@@ -6,9 +6,26 @@ host: "127.0.0.1"
 # Server port
 port: 8080
 
-# Rules directory
-# All .yaml and .yml files in this directory will be loaded automatically
-rules_dir: "examples/pipelines"
+# Repository configuration for loading rules and pipelines
+# Supports three types: filesystem, database, api
+repository:
+  type: filesystem
+  # Base path for repository (contains registry.yaml and pipelines/)
+  path: "repository"
+
+# Alternative repository configurations (examples):
+
+# Database repository (PostgreSQL, MySQL, SQLite)
+# repository:
+#   type: database
+#   db_type: postgresql
+#   url: "postgresql://user:password@localhost:5432/corint_rules"
+
+# API repository
+# repository:
+#   type: api
+#   base_url: "https://api.example.com/rules"
+#   api_key: "your-api-key-here"  # optional
 
 # Enable metrics collection
 enable_metrics: true
@@ -22,6 +39,4 @@ log_level: "info"
 # Database URL for decision result persistence (optional)
 # If not set, decision results will not be persisted to database
 # You can also set DATABASE_URL environment variable as an alternative
-# Example: postgresql://user:password@localhost:5432/corint_risk
-# database_url: "postgresql://postgres:password@localhost:5432/corint_risk"
 database_url: "postgresql://postgres.hfsbvqfkwbslcuvokmis:XPRozJ3DZox5KUnh@aws-1-ap-southeast-1.pooler.supabase.com:5432/postgres?sslmode=require"

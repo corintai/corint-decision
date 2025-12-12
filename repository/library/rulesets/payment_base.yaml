@@ -1,0 +1,44 @@
+version: "0.1"
+
+# Base payment risk ruleset
+# This is the parent ruleset that defines common payment rules
+
+imports:
+  rules:
+    - library/rules/geography/suspicious_ip.yaml
+    - library/rules/payment/card_testing.yaml
+    - library/rules/payment/velocity_check.yaml
+    - library/rules/payment/new_account_risk.yaml
+    - library/rules/payment/suspicious_email.yaml
+
+---
+
+ruleset:
+  id: payment_base
+  name: Base Payment Risk Ruleset
+  description: Common payment risk rules shared across all payment types
+
+  rules:
+    - suspicious_ip
+    - card_testing
+    - velocity_check
+    - new_account_risk
+    - suspicious_email
+
+  # Base decision logic (can be overridden by child rulesets)
+  decision_logic:
+    # Critical patterns
+    - condition: triggered_rules contains "card_testing"
+      action: deny
+      reason: "Card testing detected"
+      terminate: true
+
+    # Default action
+    - default: true
+      action: approve
+      reason: "No risk detected"
+
+  metadata:
+    version: "1.0.0"
+    last_updated: "2025-12-11"
+    category: "payment"

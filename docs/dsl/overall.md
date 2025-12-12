@@ -26,6 +26,15 @@ An RDL file may contain one of the following:
 ```yaml
 version: "0.1"
 
+# Optional: Import dependencies
+imports:
+  rules:
+    - library/rules/fraud/fraud_farm.yaml
+  rulesets:
+    - library/rulesets/fraud_detection_core.yaml
+
+---
+
 rule: {...}
 # OR
 ruleset: {...}
@@ -37,9 +46,55 @@ Components:
 
 | Component | Purpose |
 |----------|---------|
+| **imports** | Declare dependencies on external rules/rulesets (optional) |
 | **rule** | A single risk logic unit |
 | **ruleset** | A group of rules |
 | **pipeline** | The full risk processing DAG |
+
+### 2.1 Imports (Module System)
+
+RDL supports a module system for code reuse and maintainability:
+
+```yaml
+version: "0.1"
+
+# Declare dependencies
+imports:
+  rules:
+    - library/rules/fraud/fraud_farm.yaml
+    - library/rules/payment/card_testing.yaml
+  rulesets:
+    - library/rulesets/fraud_detection_core.yaml
+  templates:
+    - library/templates/score_based_decision.yaml
+
+---
+
+# Use imported components
+ruleset:
+  id: my_custom_ruleset
+  rules:
+    - fraud_farm_pattern      # From imported rule
+    - card_testing            # From imported rule
+```
+
+**Key Principles:**
+- **Explicit Dependencies**: All dependencies must be declared via `imports`
+- **Compile-Time Merging**: Dependencies resolved during compilation
+- **Dependency Propagation**: Ruleset imports automatically load their rule dependencies
+- **No Circular Dependencies**: Compiler detects and prevents circular imports
+- **ID Uniqueness**: All Rule IDs and Ruleset IDs must be globally unique
+
+**Dependency Hierarchy:**
+```
+Pipeline
+  ↓ imports rulesets
+Ruleset
+  ↓ imports rules
+Rule (leaf, no dependencies)
+```
+
+(See `imports.md` for complete specification.)
 
 ---
 
@@ -418,6 +473,7 @@ RDL documentation is organized as follows:
 - **rule.md** - Rule specification (including dynamic thresholds and dependencies)
 - **ruleset.md** - Ruleset specification
 - **pipeline.md** - Pipeline orchestration
+- **imports.md** - Module system and dependency management (NEW)
 
 ### Data & Schema
 - **event.md** - Standard event types and schemas
@@ -438,6 +494,7 @@ RDL documentation is organized as follows:
 
 ### Examples
 - **examples/** - Real-world pipeline examples
+- **repository/** - Production rule library and reusable components
 
 ---
 

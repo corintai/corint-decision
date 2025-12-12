@@ -1,0 +1,116 @@
+version: "0.1"
+
+# Reusable core fraud detection ruleset
+# This ruleset explicitly imports all its rule dependencies
+
+imports:
+  rules:
+    - library/rules/fraud/fraud_farm.yaml
+    - library/rules/fraud/account_takeover.yaml
+    - library/rules/fraud/velocity_abuse.yaml
+    - library/rules/fraud/amount_outlier.yaml
+    - library/rules/geography/suspicious_geography.yaml
+    - library/rules/fraud/new_user_fraud.yaml
+
+---
+
+ruleset:
+  id: fraud_detection_core
+  name: Core Fraud Detection Ruleset
+  description: |
+    Reusable fraud detection ruleset with 6 common fraud patterns.
+
+    Each rule detects a specific fraud pattern and contributes a score:
+    1. Fraud Farm (100pts) - High IP/device association
+    2. Account Takeover (85pts) - New device + failed logins + location change
+    3. Velocity Abuse (70pts) - Transaction frequency spikes
+    4. Amount Outlier (75pts) - Statistical anomaly
+    5. Suspicious Geography (60pts) - Impossible travel
+    6. New User Fraud (50pts) - Recent account + suspicious behavior
+
+    Decision logic uses pattern combinations and score thresholds.
+
+  # Reference imported rules by their IDs
+  rules:
+    - fraud_farm_pattern
+    - account_takeover_pattern
+    - velocity_abuse_pattern
+    - amount_outlier_pattern
+    - suspicious_geography_pattern
+    - new_user_fraud_pattern
+
+  # Multi-layer decision logic
+  decision_logic:
+    # ==========================================
+    # Priority 1: Critical Patterns
+    # ==========================================
+
+    # Fraud farm is always critical - organized fraud
+    - condition: triggered_rules contains "fraud_farm_pattern"
+      action: deny
+      reason: "Critical: Fraud farm detected (organized fraud network)"
+      terminate: true
+
+    # Multiple high-severity patterns combined
+    - condition: |
+        triggered_rules contains "account_takeover_pattern" &&
+        triggered_rules contains "amount_outlier_pattern"
+      action: deny
+      reason: "Critical: Account takeover with abnormal transaction amount"
+      terminate: true
+
+    # ==========================================
+    # Priority 2: Score-Based Thresholds
+    # ==========================================
+
+    # Critical Risk >= 200 (multiple patterns)
+    - condition: total_score >= 200
+      action: deny
+      reason: "Critical risk - multiple fraud indicators (score: {total_score})"
+      terminate: true
+
+    # Very High Risk >= 150
+    - condition: total_score >= 150
+      action: deny
+      reason: "Very high risk - strong fraud pattern (score: {total_score})"
+      terminate: true
+
+    # High Risk >= 100
+    - condition: total_score >= 100
+      action: deny
+      reason: "High risk - clear fraud signals (score: {total_score})"
+      terminate: true
+
+    # Medium-High Risk >= 60
+    - condition: total_score >= 60
+      action: review
+      reason: "Medium-high risk - manual review required (score: {total_score})"
+      terminate: false
+
+    # Medium Risk >= 30
+    - condition: total_score >= 30
+      action: review
+      reason: "Medium risk - enhanced monitoring (score: {total_score})"
+      terminate: false
+
+    # ==========================================
+    # Priority 3: Count-Based Decisions
+    # ==========================================
+
+    # Multiple fraud signals present
+    - condition: triggered_count >= 3
+      action: review
+      reason: "Multiple fraud indicators ({triggered_count} patterns detected)"
+
+    # ==========================================
+    # Priority 4: Default Action
+    # ==========================================
+
+    # Low Risk (default)
+    - default: true
+      action: approve
+      reason: "Low risk - normal pattern"
+
+  metadata:
+    version: "1.0.0"
+    last_updated: "2024-12-11"

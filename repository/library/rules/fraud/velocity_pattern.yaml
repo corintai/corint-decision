@@ -1,0 +1,32 @@
+version: "0.1"
+
+# Parameterized velocity rule
+# Can be reused with different thresholds
+
+rule:
+  id: velocity_pattern
+  name: Velocity Pattern Detection
+  description: |
+    Detects velocity abuse patterns with configurable thresholds.
+    This is a template rule that can be instantiated with different parameters.
+
+  # Parameters with default values
+  params:
+    time_window_minutes: 60
+    max_transactions: 10
+    max_amount: 5000
+    severity: "medium"
+
+  when:
+    conditions:
+      # These conditions would use the params in actual implementation
+      - transaction_count_last_hour > 10
+      - total_amount_last_hour > 5000
+
+  score: 60
+
+  metadata:
+    category: "fraud"
+    severity: "medium"
+    parameterized: true
+    rule_version: "1.0.0"

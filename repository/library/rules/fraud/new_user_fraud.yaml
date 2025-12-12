@@ -1,0 +1,30 @@
+version: "0.1"
+
+# Reusable new user fraud detection rule
+rule:
+  id: new_user_fraud_pattern
+  name: New User Fraud Detection
+  description: Detect new accounts with immediate high-risk behavior
+
+  when:
+    conditions:
+      # Account created within past 7 days
+      - user_age_days < 7
+      # AND (large amount OR unverified payment)
+      - transaction_amount > 1000 || (new_payment_method == true && user_verified == false)
+
+  score: 50
+
+  metadata:
+    category: fraud
+    severity: medium
+    tags: [first_party_fraud, synthetic_identity, fake_accounts]
+    rule_version: "1.0.0"
+    last_updated: "2024-12-11"
+    description_detail: "New account with immediate high-risk behavior"
+    detection: "user_age_days < 7 AND (high_amount OR unverified_new_payment)"
+    features:
+      - user_age_days: "Account age in days"
+      - transaction_amount: "Transaction amount"
+      - new_payment_method: "First time using this payment"
+      - user_verified: "Email/phone verification status"

@@ -1,0 +1,57 @@
+version: "0.1"
+
+---
+
+template:
+  id: hybrid_decision
+  name: Hybrid Decision Template
+  description: |
+    Combined score and pattern-based decision logic.
+    Balances quantitative scores with qualitative pattern detection.
+
+  params:
+    deny_score: 150
+    review_score: 80
+    critical_pattern: "card_testing"
+    high_risk_pattern: "velocity_abuse"
+
+  decision_logic:
+    # Pattern-based denial (highest priority)
+    - condition: triggered_rules contains "card_testing"
+      action: deny
+      reason: "Critical pattern: Card testing detected"
+      terminate: true
+
+    - condition: triggered_rules contains "fraud_farm"
+      action: deny
+      reason: "Critical pattern: Fraud farm detected"
+      terminate: true
+
+    # Score-based denial
+    - condition: total_score >= params.deny_score
+      action: deny
+      reason: "Score exceeds denial threshold (score: {total_score})"
+      terminate: true
+
+    # Combined: High score + pattern
+    - condition: total_score >= params.review_score AND triggered_rules contains "velocity_abuse"
+      action: deny
+      reason: "Combined risk: High score + velocity pattern"
+      terminate: true
+
+    # Score-based review
+    - condition: total_score >= params.review_score
+      action: review
+      reason: "Score requires review (score: {total_score})"
+      terminate: true
+
+    # Pattern-based review
+    - condition: triggered_rules contains "new_account_risk"
+      action: review
+      reason: "Pattern requires review: New account"
+      terminate: false
+
+    # Default approval
+    - default: true
+      action: approve
+      reason: "Low risk transaction"

@@ -45,6 +45,9 @@ pub struct DecisionResponse {
     /// Request ID (for tracking and correlation)
     pub request_id: String,
 
+    /// Pipeline ID that processed this request
+    pub pipeline_id: Option<String>,
+
     /// Decision result
     pub result: DecisionResult,
 
@@ -126,12 +129,19 @@ impl DecisionEngine {
             enable_semantic_analysis: config.compiler_options.enable_semantic_analysis,
             enable_constant_folding: config.compiler_options.enable_constant_folding,
             enable_dead_code_elimination: true, // FIXED: Bug with default actions resolved - now uses proper CFG analysis
+            library_base_path: "repository".to_string(),
         };
 
         let mut compiler = Compiler::with_options(compiler_opts);
 
+        // Compile rule files
         for rule_file in &config.rule_files {
             programs.extend(Self::load_and_compile_rules(rule_file, &mut compiler).await?);
+        }
+
+        // Compile rule contents (from repository)
+        for (id, content) in &config.rule_contents {
+            programs.extend(Self::compile_rules_from_content(id, content, &mut compiler).await?);
         }
 
         // Build ruleset_map, rule_map, and pipeline_map for routing
@@ -154,10 +164,23 @@ impl DecisionEngine {
         }
 
         // Load optional registry file
-        let registry = if let Some(registry_file) = &config.registry_file {
+        let registry = if let Some(registry_content) = &config.registry_content {
+            // Load registry from content string using RegistryParser
+            match RegistryParser::parse(registry_content) {
+                Ok(reg) => {
+                    tracing::info!("✓ Loaded pipeline registry from content: {} entries", reg.registry.len());
+                    Some(reg)
+                }
+                Err(e) => {
+                    tracing::warn!("Failed to parse registry content: {}. Continuing without registry.", e);
+                    None
+                }
+            }
+        } else if let Some(registry_file) = &config.registry_file {
+            // Fall back to loading from file
             match Self::load_registry(registry_file).await {
                 Ok(reg) => {
-                    tracing::info!("✓ Loaded pipeline registry: {} entries", reg.registry.len());
+                    tracing::info!("✓ Loaded pipeline registry from file: {} entries", reg.registry.len());
                     Some(reg)
                 }
                 Err(e) => {
@@ -224,8 +247,10 @@ impl DecisionEngine {
     /// Evaluate a when block against event data
     fn evaluate_when_block(when: &WhenBlock, event_data: &HashMap<String, Value>) -> bool {
         // Check event_type if specified
+        // Note: event_type field in WhenBlock corresponds to event.type in YAML,
+        // which is stored as "type" key in event_data HashMap
         if let Some(ref expected_type) = when.event_type {
-            if let Some(actual_type) = event_data.get("event_type") {
+            if let Some(actual_type) = event_data.get("type") {
                 if let Value::String(actual) = actual_type {
                     if actual != expected_type {
                         return false; // Event type mismatch
@@ -234,7 +259,7 @@ impl DecisionEngine {
                     return false; // Event type is not a string
                 }
             } else {
-                return false; // No event_type in event data
+                return false; // No type field in event data
             }
         }
 
@@ -465,6 +490,187 @@ impl DecisionEngine {
         Ok(programs)
     }
 
+    /// Compile rules from content string (from repository)
+    async fn compile_rules_from_content(
+        id: &str,
+        content: &str,
+        compiler: &mut Compiler,
+    ) -> Result<Vec<Program>> {
+        use corint_parser::YamlParser;
+
+        tracing::debug!("Compiling content from: {}", id);
+
+        let mut programs = Vec::new();
+        let mut has_pipeline = false;
+        let mut pipeline_count = 0;
+
+        // First, try to parse as a pipeline with imports (most common case for repository content)
+        if let Ok(document) = corint_parser::PipelineParser::parse_with_imports(content) {
+            has_pipeline = true;
+            pipeline_count += 1;
+
+            // Validate: Pipeline must have when condition
+            if document.definition.when.is_none() {
+                return Err(SdkError::InvalidRuleFile(format!(
+                    "Pipeline '{}' from '{}' is missing mandatory 'when' condition. \
+                     All pipelines must specify when conditions to filter events.",
+                    document.definition.id.as_ref().unwrap_or(&"<unnamed>".to_string()),
+                    id
+                )));
+            }
+
+            tracing::debug!(
+                "Parsed pipeline with imports: when={:?}, steps={}, imports={:?}",
+                document.definition.when,
+                document.definition.steps.len(),
+                document.imports.is_some()
+            );
+
+            // Resolve imports and compile dependencies
+            let resolved = compiler.import_resolver_mut().resolve_imports(&document)
+                .map_err(|e| SdkError::CompileError(e))?;
+
+            tracing::debug!(
+                "Resolved imports: {} rules, {} rulesets",
+                resolved.rules.len(),
+                resolved.rulesets.len()
+            );
+
+            // Compile all resolved rules first
+            for rule in &resolved.rules {
+                let rule_prog = compiler.compile_rule(rule)?;
+                programs.push(rule_prog);
+            }
+
+            // Compile all resolved rulesets
+            for ruleset in &resolved.rulesets {
+                let ruleset_prog = compiler.compile_ruleset(ruleset)?;
+                programs.push(ruleset_prog);
+            }
+
+            // Finally compile the pipeline itself
+            let prog = compiler.compile_pipeline(&document.definition)?;
+            tracing::debug!(
+                "Compiled pipeline: {} instructions",
+                prog.instructions.len()
+            );
+            programs.push(prog);
+
+            // IMPORTANT: Also parse inline rules and rulesets from the same YAML file
+            // This supports the format where pipeline, rules, and rulesets are in the same file
+            let documents = YamlParser::parse_multi_document(content)?;
+            if documents.len() > 1 {
+                tracing::debug!(
+                    "Found {} documents in file, checking for inline rules/rulesets",
+                    documents.len()
+                );
+
+                use corint_parser::{RuleParser, RulesetParser};
+
+                for (doc_idx, doc) in documents.iter().enumerate() {
+                    // Skip the first document (already processed as pipeline metadata)
+                    if doc_idx == 0 {
+                        continue;
+                    }
+
+                    // Skip if it's the pipeline definition (already compiled above)
+                    if doc.get("pipeline").is_some() {
+                        continue;
+                    }
+
+                    // Try to parse as rule
+                    if let Ok(rule) = RuleParser::parse_from_yaml(doc) {
+                        tracing::debug!("Found inline rule: {}", rule.id);
+                        let rule_prog = compiler.compile_rule(&rule)?;
+                        programs.push(rule_prog);
+                        continue;
+                    }
+
+                    // Try to parse as ruleset
+                    if let Ok(ruleset) = RulesetParser::parse_from_yaml(doc) {
+                        tracing::debug!("Found inline ruleset: {}", ruleset.id);
+                        let ruleset_prog = compiler.compile_ruleset(&ruleset)?;
+                        programs.push(ruleset_prog);
+                        continue;
+                    }
+                }
+            }
+        } else {
+            // Fallback: Parse as multi-document YAML for individual rules/rulesets
+            let documents = YamlParser::parse_multi_document(content)?;
+
+        // Try to parse each document
+        for (_doc_idx, doc) in documents.iter().enumerate() {
+            // Try rule first
+            if let Ok(rule) = RuleParser::parse_from_yaml(doc) {
+                let prog = compiler.compile_rule(&rule)?;
+                programs.push(prog);
+                continue;
+            }
+
+            // Try ruleset
+            if let Ok(ruleset) = RulesetParser::parse_from_yaml(doc) {
+                let prog = compiler.compile_ruleset(&ruleset)?;
+                programs.push(prog);
+                continue;
+            }
+
+            // Try pipeline (without imports, since parse_with_imports already failed above)
+            if let Ok(pipeline) = PipelineParser::parse_from_yaml(doc) {
+                has_pipeline = true;
+                pipeline_count += 1;
+
+                // Validate: Pipeline must have when condition
+                if pipeline.when.is_none() {
+                    return Err(SdkError::InvalidRuleFile(format!(
+                        "Pipeline '{}' from '{}' is missing mandatory 'when' condition. \
+                         All pipelines must specify when conditions to filter events.",
+                        pipeline.id.as_ref().unwrap_or(&"<unnamed>".to_string()),
+                        id
+                    )));
+                }
+
+                let prog = compiler.compile_pipeline(&pipeline)?;
+                tracing::debug!(
+                    "Compiled pipeline (no imports): {} instructions",
+                    prog.instructions.len()
+                );
+                programs.push(prog);
+                continue;
+            }
+
+            // Skip documents that don't match any known type (e.g., metadata sections)
+        }
+    } // Close the else block
+
+        // If no valid documents were found, return error
+        if programs.is_empty() {
+            return Err(SdkError::InvalidRuleFile(format!(
+                "Content from '{}' does not contain a valid rule, ruleset, or pipeline",
+                id
+            )));
+        }
+
+        // Validate: Content must contain at least one pipeline
+        if !has_pipeline {
+            return Err(SdkError::InvalidRuleFile(format!(
+                "Content from '{}' must contain at least one pipeline definition. \
+                 Pipelines are the entry points for rule execution and must have 'when' conditions. \
+                 Rules and rulesets cannot be used as top-level entry points.",
+                id
+            )));
+        }
+
+        tracing::info!(
+            "✓ Loaded content '{}': {} pipeline(s), {} total definitions",
+            id,
+            pipeline_count,
+            programs.len()
+        );
+
+        Ok(programs)
+    }
+
     /// Execute a decision request
     pub async fn decide(&self, mut request: DecisionRequest) -> Result<DecisionResponse> {
         use corint_runtime::result::ExecutionResult;
@@ -501,6 +707,8 @@ impl DecisionEngine {
         let mut pipeline_handled_rules = false;
         // Track whether any pipeline actually matched (when 条件命中)
         let mut pipeline_matched = false;
+        // Track which pipeline was matched for this request
+        let mut matched_pipeline_id: Option<String> = None;
 
         // PRIORITY 1: Use Registry-based routing if available
         if let Some(ref registry) = self.registry {
@@ -514,8 +722,14 @@ impl DecisionEngine {
                 if Self::evaluate_when_block(&entry.when, &request.event_data) {
                     tracing::info!("✓ Registry matched entry {}: pipeline={}", idx, entry.pipeline);
 
+                    // Record the matched pipeline ID
+                    matched_pipeline_id = Some(entry.pipeline.clone());
+
                     // Get the pipeline program
                     if let Some(pipeline_program) = self.pipeline_map.get(&entry.pipeline) {
+                        // Log pipeline execution at INFO level
+                        tracing::info!("🚀 Executing pipeline: {} (request_id={})", entry.pipeline, request_id);
+
                         // Execute the matched pipeline
                         let result = self.executor.execute_with_result(
                             pipeline_program,
@@ -651,6 +865,13 @@ impl DecisionEngine {
             }
 
             if let Some(pipeline_program) = selected_pipeline {
+                // Record the matched pipeline ID
+                matched_pipeline_id = Some(pipeline_program.metadata.source_id.clone());
+
+                // Log pipeline execution at INFO level
+                tracing::info!("🚀 Executing pipeline: {} (request_id={})",
+                    pipeline_program.metadata.source_id, request_id);
+
                 // 记录执行前的状态，用于判断是否匹配
                 let before_score = execution_result.score;
                 let before_triggers_len = execution_result.triggered_rules.len();
@@ -882,6 +1103,7 @@ impl DecisionEngine {
 
         Ok(DecisionResponse {
             request_id,
+            pipeline_id: matched_pipeline_id,
             result: combined_result,
             processing_time_ms,
             metadata: request.metadata,

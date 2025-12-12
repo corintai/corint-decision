@@ -2,9 +2,10 @@
 //!
 //! Parses YAML ruleset definitions into Ruleset AST nodes.
 
-use corint_core::ast::{Action, DecisionRule, InferConfig, Ruleset};
+use corint_core::ast::{Action, DecisionRule, InferConfig, RdlDocument, Ruleset};
 use crate::error::{ParseError, Result};
 use crate::expression_parser::ExpressionParser;
+use crate::import_parser::ImportParser;
 use crate::yaml_parser::YamlParser;
 use serde_yaml::Value as YamlValue;
 
@@ -12,10 +13,37 @@ use serde_yaml::Value as YamlValue;
 pub struct RulesetParser;
 
 impl RulesetParser {
-    /// Parse a ruleset from YAML string
+    /// Parse a ruleset from YAML string (legacy format, no imports)
+    ///
+    /// This maintains backward compatibility with existing code.
     pub fn parse(yaml_str: &str) -> Result<Ruleset> {
         let yaml = YamlParser::parse(yaml_str)?;
         Self::parse_from_yaml(&yaml)
+    }
+
+    /// Parse a ruleset with optional imports from YAML string (new format)
+    ///
+    /// Supports both formats:
+    /// 1. Legacy single-document format (backward compatible)
+    /// 2. New multi-document format with imports
+    ///
+    /// Returns an RdlDocument<Ruleset> containing both the ruleset and its imports (if any)
+    pub fn parse_with_imports(yaml_str: &str) -> Result<RdlDocument<Ruleset>> {
+        let (imports, definition_yaml) = ImportParser::parse_with_imports(yaml_str)?;
+
+        // Parse the ruleset from the definition document
+        let ruleset = Self::parse_from_yaml(&definition_yaml)?;
+
+        // Get version (default to "0.1" if not specified)
+        let version = YamlParser::get_optional_string(&definition_yaml, "version")
+            .unwrap_or_else(|| "0.1".to_string());
+
+        // Create RdlDocument
+        if let Some(imports) = imports {
+            Ok(RdlDocument::with_imports(version, imports, ruleset))
+        } else {
+            Ok(RdlDocument::new(version, ruleset))
+        }
     }
 
     /// Parse a ruleset from YAML value
@@ -43,6 +71,17 @@ impl RulesetParser {
             Vec::new()
         };
 
+        // Parse optional extends
+        let extends = YamlParser::get_optional_string(ruleset_obj, "extends");
+
+        // Parse optional description
+        let description = YamlParser::get_optional_string(ruleset_obj, "description");
+
+        // Parse optional metadata
+        let metadata = ruleset_obj.get("metadata").and_then(|v| {
+            serde_yaml::from_value(v.clone()).ok()
+        });
+
         // Parse decision logic
         let decision_logic = if let Some(logic_array) = ruleset_obj.get("decision_logic").and_then(|v| v.as_sequence()) {
             logic_array
@@ -53,16 +92,27 @@ impl RulesetParser {
             Vec::new()
         };
 
+        // Parse optional decision_template
+        let decision_template = if let Some(template_obj) = ruleset_obj.get("decision_template") {
+            Some(Self::parse_decision_template_ref(template_obj)?)
+        } else {
+            None
+        };
+
         Ok(Ruleset {
             id,
             name,
+            extends,
             rules,
             decision_logic,
+            decision_template,
+            description,
+            metadata,
         })
     }
 
-    /// Parse a decision rule
-    fn parse_decision_rule(yaml: &YamlValue) -> Result<DecisionRule> {
+    /// Parse a decision rule (public for template parser use)
+    pub fn parse_decision_rule(yaml: &YamlValue) -> Result<DecisionRule> {
         // Parse condition (optional)
         let condition = YamlParser::get_optional_string(yaml, "condition")
             .map(|s| ExpressionParser::parse(&s))
@@ -116,6 +166,30 @@ impl RulesetParser {
                 message: format!("Unknown action type: {}", action_str),
             }),
         }
+    }
+
+    /// Parse decision template reference
+    fn parse_decision_template_ref(yaml: &YamlValue) -> Result<corint_core::ast::DecisionTemplateRef> {
+        // Parse template ID
+        let template = YamlParser::get_string(yaml, "template")?;
+
+        // Parse optional params
+        let params = if let Some(params_obj) = yaml.get("params") {
+            let params_map: std::collections::HashMap<String, serde_json::Value> =
+                serde_yaml::from_value(params_obj.clone())
+                    .map_err(|e| ParseError::InvalidValue {
+                        field: "params".to_string(),
+                        message: format!("Failed to parse params: {}", e),
+                    })?;
+            Some(params_map)
+        } else {
+            None
+        };
+
+        Ok(corint_core::ast::DecisionTemplateRef {
+            template,
+            params,
+        })
     }
 
     /// Parse infer config

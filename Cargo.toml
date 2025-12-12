@@ -3,7 +3,7 @@ members = [
     "crates/corint-core",
     "crates/corint-parser",
     "crates/corint-compiler",
-    "crates/corint-runtime", "crates/corint-sdk", "crates/corint-server",
+    "crates/corint-runtime", "crates/corint-sdk", "crates/corint-server", "crates/corint-repository",
 ]
 resolver = "2"
 
@@ -26,6 +26,8 @@ publish = false
 
 [dependencies]
 corint-sdk = { path = "crates/corint-sdk" }
+corint-parser = { path = "crates/corint-parser" }
+corint-compiler = { path = "crates/corint-compiler" }
 corint-runtime = { path = "crates/corint-runtime", features = ["sqlx"] }
 tokio = { version = "1.0", features = ["full"] }
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
@@ -47,13 +49,13 @@ path = "examples/fraud_detection.rs"
 name = "complete_pipeline"
 path = "examples/complete_pipeline.rs"
 
-[[example]]
-name = "feature_datasource_example"
-path = "examples/feature_datasource_example.rs"
+# [[example]]
+# name = "feature_datasource_example"
+# path = "examples/feature_datasource_example.rs"
 
-[[example]]
-name = "postgres_datasource_example"
-path = "examples/postgres_datasource_example.rs"
+# [[example]]
+# name = "postgres_datasource_example"
+# path = "examples/postgres_datasource_example.rs"
 
 [[example]]
 name = "postgres_query_executor"
@@ -74,6 +76,26 @@ required-features = ["sqlx"]
 name = "supabase_feature_example"
 path = "examples/supabase_feature_example.rs"
 required-features = ["sqlx"]
+
+[[example]]
+name = "import_demo"
+path = "examples/import_demo.rs"
+
+[[example]]
+name = "validate_imports"
+path = "examples/validate_imports.rs"
+
+[[example]]
+name = "test_import_resolver"
+path = "examples/test_import_resolver.rs"
+
+[[example]]
+name = "test_all_pipelines"
+path = "examples/test_all_pipelines.rs"
+
+[[example]]
+name = "phase3_extends_demo"
+path = "examples/phase3_extends_demo.rs"
 
 [features]
 default = []

@@ -5,6 +5,7 @@
 
 use crate::ast::Expression;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 /// A ruleset groups multiple rules and defines decision logic
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -15,11 +16,28 @@ pub struct Ruleset {
     /// Optional human-readable name
     pub name: Option<String>,
 
+    /// Optional parent ruleset to extend from
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub extends: Option<String>,
+
     /// List of rule IDs included in this ruleset
     pub rules: Vec<String>,
 
-    /// Decision logic rules
+    /// Decision logic rules (direct specification)
     pub decision_logic: Vec<DecisionRule>,
+
+    /// Optional template-based decision logic (resolved at compile time)
+    /// If specified, this takes precedence and gets expanded into decision_logic
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub decision_template: Option<DecisionTemplateRef>,
+
+    /// Optional description
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+
+    /// Optional metadata
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub metadata: Option<serde_json::Value>,
 }
 
 /// A decision rule determines the action based on conditions
@@ -73,20 +91,47 @@ pub struct InferConfig {
     pub data_snapshot: Vec<String>,
 }
 
+/// Reference to a decision template with parameter overrides
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct DecisionTemplateRef {
+    /// Template ID to use
+    pub template: String,
+
+    /// Parameter overrides (merged with template defaults)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub params: Option<HashMap<String, serde_json::Value>>,
+}
+
 impl Ruleset {
     /// Create a new ruleset
     pub fn new(id: String) -> Self {
         Self {
             id,
             name: None,
+            extends: None,
             rules: Vec::new(),
             decision_logic: Vec::new(),
+            decision_template: None,
+            description: None,
+            metadata: None,
         }
     }
 
     /// Set the name
     pub fn with_name(mut self, name: String) -> Self {
         self.name = Some(name);
+        self
+    }
+
+    /// Set the parent ruleset to extend
+    pub fn with_extends(mut self, extends: String) -> Self {
+        self.extends = Some(extends);
+        self
+    }
+
+    /// Set the description
+    pub fn with_description(mut self, description: String) -> Self {
+        self.description = Some(description);
         self
     }
 
@@ -111,6 +156,28 @@ impl Ruleset {
     /// Add multiple decision rules
     pub fn with_decision_logic(mut self, decision_logic: Vec<DecisionRule>) -> Self {
         self.decision_logic = decision_logic;
+        self
+    }
+
+    /// Set decision template reference
+    pub fn with_decision_template(mut self, template_ref: DecisionTemplateRef) -> Self {
+        self.decision_template = Some(template_ref);
+        self
+    }
+}
+
+impl DecisionTemplateRef {
+    /// Create a new template reference
+    pub fn new(template: String) -> Self {
+        Self {
+            template,
+            params: None,
+        }
+    }
+
+    /// Add parameter overrides
+    pub fn with_params(mut self, params: HashMap<String, serde_json::Value>) -> Self {
+        self.params = Some(params);
         self
     }
 }

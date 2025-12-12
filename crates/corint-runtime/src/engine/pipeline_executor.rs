@@ -211,9 +211,11 @@ impl PipelineExecutor {
                 }
 
                 Instruction::CheckEventType { expected } => {
-                    // Check event_type field (only support event_type format)
+                    // Try both event.type and event_type for backward compatibility
                     let event_type = ctx
-                        .load_field(&[String::from("event_type")])
+                        .load_field(&[String::from("event"), String::from("type")])
+                        .ok()
+                        .or_else(|| ctx.load_field(&[String::from("event_type")]).ok())
                         .unwrap_or(Value::Null);
 
                     // Get pipeline name and description for logging
@@ -479,6 +481,19 @@ impl PipelineExecutor {
 
     /// Execute a binary operation
     fn execute_binary_op(left: &Value, op: &Operator, right: &Value) -> Result<Value> {
+        // Handle Null operands - Null in any operation returns Null
+        // This allows expressions with missing fields to propagate Null
+        match (left, right) {
+            (Value::Null, _) | (_, Value::Null) => {
+                tracing::debug!(
+                    "Null in binary operation: {:?} {:?} {:?}, returning Null",
+                    left, op, right
+                );
+                return Ok(Value::Null);
+            }
+            _ => {}
+        }
+
         match (left, op, right) {
             // Arithmetic operations
             (Value::Number(l), Operator::Add, Value::Number(r)) => Ok(Value::Number(l + r)),
@@ -536,6 +551,19 @@ impl PipelineExecutor {
 
     /// Execute a comparison operation
     fn execute_compare(left: &Value, op: &Operator, right: &Value) -> Result<bool> {
+        // Handle Null comparisons - Null compared to anything returns false
+        // This allows rules to gracefully handle missing fields
+        match (left, right) {
+            (Value::Null, _) | (_, Value::Null) => {
+                tracing::debug!(
+                    "Null comparison: {:?} {:?} {:?}, returning false",
+                    left, op, right
+                );
+                return Ok(false);
+            }
+            _ => {}
+        }
+
         match (left, op, right) {
             (Value::Number(l), Operator::Eq, Value::Number(r)) => Ok(l == r),
             (Value::Number(l), Operator::Ne, Value::Number(r)) => Ok(l != r),

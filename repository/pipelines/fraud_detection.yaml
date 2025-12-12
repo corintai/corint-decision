@@ -1,0 +1,24 @@
+version: "0.1"
+
+# Production Fraud Detection Pipeline
+# This pipeline uses the reusable fraud_detection_core ruleset from library
+
+imports:
+  rulesets:
+    - library/rulesets/fraud_detection_core.yaml
+
+---
+
+pipeline:
+  id: fraud_detection_pipeline
+  name: Fraud Detection Pipeline
+  description: Production-grade fraud detection for transaction events
+
+  # Pipeline only executes for transaction events
+  when:
+    event.type: transaction
+
+  steps:
+    # Execute the fraud detection ruleset
+    - include:
+        ruleset: fraud_detection_core

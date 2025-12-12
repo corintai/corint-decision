@@ -98,6 +98,8 @@ mod tests {
             description: Some("Check if user is over 18".to_string()),
             when,
             score: 50,
+            params: None,
+            metadata: None,
         };
 
         let program = RuleCompiler::compile(&rule).unwrap();
@@ -144,6 +146,8 @@ mod tests {
             description: None,
             when,
             score: 25,
+            params: None,
+            metadata: None,
         };
 
         let program = RuleCompiler::compile(&rule).unwrap();
@@ -175,6 +179,8 @@ mod tests {
             description: None,
             when,
             score: 75,
+            params: None,
+            metadata: None,
         };
 
         let program = RuleCompiler::compile(&rule).unwrap();
@@ -194,6 +200,8 @@ mod tests {
             description: Some("Test description".to_string()),
             when,
             score: 100,
+            params: None,
+            metadata: None,
         };
 
         let program = RuleCompiler::compile(&rule).unwrap();

@@ -1,0 +1,26 @@
+version: "0.1"
+
+# Reusable velocity abuse detection rule
+rule:
+  id: velocity_abuse_pattern
+  name: Velocity Abuse Detection
+  description: Detect abnormally high transaction frequency
+
+  when:
+    conditions:
+      # Too many transactions in 24 hours OR velocity spike
+      - transaction_count_24h > 20 || velocity_ratio > 5.0
+
+  score: 70
+
+  metadata:
+    category: fraud
+    severity: high
+    tags: [carding, automated_fraud, bot_attacks]
+    rule_version: "1.0.0"
+    last_updated: "2024-12-11"
+    description_detail: "Abnormally high transaction frequency"
+    detection: "transaction_count_24h > 20 OR velocity_ratio > 5.0"
+    features:
+      - transaction_count_24h: "Transactions in 24h"
+      - velocity_ratio: "Current vs 7-day average velocity"

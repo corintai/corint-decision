@@ -1,0 +1,30 @@
+version: "0.1"
+
+imports:
+  rules:
+    - library/rules/geography/suspicious_ip.yaml
+    - library/rules/payment/card_testing.yaml
+    - library/rules/payment/velocity_check.yaml
+  templates:
+    - library/templates/score_based_decision.yaml
+
+---
+
+ruleset:
+  id: payment_with_template
+  name: Payment Ruleset (Using Template)
+  description: Demonstrates decision logic template usage
+
+  rules:
+    - suspicious_ip
+    - card_testing
+    - velocity_check
+
+  # Use template instead of defining decision_logic directly
+  decision_template:
+    template: score_based_decision
+    params:
+      critical_threshold: 150  # Override default (200 -> 150)
+      high_threshold: 80       # Override default (100 -> 80)
+      # medium_threshold: 60   # Use template default
+      # low_threshold: 30      # Use template default

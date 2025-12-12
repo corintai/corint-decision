@@ -38,6 +38,31 @@ impl DecisionEngineBuilder {
         self
     }
 
+    /// Add rule content directly (alternative to file path)
+    ///
+    /// # Arguments
+    /// * `id` - Unique identifier for the rule (e.g., pipeline ID)
+    /// * `content` - YAML content of the rule/pipeline
+    pub fn add_rule_content(mut self, id: impl Into<String>, content: impl Into<String>) -> Self {
+        self.config.rule_contents.push((id.into(), content.into()));
+        self
+    }
+
+    /// Set registry file for pipeline routing
+    pub fn with_registry_file(mut self, path: impl Into<PathBuf>) -> Self {
+        self.config.registry_file = Some(path.into());
+        self
+    }
+
+    /// Set registry content directly (alternative to file path)
+    ///
+    /// # Arguments
+    /// * `content` - YAML content of the registry
+    pub fn with_registry_content(mut self, content: impl Into<String>) -> Self {
+        self.config.registry_content = Some(content.into());
+        self
+    }
+
     /// Set storage configuration
     pub fn with_storage(mut self, storage: StorageConfig) -> Self {
         self.config.storage = Some(storage);

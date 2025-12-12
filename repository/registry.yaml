@@ -1,0 +1,50 @@
+version: "0.1"
+
+# Pipeline Registry for Production Environment
+# This registry maps event types to their corresponding pipelines
+# Pipelines are evaluated in order - first match wins
+
+registry:
+  # Transaction events with Supabase features - Supabase Feature-Based Pipeline
+  - pipeline: supabase_transaction_pipeline
+    when:
+      event.type: transaction
+      event.source: supabase
+    description: |
+      Transaction risk assessment using features calculated from Supabase PostgreSQL database.
+      Matches transaction events with source=supabase.
+
+  # Transaction events - Fraud Detection Pipeline (default)
+  - pipeline: fraud_detection_pipeline
+    when:
+      event.type: transaction
+    description: |
+      Production fraud detection pipeline using library rulesets.
+      Detects account takeover, velocity abuse, and suspicious patterns.
+
+  # Payment events - Payment Processing Pipeline
+  - pipeline: payment_pipeline
+    when:
+      event.type: payment
+    description: |
+      Payment risk assessment pipeline with high-value checks,
+      velocity monitoring, and Brazil-specific rules.
+
+  # Login events - Authentication Risk Pipeline
+  # - pipeline: login_risk_pipeline
+  #   when:
+  #     event.type: login
+  #   description: Account takeover detection for login attempts
+
+  # Loan application events
+  # - pipeline: loan_application_pipeline
+  #   when:
+  #     event.type: loan_application
+  #   description: Credit risk assessment for loan applications
+
+  # Catch-all for undefined event types (optional)
+  # - pipeline: default_pipeline
+  #   when:
+  #     conditions:
+  #       - event.type != null
+  #   description: Default pipeline for unmatched event types

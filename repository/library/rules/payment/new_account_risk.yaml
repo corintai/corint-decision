@@ -1,0 +1,21 @@
+version: "0.1"
+
+# Reusable new account risk rule
+rule:
+  id: new_account_risk
+  name: New Account High-Value
+  description: New account with large purchase
+
+  when:
+    conditions:
+      - account_age_days < 7
+      - payment_amount > 500
+
+  score: 60
+
+  metadata:
+    category: payment
+    severity: high
+    tags: [new_account, high_value, risk]
+    rule_version: "1.0.0"
+    last_updated: "2024-12-11"

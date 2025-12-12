@@ -41,6 +41,9 @@ pub struct DecideResponsePayload {
     /// Request ID (for tracking and correlation)
     pub request_id: String,
 
+    /// Pipeline ID that processed this request
+    pub pipeline_id: Option<String>,
+
     /// Action
     pub action: Option<String>,
 
@@ -120,6 +123,7 @@ async fn decide(
 
     Ok(Json(DecideResponsePayload {
         request_id: response.request_id,
+        pipeline_id: response.pipeline_id,
         action: action_str,
         score: response.result.score,
         triggered_rules: response.result.triggered_rules,

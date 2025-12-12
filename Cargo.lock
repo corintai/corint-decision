@@ -338,7 +338,9 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "corint-core",
+ "corint-parser",
  "serde_json",
+ "serde_yaml",
  "thiserror 1.0.69",
 ]
 
@@ -356,6 +358,8 @@ dependencies = [
 name = "corint-examples"
 version = "0.1.0"
 dependencies = [
+ "corint-compiler",
+ "corint-parser",
  "corint-runtime",
  "corint-sdk",
  "reqwest",
@@ -377,6 +381,25 @@ dependencies = [
  "serde_json",
  "serde_yaml",
  "thiserror 1.0.69",
+]
+
+[[package]]
+name = "corint-repository"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "corint-core",
+ "corint-parser",
+ "path-absolutize",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "serde_yaml",
+ "sqlx",
+ "tempfile",
+ "thiserror 1.0.69",
+ "tokio",
 ]
 
 [[package]]
@@ -428,6 +451,7 @@ dependencies = [
  "chrono",
  "config",
  "corint-core",
+ "corint-repository",
  "corint-runtime",
  "corint-sdk",
  "dotenv",
@@ -1515,6 +1539,24 @@ dependencies = [
  "redox_syscall",
  "smallvec",
  "windows-link",
+]
+
+[[package]]
+name = "path-absolutize"
+version = "3.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e4af381fe79fa195b4909485d99f73a80792331df0625188e707854f0b3383f5"
+dependencies = [
+ "path-dedot",
+]
+
+[[package]]
+name = "path-dedot"
+version = "3.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "07ba0ad7e047712414213ff67533e6dd477af0a4e1d14fb52343e53d30ea9397"
+dependencies = [
+ "once_cell",
 ]
 
 [[package]]

@@ -1,0 +1,59 @@
+version: "0.1"
+
+---
+
+template:
+  id: pattern_based_decision
+  name: Pattern-Based Decision Template
+  description: |
+    Decision logic based on specific rule patterns being triggered.
+    Useful when certain rules should immediately deny or escalate.
+
+  params:
+    critical_patterns: ["card_testing", "fraud_farm", "account_takeover"]
+    high_risk_patterns: ["velocity_abuse", "suspicious_ip"]
+    review_patterns: ["new_account_risk", "amount_outlier"]
+
+  decision_logic:
+    # Critical patterns - immediate denial
+    - condition: triggered_rules contains "card_testing"
+      action: deny
+      reason: "Card testing pattern detected"
+      terminate: true
+
+    - condition: triggered_rules contains "fraud_farm"
+      action: deny
+      reason: "Fraud farm pattern detected"
+      terminate: true
+
+    - condition: triggered_rules contains "account_takeover"
+      action: deny
+      reason: "Account takeover attempt detected"
+      terminate: true
+
+    # High risk patterns - deny
+    - condition: triggered_rules contains "velocity_abuse"
+      action: deny
+      reason: "Velocity abuse pattern detected"
+      terminate: true
+
+    - condition: triggered_rules contains "suspicious_ip"
+      action: deny
+      reason: "Suspicious IP detected"
+      terminate: true
+
+    # Review patterns - escalate to manual review
+    - condition: triggered_rules contains "new_account_risk"
+      action: review
+      reason: "New account requires review"
+      terminate: false
+
+    - condition: triggered_rules contains "amount_outlier"
+      action: review
+      reason: "Unusual transaction amount"
+      terminate: false
+
+    # Default - approve if no concerning patterns
+    - default: true
+      action: approve
+      reason: "No concerning patterns detected"

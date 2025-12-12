@@ -1,0 +1,22 @@
+version: "0.1"
+
+# Reusable card testing detection rule
+rule:
+  id: card_testing
+  name: Card Testing Detection
+  description: Multiple small transactions pattern
+
+  when:
+    conditions:
+      - payment_attempts_1h >= 5
+      - payment_amount < 10
+      - unique_cards_1h >= 3
+
+  score: 80
+
+  metadata:
+    category: payment
+    severity: critical
+    tags: [card_testing, carding, fraud]
+    rule_version: "1.0.0"
+    last_updated: "2024-12-11"

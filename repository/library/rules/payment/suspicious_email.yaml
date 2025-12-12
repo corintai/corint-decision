@@ -1,0 +1,20 @@
+version: "0.1"
+
+# Reusable suspicious email detection rule
+rule:
+  id: suspicious_email
+  name: Suspicious Email Pattern
+  description: Disposable or random email
+
+  when:
+    conditions:
+      - is_disposable_email == true
+
+  score: 35
+
+  metadata:
+    category: payment
+    severity: low
+    tags: [disposable_email, suspicious, fraud_indicator]
+    rule_version: "1.0.0"
+    last_updated: "2024-12-11"

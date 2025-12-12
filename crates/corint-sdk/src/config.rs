@@ -9,8 +9,16 @@ pub struct EngineConfig {
     /// Rule file path(s)
     pub rule_files: Vec<PathBuf>,
 
+    /// Rule contents (id, content) - alternative to file paths
+    #[serde(skip)]
+    pub rule_contents: Vec<(String, String)>,
+
     /// Optional pipeline registry file path
     pub registry_file: Option<PathBuf>,
+
+    /// Optional pipeline registry content - alternative to file path
+    #[serde(skip)]
+    pub registry_content: Option<String>,
 
     /// Storage configuration
     pub storage: Option<StorageConfig>,
@@ -36,7 +44,9 @@ impl EngineConfig {
     pub fn new() -> Self {
         Self {
             rule_files: Vec::new(),
+            rule_contents: Vec::new(),
             registry_file: None,
+            registry_content: None,
             storage: None,
             llm: None,
             service: None,

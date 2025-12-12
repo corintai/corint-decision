@@ -1,0 +1,62 @@
+version: "0.1"
+
+# Standard payment ruleset (extends payment_base)
+# Uses inheritance to reuse base rules but applies different thresholds
+
+imports:
+  rulesets:
+    - library/rulesets/payment_base.yaml
+
+---
+
+ruleset:
+  id: payment_standard_v2
+  name: Standard Payment Risk Ruleset (with Inheritance)
+  extends: payment_base  # Inherit from payment_base
+  description: Balanced thresholds for standard transactions (<= $1000)
+
+  # No need to re-declare rules - inherited from payment_base automatically!
+  # We can optionally add new rules here if needed
+
+  # Override decision logic with standard transaction thresholds
+  decision_logic:
+    # Critical patterns (same as base)
+    - condition: triggered_rules contains "card_testing"
+      action: deny
+      reason: "Card testing detected"
+      terminate: true
+
+    # Very high score threshold
+    - condition: total_score >= 100
+      action: deny
+      reason: "High fraud risk"
+      terminate: true
+
+    # Medium-high score
+    - condition: total_score >= 60
+      action: challenge
+      reason: "Require 3DS verification"
+      terminate: true
+
+    # Medium score
+    - condition: total_score >= 40
+      action: review
+      reason: "Manual review needed"
+      terminate: true
+
+    # Multiple low-risk indicators
+    - condition: triggered_count >= 3
+      action: review
+      reason: "Multiple risk signals"
+      terminate: true
+
+    # Low risk
+    - default: true
+      action: approve
+      reason: "Normal transaction"
+
+  metadata:
+    version: "2.0.0"
+    last_updated: "2025-12-11"
+    parent: "payment_base"
+    transaction_limit: 1000

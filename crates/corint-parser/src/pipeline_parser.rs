@@ -4,11 +4,12 @@
 
 use corint_core::ast::{
     Branch, FeatureDefinition, MergeStrategy, Pipeline, PromptTemplate,
-    Schema, SchemaProperty, Step, WhenBlock,
+    RdlDocument, Schema, SchemaProperty, Step, WhenBlock,
 };
 use corint_core::ast::pipeline::{ErrorAction, ErrorHandling};
 use crate::error::{ParseError, Result};
 use crate::expression_parser::ExpressionParser;
+use crate::import_parser::ImportParser;
 use crate::yaml_parser::YamlParser;
 use serde_yaml::Value as YamlValue;
 use std::collections::HashMap;
@@ -17,10 +18,37 @@ use std::collections::HashMap;
 pub struct PipelineParser;
 
 impl PipelineParser {
-    /// Parse a pipeline from YAML string
+    /// Parse a pipeline from YAML string (legacy format, no imports)
+    ///
+    /// This maintains backward compatibility with existing code.
     pub fn parse(yaml_str: &str) -> Result<Pipeline> {
         let yaml = YamlParser::parse(yaml_str)?;
         Self::parse_from_yaml(&yaml)
+    }
+
+    /// Parse a pipeline with optional imports from YAML string (new format)
+    ///
+    /// Supports both formats:
+    /// 1. Legacy single-document format (backward compatible)
+    /// 2. New multi-document format with imports
+    ///
+    /// Returns an RdlDocument<Pipeline> containing both the pipeline and its imports (if any)
+    pub fn parse_with_imports(yaml_str: &str) -> Result<RdlDocument<Pipeline>> {
+        let (imports, definition_yaml) = ImportParser::parse_with_imports(yaml_str)?;
+
+        // Parse the pipeline from the definition document
+        let pipeline = Self::parse_from_yaml(&definition_yaml)?;
+
+        // Get version (default to "0.1" if not specified)
+        let version = YamlParser::get_optional_string(&definition_yaml, "version")
+            .unwrap_or_else(|| "0.1".to_string());
+
+        // Create RdlDocument
+        if let Some(imports) = imports {
+            Ok(RdlDocument::with_imports(version, imports, pipeline))
+        } else {
+            Ok(RdlDocument::new(version, pipeline))
+        }
     }
 
     /// Parse a pipeline from YAML value

@@ -1,0 +1,28 @@
+version: "0.1"
+
+# Reusable fraud farm detection rule
+rule:
+  id: fraud_farm_pattern
+  name: Fraud Farm Detection
+  description: Detect organized fraud farms with high IP/device association
+
+  when:
+    conditions:
+      # Multiple devices from same IP (5h window)
+      - ip_device_count > 10
+      # And multiple users from same IP
+      - ip_user_count > 5
+
+  score: 100
+
+  metadata:
+    category: fraud
+    severity: critical
+    tags: [organized_fraud, bot_networks, credential_stuffing]
+    rule_version: "1.0.0"
+    last_updated: "2024-12-11"
+    description_detail: "Multiple devices/users from same IP"
+    detection: "ip_device_count > 10 AND ip_user_count > 5"
+    features:
+      - ip_device_count: "Devices from same IP (5h window)"
+      - ip_user_count: "Users from same IP (5h window)"

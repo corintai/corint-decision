@@ -6,20 +6,25 @@
 //! - Rulesets
 //! - Pipelines
 //! - Pipeline Registry
+//! - Imports and dependency management
 
 pub mod expression;
+pub mod import;
 pub mod operator;
 pub mod pipeline;
 pub mod registry;
 pub mod rule;
 pub mod ruleset;
+pub mod template;
 
 pub use expression::{Expression, UnaryOperator};
+pub use import::{ImportContext, Imports, RdlDocument};
 pub use operator::Operator;
 pub use pipeline::{
     Branch, FeatureDefinition, MergeStrategy, Pipeline, PromptTemplate, Schema, SchemaProperty,
     Step,
 };
 pub use registry::{PipelineRegistry, RegistryEntry};
-pub use rule::{Rule, WhenBlock};
-pub use ruleset::{Action, DecisionRule, InferConfig, Ruleset};
+pub use rule::{Rule, RuleParams, WhenBlock};
+pub use ruleset::{Action, DecisionRule, DecisionTemplateRef, InferConfig, Ruleset};
+pub use template::{DecisionTemplate, TemplateReference};

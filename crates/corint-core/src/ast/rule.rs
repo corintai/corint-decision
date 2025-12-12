@@ -15,11 +15,27 @@ pub struct Rule {
     /// Optional description
     pub description: Option<String>,
 
+    /// Optional parameters for parameterized rules
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub params: Option<RuleParams>,
+
     /// When conditions (when this rule should be evaluated)
     pub when: WhenBlock,
 
     /// Score to add if rule is triggered
     pub score: i32,
+
+    /// Optional metadata
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub metadata: Option<serde_json::Value>,
+}
+
+/// Parameters for parameterized rules
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct RuleParams {
+    /// Parameter definitions with default values
+    #[serde(flatten)]
+    pub values: std::collections::HashMap<String, serde_json::Value>,
 }
 
 /// When block for rule evaluation conditions
@@ -39,8 +55,10 @@ impl Rule {
             id,
             name,
             description: None,
+            params: None,
             when,
             score,
+            metadata: None,
         }
     }
 
@@ -48,6 +66,44 @@ impl Rule {
     pub fn with_description(mut self, description: String) -> Self {
         self.description = Some(description);
         self
+    }
+
+    /// Set the parameters
+    pub fn with_params(mut self, params: RuleParams) -> Self {
+        self.params = Some(params);
+        self
+    }
+
+    /// Set the metadata
+    pub fn with_metadata(mut self, metadata: serde_json::Value) -> Self {
+        self.metadata = Some(metadata);
+        self
+    }
+}
+
+impl RuleParams {
+    /// Create new empty parameters
+    pub fn new() -> Self {
+        Self {
+            values: std::collections::HashMap::new(),
+        }
+    }
+
+    /// Create parameters from a HashMap
+    pub fn from_map(values: std::collections::HashMap<String, serde_json::Value>) -> Self {
+        Self { values }
+    }
+
+    /// Add a parameter
+    pub fn with_param(mut self, key: String, value: serde_json::Value) -> Self {
+        self.values.insert(key, value);
+        self
+    }
+}
+
+impl Default for RuleParams {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

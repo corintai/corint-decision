@@ -1,0 +1,31 @@
+version: "0.1"
+
+# Reusable amount outlier detection rule
+rule:
+  id: amount_outlier_pattern
+  name: Amount Outlier Detection
+  description: Detect transaction amounts that are statistical outliers
+
+  when:
+    conditions:
+      # Z-score exceeds 3.0 (statistical outlier)
+      - amount_zscore > 3.0
+      # AND flagged as outlier
+      - is_amount_outlier == true
+      # AND exceeds absolute threshold
+      - transaction_amount > 5000
+
+  score: 75
+
+  metadata:
+    category: fraud
+    severity: high
+    tags: [account_takeover, stolen_cards, money_laundering]
+    rule_version: "1.0.0"
+    last_updated: "2024-12-11"
+    description_detail: "Transaction amount is statistical outlier"
+    detection: "amount_zscore > 3.0 AND is_amount_outlier AND transaction_amount > 5000"
+    features:
+      - amount_zscore: "Z-score (standard deviations from mean)"
+      - is_amount_outlier: "Exceeds 95th percentile"
+      - transaction_amount: "Absolute amount threshold"

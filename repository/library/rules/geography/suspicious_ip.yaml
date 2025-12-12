@@ -1,0 +1,20 @@
+version: "0.1"
+
+# Reusable suspicious IP detection rule
+rule:
+  id: suspicious_ip
+  name: Suspicious IP Detection
+  description: Detects IP from non-trusted countries (only US and UK are trusted)
+
+  when:
+    conditions:
+      - context.ip_info.country != "US" && context.ip_info.country != "UK"
+
+  score: 40
+
+  metadata:
+    category: geography
+    severity: medium
+    tags: [ip, geolocation, country_risk]
+    rule_version: "1.0.0"
+    last_updated: "2024-12-11"

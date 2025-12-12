@@ -165,6 +165,79 @@ Clean separation of concerns:
 - **Audit Trails**: Complete decision history
 - **Explainability**: Rule-by-rule breakdown of decisions
 
+### 🔄 Modular Architecture (Phase 3)
+
+Reusable components with powerful inheritance and parameterization:
+
+```yaml
+# Base ruleset with core fraud checks
+ruleset:
+  id: fraud_detection_base
+  rules:
+    - velocity_check
+    - geo_mismatch
+  decision_logic:
+    - condition: total_score >= 100
+      action: deny
+
+# Specialized ruleset extending base
+ruleset:
+  id: payment_fraud_detection
+  extends: fraud_detection_base  # Inherits all rules and logic
+  rules:
+    - high_amount_check          # Additional rules
+
+# Parameterized rules for flexibility
+rule:
+  id: velocity_check
+  params:
+    time_window: 3600           # Configurable at compile time
+    max_count: 10
+  when:
+    conditions:
+      - transaction_count(last_n_seconds: params.time_window) > params.max_count
+  score: 75
+
+# Decision logic templates
+ruleset:
+  id: my_ruleset
+  decision_template: score_based_decision  # Reuse common patterns
+  template_params:
+    deny_threshold: 150
+    review_threshold: 75
+```
+
+**Key Features:**
+- **Ruleset Inheritance** (`extends`) - Build hierarchies of specialized rulesets
+- **Decision Templates** (`decision_template`) - Reuse common decision patterns
+- **Parameterized Rules** (`params`) - Configure rules with compile-time parameters
+- **Import System** - Modular composition with automatic dependency resolution
+
+### 🗄️ Flexible Storage Backend (Phase 4)
+
+Multiple repository backends for different deployment scenarios:
+
+```rust
+// File system (development)
+let repo = FileSystemRepository::new("repository")?;
+
+// PostgreSQL (production with versioning)
+let mut repo = PostgresRepository::new(database_url).await?;
+repo.save_rule(&rule).await?;        // Auto-versioning
+repo.save_ruleset(&ruleset).await?;  // Audit logging
+
+// Load from any backend
+let (rule, _) = repo.load_rule("fraud_check").await?;
+```
+
+**Features:**
+- **File System Repository**: YAML files for development and read-only deployments
+- **PostgreSQL Repository**: Full CRUD with automatic versioning and audit trails
+- **Caching Layer**: Built-in TTL-based caching for performance
+- **Async API**: Non-blocking I/O with Tokio
+- **Version Tracking**: Automatic version incrementing on updates
+- **Audit Logging**: Optional PostgreSQL triggers for compliance
+
 ---
 
 ## 🎯 Use Cases
@@ -270,6 +343,52 @@ ruleset:
     - default: true
       action: approve
 ```
+
+### Modular Rules with Inheritance (Phase 3)
+
+Build reusable rule libraries with inheritance:
+
+```yaml
+# Base fraud detection ruleset
+ruleset:
+  id: fraud_detection_base
+  name: Base Fraud Detection
+  rules:
+    - velocity_check
+    - geo_mismatch
+  decision_logic:
+    - condition: total_score >= 150
+      action: deny
+    - condition: total_score >= 75
+      action: review
+    - default: true
+      action: approve
+
+# Specialized for payments (inherits base)
+ruleset:
+  id: payment_fraud
+  extends: fraud_detection_base  # Inherits all rules and logic
+  rules:
+    - high_amount_check         # Add payment-specific rules
+    - merchant_risk_check
+
+# Parameterized velocity rule
+rule:
+  id: velocity_check
+  params:
+    time_window_seconds: 3600
+    max_transactions: 10
+  when:
+    conditions:
+      - transaction_count(last_n_seconds: params.time_window_seconds) > params.max_transactions
+  score: 75
+```
+
+**Benefits:**
+- **DRY Principle**: Define once, reuse everywhere
+- **Easy Customization**: Override or extend as needed
+- **Compile-time Configuration**: Parameters resolved during compilation
+- **Version Control Friendly**: Modular files with clear dependencies
 
 ### More Examples
 

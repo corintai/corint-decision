@@ -1,0 +1,53 @@
+version: "0.1"
+
+# Payment Risk Control Pipeline with Conditional Routing
+# This pipeline uses reusable payment rulesets from library
+
+imports:
+  rulesets:
+    - library/rulesets/payment_high_value.yaml
+    - library/rulesets/payment_standard.yaml
+
+---
+
+pipeline:
+  id: payment_risk_pipeline
+  name: Payment Risk Control Pipeline
+  description: Comprehensive payment risk assessment with conditional routing based on transaction amount
+
+  # Pipeline only executes for payment events
+  when:
+    event.type: payment
+
+  steps:
+    # Step 1: Check IP reputation via external API
+    - type: api
+      id: ip_reputation_check
+      api: ipinfo
+      endpoint: ip_lookup
+      params:
+        ip: event.ip_address
+        token: "a63066c9a63590"
+      output: context.ip_info
+      timeout: 3000
+      on_error:
+        action: fallback
+        fallback:
+          country_code: "US"
+          country: "United States"
+          continent_code: "NA"
+
+    # Step 2: Conditional branch based on payment amount
+    - branch:
+        when:
+          # High-value transactions (> $1000)
+          - condition: payment_amount > 1000
+            pipeline:
+              - include:
+                  ruleset: payment_high_value
+
+          # Standard transactions (<= $1000)
+          - condition: payment_amount <= 1000
+            pipeline:
+              - include:
+                  ruleset: payment_standard

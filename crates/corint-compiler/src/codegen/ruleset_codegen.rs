@@ -154,12 +154,9 @@ mod tests {
 
     #[test]
     fn test_compile_simple_ruleset() {
-        let ruleset = Ruleset {
-            id: "test_ruleset".to_string(),
-            name: Some("Test Ruleset".to_string()),
-            rules: vec!["rule1".to_string(), "rule2".to_string()],
-            decision_logic: vec![],
-        };
+        let ruleset = Ruleset::new("test_ruleset".to_string())
+            .with_name("Test Ruleset".to_string())
+            .with_rules(vec!["rule1".to_string(), "rule2".to_string()]);
 
         let program = RulesetCompiler::compile(&ruleset).unwrap();
 
@@ -205,6 +202,7 @@ mod tests {
         let ruleset = Ruleset {
             id: "decision_ruleset".to_string(),
             name: Some("Decision Ruleset".to_string()),
+            extends: None,
             rules: vec![],
             decision_logic: vec![
                 DecisionRule {
@@ -215,6 +213,9 @@ mod tests {
                     terminate: true,
                 },
             ],
+            decision_template: None,
+            description: None,
+            metadata: None,
         };
 
         let program = RulesetCompiler::compile(&ruleset).unwrap();
@@ -230,6 +231,7 @@ mod tests {
         let ruleset = Ruleset {
             id: "test_conditions".to_string(),
             name: Some("Test Conditions".to_string()),
+            extends: None,
             rules: vec![],
             decision_logic: vec![
                 DecisionRule {
@@ -251,6 +253,9 @@ mod tests {
                     terminate: false,
                 },
             ],
+            decision_template: None,
+            description: None,
+            metadata: None,
         };
 
         let program = RulesetCompiler::compile(&ruleset).unwrap();
@@ -273,6 +278,7 @@ mod tests {
         let ruleset = Ruleset {
             id: "fraud_detection".to_string(),
             name: Some("Fraud Detection".to_string()),
+            extends: None,
             rules: vec![],
             decision_logic: vec![
                 DecisionRule {
@@ -316,6 +322,9 @@ mod tests {
                     terminate: false,
                 },
             ],
+            decision_template: None,
+            description: None,
+            metadata: None,
         };
 
         let program = RulesetCompiler::compile(&ruleset).unwrap();
@@ -338,6 +347,7 @@ fn test_compile_simple_ruleset() {
     let ruleset = Ruleset {
         id: "test_ruleset".to_string(),
         name: Some("Test Ruleset".to_string()),
+        extends: None,
         rules: vec!["test_rule".to_string()],
         decision_logic: vec![
             DecisionRule {
@@ -359,6 +369,9 @@ fn test_compile_simple_ruleset() {
                 terminate: false,
             },
         ],
+        decision_template: None,
+        description: None,
+        metadata: None,
     };
 
     let program = RulesetCompiler::compile(&ruleset).unwrap();

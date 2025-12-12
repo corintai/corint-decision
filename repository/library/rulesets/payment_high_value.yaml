@@ -1,0 +1,63 @@
+version: "0.1"
+
+# Reusable high-value payment risk ruleset
+# This ruleset explicitly imports all its rule dependencies
+
+imports:
+  rules:
+    - library/rules/geography/suspicious_ip.yaml
+    - library/rules/payment/card_testing.yaml
+    - library/rules/payment/velocity_check.yaml
+    - library/rules/payment/new_account_risk.yaml
+    - library/rules/payment/suspicious_email.yaml
+
+---
+
+ruleset:
+  id: payment_high_value
+  name: High-Value Payment Risk Ruleset
+  description: Stricter thresholds for high-value transactions (> $1000)
+
+  # Reference imported rules by their IDs
+  rules:
+    - suspicious_ip
+    - card_testing
+    - velocity_check
+    - new_account_risk
+    - suspicious_email
+
+  decision_logic:
+    # Critical patterns
+    - condition: |
+        triggered_rules contains "card_testing" ||
+        triggered_rules contains "new_account_risk"
+      action: deny
+      reason: "Critical fraud pattern detected"
+      terminate: true
+
+    # High score threshold (stricter than standard)
+    - condition: total_score >= 60
+      action: deny
+      reason: "Risk score too high for large transaction"
+      terminate: true
+
+    # Multiple risk indicators
+    - condition: triggered_count >= 2
+      action: review
+      reason: "Multiple risk indicators detected"
+      terminate: true
+
+    # Single risk indicator
+    - condition: triggered_count >= 1
+      action: challenge
+      reason: "Require 3DS authentication"
+      terminate: true
+
+    # Clean high-value transaction
+    - default: true
+      action: approve
+      reason: "Clean high-value transaction"
+
+  metadata:
+    version: "1.0.0"
+    last_updated: "2024-12-11"

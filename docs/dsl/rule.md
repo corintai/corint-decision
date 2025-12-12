@@ -13,8 +13,12 @@ rule:
   id: string
   name: string
   description: string
+  params:                    # ✨ NEW: Parameters (Phase 3)
+    <param-key>: <value>
   when: <condition-block>
   score: number
+  metadata:                  # Optional metadata
+    <key>: <value>
 ```
 
 ---
@@ -178,16 +182,199 @@ Negative scores are useful for modeling low-risk behavior, whitelist conditions,
 
 **Note:** The aggregate risk score may become negative depending on your scoring logic; it is recommended to validate or normalize the total score as appropriate for your use case.
 
+---
+
+## 9. Parameterized Rules (`params`) **[Phase 3]**
+
+**Parameterized rules allow you to define default parameter values that can be customized per use case without duplicating rule logic.**
+
+This enables:
+- **Reusable rule templates** - Define rules once with configurable parameters
+- **Easy customization** - Override parameter values per deployment
+- **Reduced duplication** - Same rule logic, different thresholds
+- **Type-safe configuration** - Parameters validated at compile-time
+
+### 9.1 Basic Syntax
+
+```yaml
+rule:
+  id: velocity_pattern
+  name: Velocity Pattern Detection
+  description: Detects velocity abuse with configurable thresholds
+
+  # Default parameter values
+  params:
+    time_window_minutes: 60
+    max_transactions: 10
+    max_amount: 5000
+    severity: "medium"
+
+  when:
+    event.type: transaction
+    conditions:
+      # Reference params in conditions (future support)
+      - transaction_count_last_hour > 10
+      - total_amount_last_hour > 5000
+
+  score: 60
+```
+
+### 9.2 Parameter Types
+
+Parameters support JSON-compatible types:
+
+```yaml
+params:
+  # Numbers
+  threshold: 100
+  multiplier: 1.5
+
+  # Strings
+  severity: "high"
+  category: "fraud"
+
+  # Booleans
+  enabled: true
+  strict_mode: false
+
+  # Arrays
+  allowed_countries: ["US", "CA", "UK"]
+  risk_levels: [1, 2, 3]
+
+  # Objects
+  thresholds:
+    low: 30
+    medium: 60
+    high: 100
+```
+
+### 9.3 Use Cases
+
+**1. Regional Variations**
+
+Different thresholds for different regions:
+
+```yaml
+# Base rule with params
+rule:
+  id: transaction_velocity_check
+  params:
+    max_transactions_per_hour: 10
+    max_amount_per_hour: 5000
+  when:
+    # Conditions using thresholds
+```
+
+Deploy with region-specific overrides:
+- US deployment: `max_transactions_per_hour: 15`
+- EU deployment: `max_transactions_per_hour: 10` (stricter)
+- APAC deployment: `max_transactions_per_hour: 20` (more lenient)
+
+**2. A/B Testing**
+
+Test different thresholds without changing rule logic:
+
+```yaml
+rule:
+  id: fraud_score_threshold
+  params:
+    deny_threshold: 100
+    review_threshold: 60
+  when:
+    # Rule logic
+```
+
+Run A/B tests:
+- Control group: Default parameters
+- Test group A: `deny_threshold: 120` (more lenient)
+- Test group B: `deny_threshold: 80` (stricter)
+
+**3. Environment-Specific Configuration**
+
+Different settings for dev/staging/production:
+
+```yaml
+rule:
+  id: rate_limit_check
+  params:
+    rate_limit: 100
+    burst_size: 10
+```
+
+Override per environment:
+- Development: `rate_limit: 1000` (relaxed for testing)
+- Staging: `rate_limit: 100` (production-like)
+- Production: `rate_limit: 50` (strict)
+
+### 9.4 Status and Future Work
+
+**Current Status (Phase 3):**
+- ✅ AST support for params field
+- ✅ Parser support for reading params from YAML
+- ✅ Parameters stored in rule definition
+
+**Future Implementation:**
+- ⏳ Parameter substitution in rule conditions
+- ⏳ Runtime parameter override mechanism
+- ⏳ Parameter validation and type checking
+- ⏳ Parameter inheritance in rule templates
+
+**Note:** While the params field is fully parsed and stored in Phase 3, runtime parameter substitution and rule instantiation will be implemented in future phases when specific use cases require it.
+
+### 9.5 Best Practices
+
+1. **Use Descriptive Names**
+   ```yaml
+   # Good
+   params:
+     max_transactions_per_hour: 10
+
+   # Avoid
+   params:
+     limit: 10
+   ```
+
+2. **Provide Sensible Defaults**
+   ```yaml
+   params:
+     threshold: 100  # Good default for most cases
+   ```
+
+3. **Document Parameters**
+   ```yaml
+   rule:
+     id: velocity_check
+     description: |
+       Velocity check with configurable thresholds.
+       Parameters:
+       - time_window_minutes: Time window for counting (default: 60)
+       - max_transactions: Maximum transactions allowed (default: 10)
+     params:
+       time_window_minutes: 60
+       max_transactions: 10
+   ```
+
+4. **Group Related Parameters**
+   ```yaml
+   params:
+     thresholds:
+       low: 30
+       medium: 60
+       high: 100
+     limits:
+       daily: 1000
+       hourly: 100
+   ```
 
 ---
 
-## 9. Dynamic Thresholds
+## 10. Dynamic Thresholds
 
-### 9.1 Overview
+### 10.1 Overview
 
 Static thresholds may not adapt well to changing patterns. Dynamic thresholds allow rules to automatically adjust based on historical data.
 
-### 9.2 Dynamic Threshold Definition
+### 10.2 Dynamic Threshold Definition
 
 ```yaml
 rule:
@@ -364,7 +551,7 @@ rule:
 
 ---
 
-## 10. Rule Dependencies and Conflict Management
+## 11. Rule Dependencies and Conflict Management
 
 ### 10.1 Overview
 
@@ -636,7 +823,7 @@ rule:
 
 ---
 
-## 11. Rule Metadata
+## 12. Rule Metadata
 
 ### 11.1 Metadata Fields
 
@@ -686,7 +873,7 @@ rule:
 
 ---
 
-## 12. Decision Making
+## 13. Decision Making
 
 **Rules do not define actions.**
 
@@ -697,7 +884,7 @@ See `ruleset.md` for decision-making configuration.
 
 ---
 
-## 13. Complete Examples
+## 14. Complete Examples
 
 ### 13.1 Login Risk Example
 
@@ -745,27 +932,183 @@ rule:
 
 ---
 
-## 14. Summary
+## 15. Summary
 
 A CORINT Rule:
 
-- Defines an atomic risk detection  
-- Combines structured logic + LLM reasoning  
+- Defines an atomic risk detection
+- Combines structured logic + LLM reasoning
 - Produces a score when triggered
 - **Does not define action** (actions defined in Ruleset)
+- **Supports parameterization** via `params` field **[Phase 3]**
 - Supports **dynamic thresholds** for adaptive detection
 - Manages **dependencies** and **conflicts** with other rules
 - Forms the basis of reusable Rulesets
 - Integrates seamlessly into Pipelines
 
+**Phase 3 Features:**
+- **Parameterized Rules (`params`)** - Define configurable parameters with default values
+- **Metadata Support** - Enhanced metadata for better governance and tracking
+- **Future-Ready** - AST and parser ready for parameter substitution and rule instantiation
+
+**Benefits of Parameterization:**
+- Define rules once with configurable thresholds
+- Easy customization per region/environment/use case
+- Reduced code duplication through reusable rule templates
+- A/B testing without code changes
+- Type-safe parameter configuration
+
 This document establishes the authoritative specification of RDL Rules for CORINT v0.1.
 
 ---
 
-## 15. Related Documentation
+## 15. Rule Library and Reusability
 
+### 15.1 Creating Reusable Rule Files
+
+Rules can be defined in separate files for reuse across multiple rulesets and pipelines:
+
+```yaml
+# library/rules/fraud/fraud_farm.yaml
+version: "0.1"
+
+rule:
+  id: fraud_farm_pattern
+  name: Fraud Farm Detection
+  description: Detect organized fraud farms with high IP/device association
+
+  when:
+    conditions:
+      - ip_device_count > 10
+      - ip_user_count > 5
+
+  score: 100
+
+  metadata:
+    category: fraud
+    severity: critical
+    tags: [organized_fraud, bot_networks]
+    rule_version: "1.0.0"
+    last_updated: "2024-12-11"
+```
+
+### 15.2 Rule Metadata for Library
+
+When creating rules for a library, include comprehensive metadata:
+
+```yaml
+metadata:
+  category: fraud | payment | geography | account | device
+  severity: critical | high | medium | low
+  tags: [tag1, tag2, tag3]
+  rule_version: "major.minor.patch"
+  last_updated: "YYYY-MM-DD"
+  author: "Team Name"
+  description_detail: "Detailed explanation"
+  detection: "Condition summary"
+  features:
+    - feature_name: "Feature description"
+    - another_feature: "Another description"
+  common_in: [attack_type1, attack_type2]
+  changelog:
+    - version: "1.0.0"
+      date: "2024-12-11"
+      changes: "Initial version"
+```
+
+### 15.3 ID Naming Conventions
+
+**Rule ID Format**: `<category>_<specific_pattern>`
+
+| Category | Prefix | Example |
+|----------|--------|---------|
+| Fraud | `fraud_` | `fraud_farm_pattern`, `fraud_velocity_abuse` |
+| Payment | `payment_` | `payment_card_testing`, `payment_high_value` |
+| Geography | `geo_` | `geo_suspicious_country`, `geo_impossible_travel` |
+| Account | `account_` | `account_takeover_pattern`, `account_new_user_risk` |
+| Device | `device_` | `device_fingerprint_mismatch` |
+
+**Naming Principles**:
+- ✅ Use `snake_case` (lowercase + underscores)
+- ✅ Include category prefix to avoid conflicts
+- ✅ Be descriptive and clear
+- ✅ Use `_pattern` or `_check` suffix
+- ❌ Avoid generic names like `rule1`, `check`, `test`
+- ❌ Keep under 50 characters
+
+### 15.4 Using Rules from Library
+
+Rules are imported and referenced by rulesets (not by pipelines directly):
+
+```yaml
+# library/rulesets/fraud_detection_core.yaml
+version: "0.1"
+
+imports:
+  rules:
+    - library/rules/fraud/fraud_farm.yaml
+    - library/rules/fraud/account_takeover.yaml
+
+---
+
+ruleset:
+  id: fraud_detection_core
+  rules:
+    - fraud_farm_pattern          # Reference by ID
+    - account_takeover_pattern    # Reference by ID
+```
+
+### 15.5 Rule Testing
+
+Create test files alongside rule definitions:
+
+```yaml
+# library/rules/fraud/fraud_farm.test.yaml
+tests:
+  - name: "Fraud farm detected - high device count"
+    input:
+      ip_device_count: 15
+      ip_user_count: 8
+    expected:
+      triggered: true
+      score: 100
+
+  - name: "Normal traffic - below threshold"
+    input:
+      ip_device_count: 2
+      ip_user_count: 1
+    expected:
+      triggered: false
+      score: 0
+
+  - name: "Edge case - only device count high"
+    input:
+      ip_device_count: 15
+      ip_user_count: 2
+    expected:
+      triggered: false
+      score: 0
+```
+
+### 15.6 Benefits of Rule Libraries
+
+✅ **Reusability**: Define once, use in multiple rulesets
+✅ **Consistency**: Same logic across all pipelines
+✅ **Maintainability**: Update in one place
+✅ **Testability**: Test rules independently
+✅ **Collaboration**: Team members work on separate rules
+✅ **Versioning**: Track changes with metadata
+
+(See `imports.md` for complete module system specification.)
+
+---
+
+## 16. Related Documentation
+
+- `imports.md` - Module system and code reuse (NEW)
 - `ruleset.md` - Ruleset and decision logic
 - `expression.md` - Expression language for conditions
 - `feature.md` - Feature engineering for rule conditions
 - `versioning.md` - Rule versioning and deployment
 - `test.md` - Testing rules
+- `../repository/README.md` - Rule library usage guide

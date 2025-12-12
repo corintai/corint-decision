@@ -7,10 +7,14 @@ pub mod compiler;
 pub mod codegen;
 pub mod semantic;
 pub mod optimizer;
+pub mod import_resolver;
 
 // Re-export main types
 pub use error::{CompileError, Result};
 pub use compiler::{Compiler, CompilerOptions};
+
+// Re-export import resolver types
+pub use import_resolver::{ImportResolver, ResolvedDocument};
 
 // Re-export codegen types for backward compatibility
 pub use codegen::ExpressionCompiler;

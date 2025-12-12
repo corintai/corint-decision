@@ -9,6 +9,7 @@ license = "Elastic-2.0"
 corint-sdk = { path = "../corint-sdk", features = ["sqlx"] }
 corint-runtime = { path = "../corint-runtime", features = ["sqlx"] }
 corint-core = { path = "../corint-core" }
+corint-repository = { path = "../corint-repository", features = ["api"] }
 
 # Async runtime
 tokio = { version = "1.35", features = ["full"] }

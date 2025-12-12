@@ -7,6 +7,8 @@ description = "AST to IR compiler for CORINT Decision Engine"
 
 [dependencies]
 corint-core = { path = "../corint-core" }
+corint-parser = { path = "../corint-parser" }
 thiserror = { workspace = true }
 anyhow = { workspace = true }
 serde_json = { workspace = true }
+serde_yaml = { workspace = true }

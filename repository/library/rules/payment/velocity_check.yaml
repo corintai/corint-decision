@@ -1,0 +1,20 @@
+version: "0.1"
+
+# Reusable velocity check rule
+rule:
+  id: velocity_check
+  name: Velocity Violation
+  description: High transaction frequency
+
+  when:
+    conditions:
+      - transaction_count_24h > 20
+
+  score: 50
+
+  metadata:
+    category: payment
+    severity: medium
+    tags: [velocity, frequency, abuse]
+    rule_version: "1.0.0"
+    last_updated: "2024-12-11"
