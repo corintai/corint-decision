@@ -13,6 +13,7 @@ use anyhow::Result;
 use corint_sdk::DecisionEngineBuilder;
 use corint_runtime::datasource::{DataSourceClient, DataSourceConfig};
 use corint_runtime::feature::{FeatureExecutor, FeatureRegistry};
+use corint_runtime::observability::otel::{OtelConfig, OtelContext, init_opentelemetry};
 use std::sync::Arc;
 use tokio::net::TcpListener;
 use tracing::{info, error, warn};
@@ -27,12 +28,16 @@ async fn main() -> Result<()> {
     let config = ServerConfig::load()?;
     info!("Loaded configuration: {:?}", config);
 
+    // Initialize OpenTelemetry
+    let otel_ctx = init_otel(&config)?;
+    info!("OpenTelemetry initialized");
+
     // Initialize decision engine
     let engine = init_engine(&config).await?;
     info!("Decision engine initialized");
 
-    // Create router
-    let app = api::create_router(Arc::new(engine));
+    // Create router with OTel context
+    let app = api::create_router_with_metrics(Arc::new(engine), Arc::new(otel_ctx));
 
     // Start server
     let addr = format!("{}:{}", config.host, config.port);
@@ -42,6 +47,7 @@ async fn main() -> Result<()> {
     info!("✓ Server listening on http://{}", addr);
     info!("  Health check: http://{}/health", addr);
     info!("  Decision API: http://{}/v1/decide", addr);
+    info!("  Metrics: http://{}/metrics", addr);
 
     axum::serve(listener, app).await?;
 
@@ -60,6 +66,24 @@ fn init_tracing() -> Result<()> {
         .map_err(|e| anyhow::anyhow!("Failed to initialize tracing: {}", e))?;
 
     Ok(())
+}
+
+/// Initialize OpenTelemetry
+fn init_otel(config: &ServerConfig) -> Result<OtelContext> {
+    let otel_config = OtelConfig::new("corint-server")
+        .with_version(env!("CARGO_PKG_VERSION"))
+        .with_metrics(config.enable_metrics)
+        .with_tracing(config.enable_tracing);
+
+    // Configure OTLP endpoint if available
+    let otel_config = if let Ok(endpoint) = std::env::var("OTEL_EXPORTER_OTLP_ENDPOINT") {
+        info!("Using OTLP endpoint: {}", endpoint);
+        otel_config.with_otlp_endpoint(endpoint)
+    } else {
+        otel_config
+    };
+
+    init_opentelemetry(otel_config)
 }
 
 /// Initialize decision engine

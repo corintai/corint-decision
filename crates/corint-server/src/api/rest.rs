@@ -5,8 +5,11 @@ use axum::{
     extract::State,
     routing::{get, post},
     Json, Router,
+    response::{IntoResponse, Response},
+    http::StatusCode,
 };
 use corint_core::Value;
+use corint_runtime::observability::otel::OtelContext;
 use corint_sdk::{DecisionEngine, DecisionRequest};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -19,6 +22,13 @@ use tracing::info;
 #[derive(Clone)]
 pub struct AppState {
     pub engine: Arc<DecisionEngine>,
+}
+
+/// Application state with metrics
+#[derive(Clone)]
+pub struct AppStateWithMetrics {
+    pub engine: Arc<DecisionEngine>,
+    pub otel_ctx: Arc<OtelContext>,
 }
 
 /// Health check response
@@ -67,6 +77,25 @@ pub fn create_router(engine: Arc<DecisionEngine>) -> Router {
     Router::new()
         .route("/health", get(health))
         .route("/v1/decide", post(decide))
+        .with_state(state)
+        .layer(CorsLayer::permissive())
+        .layer(TraceLayer::new_for_http())
+}
+
+/// Create REST API router with metrics endpoint
+pub fn create_router_with_metrics(
+    engine: Arc<DecisionEngine>,
+    otel_ctx: Arc<OtelContext>,
+) -> Router {
+    let state = AppStateWithMetrics {
+        engine: engine.clone(),
+        otel_ctx,
+    };
+
+    Router::new()
+        .route("/health", get(health))
+        .route("/metrics", get(metrics))
+        .route("/v1/decide", post(decide_with_metrics))
         .with_state(state)
         .layer(CorsLayer::permissive())
         .layer(TraceLayer::new_for_http())
@@ -518,5 +547,77 @@ mod tests {
             panic!("Expected Object");
         }
     }
+}
+
+/// Metrics endpoint - returns Prometheus format metrics
+async fn metrics(
+    State(state): State<AppStateWithMetrics>,
+) -> Response {
+    match state.otel_ctx.metrics() {
+        Ok(metrics_text) => {
+            (
+                StatusCode::OK,
+                [("Content-Type", "text/plain; version=0.0.4")],
+                metrics_text,
+            ).into_response()
+        }
+        Err(e) => {
+            tracing::error!("Failed to get metrics: {}", e);
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Failed to get metrics: {}", e),
+            ).into_response()
+        }
+    }
+}
+
+/// Decision endpoint with metrics
+#[axum::debug_handler]
+async fn decide_with_metrics(
+    State(state): State<AppStateWithMetrics>,
+    Json(payload): Json<DecideRequestPayload>,
+) -> Result<Json<DecideResponsePayload>, ServerError> {
+    info!("Received decision request with {} event fields", payload.event_data.len());
+
+    // Convert serde_json::Value to corint_core::Value
+    let event_fields: HashMap<String, Value> = payload
+        .event_data
+        .into_iter()
+        .map(|(k, v)| (k, json_to_value(v)))
+        .collect();
+
+    // Create event_data with dual structure (same as decide())
+    let mut event_data = HashMap::new();
+
+    // Store original nested structure
+    let event_object = Value::Object(event_fields.clone());
+    event_data.insert("event".to_string(), event_object.clone());
+
+    // Store top-level fields for backward compatibility
+    for (key, value) in &event_fields {
+        event_data.insert(key.clone(), value.clone());
+    }
+
+    // Flatten the entire event object recursively
+    flatten_object("event", &event_object, &mut event_data);
+
+    // Create decision request
+    let request = DecisionRequest::new(event_data);
+
+    // Execute decision
+    let response = state.engine.decide(request).await?;
+
+    // Convert action to string
+    let action_str = response.result.action.map(|a| format!("{:?}", a));
+
+    Ok(Json(DecideResponsePayload {
+        request_id: response.request_id,
+        pipeline_id: response.pipeline_id,
+        action: action_str,
+        score: response.result.score,
+        triggered_rules: response.result.triggered_rules,
+        explanation: response.result.explanation,
+        processing_time_ms: response.processing_time_ms,
+    }))
 }
 

@@ -20,9 +20,18 @@ urlencoding = "2.1"
 sqlx = { version = "0.8", features = ["runtime-tokio-native-tls", "postgres", "chrono", "bigdecimal"], optional = true }
 bigdecimal = { version = "0.4", features = ["serde"], optional = true }
 
+# OpenTelemetry dependencies
+opentelemetry = { version = "0.27", optional = true }
+opentelemetry_sdk = { version = "0.27", features = ["rt-tokio"], optional = true }
+opentelemetry-prometheus = { version = "0.27", optional = true }
+opentelemetry-otlp = { version = "0.27", features = ["tokio", "grpc-tonic"], optional = true }
+opentelemetry-semantic-conventions = { version = "0.27", optional = true }
+prometheus = { version = "0.13", optional = true }
+
 [features]
 default = []
 sqlx = ["dep:sqlx", "dep:bigdecimal"]
+otel = ["dep:opentelemetry", "dep:opentelemetry_sdk", "dep:opentelemetry-prometheus", "dep:opentelemetry-otlp", "dep:opentelemetry-semantic-conventions", "dep:prometheus"]
 
 [dev-dependencies]
 tokio = { version = "1.0", features = ["full", "test-util"] }
