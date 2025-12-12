@@ -118,3 +118,163 @@ impl CacheConfig {
         self
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_cache_stats_hit_rate() {
+        let stats = CacheStats {
+            hits: 80,
+            misses: 20,
+            size: 100,
+            memory_bytes: 1024,
+        };
+
+        assert_eq!(stats.hit_rate(), 0.8);
+    }
+
+    #[test]
+    fn test_cache_stats_zero_total() {
+        let stats = CacheStats {
+            hits: 0,
+            misses: 0,
+            size: 0,
+            memory_bytes: 0,
+        };
+
+        assert_eq!(stats.hit_rate(), 0.0);
+    }
+
+    #[test]
+    fn test_cache_stats_default() {
+        let stats = CacheStats::default();
+        assert_eq!(stats.hits, 0);
+        assert_eq!(stats.misses, 0);
+        assert_eq!(stats.size, 0);
+        assert_eq!(stats.memory_bytes, 0);
+        assert_eq!(stats.hit_rate(), 0.0);
+    }
+
+    #[test]
+    fn test_cached_artifact_creation() {
+        let data = "test_data".to_string();
+        let content = "test_content".to_string();
+        let ttl = Duration::from_secs(60);
+
+        let artifact = CachedArtifact::new(data.clone(), content.clone(), ttl);
+
+        assert_eq!(artifact.data, data);
+        assert_eq!(artifact.content, content);
+        assert_eq!(artifact.ttl, ttl);
+        assert!(!artifact.is_expired());
+    }
+
+    #[test]
+    fn test_cached_artifact_age() {
+        let data = "test".to_string();
+        let content = "content".to_string();
+        let ttl = Duration::from_secs(60);
+
+        let artifact = CachedArtifact::new(data, content, ttl);
+        let age = artifact.age();
+
+        // Age should be very small (just created)
+        assert!(age < Duration::from_millis(100));
+    }
+
+    #[test]
+    fn test_cached_artifact_not_expired() {
+        let data = "test".to_string();
+        let content = "content".to_string();
+        let ttl = Duration::from_secs(60);
+
+        let artifact = CachedArtifact::new(data, content, ttl);
+
+        assert!(!artifact.is_expired());
+    }
+
+    #[test]
+    fn test_cache_config_default() {
+        let config = CacheConfig::default();
+
+        assert!(config.enabled);
+        assert_eq!(config.default_ttl, Duration::from_secs(300));
+        assert_eq!(config.max_entries, Some(1000));
+        assert_eq!(config.max_memory_bytes, Some(100 * 1024 * 1024));
+    }
+
+    #[test]
+    fn test_cache_config_new() {
+        let config = CacheConfig::new();
+
+        assert!(config.enabled);
+        assert_eq!(config.default_ttl, Duration::from_secs(300));
+    }
+
+    #[test]
+    fn test_cache_config_disabled() {
+        let config = CacheConfig::disabled();
+
+        assert!(!config.enabled);
+        assert_eq!(config.default_ttl, Duration::from_secs(300));
+    }
+
+    #[test]
+    fn test_cache_config_with_ttl() {
+        let ttl = Duration::from_secs(600);
+        let config = CacheConfig::new().with_ttl(ttl);
+
+        assert_eq!(config.default_ttl, ttl);
+    }
+
+    #[test]
+    fn test_cache_config_with_max_entries() {
+        let config = CacheConfig::new().with_max_entries(500);
+
+        assert_eq!(config.max_entries, Some(500));
+    }
+
+    #[test]
+    fn test_cache_config_unlimited_entries() {
+        let config = CacheConfig::new().unlimited_entries();
+
+        assert_eq!(config.max_entries, None);
+    }
+
+    #[test]
+    fn test_cache_config_chaining() {
+        let config = CacheConfig::new()
+            .with_ttl(Duration::from_secs(120))
+            .with_max_entries(2000);
+
+        assert!(config.enabled);
+        assert_eq!(config.default_ttl, Duration::from_secs(120));
+        assert_eq!(config.max_entries, Some(2000));
+    }
+
+    #[test]
+    fn test_cache_stats_100_percent_hit_rate() {
+        let stats = CacheStats {
+            hits: 100,
+            misses: 0,
+            size: 50,
+            memory_bytes: 2048,
+        };
+
+        assert_eq!(stats.hit_rate(), 1.0);
+    }
+
+    #[test]
+    fn test_cache_stats_0_percent_hit_rate() {
+        let stats = CacheStats {
+            hits: 0,
+            misses: 100,
+            size: 50,
+            memory_bytes: 2048,
+        };
+
+        assert_eq!(stats.hit_rate(), 0.0);
+    }
+}

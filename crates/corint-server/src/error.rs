@@ -67,4 +67,90 @@ impl From<anyhow::Error> for ServerError {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_engine_error_display() {
+        let err = ServerError::EngineError("compilation failed".to_string());
+        assert_eq!(err.to_string(), "Engine error: compilation failed");
+    }
+
+    #[test]
+    fn test_invalid_request_display() {
+        let err = ServerError::InvalidRequest("missing field".to_string());
+        assert_eq!(err.to_string(), "Invalid request: missing field");
+    }
+
+    #[test]
+    fn test_internal_error_display() {
+        let err = ServerError::InternalError("database connection failed".to_string());
+        assert_eq!(err.to_string(), "Internal error: database connection failed");
+    }
+
+    #[test]
+    fn test_not_found_display() {
+        let err = ServerError::NotFound("pipeline not found".to_string());
+        assert_eq!(err.to_string(), "Not found: pipeline not found");
+    }
+
+    #[test]
+    fn test_error_debug_format() {
+        let err = ServerError::EngineError("test".to_string());
+        let debug_str = format!("{:?}", err);
+        assert!(debug_str.contains("EngineError"));
+    }
+
+    #[test]
+    fn test_sdk_error_conversion() {
+        let sdk_err = corint_sdk::error::SdkError::NotInitialized;
+        let server_err: ServerError = sdk_err.into();
+        assert!(server_err.to_string().contains("Engine error"));
+        assert!(server_err.to_string().contains("Engine not initialized"));
+    }
+
+    #[test]
+    fn test_anyhow_error_conversion() {
+        let anyhow_err = anyhow::anyhow!("something went wrong");
+        let server_err: ServerError = anyhow_err.into();
+        assert!(server_err.to_string().contains("Internal error"));
+        assert!(server_err.to_string().contains("something went wrong"));
+    }
+
+    #[test]
+    fn test_into_response_engine_error() {
+        let err = ServerError::EngineError("test error".to_string());
+        let response = err.into_response();
+        assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
+    }
+
+    #[test]
+    fn test_into_response_invalid_request() {
+        let err = ServerError::InvalidRequest("bad input".to_string());
+        let response = err.into_response();
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    }
+
+    #[test]
+    fn test_into_response_internal_error() {
+        let err = ServerError::InternalError("crash".to_string());
+        let response = err.into_response();
+        assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
+    }
+
+    #[test]
+    fn test_into_response_not_found() {
+        let err = ServerError::NotFound("resource missing".to_string());
+        let response = err.into_response();
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    }
+
+    #[test]
+    fn test_error_is_send_sync() {
+        fn assert_send_sync<T: Send + Sync>() {}
+        assert_send_sync::<ServerError>();
+    }
+}
+
 

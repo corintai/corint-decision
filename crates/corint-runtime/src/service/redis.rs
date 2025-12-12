@@ -201,4 +201,90 @@ mod tests {
         let response = client.call(request).await.unwrap();
         assert_eq!(response.status, "success");
     }
+
+    #[tokio::test]
+    async fn test_redis_command_with_multiple_args() {
+        let cmd = RedisCommand::new("MSET".to_string())
+            .with_args(vec![
+                "key1".to_string(),
+                "value1".to_string(),
+                "key2".to_string(),
+                "value2".to_string(),
+            ]);
+
+        assert_eq!(cmd.args.len(), 4);
+    }
+
+    #[tokio::test]
+    async fn test_redis_unknown_command() {
+        let client = MockRedisClient::new();
+
+        let cmd = RedisCommand::new("UNKNOWN".to_string());
+        let result = client.execute(cmd).await.unwrap();
+
+        assert_eq!(result, Value::Null);
+    }
+
+    #[tokio::test]
+    async fn test_redis_client_name() {
+        let client = MockRedisClient::new();
+        assert_eq!(client.name(), "mock_redis");
+    }
+
+    #[tokio::test]
+    async fn test_redis_get_nonexistent_key() {
+        let client = MockRedisClient::new();
+
+        let cmd = RedisCommand::new("GET".to_string())
+            .with_arg("nonexistent".to_string());
+        let result = client.execute(cmd).await.unwrap();
+
+        assert_eq!(result, Value::Null);
+    }
+
+    #[tokio::test]
+    async fn test_redis_del_nonexistent_key() {
+        let client = MockRedisClient::new();
+
+        let cmd = RedisCommand::new("DEL".to_string())
+            .with_arg("nonexistent".to_string());
+        let result = client.execute(cmd).await.unwrap();
+
+        assert_eq!(result, Value::Number(0.0));
+    }
+
+    #[tokio::test]
+    async fn test_redis_case_insensitive_commands() {
+        let client = MockRedisClient::new();
+
+        // Test lowercase command
+        let set_cmd = RedisCommand::new("set".to_string())
+            .with_arg("key1".to_string())
+            .with_arg("value1".to_string());
+        let set_result = client.execute(set_cmd).await.unwrap();
+        assert_eq!(set_result, Value::String("OK".to_string()));
+
+        // Test mixed case command
+        let get_cmd = RedisCommand::new("GeT".to_string())
+            .with_arg("key1".to_string());
+        let get_result = client.execute(get_cmd).await.unwrap();
+        assert_eq!(get_result, Value::String("value1".to_string()));
+    }
+
+    #[tokio::test]
+    async fn test_redis_update_existing_key() {
+        let client = MockRedisClient::new();
+
+        // Set initial value
+        client.set("key1".to_string(), "value1".to_string());
+
+        // Update value
+        let set_cmd = RedisCommand::new("SET".to_string())
+            .with_arg("key1".to_string())
+            .with_arg("value2".to_string());
+        client.execute(set_cmd).await.unwrap();
+
+        // Verify updated value
+        assert_eq!(client.get("key1"), Some("value2".to_string()));
+    }
 }

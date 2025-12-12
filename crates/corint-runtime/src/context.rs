@@ -327,8 +327,10 @@ mod tests {
         let event = create_test_event();
         let ctx = ExecutionContext::new(event);
 
+        // Field not found should return Null (graceful handling)
         let result = ctx.load_field(&[String::from("nonexistent")]);
-        assert!(result.is_err());
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), Value::Null);
     }
 
     #[test]

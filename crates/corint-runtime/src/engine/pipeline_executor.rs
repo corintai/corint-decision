@@ -215,7 +215,9 @@ impl PipelineExecutor {
                     let event_type = ctx
                         .load_field(&[String::from("event"), String::from("type")])
                         .ok()
-                        .or_else(|| ctx.load_field(&[String::from("event_type")]).ok())
+                        .filter(|v| *v != Value::Null)  // Filter out Null to try fallback
+                        .or_else(|| ctx.load_field(&[String::from("event_type")]).ok().filter(|v| *v != Value::Null))
+                        .or_else(|| ctx.load_field(&[String::from("type")]).ok().filter(|v| *v != Value::Null))  // Also try "type" directly
                         .unwrap_or(Value::Null);
 
                     // Get pipeline name and description for logging

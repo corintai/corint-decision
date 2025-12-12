@@ -1,7 +1,6 @@
 //! Integration tests for FileSystemRepository
 
 use corint_repository::{FileSystemRepository, Repository};
-use std::path::Path;
 use tempfile::TempDir;
 use tokio::fs;
 

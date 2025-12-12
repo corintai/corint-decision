@@ -489,6 +489,8 @@ impl Default for FeatureExecutor {
 mod tests {
     use super::*;
     use std::time::Duration;
+    use tokio::time::sleep;
+    use crate::feature::operator::Operator;
 
     #[test]
     fn test_cache_entry_expiration() {
@@ -497,6 +499,19 @@ mod tests {
 
         std::thread::sleep(Duration::from_secs(2));
         assert!(entry.is_expired());
+    }
+
+    #[test]
+    fn test_cache_entry_not_expired() {
+        let entry = CacheEntry::new(Value::Number(100.0), 3600); // 1 hour TTL
+        assert!(!entry.is_expired());
+    }
+
+    #[test]
+    fn test_cache_entry_value() {
+        let value = Value::String("test_value".to_string());
+        let entry = CacheEntry::new(value.clone(), 300);
+        assert_eq!(entry.value, value);
     }
 
     #[test]
@@ -510,5 +525,250 @@ mod tests {
         assert!(key.contains("login_count_24h"));
         assert!(key.contains("user_id:user123"));
         assert!(key.contains("device_id:device456"));
+    }
+
+    #[test]
+    fn test_cache_key_different_features() {
+        let executor = FeatureExecutor::new();
+        let mut context = HashMap::new();
+        context.insert("user_id".to_string(), Value::String("user123".to_string()));
+
+        let key1 = executor.build_cache_key("feature1", &context);
+        let key2 = executor.build_cache_key("feature2", &context);
+
+        assert_ne!(key1, key2);
+        assert!(key1.contains("feature1"));
+        assert!(key2.contains("feature2"));
+    }
+
+    #[test]
+    fn test_cache_key_different_contexts() {
+        let executor = FeatureExecutor::new();
+
+        let mut context1 = HashMap::new();
+        context1.insert("user_id".to_string(), Value::String("user123".to_string()));
+
+        let mut context2 = HashMap::new();
+        context2.insert("user_id".to_string(), Value::String("user456".to_string()));
+
+        let key1 = executor.build_cache_key("login_count", &context1);
+        let key2 = executor.build_cache_key("login_count", &context2);
+
+        assert_ne!(key1, key2);
+    }
+
+    #[tokio::test]
+    async fn test_l1_cache_set_and_get() {
+        let executor = FeatureExecutor::new();
+        let key = "test_key";
+        let value = Value::Number(123.0);
+
+        executor.set_to_l1_cache(key, value.clone(), 300).await;
+        let cached = executor.get_from_l1_cache(key).await;
+
+        assert_eq!(cached, Some(value));
+    }
+
+    #[tokio::test]
+    async fn test_l1_cache_miss() {
+        let executor = FeatureExecutor::new();
+        let cached = executor.get_from_l1_cache("nonexistent_key").await;
+        assert_eq!(cached, None);
+    }
+
+    #[tokio::test]
+    async fn test_l1_cache_expiration() {
+        let executor = FeatureExecutor::new();
+        let key = "expire_test";
+        let value = Value::Number(42.0);
+
+        executor.set_to_l1_cache(key, value.clone(), 1).await; // 1 second TTL
+
+        // Should be present immediately
+        assert_eq!(executor.get_from_l1_cache(key).await, Some(value.clone()));
+
+        // Wait for expiration
+        sleep(Duration::from_secs(2)).await;
+
+        // Should be expired now
+        assert_eq!(executor.get_from_l1_cache(key).await, None);
+    }
+
+    #[tokio::test]
+    async fn test_cache_stats_initialization() {
+        let executor = FeatureExecutor::new().with_stats();
+        let stats = executor.get_stats().await;
+
+        assert_eq!(stats.l1_hits, 0);
+        assert_eq!(stats.l1_misses, 0);
+        assert_eq!(stats.l2_hits, 0);
+        assert_eq!(stats.l2_misses, 0);
+        assert_eq!(stats.compute_count, 0);
+    }
+
+    #[test]
+    fn test_cache_stats_default() {
+        let stats = CacheStats::default();
+        assert_eq!(stats.l1_hits, 0);
+        assert_eq!(stats.l1_misses, 0);
+        assert_eq!(stats.l2_hits, 0);
+        assert_eq!(stats.l2_misses, 0);
+        assert_eq!(stats.compute_count, 0);
+    }
+
+    #[test]
+    fn test_feature_executor_new() {
+        let executor = FeatureExecutor::new();
+        assert!(!executor.enable_stats);
+        assert_eq!(executor.datasources.len(), 0);
+        assert_eq!(executor.features.len(), 0);
+    }
+
+    #[test]
+    fn test_feature_executor_with_stats() {
+        let executor = FeatureExecutor::new().with_stats();
+        assert!(executor.enable_stats);
+    }
+
+    #[test]
+    fn test_feature_executor_has_feature() {
+        use crate::feature::operator::{CountOperator, WindowConfig, WindowUnit};
+
+        let mut executor = FeatureExecutor::new();
+        assert!(!executor.has_feature("test_feature"));
+
+        let operator = Operator::Count(CountOperator {
+            params: crate::feature::operator::OperatorParams {
+                datasource: None,
+                entity: "test_entity".to_string(),
+                dimension: "test_dim".to_string(),
+                dimension_value: "{test}".to_string(),
+                window: Some(WindowConfig {
+                    value: 24,
+                    unit: WindowUnit::Hours,
+                }),
+                filters: vec![],
+                cache: None,
+            },
+        });
+
+        let feature = FeatureDefinition::new("test_feature", operator);
+
+        executor.register_feature(feature).unwrap();
+        assert!(executor.has_feature("test_feature"));
+    }
+
+    #[tokio::test]
+    async fn test_concurrent_cache_access() {
+        use tokio::task::JoinSet;
+
+        let executor = Arc::new(FeatureExecutor::new());
+        let mut tasks = JoinSet::new();
+
+        // Spawn multiple concurrent tasks
+        for i in 0..10 {
+            let exec = executor.clone();
+            tasks.spawn(async move {
+                let key = format!("concurrent_key_{}", i);
+                let value = Value::Number(i as f64);
+                exec.set_to_l1_cache(&key, value.clone(), 300).await;
+                exec.get_from_l1_cache(&key).await
+            });
+        }
+
+        // Collect results
+        let mut results = Vec::new();
+        while let Some(result) = tasks.join_next().await {
+            results.push(result.unwrap());
+        }
+
+        // Verify all writes were successful
+        assert_eq!(results.len(), 10);
+        assert!(results.iter().all(|r| r.is_some()));
+    }
+
+    #[tokio::test]
+    async fn test_concurrent_feature_registration() {
+        use tokio::task::JoinSet;
+        use crate::feature::operator::{CountOperator, WindowConfig, WindowUnit};
+
+        let executor = Arc::new(tokio::sync::RwLock::new(FeatureExecutor::new()));
+        let mut tasks = JoinSet::new();
+
+        // Spawn multiple concurrent registration tasks
+        for i in 0..5 {
+            let exec = executor.clone();
+            tasks.spawn(async move {
+                let operator = Operator::Count(CountOperator {
+                    params: crate::feature::operator::OperatorParams {
+                        datasource: None,
+                        entity: "test_entity".to_string(),
+                        dimension: "test_dim".to_string(),
+                        dimension_value: format!("{{test_{}}}", i),
+                        window: Some(WindowConfig {
+                            value: 24,
+                            unit: WindowUnit::Hours,
+                        }),
+                        filters: vec![],
+                        cache: None,
+                    },
+                });
+
+                let feature = FeatureDefinition::new(format!("feature_{}", i), operator);
+                exec.write().await.register_feature(feature)
+            });
+        }
+
+        // Collect results
+        let mut results = Vec::new();
+        while let Some(result) = tasks.join_next().await {
+            results.push(result.unwrap());
+        }
+
+        // Verify all registrations were successful
+        assert_eq!(results.len(), 5);
+        assert!(results.iter().all(|r| r.is_ok()));
+
+        // Verify all features are registered
+        let exec = executor.read().await;
+        for i in 0..5 {
+            assert!(exec.has_feature(&format!("feature_{}", i)));
+        }
+    }
+
+    #[test]
+    fn test_value_to_string_conversions() {
+        assert_eq!(value_to_string(&Value::Null), "null");
+        assert_eq!(value_to_string(&Value::Bool(true)), "true");
+        assert_eq!(value_to_string(&Value::Bool(false)), "false");
+        assert_eq!(value_to_string(&Value::Number(42.5)), "42.5");
+        assert_eq!(value_to_string(&Value::String("test".to_string())), "test");
+        assert_eq!(value_to_string(&Value::Array(vec![])), "[array]");
+        assert_eq!(value_to_string(&Value::Object(HashMap::new())), "{object}");
+    }
+
+    #[tokio::test]
+    async fn test_cache_overwrite() {
+        let executor = FeatureExecutor::new();
+        let key = "overwrite_key";
+
+        executor.set_to_l1_cache(key, Value::Number(1.0), 300).await;
+        assert_eq!(executor.get_from_l1_cache(key).await, Some(Value::Number(1.0)));
+
+        executor.set_to_l1_cache(key, Value::Number(2.0), 300).await;
+        assert_eq!(executor.get_from_l1_cache(key).await, Some(Value::Number(2.0)));
+    }
+
+    #[tokio::test]
+    async fn test_multiple_cache_keys() {
+        let executor = FeatureExecutor::new();
+
+        executor.set_to_l1_cache("key1", Value::Number(1.0), 300).await;
+        executor.set_to_l1_cache("key2", Value::Number(2.0), 300).await;
+        executor.set_to_l1_cache("key3", Value::Number(3.0), 300).await;
+
+        assert_eq!(executor.get_from_l1_cache("key1").await, Some(Value::Number(1.0)));
+        assert_eq!(executor.get_from_l1_cache("key2").await, Some(Value::Number(2.0)));
+        assert_eq!(executor.get_from_l1_cache("key3").await, Some(Value::Number(3.0)));
     }
 }

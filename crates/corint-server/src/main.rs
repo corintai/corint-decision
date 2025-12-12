@@ -2,10 +2,10 @@
 //!
 //! Provides REST API for executing decision rules.
 
-mod api;
-mod config;
-mod error;
-mod repository_loader;
+pub mod api;
+pub mod config;
+pub mod error;
+pub mod repository_loader;
 
 use crate::config::ServerConfig;
 use crate::repository_loader::load_rules_from_repository;
@@ -131,14 +131,14 @@ async fn init_engine(config: &ServerConfig) -> Result<corint_sdk::DecisionEngine
 /// Initialize feature executor with datasources and features
 async fn init_feature_executor() -> Result<Option<FeatureExecutor>> {
     // Check if datasource config exists
-    let datasource_dir = std::path::Path::new("examples/configs/datasources");
+    let datasource_dir = std::path::Path::new("repository/configs/datasources");
     if !datasource_dir.exists() {
         info!("Datasource directory not found: {:?}", datasource_dir);
         return Ok(None);
     }
 
     // Check if feature config exists
-    let feature_dir = std::path::Path::new("examples/configs/features");
+    let feature_dir = std::path::Path::new("repository/configs/features");
     if !feature_dir.exists() {
         info!("Feature directory not found: {:?}", feature_dir);
         return Ok(None);

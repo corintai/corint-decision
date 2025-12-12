@@ -183,4 +183,86 @@ mod tests {
         let response = client.call(request).await.unwrap();
         assert_eq!(response.status, "success");
     }
+
+    #[tokio::test]
+    async fn test_database_query_with_params() {
+        let query = DatabaseQuery::new("SELECT * FROM users WHERE id = ?".to_string())
+            .with_param(Value::Number(1.0));
+
+        assert_eq!(query.params.len(), 1);
+        assert_eq!(query.params[0], Value::Number(1.0));
+    }
+
+    #[tokio::test]
+    async fn test_database_query_empty_table() {
+        let client = MockDatabaseClient::new();
+
+        // Query non-existent table
+        let query = DatabaseQuery::new("SELECT * FROM nonexistent".to_string());
+        let results = client.query(query).await.unwrap();
+
+        assert_eq!(results.len(), 0);
+    }
+
+    #[tokio::test]
+    async fn test_database_multiple_params() {
+        let query = DatabaseQuery::new("SELECT * FROM users WHERE name = ? AND age > ?".to_string())
+            .with_param(Value::String("Alice".to_string()))
+            .with_param(Value::Number(18.0));
+
+        assert_eq!(query.params.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn test_database_service_execute() {
+        let client = MockDatabaseClient::new();
+
+        let request = ServiceRequest::new("database".to_string(), "execute".to_string())
+            .with_param("query".to_string(), Value::String("DELETE FROM users WHERE id = 1".to_string()));
+
+        let response = client.call(request).await.unwrap();
+        assert_eq!(response.status, "success");
+        assert_eq!(response.data, Value::Number(1.0));
+    }
+
+    #[tokio::test]
+    async fn test_database_service_unknown_operation() {
+        let client = MockDatabaseClient::new();
+
+        let request = ServiceRequest::new("database".to_string(), "unknown".to_string());
+        let response = client.call(request).await.unwrap();
+
+        // Unknown operation should return Null
+        assert_eq!(response.data, Value::Null);
+    }
+
+    #[tokio::test]
+    async fn test_database_client_name() {
+        let client = MockDatabaseClient::new();
+        assert_eq!(client.name(), "mock_db");
+    }
+
+    #[tokio::test]
+    async fn test_database_seed_multiple_tables() {
+        let client = MockDatabaseClient::new();
+
+        // Seed users table
+        let mut user1 = HashMap::new();
+        user1.insert("id".to_string(), Value::Number(1.0));
+        user1.insert("name".to_string(), Value::String("Alice".to_string()));
+        client.seed_table("users".to_string(), vec![user1]);
+
+        // Seed orders table
+        let mut order1 = HashMap::new();
+        order1.insert("id".to_string(), Value::Number(100.0));
+        order1.insert("user_id".to_string(), Value::Number(1.0));
+        client.seed_table("orders".to_string(), vec![order1]);
+
+        // Query both tables
+        let users = client.query(DatabaseQuery::new("SELECT * FROM users".to_string())).await.unwrap();
+        let orders = client.query(DatabaseQuery::new("SELECT * FROM orders".to_string())).await.unwrap();
+
+        assert_eq!(users.len(), 1);
+        assert_eq!(orders.len(), 1);
+    }
 }

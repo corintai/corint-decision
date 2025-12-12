@@ -53,7 +53,7 @@ rule:
   
   when:
     conditions:
-      - features.max_transaction_7d > 400
+      - features.max_transaction_14d > 400
   
   score: 35
 

@@ -34,6 +34,7 @@ reqwest = { version = "0.11", features = ["json"], optional = true }
 [dev-dependencies]
 tokio = { version = "1.0", features = ["full", "test-util"] }
 tempfile = "3.8"
+mockito = "1.2"
 
 [features]
 default = []

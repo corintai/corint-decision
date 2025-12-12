@@ -146,7 +146,7 @@ features:
       enabled: true
       ttl: 3600
 
-  - name: max_transaction_7d
+  - name: max_transaction_14d
     description: "Maximum transaction amount in last 7 days"
     operator: max
     datasource: supabase_events
@@ -155,7 +155,7 @@ features:
     dimension_value: "{event.user_id}"
     field: amount
     window:
-      value: 7
+      value: 14
       unit: days
     filters:
       - field: event_type

@@ -248,20 +248,20 @@ mod tests {
         let mut profile = HashMap::new();
         profile.insert("tier".to_string(), Value::String("gold".to_string()));
         profile.insert("age".to_string(), Value::Number(30.0));
-        
+
         let mut user = HashMap::new();
         user.insert("id".to_string(), Value::String("user_001".to_string()));
         user.insert("profile".to_string(), Value::Object(profile));
-        
+
         let mut event_obj = HashMap::new();
         event_obj.insert("user".to_string(), Value::Object(user));
         event_obj.insert("amount".to_string(), Value::Number(1000.0));
-        
+
         let event = Value::Object(event_obj);
         let mut result = HashMap::new();
-        
+
         flatten_object("event", &event, &mut result);
-        
+
         // Check all levels are flattened
         assert!(result.contains_key("event.user"));
         assert_eq!(result.get("event.user.id"), Some(&Value::String("user_001".to_string())));
@@ -269,6 +269,254 @@ mod tests {
         assert_eq!(result.get("event.user.profile.tier"), Some(&Value::String("gold".to_string())));
         assert_eq!(result.get("event.user.profile.age"), Some(&Value::Number(30.0)));
         assert_eq!(result.get("event.amount"), Some(&Value::Number(1000.0)));
+    }
+
+    #[test]
+    fn test_json_to_value_null() {
+        let json = serde_json::Value::Null;
+        let value = json_to_value(json);
+        assert!(matches!(value, Value::Null));
+    }
+
+    #[test]
+    fn test_json_to_value_bool() {
+        let json_true = serde_json::Value::Bool(true);
+        let json_false = serde_json::Value::Bool(false);
+
+        assert!(matches!(json_to_value(json_true), Value::Bool(true)));
+        assert!(matches!(json_to_value(json_false), Value::Bool(false)));
+    }
+
+    #[test]
+    fn test_json_to_value_number_integer() {
+        let json = serde_json::json!(42);
+        let value = json_to_value(json);
+
+        if let Value::Number(n) = value {
+            assert_eq!(n, 42.0);
+        } else {
+            panic!("Expected Number");
+        }
+    }
+
+    #[test]
+    fn test_json_to_value_number_float() {
+        let json = serde_json::json!(3.14);
+        let value = json_to_value(json);
+
+        if let Value::Number(n) = value {
+            assert!((n - 3.14).abs() < 0.001);
+        } else {
+            panic!("Expected Number");
+        }
+    }
+
+    #[test]
+    fn test_json_to_value_string() {
+        let json = serde_json::json!("hello");
+        let value = json_to_value(json);
+
+        assert_eq!(value, Value::String("hello".to_string()));
+    }
+
+    #[test]
+    fn test_json_to_value_array() {
+        let json = serde_json::json!([1, 2, 3]);
+        let value = json_to_value(json);
+
+        if let Value::Array(arr) = value {
+            assert_eq!(arr.len(), 3);
+            assert_eq!(arr[0], Value::Number(1.0));
+            assert_eq!(arr[1], Value::Number(2.0));
+            assert_eq!(arr[2], Value::Number(3.0));
+        } else {
+            panic!("Expected Array");
+        }
+    }
+
+    #[test]
+    fn test_json_to_value_nested_array() {
+        let json = serde_json::json!([[1, 2], [3, 4]]);
+        let value = json_to_value(json);
+
+        if let Value::Array(outer) = value {
+            assert_eq!(outer.len(), 2);
+            if let Value::Array(inner) = &outer[0] {
+                assert_eq!(inner.len(), 2);
+                assert_eq!(inner[0], Value::Number(1.0));
+            } else {
+                panic!("Expected nested array");
+            }
+        } else {
+            panic!("Expected Array");
+        }
+    }
+
+    #[test]
+    fn test_json_to_value_object() {
+        let json = serde_json::json!({"key": "value"});
+        let value = json_to_value(json);
+
+        if let Value::Object(map) = value {
+            assert_eq!(map.get("key"), Some(&Value::String("value".to_string())));
+        } else {
+            panic!("Expected Object");
+        }
+    }
+
+    #[test]
+    fn test_json_to_value_nested_object() {
+        let json = serde_json::json!({
+            "user": {
+                "name": "Alice",
+                "age": 30
+            }
+        });
+        let value = json_to_value(json);
+
+        if let Value::Object(outer) = value {
+            if let Some(Value::Object(inner)) = outer.get("user") {
+                assert_eq!(inner.get("name"), Some(&Value::String("Alice".to_string())));
+                assert_eq!(inner.get("age"), Some(&Value::Number(30.0)));
+            } else {
+                panic!("Expected nested object");
+            }
+        } else {
+            panic!("Expected Object");
+        }
+    }
+
+    #[test]
+    fn test_flatten_object_empty() {
+        let event = Value::Object(HashMap::new());
+        let mut result = HashMap::new();
+
+        flatten_object("event", &event, &mut result);
+
+        // Empty object should produce no flattened keys
+        assert_eq!(result.len(), 0);
+    }
+
+    #[test]
+    fn test_flatten_object_non_object() {
+        let event = Value::String("test".to_string());
+        let mut result = HashMap::new();
+
+        flatten_object("event", &event, &mut result);
+
+        // Non-object should just store the value itself
+        assert_eq!(result.get("event"), Some(&Value::String("test".to_string())));
+    }
+
+    #[test]
+    fn test_flatten_object_array_value() {
+        let mut obj = HashMap::new();
+        obj.insert("tags".to_string(), Value::Array(vec![
+            Value::String("fraud".to_string()),
+            Value::String("suspicious".to_string()),
+        ]));
+
+        let event = Value::Object(obj);
+        let mut result = HashMap::new();
+
+        flatten_object("event", &event, &mut result);
+
+        // Array should be stored as-is, not flattened
+        if let Some(Value::Array(tags)) = result.get("event.tags") {
+            assert_eq!(tags.len(), 2);
+        } else {
+            panic!("Expected array value");
+        }
+    }
+
+    #[test]
+    fn test_flatten_object_deep_nesting() {
+        // Create 4 levels deep: event.a.b.c.d = "value"
+        let mut level_d = HashMap::new();
+        level_d.insert("d".to_string(), Value::String("value".to_string()));
+
+        let mut level_c = HashMap::new();
+        level_c.insert("c".to_string(), Value::Object(level_d));
+
+        let mut level_b = HashMap::new();
+        level_b.insert("b".to_string(), Value::Object(level_c));
+
+        let mut level_a = HashMap::new();
+        level_a.insert("a".to_string(), Value::Object(level_b));
+
+        let event = Value::Object(level_a);
+        let mut result = HashMap::new();
+
+        flatten_object("event", &event, &mut result);
+
+        // Check deeply nested value is accessible
+        assert_eq!(result.get("event.a.b.c.d"), Some(&Value::String("value".to_string())));
+    }
+
+    #[test]
+    fn test_health_response_fields() {
+        let response = HealthResponse {
+            status: "healthy".to_string(),
+            version: "1.0.0".to_string(),
+        };
+
+        assert_eq!(response.status, "healthy");
+        assert_eq!(response.version, "1.0.0");
+    }
+
+    #[test]
+    fn test_decide_response_payload_fields() {
+        let response = DecideResponsePayload {
+            request_id: "req_123".to_string(),
+            pipeline_id: Some("pipeline_001".to_string()),
+            action: Some("APPROVE".to_string()),
+            score: 85,
+            triggered_rules: vec!["rule1".to_string(), "rule2".to_string()],
+            explanation: "Low risk transaction".to_string(),
+            processing_time_ms: 42,
+        };
+
+        assert_eq!(response.request_id, "req_123");
+        assert_eq!(response.pipeline_id, Some("pipeline_001".to_string()));
+        assert_eq!(response.action, Some("APPROVE".to_string()));
+        assert_eq!(response.score, 85);
+        assert_eq!(response.triggered_rules.len(), 2);
+        assert_eq!(response.explanation, "Low risk transaction");
+        assert_eq!(response.processing_time_ms, 42);
+    }
+
+    #[test]
+    fn test_decide_request_payload_empty() {
+        let payload = DecideRequestPayload {
+            event_data: HashMap::new(),
+        };
+
+        assert_eq!(payload.event_data.len(), 0);
+    }
+
+    #[test]
+    fn test_json_to_value_mixed_types() {
+        let json = serde_json::json!({
+            "str": "text",
+            "num": 123,
+            "bool": true,
+            "null": null,
+            "arr": [1, 2, 3],
+            "obj": {"nested": "value"}
+        });
+
+        let value = json_to_value(json);
+
+        if let Value::Object(map) = value {
+            assert!(matches!(map.get("str"), Some(Value::String(_))));
+            assert!(matches!(map.get("num"), Some(Value::Number(_))));
+            assert!(matches!(map.get("bool"), Some(Value::Bool(true))));
+            assert!(matches!(map.get("null"), Some(Value::Null)));
+            assert!(matches!(map.get("arr"), Some(Value::Array(_))));
+            assert!(matches!(map.get("obj"), Some(Value::Object(_))));
+        } else {
+            panic!("Expected Object");
+        }
     }
 }
 

@@ -1065,10 +1065,10 @@ impl DecisionEngine {
                 registry.registry.iter()
                     .find(|entry| Self::evaluate_when_block(&entry.when, &request.event_data))
                     .map(|entry| entry.pipeline.clone())
-                    .unwrap_or_else(|| "unknown".to_string())
+                    .unwrap_or("unknown".to_string())
             } else if !self.pipeline_map.is_empty() {
                 // Use first pipeline ID
-                self.pipeline_map.keys().next().cloned().unwrap_or_else(|| "unknown".to_string())
+                self.pipeline_map.keys().next().cloned().unwrap_or("unknown".to_string())
             } else {
                 "unknown".to_string()
             };
@@ -1203,7 +1203,7 @@ ruleset:
             .unwrap();
 
         let mut event_data = HashMap::new();
-        event_data.insert("event_type".to_string(), Value::String("test".to_string()));
+        event_data.insert("type".to_string(), Value::String("test".to_string()));
         event_data.insert("amount".to_string(), Value::Number(150.0));
 
         let request = DecisionRequest::new(event_data);
@@ -1266,7 +1266,7 @@ ruleset:
 
         // Test Case 1: Normal transaction (50.0) - should approve
         let mut event_data = HashMap::new();
-        event_data.insert("event_type".to_string(), Value::String("transaction".to_string()));
+        event_data.insert("type".to_string(), Value::String("transaction".to_string()));
         event_data.insert("transaction_amount".to_string(), Value::Number(50.0));
         let request = DecisionRequest::new(event_data.clone());
         let response = engine.decide(request).await.unwrap();
@@ -1290,5 +1290,317 @@ ruleset:
         let response = engine.decide(request).await.unwrap();
         println!("Test Case 3 (15000.0): Action: {:?}", response.result.action);
         assert!(matches!(response.result.action, Some(Action::Deny)));
+    }
+
+    #[tokio::test]
+    async fn test_decide_request_id_generation() {
+        use crate::builder::DecisionEngineBuilder;
+
+        let yaml_content = r#"
+pipeline:
+  id: simple_pipeline
+  name: Simple Pipeline
+  when:
+    event.type: test
+  steps:
+    - include:
+        ruleset: simple_ruleset
+
+---
+
+ruleset:
+  id: simple_ruleset
+  name: Simple Ruleset
+  rules: []
+  decision_logic:
+    - default: true
+      action: approve
+"#;
+        let temp_file = "/tmp/test_request_id.yaml";
+        std::fs::write(temp_file, yaml_content).unwrap();
+
+        let engine = DecisionEngineBuilder::new()
+            .add_rule_file(temp_file)
+            .build()
+            .await
+            .unwrap();
+
+        // Test Case 1: Auto-generated request ID
+        let mut event_data = HashMap::new();
+        event_data.insert("type".to_string(), Value::String("test".to_string()));
+
+        let request = DecisionRequest::new(event_data.clone());
+        let response = engine.decide(request).await.unwrap();
+
+        println!("Auto-generated request_id: {}", response.request_id);
+        assert!(response.request_id.starts_with("req_"));
+        assert!(response.request_id.len() > 10);
+
+        // Test Case 2: Custom request ID
+        let request = DecisionRequest::new(event_data)
+            .with_metadata("request_id".to_string(), "custom_req_123".to_string());
+        let response = engine.decide(request).await.unwrap();
+
+        println!("Custom request_id: {}", response.request_id);
+        assert_eq!(response.request_id, "custom_req_123");
+    }
+
+    #[tokio::test]
+    async fn test_decide_metadata_handling() {
+        use crate::builder::DecisionEngineBuilder;
+
+        let yaml_content = r#"
+pipeline:
+  id: metadata_pipeline
+  name: Metadata Pipeline
+  when:
+    event.type: test
+  steps:
+    - include:
+        ruleset: metadata_ruleset
+
+---
+
+ruleset:
+  id: metadata_ruleset
+  name: Metadata Ruleset
+  rules: []
+  decision_logic:
+    - default: true
+      action: approve
+"#;
+        let temp_file = "/tmp/test_metadata.yaml";
+        std::fs::write(temp_file, yaml_content).unwrap();
+
+        let engine = DecisionEngineBuilder::new()
+            .add_rule_file(temp_file)
+            .build()
+            .await
+            .unwrap();
+
+        let mut event_data = HashMap::new();
+        event_data.insert("type".to_string(), Value::String("test".to_string()));
+
+        let request = DecisionRequest::new(event_data)
+            .with_metadata("event_id".to_string(), "evt_123".to_string())
+            .with_metadata("source".to_string(), "mobile_app".to_string())
+            .with_metadata("user_agent".to_string(), "iOS/14.5".to_string());
+
+        let response = engine.decide(request).await.unwrap();
+
+        // Verify metadata is preserved in response
+        assert_eq!(response.metadata.get("event_id"), Some(&"evt_123".to_string()));
+        assert_eq!(response.metadata.get("source"), Some(&"mobile_app".to_string()));
+        assert_eq!(response.metadata.get("user_agent"), Some(&"iOS/14.5".to_string()));
+        // Note: request_id may also be added to metadata, so length could be 3 or 4
+        assert!(response.metadata.len() >= 3);
+
+        println!("Metadata preserved: {:?}", response.metadata);
+    }
+
+    #[tokio::test]
+    async fn test_decide_processing_time() {
+        use crate::builder::DecisionEngineBuilder;
+
+        let yaml_content = r#"
+pipeline:
+  id: timing_pipeline
+  name: Timing Pipeline
+  when:
+    event.type: test
+  steps:
+    - include:
+        ruleset: timing_ruleset
+
+---
+
+ruleset:
+  id: timing_ruleset
+  name: Timing Ruleset
+  rules: []
+  decision_logic:
+    - condition: value > 100
+      action: review
+    - default: true
+      action: approve
+"#;
+        let temp_file = "/tmp/test_timing.yaml";
+        std::fs::write(temp_file, yaml_content).unwrap();
+
+        let engine = DecisionEngineBuilder::new()
+            .add_rule_file(temp_file)
+            .build()
+            .await
+            .unwrap();
+
+        let mut event_data = HashMap::new();
+        event_data.insert("type".to_string(), Value::String("test".to_string()));
+        event_data.insert("value".to_string(), Value::Number(150.0));
+
+        let request = DecisionRequest::new(event_data);
+        let response = engine.decide(request).await.unwrap();
+
+        // Verify processing time is recorded and reasonable
+        // Note: May be 0 for very fast operations, which is acceptable
+        assert!(response.processing_time_ms < 1000); // Should complete in less than 1 second
+
+        println!("Processing time: {}ms", response.processing_time_ms);
+    }
+
+    #[tokio::test]
+    async fn test_decide_with_missing_fields() {
+        use crate::builder::DecisionEngineBuilder;
+        use corint_core::ast::Action;
+
+        let yaml_content = r#"
+pipeline:
+  id: missing_field_pipeline
+  name: Missing Field Pipeline
+  when:
+    event.type: test
+  steps:
+    - include:
+        ruleset: missing_field_ruleset
+
+---
+
+ruleset:
+  id: missing_field_ruleset
+  name: Missing Field Ruleset
+  rules: []
+  decision_logic:
+    - condition: optional_field > 100
+      action: review
+    - default: true
+      action: approve
+"#;
+        let temp_file = "/tmp/test_missing_field.yaml";
+        std::fs::write(temp_file, yaml_content).unwrap();
+
+        let engine = DecisionEngineBuilder::new()
+            .add_rule_file(temp_file)
+            .build()
+            .await
+            .unwrap();
+
+        // Test with missing optional_field - should use default action
+        let mut event_data = HashMap::new();
+        event_data.insert("type".to_string(), Value::String("test".to_string()));
+        // Note: optional_field is not provided
+
+        let request = DecisionRequest::new(event_data);
+        let response = engine.decide(request).await.unwrap();
+
+        println!("Missing field test:");
+        println!("  Action: {:?}", response.result.action);
+
+        // Should approve because condition fails (Null > 100 is false)
+        assert!(matches!(response.result.action, Some(Action::Approve)));
+    }
+
+    #[tokio::test]
+    async fn test_decide_with_content_api() {
+        use crate::builder::DecisionEngineBuilder;
+        use corint_core::ast::Action;
+
+        // Simulate loading from repository/API
+        let rule_content = r#"
+pipeline:
+  id: content_pipeline
+  name: Content Pipeline
+  when:
+    event.type: api_test
+  steps:
+    - include:
+        ruleset: content_ruleset
+
+---
+
+ruleset:
+  id: content_ruleset
+  name: Content Ruleset
+  rules: []
+  decision_logic:
+    - condition: risk_score > 50
+      action: deny
+    - default: true
+      action: approve
+"#;
+
+        let engine = DecisionEngineBuilder::new()
+            .add_rule_content("content_pipeline", rule_content)
+            .build()
+            .await
+            .unwrap();
+
+        let mut event_data = HashMap::new();
+        event_data.insert("type".to_string(), Value::String("api_test".to_string()));
+        event_data.insert("risk_score".to_string(), Value::Number(75.0));
+
+        let request = DecisionRequest::new(event_data);
+        let response = engine.decide(request).await.unwrap();
+
+        println!("Content API test:");
+        println!("  Action: {:?}", response.result.action);
+
+        assert!(matches!(response.result.action, Some(Action::Deny)));
+    }
+
+    #[tokio::test]
+    async fn test_builder_config_options() {
+        use crate::builder::DecisionEngineBuilder;
+
+        let yaml_content = r#"
+pipeline:
+  id: config_test_pipeline
+  name: Config Test Pipeline
+  when:
+    event.type: test
+  steps:
+    - include:
+        ruleset: config_test_ruleset
+
+---
+
+ruleset:
+  id: config_test_ruleset
+  name: Config Test Ruleset
+  rules: []
+  decision_logic:
+    - default: true
+      action: approve
+"#;
+        let temp_file = "/tmp/test_config.yaml";
+        std::fs::write(temp_file, yaml_content).unwrap();
+
+        // Test with various configuration options
+        let engine = DecisionEngineBuilder::new()
+            .add_rule_file(temp_file)
+            .enable_metrics(true)
+            .enable_tracing(false)
+            .enable_semantic_analysis(true)
+            .enable_constant_folding(true)
+            .enable_dead_code_elimination(true)
+            .build()
+            .await
+            .unwrap();
+
+        // Verify configuration is applied
+        let config = engine.config();
+        assert!(config.enable_metrics);
+        assert!(!config.enable_tracing);
+        assert!(config.compiler_options.enable_semantic_analysis);
+        assert!(config.compiler_options.enable_constant_folding);
+        assert!(config.compiler_options.enable_dead_code_elimination);
+
+        // Test execution still works
+        let mut event_data = HashMap::new();
+        event_data.insert("type".to_string(), Value::String("test".to_string()));
+
+        let request = DecisionRequest::new(event_data);
+        let response = engine.decide(request).await.unwrap();
+
+        assert!(response.request_id.starts_with("req_"));
+        println!("Config test passed with request_id: {}", response.request_id);
     }
 }

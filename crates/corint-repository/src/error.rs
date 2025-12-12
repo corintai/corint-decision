@@ -60,3 +60,108 @@ impl From<corint_parser::ParseError> for RepositoryError {
         RepositoryError::Parser(err.to_string())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::PathBuf;
+
+    #[test]
+    fn test_not_found_error() {
+        let err = RepositoryError::NotFound {
+            path: "test/path.yaml".to_string(),
+        };
+
+        assert!(err.to_string().contains("Artifact not found"));
+        assert!(err.to_string().contains("test/path.yaml"));
+    }
+
+    #[test]
+    fn test_parser_error() {
+        let err = RepositoryError::Parser("Invalid YAML syntax".to_string());
+
+        assert!(err.to_string().contains("Parser error"));
+        assert!(err.to_string().contains("Invalid YAML syntax"));
+    }
+
+    #[test]
+    fn test_invalid_path_error() {
+        let path = PathBuf::from("/invalid/path");
+        let err = RepositoryError::InvalidPath { path: path.clone() };
+
+        assert!(err.to_string().contains("Invalid path"));
+    }
+
+    #[test]
+    fn test_id_not_found_error() {
+        let err = RepositoryError::IdNotFound {
+            id: "rule_123".to_string(),
+        };
+
+        assert!(err.to_string().contains("Artifact ID not found"));
+        assert!(err.to_string().contains("rule_123"));
+    }
+
+    #[test]
+    fn test_cache_error() {
+        let err = RepositoryError::Cache("Cache full".to_string());
+
+        assert!(err.to_string().contains("Cache error"));
+        assert!(err.to_string().contains("Cache full"));
+    }
+
+    #[test]
+    fn test_api_error() {
+        let err = RepositoryError::ApiError("HTTP 404".to_string());
+
+        assert!(err.to_string().contains("API error"));
+        assert!(err.to_string().contains("HTTP 404"));
+    }
+
+    #[test]
+    fn test_parse_error() {
+        let err = RepositoryError::ParseError("JSON parse failed".to_string());
+
+        assert!(err.to_string().contains("Parse error"));
+        assert!(err.to_string().contains("JSON parse failed"));
+    }
+
+    #[test]
+    fn test_other_error() {
+        let err = RepositoryError::Other("Unknown error".to_string());
+
+        assert!(err.to_string().contains("Repository error"));
+        assert!(err.to_string().contains("Unknown error"));
+    }
+
+    #[test]
+    fn test_io_error_conversion() {
+        let io_err = std::io::Error::new(std::io::ErrorKind::NotFound, "File not found");
+        let repo_err: RepositoryError = io_err.into();
+
+        assert!(repo_err.to_string().contains("I/O error"));
+    }
+
+    #[test]
+    fn test_repository_result_ok() {
+        let result: RepositoryResult<i32> = Ok(42);
+
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), 42);
+    }
+
+    #[test]
+    fn test_repository_result_err() {
+        let result: RepositoryResult<i32> = Err(RepositoryError::Other("test".to_string()));
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_error_debug_format() {
+        let err = RepositoryError::Cache("test".to_string());
+        let debug_str = format!("{:?}", err);
+
+        assert!(debug_str.contains("Cache"));
+    }
+}
