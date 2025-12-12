@@ -7,7 +7,7 @@ use thiserror::Error;
 pub enum ParseError {
     /// YAML parsing error
     #[error("YAML parsing error: {0}")]
-    YamlError(#[from] serde_yaml::Error),
+    YamlError(#[from] #[source] serde_yaml::Error),
 
     /// Missing required field
     #[error("Missing required field: {field}")]

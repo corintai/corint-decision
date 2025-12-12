@@ -6,44 +6,35 @@ use axum::{
     Json,
 };
 use serde_json::json;
-use std::fmt;
+use thiserror::Error;
 
 /// Server error type
-#[derive(Debug)]
+#[derive(Error, Debug)]
 pub enum ServerError {
     /// Decision engine error
-    EngineError(String),
-    
+    #[error("Engine error: {0}")]
+    EngineError(#[from] #[source] corint_sdk::error::SdkError),
+
     /// Invalid request
+    #[error("Invalid request: {0}")]
     InvalidRequest(String),
-    
+
     /// Internal server error
-    InternalError(String),
-    
+    #[error("Internal error: {0}")]
+    InternalError(#[from] #[source] anyhow::Error),
+
     /// Not found
+    #[error("Not found: {0}")]
     NotFound(String),
 }
 
-impl fmt::Display for ServerError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            ServerError::EngineError(msg) => write!(f, "Engine error: {}", msg),
-            ServerError::InvalidRequest(msg) => write!(f, "Invalid request: {}", msg),
-            ServerError::InternalError(msg) => write!(f, "Internal error: {}", msg),
-            ServerError::NotFound(msg) => write!(f, "Not found: {}", msg),
-        }
-    }
-}
-
-impl std::error::Error for ServerError {}
-
 impl IntoResponse for ServerError {
     fn into_response(self) -> Response {
-        let (status, error_message) = match self {
-            ServerError::EngineError(msg) => (StatusCode::INTERNAL_SERVER_ERROR, msg),
-            ServerError::InvalidRequest(msg) => (StatusCode::BAD_REQUEST, msg),
-            ServerError::InternalError(msg) => (StatusCode::INTERNAL_SERVER_ERROR, msg),
-            ServerError::NotFound(msg) => (StatusCode::NOT_FOUND, msg),
+        let (status, error_message) = match &self {
+            ServerError::EngineError(_) => (StatusCode::INTERNAL_SERVER_ERROR, self.to_string()),
+            ServerError::InvalidRequest(_) => (StatusCode::BAD_REQUEST, self.to_string()),
+            ServerError::InternalError(_) => (StatusCode::INTERNAL_SERVER_ERROR, self.to_string()),
+            ServerError::NotFound(_) => (StatusCode::NOT_FOUND, self.to_string()),
         };
 
         let body = Json(json!({
@@ -55,26 +46,16 @@ impl IntoResponse for ServerError {
     }
 }
 
-impl From<corint_sdk::error::SdkError> for ServerError {
-    fn from(err: corint_sdk::error::SdkError) -> Self {
-        ServerError::EngineError(err.to_string())
-    }
-}
-
-impl From<anyhow::Error> for ServerError {
-    fn from(err: anyhow::Error) -> Self {
-        ServerError::InternalError(err.to_string())
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
     fn test_engine_error_display() {
-        let err = ServerError::EngineError("compilation failed".to_string());
-        assert_eq!(err.to_string(), "Engine error: compilation failed");
+        let sdk_err = corint_sdk::error::SdkError::GenericError("compilation failed".to_string());
+        let err = ServerError::EngineError(sdk_err);
+        assert!(err.to_string().contains("Engine error"));
+        assert!(err.to_string().contains("compilation failed"));
     }
 
     #[test]
@@ -85,8 +66,10 @@ mod tests {
 
     #[test]
     fn test_internal_error_display() {
-        let err = ServerError::InternalError("database connection failed".to_string());
-        assert_eq!(err.to_string(), "Internal error: database connection failed");
+        let anyhow_err = anyhow::anyhow!("database connection failed");
+        let err = ServerError::InternalError(anyhow_err);
+        assert!(err.to_string().contains("Internal error"));
+        assert!(err.to_string().contains("database connection failed"));
     }
 
     #[test]
@@ -97,7 +80,8 @@ mod tests {
 
     #[test]
     fn test_error_debug_format() {
-        let err = ServerError::EngineError("test".to_string());
+        let sdk_err = corint_sdk::error::SdkError::NotInitialized;
+        let err = ServerError::EngineError(sdk_err);
         let debug_str = format!("{:?}", err);
         assert!(debug_str.contains("EngineError"));
     }
@@ -120,7 +104,8 @@ mod tests {
 
     #[test]
     fn test_into_response_engine_error() {
-        let err = ServerError::EngineError("test error".to_string());
+        let sdk_err = corint_sdk::error::SdkError::NotInitialized;
+        let err = ServerError::EngineError(sdk_err);
         let response = err.into_response();
         assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
     }
@@ -134,7 +119,8 @@ mod tests {
 
     #[test]
     fn test_into_response_internal_error() {
-        let err = ServerError::InternalError("crash".to_string());
+        let anyhow_err = anyhow::anyhow!("crash");
+        let err = ServerError::InternalError(anyhow_err);
         let response = err.into_response();
         assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
     }
