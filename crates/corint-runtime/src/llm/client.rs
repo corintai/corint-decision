@@ -10,7 +10,7 @@ pub struct LLMRequest {
     /// The prompt to send to the LLM
     pub prompt: String,
 
-    /// Model identifier (e.g., "gpt-4", "claude-3-opus")
+    /// Model identifier (e.g., "gpt-4", "claude-3-opus", "o1-preview")
     pub model: String,
 
     /// Maximum tokens to generate
@@ -21,6 +21,9 @@ pub struct LLMRequest {
 
     /// System message/instructions
     pub system: Option<String>,
+
+    /// Enable extended thinking for reasoning models (Claude, O1, etc.)
+    pub enable_thinking: Option<bool>,
 }
 
 impl LLMRequest {
@@ -32,6 +35,7 @@ impl LLMRequest {
             max_tokens: None,
             temperature: None,
             system: None,
+            enable_thinking: None,
         }
     }
 
@@ -52,6 +56,12 @@ impl LLMRequest {
         self.system = Some(system);
         self
     }
+
+    /// Enable extended thinking mode for reasoning models
+    pub fn with_thinking(mut self, enable: bool) -> Self {
+        self.enable_thinking = Some(enable);
+        self
+    }
 }
 
 /// Response from an LLM
@@ -68,6 +78,9 @@ pub struct LLMResponse {
 
     /// Finish reason (e.g., "stop", "length")
     pub finish_reason: String,
+
+    /// Extended thinking content (for reasoning models)
+    pub thinking: Option<String>,
 }
 
 impl LLMResponse {
@@ -78,6 +91,7 @@ impl LLMResponse {
             model,
             tokens_used: 0,
             finish_reason: "stop".to_string(),
+            thinking: None,
         }
     }
 
@@ -92,13 +106,24 @@ impl LLMResponse {
         self.finish_reason = reason;
         self
     }
+
+    /// Set thinking content
+    pub fn with_thinking(mut self, thinking: String) -> Self {
+        self.thinking = Some(thinking);
+        self
+    }
 }
 
 /// Async LLM client trait
 #[async_trait]
 pub trait LLMClient: Send + Sync {
-    /// Call the LLM with a request
+    /// Call the LLM with a request for text generation
     async fn call(&self, request: LLMRequest) -> Result<LLMResponse>;
+
+    /// Check if this client supports extended thinking mode
+    fn supports_thinking(&self) -> bool {
+        false
+    }
 
     /// Get the name of this client
     fn name(&self) -> &str;
@@ -132,5 +157,29 @@ mod tests {
         assert_eq!(response.model, "gpt-4");
         assert_eq!(response.tokens_used, 50);
         assert_eq!(response.finish_reason, "stop");
+    }
+
+    #[test]
+    fn test_thinking_request_builder() {
+        let request = LLMRequest::new(
+            "Solve this problem".to_string(),
+            "o1-preview".to_string(),
+        )
+        .with_thinking(true);
+
+        assert_eq!(request.prompt, "Solve this problem");
+        assert_eq!(request.model, "o1-preview");
+        assert_eq!(request.enable_thinking, Some(true));
+    }
+
+    #[test]
+    fn test_thinking_response_builder() {
+        let response = LLMResponse::new("Answer".to_string(), "claude-3-opus".to_string())
+            .with_thinking("Let me think...".to_string())
+            .with_tokens(100);
+
+        assert_eq!(response.content, "Answer");
+        assert_eq!(response.thinking, Some("Let me think...".to_string()));
+        assert_eq!(response.tokens_used, 100);
     }
 }

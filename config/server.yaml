@@ -40,3 +40,83 @@ log_level: "info"
 # If not set, decision results will not be persisted to database
 # You can also set DATABASE_URL environment variable as an alternative
 database_url: "postgresql://postgres.hfsbvqfkwbslcuvokmis:XPRozJ3DZox5KUnh@aws-1-ap-southeast-1.pooler.supabase.com:5432/postgres?sslmode=require"
+
+# LLM Provider Configuration
+# Supports OpenAI (including O1/O3 thinking models), Anthropic (Claude with extended thinking),
+# Google Gemini, and DeepSeek
+llm:
+  # Default provider to use (openai, anthropic, gemini, deepseek)
+  default_provider: deepseek
+
+  # Enable response caching to reduce API calls
+  enable_cache: true
+
+  # Default settings for thinking/reasoning models
+  # When enabled, compatible models will use extended reasoning
+  enable_thinking: false
+
+  # OpenAI Configuration
+  openai:
+    # API key (can also use OPENAI_API_KEY environment variable)
+    # Supports standard models (GPT-4, GPT-3.5) and thinking models (O1/O3)
+    api_key: "${OPENAI_API_KEY}"
+
+    # Base URL (optional, for Azure OpenAI or custom endpoints)
+    base_url: "https://api.openai.com/v1"
+
+    # Default model for standard text generation
+    default_model: "gpt-4o-mini"
+
+    # Default max tokens for responses
+    max_tokens: 1000
+
+    # Default temperature (0.0 - 1.0, not used for O1/O3 models)
+    temperature: 0.7
+
+  # Anthropic Configuration
+  # Supports Claude models with extended thinking mode
+  anthropic:
+    # API key (can also use ANTHROPIC_API_KEY environment variable)
+    api_key: "${ANTHROPIC_API_KEY}"
+
+    # Default Claude model
+    default_model: "claude-3-5-sonnet-20241022"
+
+    # Extended thinking budget in tokens (used when enable_thinking is true)
+    thinking_budget: 10000
+
+    # Default max tokens for responses
+    max_tokens: 1000
+
+    # Default temperature (0.0 - 1.0)
+    temperature: 0.7
+
+  # Google Gemini Configuration
+  # Standard text generation models
+  gemini:
+    # API key (can also use GEMINI_API_KEY environment variable)
+    api_key: "${GEMINI_API_KEY}"
+
+    # Default Gemini model
+    default_model: "gemini-1.5-flash"
+
+    # Default max tokens for responses
+    max_tokens: 1000
+
+    # Default temperature (0.0 - 1.0)
+    temperature: 0.7
+
+  # DeepSeek Configuration
+  # OpenAI-compatible API
+  deepseek:
+    # API key (can also use DEEPSEEK_API_KEY environment variable)
+    api_key: "${DEEPSEEK_API_KEY}"
+
+    # Default DeepSeek model
+    default_model: "deepseek-chat"
+
+    # Default max tokens for responses
+    max_tokens: 1000
+
+    # Default temperature (0.0 - 1.0)
+    temperature: 0.7

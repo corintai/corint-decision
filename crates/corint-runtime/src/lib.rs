@@ -28,7 +28,10 @@ pub use error::{RuntimeError, Result};
 pub use executor::Executor;
 pub use external_api::{ApiConfig, EndpointConfig, ExternalApiClient, HttpMethod};
 pub use feature::FeatureExtractor;
-pub use llm::{LLMClient, LLMRequest, LLMResponse};
+pub use llm::{
+    LLMClient, LLMRequest, LLMResponse,
+    LLMProvider, OpenAIProvider, AnthropicProvider, GeminiProvider, DeepSeekProvider, MockProvider,
+};
 pub use observability::{Metrics, MetricsCollector};
 pub use result::{DecisionRecord, DecisionResultWriter, DecisionResult, ExecutionResult, RuleExecutionRecord};
 pub use service::{ServiceClient, ServiceRequest, ServiceResponse};

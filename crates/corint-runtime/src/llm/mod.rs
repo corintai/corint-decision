@@ -9,4 +9,4 @@ pub mod provider;
 
 pub use client::{LLMClient, LLMRequest, LLMResponse};
 pub use cache::{LLMCache, InMemoryLLMCache};
-pub use provider::{LLMProvider, OpenAIProvider, AnthropicProvider, MockProvider};
+pub use provider::{LLMProvider, OpenAIProvider, AnthropicProvider, GeminiProvider, DeepSeekProvider, MockProvider};
