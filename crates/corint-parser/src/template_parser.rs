@@ -98,7 +98,7 @@ impl TemplateParser {
 
         let decision_logic: Vec<DecisionRule> = decision_logic_array
             .iter()
-            .map(|rule_value| RulesetParser::parse_decision_rule(rule_value))
+            .map(RulesetParser::parse_decision_rule)
             .collect::<Result<Vec<_>, _>>()?;
 
         // Parse metadata

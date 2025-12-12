@@ -107,7 +107,7 @@ impl RuleParser {
         let conditions = if let Some(cond_array) = when_obj.get("conditions").and_then(|v| v.as_sequence()) {
             cond_array
                 .iter()
-                .map(|cond| Self::parse_condition(cond))
+                .map(Self::parse_condition)
                 .collect::<Result<Vec<_>>>()?
         } else {
             Vec::new()

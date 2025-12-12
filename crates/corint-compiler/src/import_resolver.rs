@@ -444,6 +444,7 @@ impl ImportResolver {
         let mut current = ruleset.clone();
         visited.insert(current.id.clone());
 
+        #[allow(clippy::while_let_loop)]
         loop {
             if let Some(extends_id) = &current.extends {
                 if extends_id == original_id || visited.contains(extends_id) {

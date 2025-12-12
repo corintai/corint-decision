@@ -162,9 +162,9 @@ fn json_to_value(v: serde_json::Value) -> Value {
 }
 
 /// Recursively flatten nested objects into dot-notation keys
-/// 
+///
 /// Example:
-/// ```
+/// ```text
 /// event = {
 ///   user: {
 ///     id: "123",
@@ -175,9 +175,9 @@ fn json_to_value(v: serde_json::Value) -> Value {
 ///   amount: 1000
 /// }
 /// ```
-/// 
+///
 /// Produces:
-/// ```
+/// ```text
 /// event.user.id = "123"
 /// event.user.profile.tier = "gold"
 /// event.amount = 1000

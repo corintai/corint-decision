@@ -250,16 +250,12 @@ impl DecisionEngine {
         // Note: event_type field in WhenBlock corresponds to event.type in YAML,
         // which is stored as "type" key in event_data HashMap
         if let Some(ref expected_type) = when.event_type {
-            if let Some(actual_type) = event_data.get("type") {
-                if let Value::String(actual) = actual_type {
-                    if actual != expected_type {
-                        return false; // Event type mismatch
-                    }
-                } else {
-                    return false; // Event type is not a string
+            if let Some(Value::String(actual)) = event_data.get("type") {
+                if actual != expected_type {
+                    return false; // Event type mismatch
                 }
             } else {
-                return false; // No type field in event data
+                return false; // No type field in event data or type is not a string
             }
         }
 
@@ -415,7 +411,7 @@ impl DecisionEngine {
         let documents = YamlParser::parse_multi_document(&content)?;
 
         // Try to parse each document
-        for (_doc_idx, doc) in documents.iter().enumerate() {
+        for doc in documents.iter() {
             // Try rule first
             if let Ok(rule) = RuleParser::parse_from_yaml(doc) {
                 let prog = compiler.compile_rule(&rule)?;
@@ -528,7 +524,7 @@ impl DecisionEngine {
 
             // Resolve imports and compile dependencies
             let resolved = compiler.import_resolver_mut().resolve_imports(&document)
-                .map_err(|e| SdkError::CompileError(e))?;
+                .map_err(SdkError::CompileError)?;
 
             tracing::debug!(
                 "Resolved imports: {} rules, {} rulesets",
@@ -600,7 +596,7 @@ impl DecisionEngine {
             let documents = YamlParser::parse_multi_document(content)?;
 
         // Try to parse each document
-        for (_doc_idx, doc) in documents.iter().enumerate() {
+        for doc in documents.iter() {
             // Try rule first
             if let Ok(rule) = RuleParser::parse_from_yaml(doc) {
                 let prog = compiler.compile_rule(&rule)?;

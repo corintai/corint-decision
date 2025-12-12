@@ -7,7 +7,6 @@ use std::time::Duration;
 /// Counter metric
 #[derive(Debug, Clone)]
 pub struct Counter {
-    #[allow(dead_code)]
     name: String,
     value: Arc<RwLock<u64>>,
     labels: HashMap<String, String>,
@@ -27,6 +26,16 @@ impl Counter {
     pub fn with_labels(mut self, labels: HashMap<String, String>) -> Self {
         self.labels = labels;
         self
+    }
+
+    /// Get the counter name
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    /// Get the labels
+    pub fn labels(&self) -> &HashMap<String, String> {
+        &self.labels
     }
 
     /// Increment the counter
@@ -53,7 +62,6 @@ impl Counter {
 /// Histogram metric for tracking distributions
 #[derive(Debug, Clone)]
 pub struct Histogram {
-    #[allow(dead_code)]
     name: String,
     values: Arc<RwLock<Vec<f64>>>,
     labels: HashMap<String, String>,
@@ -73,6 +81,16 @@ impl Histogram {
     pub fn with_labels(mut self, labels: HashMap<String, String>) -> Self {
         self.labels = labels;
         self
+    }
+
+    /// Get the histogram name
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    /// Get the labels
+    pub fn labels(&self) -> &HashMap<String, String> {
+        &self.labels
     }
 
     /// Observe a value

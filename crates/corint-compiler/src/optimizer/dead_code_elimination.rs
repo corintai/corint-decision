@@ -144,8 +144,8 @@ impl DeadCodeEliminator {
     pub fn optimize(&self, program: &Program) -> Program {
         let program = self.eliminate(program);
         let program = self.eliminate_duplicates(&program);
-        let program = self.eliminate_nops(&program);
-        program
+        
+        self.eliminate_nops(&program)
     }
 }
 

@@ -90,17 +90,17 @@ impl ExpressionParser {
         let input = input.trim();
 
         // Check for unary operators
-        if input.starts_with('!') {
+        if let Some(stripped) = input.strip_prefix('!') {
             return Ok(Expression::Unary {
                 op: UnaryOperator::Not,
-                operand: Box::new(Self::parse_primary(&input[1..].trim())?),
+                operand: Box::new(Self::parse_primary(stripped.trim())?),
             });
         }
 
         if input.starts_with('-') && !input[1..].trim().starts_with(|c: char| c.is_ascii_digit()) {
             return Ok(Expression::Unary {
                 op: UnaryOperator::Negate,
-                operand: Box::new(Self::parse_primary(&input[1..].trim())?),
+                operand: Box::new(Self::parse_primary(input[1..].trim())?),
             });
         }
 

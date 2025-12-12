@@ -144,8 +144,8 @@ impl RelativeWindow {
 
     /// Parse from string like "24h", "7d", "5m"
     pub fn from_string(s: &str) -> Option<Self> {
-        if s.starts_with("last_") {
-            let s = &s[5..]; // Remove "last_" prefix
+        if let Some(s) = s.strip_prefix("last_") {
+            // Remove "last_" prefix
             Self::parse_duration(s)
         } else {
             Self::parse_duration(s)

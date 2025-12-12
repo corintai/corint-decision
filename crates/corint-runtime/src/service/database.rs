@@ -43,10 +43,13 @@ pub trait DatabaseClient: Send + Sync {
     async fn execute(&self, query: DatabaseQuery) -> Result<u64>;
 }
 
+/// Type alias for mock database storage
+type MockDbStorage = Arc<RwLock<HashMap<String, Vec<HashMap<String, Value>>>>>;
+
 /// Mock database client for testing
 pub struct MockDatabaseClient {
     name: String,
-    data: Arc<RwLock<HashMap<String, Vec<HashMap<String, Value>>>>>,
+    data: MockDbStorage,
 }
 
 impl MockDatabaseClient {
@@ -109,7 +112,7 @@ impl ServiceClient for MockDatabaseClient {
 
                 Ok(ServiceResponse::new(Value::Array(
                     results.into_iter()
-                        .map(|row| Value::Object(row))
+                        .map(Value::Object)
                         .collect()
                 )))
             }

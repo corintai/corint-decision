@@ -88,7 +88,7 @@ impl RedisClient for MockRedisClient {
                 Ok(value.map(Value::String).unwrap_or(Value::Null))
             }
             "SET" => {
-                let key = command.args.get(0).cloned().unwrap_or_default();
+                let key = command.args.first().cloned().unwrap_or_default();
                 let value = command.args.get(1).cloned().unwrap_or_default();
                 self.set(key, value);
                 Ok(Value::String("OK".to_string()))

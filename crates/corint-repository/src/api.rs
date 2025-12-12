@@ -24,7 +24,7 @@
 //! #[tokio::main]
 //! async fn main() -> anyhow::Result<()> {
 //!     // Create API repository
-//!     let repo = ApiRepository::new("https://api.example.com/rules", None).await?;
+//!     let repo = ApiRepository::new("https://api.example.com/rules", None::<String>).await?;
 //!
 //!     // Or with API key
 //!     let repo = ApiRepository::new(
@@ -120,6 +120,7 @@ struct CachedArtifact {
 struct ApiManifest {
     /// Optional registry URL
     #[serde(default)]
+    #[allow(dead_code)]
     registry: Option<String>,
 
     /// List of available pipelines
@@ -150,6 +151,7 @@ struct ArtifactRef {
 
     /// Optional description
     #[serde(default)]
+    #[allow(dead_code)]
     description: Option<String>,
 }
 

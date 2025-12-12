@@ -496,17 +496,13 @@ impl CrossDimensionCountOperator {
             });
         }
 
-        let time_window = if let Some(window) = &self.window {
-            Some(TimeWindow {
+        let time_window = self.window.as_ref().map(|window| TimeWindow {
                 window_type: TimeWindowType::Relative(crate::datasource::RelativeWindow {
                     value: window.value,
                     unit: window.unit.to_time_unit(),
                 }),
                 time_field: "event_timestamp".to_string(), // PostgreSQL events table uses event_timestamp
-            })
-        } else {
-            None
-        };
+            });
 
         let query = Query {
             query_type: QueryType::CountDistinct,

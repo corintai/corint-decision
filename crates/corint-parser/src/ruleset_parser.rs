@@ -86,7 +86,7 @@ impl RulesetParser {
         let decision_logic = if let Some(logic_array) = ruleset_obj.get("decision_logic").and_then(|v| v.as_sequence()) {
             logic_array
                 .iter()
-                .map(|v| Self::parse_decision_rule(v))
+                .map(Self::parse_decision_rule)
                 .collect::<Result<Vec<_>>>()?
         } else {
             Vec::new()

@@ -160,6 +160,7 @@ impl TypeChecker {
     }
 
     /// Infer the type of a literal value
+    #[allow(clippy::only_used_in_recursion)]
     fn infer_literal_type(&self, value: &Value) -> TypeInfo {
         match value {
             Value::Number(_) => TypeInfo::Number,
@@ -216,13 +217,12 @@ impl TypeChecker {
                     ));
                 }
                 // Type compatibility check
-                if !left.is_compatible_with(right) && !right.is_compatible_with(left) {
-                    if !matches!(left, TypeInfo::Unknown) && !matches!(right, TypeInfo::Unknown) {
+                if !left.is_compatible_with(right) && !right.is_compatible_with(left)
+                    && !matches!(left, TypeInfo::Unknown) && !matches!(right, TypeInfo::Unknown) {
                         return Err(CompileError::TypeError(
                             "Operands must have compatible types".to_string(),
                         ));
                     }
-                }
                 Ok(TypeInfo::Boolean)
             }
 

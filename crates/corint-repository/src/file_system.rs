@@ -406,6 +406,7 @@ impl FileSystemRepository {
     }
 
     /// Recursively collect YAML files
+    #[allow(clippy::only_used_in_recursion)]
     fn collect_yaml_files<'a>(
         &'a self,
         dir: &'a Path,

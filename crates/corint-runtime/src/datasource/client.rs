@@ -354,7 +354,7 @@ impl OLAPClient {
         // Build SELECT clause
         sql.push_str("SELECT ");
         if query.aggregations.is_empty() {
-            sql.push_str("*");
+            sql.push('*');
         } else {
             let agg_clauses: Vec<String> = query
                 .aggregations
@@ -610,7 +610,7 @@ impl SQLClient {
         // Build SELECT clause
         sql.push_str("SELECT ");
         if query.aggregations.is_empty() {
-            sql.push_str("*");
+            sql.push('*');
         } else {
             let agg_clauses: Vec<String> = query
                 .aggregations
@@ -694,7 +694,7 @@ impl SQLClient {
                 format!("({})::numeric", field)
             } else if field == "amount" {
                 // Common case: amount field in attributes JSONB
-                format!("(attributes->>'amount')::numeric")
+                "(attributes->>'amount')::numeric".to_string()
             } else if field.starts_with("attributes") {
                 // Already has attributes prefix
                 format!("({})::numeric", field)

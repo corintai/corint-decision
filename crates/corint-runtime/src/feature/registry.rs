@@ -67,14 +67,14 @@ impl FeatureRegistry {
             let feature_type = feature.get_type();
             self.features_by_type
                 .entry(feature_type)
-                .or_insert_with(Vec::new)
+                .or_default()
                 .push(name.clone());
 
             // Index by tags
             for tag in &feature.tags {
                 self.features_by_tag
                     .entry(tag.clone())
-                    .or_insert_with(Vec::new)
+                    .or_default()
                     .push(name.clone());
             }
 

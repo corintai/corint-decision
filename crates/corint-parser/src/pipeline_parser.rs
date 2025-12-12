@@ -77,13 +77,13 @@ impl PipelineParser {
             // Direct array: pipeline: [...]
             steps_array
                 .iter()
-                .map(|v| Self::parse_step(v))
+                .map(Self::parse_step)
                 .collect::<Result<Vec<_>>>()?
         } else if let Some(steps_array) = pipeline_obj.get("steps").and_then(|v| v.as_sequence()) {
             // Nested: pipeline: steps: [...]
             steps_array
                 .iter()
-                .map(|v| Self::parse_step(v))
+                .map(Self::parse_step)
                 .collect::<Result<Vec<_>>>()?
         } else {
             Vec::new()
@@ -163,7 +163,7 @@ impl PipelineParser {
         let features = if let Some(features_array) = yaml.get("features").and_then(|v| v.as_sequence()) {
             features_array
                 .iter()
-                .map(|v| Self::parse_feature_definition(v))
+                .map(Self::parse_feature_definition)
                 .collect::<Result<Vec<_>>>()?
         } else {
             Vec::new()
@@ -194,7 +194,7 @@ impl PipelineParser {
 
         let output_schema = yaml
             .get("output_schema")
-            .map(|v| Self::parse_schema(v))
+            .map(Self::parse_schema)
             .transpose()?;
 
         Ok(Step::Reason {
@@ -364,7 +364,7 @@ impl PipelineParser {
         let branches = if let Some(branches_array) = yaml.get("branches").and_then(|v| v.as_sequence()) {
             branches_array
                 .iter()
-                .map(|v| Self::parse_branch(v))
+                .map(Self::parse_branch)
                 .collect::<Result<Vec<_>>>()?
         } else {
             Vec::new()
@@ -381,7 +381,7 @@ impl PipelineParser {
         let pipeline = if let Some(steps_array) = yaml.get("pipeline").and_then(|v| v.as_sequence()) {
             steps_array
                 .iter()
-                .map(|v| Self::parse_step(v))
+                .map(Self::parse_step)
                 .collect::<Result<Vec<_>>>()?
         } else {
             Vec::new()
@@ -398,7 +398,7 @@ impl PipelineParser {
         let steps = if let Some(steps_array) = yaml.get("steps").and_then(|v| v.as_sequence()) {
             steps_array
                 .iter()
-                .map(|v| Self::parse_step(v))
+                .map(Self::parse_step)
                 .collect::<Result<Vec<_>>>()?
         } else {
             Vec::new()
@@ -436,7 +436,7 @@ impl PipelineParser {
 
         let branches = when_array
             .iter()
-            .map(|v| Self::parse_branch(v))
+            .map(Self::parse_branch)
             .collect::<Result<Vec<_>>>()?;
 
         Ok(Step::Branch { branches })
@@ -453,7 +453,7 @@ impl PipelineParser {
         let steps = if let Some(steps_array) = parallel_val.as_sequence() {
             steps_array
                 .iter()
-                .map(|v| Self::parse_step(v))
+                .map(Self::parse_step)
                 .collect::<Result<Vec<_>>>()?
         } else {
             Vec::new()

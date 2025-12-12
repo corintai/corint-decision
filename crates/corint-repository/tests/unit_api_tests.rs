@@ -5,41 +5,42 @@
 #![cfg(feature = "api")]
 
 use corint_repository::{ApiRepository, Repository};
-use mockito::{mock, Mock, Server};
+use mockito::{Mock, Server};
 
 /// Helper to create a mock manifest response
 fn create_mock_manifest(server: &mut Server) -> Mock {
-    let manifest_json = r#"{
-        "registry": "http://example.com/registry.yaml",
+    let base_url = server.url();
+    let manifest_json = format!(r#"{{
+        "registry": "{base_url}/registry.yaml",
         "pipelines": [
-            {
+            {{
                 "id": "test_pipeline",
-                "url": "http://example.com/pipelines/test_pipeline.yaml",
+                "url": "{base_url}/pipelines/test_pipeline.yaml",
                 "description": "Test pipeline"
-            }
+            }}
         ],
         "rulesets": [
-            {
+            {{
                 "id": "test_ruleset",
-                "url": "http://example.com/rulesets/test_ruleset.yaml",
+                "url": "{base_url}/rulesets/test_ruleset.yaml",
                 "description": "Test ruleset"
-            }
+            }}
         ],
         "rules": [
-            {
+            {{
                 "id": "test_rule",
-                "url": "http://example.com/rules/test_rule.yaml",
+                "url": "{base_url}/rules/test_rule.yaml",
                 "description": "Test rule"
-            }
+            }}
         ],
         "templates": [
-            {
+            {{
                 "id": "test_template",
-                "url": "http://example.com/templates/test_template.yaml",
+                "url": "{base_url}/templates/test_template.yaml",
                 "description": "Test template"
-            }
+            }}
         ]
-    }"#;
+    }}"#);
 
     server
         .mock("GET", "/manifest")
@@ -100,15 +101,17 @@ async fn test_load_rule_success() {
     let mut server = Server::new_async().await;
     let _m = create_mock_manifest(&mut server);
 
-    let rule_yaml = r#"version: "0.1"
-
-rule:
-  id: test_rule
-  name: Test Rule
-  when:
-    conditions:
-      - amount > 100
-  score: 50
+    let rule_yaml = r#"id: test_rule
+name: Test Rule
+when:
+  conditions:
+    - !Binary
+      left: !FieldAccess
+        - amount
+      op: Gt
+      right: !Literal
+        Number: 100.0
+score: 50
 "#;
 
     let _rule_mock = server
@@ -170,18 +173,22 @@ async fn test_load_ruleset_success() {
     let mut server = Server::new_async().await;
     let _m = create_mock_manifest(&mut server);
 
-    let ruleset_yaml = r#"version: "0.1"
-
-ruleset:
-  id: test_ruleset
-  name: Test Ruleset
-  rules:
-    - test_rule
-  decision_logic:
-    - condition: total_score >= 100
-      action: deny
-    - default: true
-      action: approve
+    let ruleset_yaml = r#"id: test_ruleset
+name: Test Ruleset
+rules:
+  - test_rule
+decision_logic:
+  - condition: !Binary
+      left: !FieldAccess
+        - total_score
+      op: Ge
+      right: !Literal
+        Number: 100.0
+    action:
+      type: deny
+  - default: true
+    action:
+      type: approve
 "#;
 
     let _ruleset_mock = server
@@ -209,18 +216,23 @@ async fn test_load_template_success() {
     let mut server = Server::new_async().await;
     let _m = create_mock_manifest(&mut server);
 
-    let template_yaml = r#"version: "0.1"
-
-decision_template:
-  id: test_template
-  name: Test Template
-  params:
-    threshold: integer
-  logic:
-    - condition: total_score >= params.threshold
-      action: deny
-    - default: true
-      action: approve
+    let template_yaml = r#"id: test_template
+name: Test Template
+params:
+  threshold: integer
+decision_logic:
+  - condition: !Binary
+      left: !FieldAccess
+        - total_score
+      op: Ge
+      right: !FieldAccess
+        - params
+        - threshold
+    action:
+      type: deny
+  - default: true
+    action:
+      type: approve
 "#;
 
     let _template_mock = server
@@ -248,13 +260,11 @@ async fn test_load_pipeline_success() {
     let mut server = Server::new_async().await;
     let _m = create_mock_manifest(&mut server);
 
-    let pipeline_yaml = r#"version: "0.1"
-
-pipeline:
-  id: test_pipeline
-  name: Test Pipeline
-  stages:
-    - ruleset: test_ruleset
+    let pipeline_yaml = r#"id: test_pipeline
+name: Test Pipeline
+steps:
+  - type: include
+    ruleset: test_ruleset
 "#;
 
     let _pipeline_mock = server
@@ -273,7 +283,7 @@ pipeline:
         .await
         .expect("Failed to load pipeline");
 
-    assert_eq!(pipeline.id, "test_pipeline");
+    assert_eq!(pipeline.id, Some("test_pipeline".to_string()));
     assert!(content.contains("test_pipeline"));
 }
 
@@ -423,32 +433,31 @@ async fn test_load_registry_not_found() {
 #[tokio::test]
 async fn test_api_with_authentication_header() {
     let mut server = Server::new_async().await;
+    let base_url = server.url();
 
     let _manifest_mock = server
         .mock("GET", "/manifest")
         .match_header("Authorization", "Bearer secret_key")
         .with_status(200)
         .with_header("content-type", "application/json")
-        .with_body(r#"{
-            "rules": [{
+        .with_body(format!(r#"{{
+            "rules": [{{
                 "id": "secure_rule",
-                "url": "http://example.com/rules/secure_rule.yaml"
-            }],
+                "url": "{base_url}/rules/secure_rule.yaml"
+            }}],
             "rulesets": [],
             "templates": [],
             "pipelines": []
-        }"#)
+        }}"#))
         .create();
 
-    let rule_yaml = r#"version: "0.1"
-
-rule:
-  id: secure_rule
-  name: Secure Rule
-  when:
-    conditions:
-      - true
-  score: 10
+    let rule_yaml = r#"id: secure_rule
+name: Secure Rule
+when:
+  conditions:
+    - !Literal
+      Bool: true
+score: 10
 "#;
 
     let _rule_mock = server

@@ -250,6 +250,7 @@ impl SemanticAnalyzer {
     }
 
     /// Collect variable references from an expression
+    #[allow(clippy::only_used_in_recursion)]
     fn collect_variable_references(&self, expr: &Expression, references: &mut HashSet<String>) {
         match expr {
             Expression::FieldAccess(path) => {
@@ -282,6 +283,7 @@ impl SemanticAnalyzer {
     }
 
     /// Analyze an expression
+    #[allow(clippy::only_used_in_recursion)]
     fn analyze_expression(&mut self, expr: &Expression) -> Result<()> {
         match expr {
             Expression::Literal(_) => {

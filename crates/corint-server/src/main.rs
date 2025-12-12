@@ -221,6 +221,8 @@ async fn init_feature_executor() -> Result<Option<FeatureExecutor>> {
         }
     }
 
+    info!("Loaded {} feature files", feature_file_count);
+
     // Register features to executor
     for feature in registry.all_features() {
         if let Err(e) = executor.register_feature(feature.clone()) {

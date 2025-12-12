@@ -85,7 +85,6 @@ pub struct DecisionRecord {
 /// Async decision result writer that queues writes to avoid blocking decision execution
 pub struct DecisionResultWriter {
     /// Channel sender for queuing decision records
-    #[allow(dead_code)]
     sender: mpsc::UnboundedSender<DecisionRecord>,
 }
 
@@ -197,7 +196,7 @@ impl DecisionResultWriter {
         .bind(&record.request_id)
         .bind(record.event_id.as_deref())
         .bind(&record.pipeline_id)
-        .bind(record.risk_score as i32)
+        .bind(record.risk_score)
         .bind(&decision_str)
         .bind(record.decision_reason.as_deref())
         .bind(&triggered_rules_array)
@@ -247,7 +246,7 @@ impl DecisionResultWriter {
             .bind(&rule_exec.rule_id)
             .bind(rule_exec.rule_name.as_deref())
             .bind(rule_exec.triggered)
-            .bind(rule_exec.score.map(|s| s as i32))
+            .bind(rule_exec.score)
             .bind(rule_exec.execution_time_ms.map(|t| t as i32))
             .bind(feature_values_json.as_ref())
             .bind(rule_exec.rule_conditions.as_ref())

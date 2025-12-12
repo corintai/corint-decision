@@ -143,7 +143,7 @@ impl FeatureExtractor {
     }
 
     fn compute_percentile(&self, events: &[Event], field: &[String], p: f64) -> Result<Value> {
-        if p < 0.0 || p > 100.0 {
+        if !(0.0..=100.0).contains(&p) {
             return Err(RuntimeError::InvalidOperation(
                 "Percentile must be between 0 and 100".to_string(),
             ));
@@ -153,7 +153,10 @@ impl FeatureExtractor {
 
         for event in events {
             if let Some(Value::Number(n)) = self.get_field_value(&event.data, field) {
-                values.push(n);
+                // Filter out NaN and Infinity values
+                if n.is_finite() {
+                    values.push(n);
+                }
             }
         }
 
@@ -161,7 +164,8 @@ impl FeatureExtractor {
             return Ok(Value::Number(0.0));
         }
 
-        values.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        // Safe sort: NaN values have been filtered out above
+        values.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
 
         let index = (p / 100.0 * (values.len() - 1) as f64).round() as usize;
         Ok(Value::Number(values[index]))
