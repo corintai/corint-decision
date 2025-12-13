@@ -105,10 +105,7 @@ impl Schema {
 
     /// Check if a field is required
     pub fn is_required(&self, name: &str) -> bool {
-        self.fields
-            .get(name)
-            .map(|f| f.required)
-            .unwrap_or(false)
+        self.fields.get(name).map(|f| f.required).unwrap_or(false)
     }
 }
 
@@ -209,10 +206,7 @@ mod tests {
         assert_eq!(field.name, "email");
         assert_eq!(field.field_type, FieldType::String);
         assert!(field.required);
-        assert_eq!(
-            field.description,
-            Some("User email address".to_string())
-        );
+        assert_eq!(field.description, Some("User email address".to_string()));
         assert_eq!(field.default, Some("\"user@example.com\"".to_string()));
     }
 
@@ -344,11 +338,8 @@ mod tests {
                     .with_description("Event timestamp (Unix)".to_string()),
             )
             .add_field(
-                SchemaField::new(
-                    "tags".to_string(),
-                    FieldType::array(FieldType::String),
-                )
-                .with_description("Event tags".to_string()),
+                SchemaField::new("tags".to_string(), FieldType::array(FieldType::String))
+                    .with_description("Event tags".to_string()),
             )
             .add_field(
                 SchemaField::new("metadata".to_string(), FieldType::object())

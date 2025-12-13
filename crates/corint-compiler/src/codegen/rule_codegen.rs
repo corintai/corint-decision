@@ -2,10 +2,10 @@
 //!
 //! Compiles Rule AST nodes into IR programs.
 
+use super::expression_codegen::ExpressionCompiler;
+use crate::error::Result;
 use corint_core::ast::Rule;
 use corint_core::ir::{Instruction, Program, ProgramMetadata};
-use crate::error::Result;
-use super::expression_codegen::ExpressionCompiler;
 
 /// Rule compiler
 pub struct RuleCompiler;
@@ -46,7 +46,7 @@ impl RuleCompiler {
             }
 
             instructions.push(Instruction::JumpIfFalse {
-                offset: remaining_instruction_count as isize
+                offset: remaining_instruction_count as isize,
             });
         }
 
@@ -62,8 +62,7 @@ impl RuleCompiler {
         instructions.push(Instruction::Return);
 
         // Create program metadata
-        let metadata = ProgramMetadata::for_rule(rule.id.clone())
-            .with_name(rule.name.clone());
+        let metadata = ProgramMetadata::for_rule(rule.id.clone()).with_name(rule.name.clone());
 
         let metadata = if let Some(desc) = &rule.description {
             metadata.with_description(desc.clone())

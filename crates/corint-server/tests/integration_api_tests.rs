@@ -24,9 +24,15 @@ async fn create_test_engine() -> (TempDir, Arc<corint_sdk::DecisionEngine>) {
     let repo_path = temp_dir.path();
 
     // Create directory structure
-    fs::create_dir_all(repo_path.join("pipelines")).await.unwrap();
-    fs::create_dir_all(repo_path.join("library/rules")).await.unwrap();
-    fs::create_dir_all(repo_path.join("library/rulesets")).await.unwrap();
+    fs::create_dir_all(repo_path.join("pipelines"))
+        .await
+        .unwrap();
+    fs::create_dir_all(repo_path.join("library/rules"))
+        .await
+        .unwrap();
+    fs::create_dir_all(repo_path.join("library/rulesets"))
+        .await
+        .unwrap();
 
     // Create a simple test rule
     let rule_yaml = r#"version: "0.1"
@@ -40,12 +46,9 @@ rule:
   score: 100
 "#;
 
-    fs::write(
-        repo_path.join("library/rules/test_rule.yaml"),
-        rule_yaml,
-    )
-    .await
-    .unwrap();
+    fs::write(repo_path.join("library/rules/test_rule.yaml"), rule_yaml)
+        .await
+        .unwrap();
 
     // Create a test ruleset
     let ruleset_yaml = r#"version: "0.1"
@@ -228,7 +231,10 @@ fn create_test_router(engine: Arc<corint_sdk::DecisionEngine>) -> Router {
         flatten_object("event", &event_object, &mut event_data);
 
         let request = DecisionRequest::new(event_data);
-        let response = state.engine.decide(request).await
+        let response = state
+            .engine
+            .decide(request)
+            .await
             .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
         let action_str = response.result.action.map(|a| format!("{:?}", a));

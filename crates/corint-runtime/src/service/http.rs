@@ -1,10 +1,10 @@
 //! HTTP service client
 
+use crate::error::Result;
+use crate::service::client::{ServiceClient, ServiceRequest, ServiceResponse};
 use async_trait::async_trait;
 use corint_core::Value;
 use serde::{Deserialize, Serialize};
-use crate::error::Result;
-use crate::service::client::{ServiceClient, ServiceRequest, ServiceResponse};
 use std::collections::HashMap;
 
 /// HTTP method
@@ -87,7 +87,9 @@ impl ServiceClient for MockHttpClient {
             _ => HttpMethod::GET,
         };
 
-        let url = request.params.get("url")
+        let url = request
+            .params
+            .get("url")
             .and_then(|v| match v {
                 Value::String(s) => Some(s.clone()),
                 _ => None,
@@ -112,12 +114,15 @@ mod tests {
     async fn test_http_get() {
         let client = MockHttpClient::new();
 
-        let response = client.request(
-            HttpMethod::GET,
-            "https://api.example.com/users".to_string(),
-            HashMap::new(),
-            None,
-        ).await.unwrap();
+        let response = client
+            .request(
+                HttpMethod::GET,
+                "https://api.example.com/users".to_string(),
+                HashMap::new(),
+                None,
+            )
+            .await
+            .unwrap();
 
         assert_eq!(response.status, "success");
     }
@@ -129,12 +134,15 @@ mod tests {
 
         let client = MockHttpClient::new();
 
-        let response = client.request(
-            HttpMethod::POST,
-            "https://api.example.com/users".to_string(),
-            HashMap::new(),
-            Some(Value::Object(body)),
-        ).await.unwrap();
+        let response = client
+            .request(
+                HttpMethod::POST,
+                "https://api.example.com/users".to_string(),
+                HashMap::new(),
+                Some(Value::Object(body)),
+            )
+            .await
+            .unwrap();
 
         assert_eq!(response.status, "success");
     }
@@ -143,8 +151,10 @@ mod tests {
     async fn test_http_service_client() {
         let client = MockHttpClient::new();
 
-        let request = ServiceRequest::new("http".to_string(), "GET".to_string())
-            .with_param("url".to_string(), Value::String("https://api.example.com/data".to_string()));
+        let request = ServiceRequest::new("http".to_string(), "GET".to_string()).with_param(
+            "url".to_string(),
+            Value::String("https://api.example.com/data".to_string()),
+        );
 
         let response = client.call(request).await.unwrap();
         assert_eq!(response.status, "success");
@@ -153,16 +163,22 @@ mod tests {
     #[tokio::test]
     async fn test_http_custom_response() {
         let mut custom_data = HashMap::new();
-        custom_data.insert("message".to_string(), Value::String("Custom response".to_string()));
+        custom_data.insert(
+            "message".to_string(),
+            Value::String("Custom response".to_string()),
+        );
 
         let client = MockHttpClient::with_response(Value::Object(custom_data));
 
-        let response = client.request(
-            HttpMethod::GET,
-            "https://test.com".to_string(),
-            HashMap::new(),
-            None,
-        ).await.unwrap();
+        let response = client
+            .request(
+                HttpMethod::GET,
+                "https://test.com".to_string(),
+                HashMap::new(),
+                None,
+            )
+            .await
+            .unwrap();
 
         if let Value::Object(data) = &response.data {
             assert_eq!(
@@ -178,8 +194,10 @@ mod tests {
     async fn test_http_put_method() {
         let client = MockHttpClient::new();
 
-        let request = ServiceRequest::new("http".to_string(), "PUT".to_string())
-            .with_param("url".to_string(), Value::String("https://api.example.com/users/1".to_string()));
+        let request = ServiceRequest::new("http".to_string(), "PUT".to_string()).with_param(
+            "url".to_string(),
+            Value::String("https://api.example.com/users/1".to_string()),
+        );
 
         let response = client.call(request).await.unwrap();
         assert_eq!(response.status, "success");
@@ -189,8 +207,10 @@ mod tests {
     async fn test_http_delete_method() {
         let client = MockHttpClient::new();
 
-        let request = ServiceRequest::new("http".to_string(), "DELETE".to_string())
-            .with_param("url".to_string(), Value::String("https://api.example.com/users/1".to_string()));
+        let request = ServiceRequest::new("http".to_string(), "DELETE".to_string()).with_param(
+            "url".to_string(),
+            Value::String("https://api.example.com/users/1".to_string()),
+        );
 
         let response = client.call(request).await.unwrap();
         assert_eq!(response.status, "success");
@@ -200,8 +220,10 @@ mod tests {
     async fn test_http_patch_method() {
         let client = MockHttpClient::new();
 
-        let request = ServiceRequest::new("http".to_string(), "PATCH".to_string())
-            .with_param("url".to_string(), Value::String("https://api.example.com/users/1".to_string()));
+        let request = ServiceRequest::new("http".to_string(), "PATCH".to_string()).with_param(
+            "url".to_string(),
+            Value::String("https://api.example.com/users/1".to_string()),
+        );
 
         let response = client.call(request).await.unwrap();
         assert_eq!(response.status, "success");
@@ -211,8 +233,10 @@ mod tests {
     async fn test_http_unknown_method_defaults_to_get() {
         let client = MockHttpClient::new();
 
-        let request = ServiceRequest::new("http".to_string(), "UNKNOWN".to_string())
-            .with_param("url".to_string(), Value::String("https://api.example.com/data".to_string()));
+        let request = ServiceRequest::new("http".to_string(), "UNKNOWN".to_string()).with_param(
+            "url".to_string(),
+            Value::String("https://api.example.com/data".to_string()),
+        );
 
         let response = client.call(request).await.unwrap();
         assert_eq!(response.status, "success");
@@ -233,7 +257,10 @@ mod tests {
         body_data.insert("amount".to_string(), Value::Number(100.0));
 
         let request = ServiceRequest::new("http".to_string(), "POST".to_string())
-            .with_param("url".to_string(), Value::String("https://api.example.com/transactions".to_string()))
+            .with_param(
+                "url".to_string(),
+                Value::String("https://api.example.com/transactions".to_string()),
+            )
             .with_param("body".to_string(), Value::Object(body_data));
 
         let response = client.call(request).await.unwrap();
@@ -245,29 +272,27 @@ mod tests {
         let client = MockHttpClient::new();
 
         let test_url = "https://api.example.com/test".to_string();
-        let response = client.request(
-            HttpMethod::GET,
-            test_url.clone(),
-            HashMap::new(),
-            None,
-        ).await.unwrap();
+        let response = client
+            .request(HttpMethod::GET, test_url.clone(), HashMap::new(), None)
+            .await
+            .unwrap();
 
-        assert_eq!(
-            response.metadata.get("url"),
-            Some(&Value::String(test_url))
-        );
+        assert_eq!(response.metadata.get("url"), Some(&Value::String(test_url)));
     }
 
     #[tokio::test]
     async fn test_http_metadata_includes_status_code() {
         let client = MockHttpClient::new();
 
-        let response = client.request(
-            HttpMethod::GET,
-            "https://api.example.com/test".to_string(),
-            HashMap::new(),
-            None,
-        ).await.unwrap();
+        let response = client
+            .request(
+                HttpMethod::GET,
+                "https://api.example.com/test".to_string(),
+                HashMap::new(),
+                None,
+            )
+            .await
+            .unwrap();
 
         assert_eq!(
             response.metadata.get("status_code"),
@@ -286,12 +311,15 @@ mod tests {
     async fn test_http_default_response() {
         let client = MockHttpClient::new();
 
-        let response = client.request(
-            HttpMethod::GET,
-            "https://test.com".to_string(),
-            HashMap::new(),
-            None,
-        ).await.unwrap();
+        let response = client
+            .request(
+                HttpMethod::GET,
+                "https://test.com".to_string(),
+                HashMap::new(),
+                None,
+            )
+            .await
+            .unwrap();
 
         // Default response should be an empty object
         if let Value::Object(data) = &response.data {

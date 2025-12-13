@@ -249,11 +249,13 @@ mod tests {
 
     #[test]
     fn test_engine_config_with_registry() {
-        let config = EngineConfig::new()
-            .with_registry_file(PathBuf::from("registry.yaml"));
+        let config = EngineConfig::new().with_registry_file(PathBuf::from("registry.yaml"));
 
         assert!(config.registry_file.is_some());
-        assert_eq!(config.registry_file.unwrap(), PathBuf::from("registry.yaml"));
+        assert_eq!(
+            config.registry_file.unwrap(),
+            PathBuf::from("registry.yaml")
+        );
     }
 
     #[test]
@@ -263,8 +265,7 @@ mod tests {
             connection: "redis://localhost:6379".to_string(),
         };
 
-        let config = EngineConfig::new()
-            .with_storage(storage.clone());
+        let config = EngineConfig::new().with_storage(storage.clone());
 
         assert!(config.storage.is_some());
         let config_storage = config.storage.unwrap();
@@ -281,8 +282,7 @@ mod tests {
             enable_cache: false,
         };
 
-        let config = EngineConfig::new()
-            .with_llm(llm.clone());
+        let config = EngineConfig::new().with_llm(llm.clone());
 
         assert!(config.llm.is_some());
         let config_llm = config.llm.unwrap();
@@ -298,8 +298,7 @@ mod tests {
             endpoint: "https://api.example.com".to_string(),
         };
 
-        let config = EngineConfig::new()
-            .with_service(service.clone());
+        let config = EngineConfig::new().with_service(service.clone());
 
         assert!(config.service.is_some());
         let config_service = config.service.unwrap();

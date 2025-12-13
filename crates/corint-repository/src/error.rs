@@ -15,15 +15,27 @@ pub enum RepositoryError {
 
     /// I/O error occurred
     #[error("I/O error: {0}")]
-    Io(#[from] #[source] std::io::Error),
+    Io(
+        #[from]
+        #[source]
+        std::io::Error,
+    ),
 
     /// YAML parsing error
     #[error("Failed to parse YAML: {0}")]
-    YamlParse(#[from] #[source] serde_yaml::Error),
+    YamlParse(
+        #[from]
+        #[source]
+        serde_yaml::Error,
+    ),
 
     /// Parser error from corint-parser
     #[error("Parser error: {0}")]
-    Parser(#[from] #[source] corint_parser::error::ParseError),
+    Parser(
+        #[from]
+        #[source]
+        corint_parser::error::ParseError,
+    ),
 
     /// Invalid path provided
     #[error("Invalid path: {path}")]
@@ -36,7 +48,11 @@ pub enum RepositoryError {
     /// Database error (when database feature is enabled)
     #[cfg(feature = "postgres")]
     #[error("Database error: {0}")]
-    Database(#[from] #[source] sqlx::Error),
+    Database(
+        #[from]
+        #[source]
+        sqlx::Error,
+    ),
 
     /// Cache error
     #[error("Cache error: {0}")]
@@ -55,7 +71,6 @@ pub enum RepositoryError {
     Other(String),
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -73,7 +88,8 @@ mod tests {
 
     #[test]
     fn test_parser_error() {
-        let parse_err = corint_parser::error::ParseError::InvalidExpression("Invalid YAML syntax".to_string());
+        let parse_err =
+            corint_parser::error::ParseError::InvalidExpression("Invalid YAML syntax".to_string());
         let err = RepositoryError::Parser(parse_err);
 
         assert!(err.to_string().contains("Parser error"));

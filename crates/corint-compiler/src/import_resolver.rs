@@ -4,11 +4,11 @@
 //! It loads rules, rulesets, and pipelines from the file system, resolves dependencies
 //! transitively, and validates ID uniqueness.
 
-use std::path::{Path, PathBuf};
-use std::collections::{HashMap, HashSet};
-use corint_core::ast::{Rule, Ruleset, RdlDocument, DecisionTemplate};
-use corint_parser::{RuleParser, RulesetParser, TemplateParser};
 use crate::error::{CompileError, Result};
+use corint_core::ast::{DecisionTemplate, RdlDocument, Rule, Ruleset};
+use corint_parser::{RuleParser, RulesetParser, TemplateParser};
+use std::collections::{HashMap, HashSet};
+use std::path::{Path, PathBuf};
 
 /// Import resolver for loading and merging library components
 pub struct ImportResolver {
@@ -47,10 +47,7 @@ impl ImportResolver {
     /// 2. Recursively loads dependencies (e.g., rules imported by rulesets)
     /// 3. Deduplicates rules and rulesets
     /// 4. Validates ID uniqueness
-    pub fn resolve_imports<T>(
-        &mut self,
-        document: &RdlDocument<T>,
-    ) -> Result<ResolvedDocument> {
+    pub fn resolve_imports<T>(&mut self, document: &RdlDocument<T>) -> Result<ResolvedDocument> {
         let mut resolved_rules = Vec::new();
         let mut resolved_rulesets = Vec::new();
 
@@ -163,14 +160,14 @@ impl ImportResolver {
         let full_path = self.library_base_path.join(path);
 
         // Load and parse YAML
-        let content = std::fs::read_to_string(&full_path)
-            .map_err(|e| CompileError::ImportNotFound {
+        let content =
+            std::fs::read_to_string(&full_path).map_err(|e| CompileError::ImportNotFound {
                 path: path.to_string(),
                 source: e,
             })?;
 
-        let document = RuleParser::parse_with_imports(&content)
-            .map_err(|e| CompileError::ParseError {
+        let document =
+            RuleParser::parse_with_imports(&content).map_err(|e| CompileError::ParseError {
                 path: path.to_string(),
                 message: e.to_string(),
             })?;
@@ -178,7 +175,8 @@ impl ImportResolver {
         let rule = document.definition;
 
         // Cache it
-        self.rule_cache.insert(path.to_string(), (rule.clone(), path.to_string()));
+        self.rule_cache
+            .insert(path.to_string(), (rule.clone(), path.to_string()));
 
         Ok((rule, path.to_string()))
     }
@@ -194,14 +192,14 @@ impl ImportResolver {
         let full_path = self.library_base_path.join(path);
 
         // Load and parse YAML
-        let content = std::fs::read_to_string(&full_path)
-            .map_err(|e| CompileError::ImportNotFound {
+        let content =
+            std::fs::read_to_string(&full_path).map_err(|e| CompileError::ImportNotFound {
                 path: path.to_string(),
                 source: e,
             })?;
 
-        let document = TemplateParser::parse_with_imports(&content)
-            .map_err(|e| CompileError::ParseError {
+        let document =
+            TemplateParser::parse_with_imports(&content).map_err(|e| CompileError::ParseError {
                 path: path.to_string(),
                 message: e.to_string(),
             })?;
@@ -209,7 +207,8 @@ impl ImportResolver {
         let template = document.definition;
 
         // Cache it
-        self.template_cache.insert(path.to_string(), (template.clone(), path.to_string()));
+        self.template_cache
+            .insert(path.to_string(), (template.clone(), path.to_string()));
 
         Ok((template, path.to_string()))
     }
@@ -246,14 +245,14 @@ impl ImportResolver {
 
         // 1. Load ruleset file
         let full_path = self.library_base_path.join(path);
-        let content = std::fs::read_to_string(&full_path)
-            .map_err(|e| CompileError::ImportNotFound {
+        let content =
+            std::fs::read_to_string(&full_path).map_err(|e| CompileError::ImportNotFound {
                 path: path.to_string(),
                 source: e,
             })?;
 
-        let document = RulesetParser::parse_with_imports(&content)
-            .map_err(|e| CompileError::ParseError {
+        let document =
+            RulesetParser::parse_with_imports(&content).map_err(|e| CompileError::ParseError {
                 path: path.to_string(),
                 message: e.to_string(),
             })?;
@@ -294,7 +293,8 @@ impl ImportResolver {
         }
 
         // Cache it
-        self.ruleset_cache.insert(path.to_string(), (ruleset.clone(), path.to_string()));
+        self.ruleset_cache
+            .insert(path.to_string(), (ruleset.clone(), path.to_string()));
 
         // Remove from loading stack
         self.loading_stack.pop();
@@ -317,12 +317,13 @@ impl ImportResolver {
         child_path: &str,
     ) -> Result<Ruleset> {
         // Find parent ruleset in cache
-        let parent = self.find_ruleset_by_id(extends_id)
-            .ok_or_else(|| CompileError::ExtendsNotFound {
-                child_id: child.id.clone(),
-                extends_id: extends_id.to_string(),
-                child_path: child_path.to_string(),
-            })?;
+        let parent =
+            self.find_ruleset_by_id(extends_id)
+                .ok_or_else(|| CompileError::ExtendsNotFound {
+                    child_id: child.id.clone(),
+                    extends_id: extends_id.to_string(),
+                    child_path: child_path.to_string(),
+                })?;
 
         // Check for circular inheritance
         if self.has_circular_extends(&parent, extends_id)? {
@@ -377,11 +378,14 @@ impl ImportResolver {
         template_ref: &corint_core::ast::DecisionTemplateRef,
     ) -> Result<Ruleset> {
         // Find template by ID
-        let template = self.find_template_by_id(&template_ref.template)
-            .ok_or_else(|| CompileError::CompileError(format!(
-                "Template '{}' not found. Make sure it's imported before use.",
-                template_ref.template
-            )))?;
+        let template = self
+            .find_template_by_id(&template_ref.template)
+            .ok_or_else(|| {
+                CompileError::CompileError(format!(
+                    "Template '{}' not found. Make sure it's imported before use.",
+                    template_ref.template
+                ))
+            })?;
 
         // Merge params: template defaults + override params
         let mut final_params = template.params.clone().unwrap_or_default();
@@ -507,7 +511,9 @@ impl ImportResolver {
                 return Err(CompileError::DuplicateRuleId {
                     id: rule.id.clone(),
                     first_defined: existing_path.unwrap_or_else(|| "unknown".to_string()),
-                    also_defined: self.get_rule_source(&rule.id).unwrap_or_else(|| "current import".to_string()),
+                    also_defined: self
+                        .get_rule_source(&rule.id)
+                        .unwrap_or_else(|| "current import".to_string()),
                 });
             }
         }
@@ -515,12 +521,16 @@ impl ImportResolver {
         // Check Ruleset IDs uniqueness
         let mut ruleset_ids = HashMap::new();
         for ruleset in rulesets {
-            if let Some(existing_path) = ruleset_ids.insert(&ruleset.id, self.get_ruleset_source(&ruleset.id)) {
+            if let Some(existing_path) =
+                ruleset_ids.insert(&ruleset.id, self.get_ruleset_source(&ruleset.id))
+            {
                 // Found duplicate Ruleset ID
                 return Err(CompileError::DuplicateRulesetId {
                     id: ruleset.id.clone(),
                     first_defined: existing_path.unwrap_or_else(|| "unknown".to_string()),
-                    also_defined: self.get_ruleset_source(&ruleset.id).unwrap_or_else(|| "current import".to_string()),
+                    also_defined: self
+                        .get_ruleset_source(&ruleset.id)
+                        .unwrap_or_else(|| "current import".to_string()),
                 });
             }
         }

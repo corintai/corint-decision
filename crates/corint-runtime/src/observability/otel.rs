@@ -6,17 +6,11 @@
 //! - Unified instrumentation layer
 
 #[cfg(feature = "otel")]
-use opentelemetry::{
-    global,
-    KeyValue,
-};
+use opentelemetry::{global, KeyValue};
 #[cfg(feature = "otel")]
 use opentelemetry_prometheus::PrometheusExporter;
 #[cfg(feature = "otel")]
-use opentelemetry_sdk::{
-    trace::TracerProvider,
-    Resource,
-};
+use opentelemetry_sdk::{trace::TracerProvider, Resource};
 #[cfg(feature = "otel")]
 use opentelemetry_semantic_conventions::resource::{SERVICE_NAME, SERVICE_VERSION};
 
@@ -250,7 +244,10 @@ mod tests {
         assert_eq!(config.service_version, "1.0.0");
         assert!(!config.enable_metrics);
         assert!(config.enable_tracing);
-        assert_eq!(config.otlp_endpoint, Some("http://localhost:4317".to_string()));
+        assert_eq!(
+            config.otlp_endpoint,
+            Some("http://localhost:4317".to_string())
+        );
         assert_eq!(config.metrics_export_interval_secs, 30);
     }
 

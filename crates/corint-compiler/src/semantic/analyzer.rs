@@ -2,8 +2,8 @@
 //!
 //! Performs semantic analysis on AST nodes to detect errors before compilation.
 
-use corint_core::ast::{Expression, Rule, Ruleset, Pipeline};
 use crate::error::{CompileError, Result};
+use corint_core::ast::{Expression, Pipeline, Rule, Ruleset};
 use std::collections::HashSet;
 
 /// Semantic analyzer
@@ -96,7 +96,12 @@ impl SemanticAnalyzer {
 
         // 5. Analyze each step
         for step in &pipeline.steps {
-            self.analyze_step(step, &mut step_ids, &mut produced_vars, &mut referenced_vars)?;
+            self.analyze_step(
+                step,
+                &mut step_ids,
+                &mut produced_vars,
+                &mut referenced_vars,
+            )?;
         }
 
         // 6. Check for undefined variable references
@@ -175,7 +180,9 @@ impl SemanticAnalyzer {
                 }
             }
 
-            Step::Service { id, output, params, .. } => {
+            Step::Service {
+                id, output, params, ..
+            } => {
                 // Check for duplicate step ID
                 if !step_ids.insert(id.clone()) {
                     return Err(CompileError::InvalidExpression(format!(
@@ -196,7 +203,9 @@ impl SemanticAnalyzer {
                 }
             }
 
-            Step::Api { id, output, params, .. } => {
+            Step::Api {
+                id, output, params, ..
+            } => {
                 // Check for duplicate step ID
                 if !step_ids.insert(id.clone()) {
                     return Err(CompileError::InvalidExpression(format!(
@@ -271,7 +280,11 @@ impl SemanticAnalyzer {
                     self.collect_variable_references(arg, references);
                 }
             }
-            Expression::Ternary { condition, true_expr, false_expr } => {
+            Expression::Ternary {
+                condition,
+                true_expr,
+                false_expr,
+            } => {
                 self.collect_variable_references(condition, references);
                 self.collect_variable_references(true_expr, references);
                 self.collect_variable_references(false_expr, references);
@@ -364,7 +377,7 @@ impl Default for SemanticAnalyzer {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use corint_core::ast::{WhenBlock, Operator};
+    use corint_core::ast::{Operator, WhenBlock};
     use corint_core::Value;
 
     #[test]
@@ -385,12 +398,7 @@ mod tests {
     fn test_analyze_rule_empty_id() {
         let mut analyzer = SemanticAnalyzer::new();
 
-        let rule = Rule::new(
-            String::new(),
-            "Test Rule".to_string(),
-            WhenBlock::new(),
-            50,
-        );
+        let rule = Rule::new(String::new(), "Test Rule".to_string(), WhenBlock::new(), 50);
 
         assert!(analyzer.analyze_rule(&rule).is_err());
     }
@@ -399,12 +407,7 @@ mod tests {
     fn test_analyze_rule_empty_name() {
         let mut analyzer = SemanticAnalyzer::new();
 
-        let rule = Rule::new(
-            "test_rule".to_string(),
-            String::new(),
-            WhenBlock::new(),
-            50,
-        );
+        let rule = Rule::new("test_rule".to_string(), String::new(), WhenBlock::new(), 50);
 
         assert!(analyzer.analyze_rule(&rule).is_err());
     }

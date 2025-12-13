@@ -50,7 +50,9 @@ impl YamlParser {
 
     /// Get an optional string field from YAML object
     pub fn get_optional_string(obj: &YamlValue, field: &str) -> Option<String> {
-        obj.get(field).and_then(|v| v.as_str()).map(|s| s.to_string())
+        obj.get(field)
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string())
     }
 
     /// Get a required integer field from YAML object
@@ -120,7 +122,10 @@ impl YamlParser {
     }
 
     /// Get an optional object field from YAML object
-    pub fn get_optional_object<'a>(obj: &'a YamlValue, field: &str) -> Option<&'a serde_yaml::Mapping> {
+    pub fn get_optional_object<'a>(
+        obj: &'a YamlValue,
+        field: &str,
+    ) -> Option<&'a serde_yaml::Mapping> {
         obj.get(field).and_then(|v| v.as_mapping())
     }
 

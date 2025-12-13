@@ -44,10 +44,7 @@ pub enum CompileError {
 
     /// Parse error in imported file
     #[error("Parse error in {path}: {message}")]
-    ParseError {
-        path: String,
-        message: String,
-    },
+    ParseError { path: String, message: String },
 
     /// No rule found in file
     #[error("No rule found in file: {path}")]
@@ -79,10 +76,7 @@ pub enum CompileError {
 
     /// ID conflict between rule and ruleset
     #[error("ID conflict: '{id}'\n  {conflict}")]
-    IdConflict {
-        id: String,
-        conflict: String,
-    },
+    IdConflict { id: String, conflict: String },
 
     /// Rule not found
     #[error("Rule not found: {id}")]
@@ -94,10 +88,7 @@ pub enum CompileError {
 
     /// Circular dependency detected
     #[error("Circular dependency detected: {path}\n  Loading stack: {}", stack.join(" -> "))]
-    CircularDependency {
-        path: String,
-        stack: Vec<String>,
-    },
+    CircularDependency { path: String, stack: Vec<String> },
 
     /// Extends parent ruleset not found
     #[error("Ruleset '{child_id}' extends '{extends_id}', but parent ruleset not found\n  Child path: {child_path}\n  Hint: Make sure to import the parent ruleset before the child")]

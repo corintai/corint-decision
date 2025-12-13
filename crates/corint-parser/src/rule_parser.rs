@@ -2,11 +2,11 @@
 //!
 //! Parses YAML rule definitions into Rule AST nodes.
 
-use corint_core::ast::{Expression, RdlDocument, Rule, WhenBlock};
 use crate::error::{ParseError, Result};
 use crate::expression_parser::ExpressionParser;
 use crate::import_parser::ImportParser;
 use crate::yaml_parser::YamlParser;
+use corint_core::ast::{Expression, RdlDocument, Rule, WhenBlock};
 use serde_yaml::Value as YamlValue;
 
 /// Rule parser
@@ -49,11 +49,9 @@ impl RuleParser {
     /// Parse a rule from YAML value
     pub fn parse_from_yaml(yaml: &YamlValue) -> Result<Rule> {
         // Get the "rule" object
-        let rule_obj = yaml
-            .get("rule")
-            .ok_or_else(|| ParseError::MissingField {
-                field: "rule".to_string(),
-            })?;
+        let rule_obj = yaml.get("rule").ok_or_else(|| ParseError::MissingField {
+            field: "rule".to_string(),
+        })?;
 
         // Parse required fields using YamlParser utilities
         let id = YamlParser::get_string(rule_obj, "id")?;
@@ -71,9 +69,9 @@ impl RuleParser {
         };
 
         // Parse optional metadata
-        let metadata = rule_obj.get("metadata").and_then(|v| {
-            serde_yaml::from_value(v.clone()).ok()
-        });
+        let metadata = rule_obj
+            .get("metadata")
+            .and_then(|v| serde_yaml::from_value(v.clone()).ok());
 
         // Parse when block
         let when = Self::parse_when_block(rule_obj)?;
@@ -104,14 +102,15 @@ impl RuleParser {
             .or_else(|| YamlParser::get_nested_string(when_obj, "event.type"));
 
         // Parse conditions
-        let conditions = if let Some(cond_array) = when_obj.get("conditions").and_then(|v| v.as_sequence()) {
-            cond_array
-                .iter()
-                .map(Self::parse_condition)
-                .collect::<Result<Vec<_>>>()?
-        } else {
-            Vec::new()
-        };
+        let conditions =
+            if let Some(cond_array) = when_obj.get("conditions").and_then(|v| v.as_sequence()) {
+                cond_array
+                    .iter()
+                    .map(Self::parse_condition)
+                    .collect::<Result<Vec<_>>>()?
+            } else {
+                Vec::new()
+            };
 
         Ok(WhenBlock {
             event_type,
@@ -128,8 +127,8 @@ impl RuleParser {
             // Object-based condition (for complex conditions)
             // For now, convert to string and parse
             // TODO: Support more complex YAML-based condition syntax
-            let yaml_str = serde_yaml::to_string(yaml)
-                .map_err(|e| ParseError::ParseError(e.to_string()))?;
+            let yaml_str =
+                serde_yaml::to_string(yaml).map_err(|e| ParseError::ParseError(e.to_string()))?;
             Err(ParseError::InvalidValue {
                 field: "condition".to_string(),
                 message: format!("Object-based conditions not yet supported: {}", yaml_str),
@@ -153,8 +152,12 @@ impl RuleParser {
             for (key, value) in map {
                 if let Some(key_str) = key.as_str() {
                     // Convert YAML value to serde_json::Value
-                    let json_value = serde_yaml::from_value(value.clone())
-                        .map_err(|e| ParseError::ParseError(format!("Failed to parse param '{}': {}", key_str, e)))?;
+                    let json_value = serde_yaml::from_value(value.clone()).map_err(|e| {
+                        ParseError::ParseError(format!(
+                            "Failed to parse param '{}': {}",
+                            key_str, e
+                        ))
+                    })?;
                     values.insert(key_str.to_string(), json_value);
                 }
             }
@@ -186,7 +189,10 @@ rule:
 
         assert_eq!(rule.id, "age_check");
         assert_eq!(rule.name, "Age Check Rule");
-        assert_eq!(rule.description, Some("Check if user is over 18".to_string()));
+        assert_eq!(
+            rule.description,
+            Some("Check if user is over 18".to_string())
+        );
         assert_eq!(rule.score, 50);
         assert_eq!(rule.when.event_type, Some("login".to_string()));
         assert_eq!(rule.when.conditions.len(), 1);

@@ -11,4 +11,4 @@ pub mod redis;
 pub use client::{ServiceClient, ServiceRequest, ServiceResponse};
 pub use database::{DatabaseClient, DatabaseQuery, MockDatabaseClient};
 pub use http::{HttpClient, HttpMethod, MockHttpClient};
-pub use redis::{RedisClient, RedisCommand, MockRedisClient};
+pub use redis::{MockRedisClient, RedisClient, RedisCommand};

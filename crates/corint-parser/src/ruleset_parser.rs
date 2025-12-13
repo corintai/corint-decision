@@ -2,11 +2,11 @@
 //!
 //! Parses YAML ruleset definitions into Ruleset AST nodes.
 
-use corint_core::ast::{Action, DecisionRule, InferConfig, RdlDocument, Ruleset};
 use crate::error::{ParseError, Result};
 use crate::expression_parser::ExpressionParser;
 use crate::import_parser::ImportParser;
 use crate::yaml_parser::YamlParser;
+use corint_core::ast::{Action, DecisionRule, InferConfig, RdlDocument, Ruleset};
 use serde_yaml::Value as YamlValue;
 
 /// Ruleset parser
@@ -62,14 +62,15 @@ impl RulesetParser {
         let name = YamlParser::get_optional_string(ruleset_obj, "name");
 
         // Parse rules array
-        let rules = if let Some(rules_array) = ruleset_obj.get("rules").and_then(|v| v.as_sequence()) {
-            rules_array
-                .iter()
-                .filter_map(|v| v.as_str().map(|s| s.to_string()))
-                .collect()
-        } else {
-            Vec::new()
-        };
+        let rules =
+            if let Some(rules_array) = ruleset_obj.get("rules").and_then(|v| v.as_sequence()) {
+                rules_array
+                    .iter()
+                    .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                    .collect()
+            } else {
+                Vec::new()
+            };
 
         // Parse optional extends
         let extends = YamlParser::get_optional_string(ruleset_obj, "extends");
@@ -78,12 +79,15 @@ impl RulesetParser {
         let description = YamlParser::get_optional_string(ruleset_obj, "description");
 
         // Parse optional metadata
-        let metadata = ruleset_obj.get("metadata").and_then(|v| {
-            serde_yaml::from_value(v.clone()).ok()
-        });
+        let metadata = ruleset_obj
+            .get("metadata")
+            .and_then(|v| serde_yaml::from_value(v.clone()).ok());
 
         // Parse decision logic
-        let decision_logic = if let Some(logic_array) = ruleset_obj.get("decision_logic").and_then(|v| v.as_sequence()) {
+        let decision_logic = if let Some(logic_array) = ruleset_obj
+            .get("decision_logic")
+            .and_then(|v| v.as_sequence())
+        {
             logic_array
                 .iter()
                 .map(Self::parse_decision_rule)
@@ -119,8 +123,7 @@ impl RulesetParser {
             .transpose()?;
 
         // Parse default flag
-        let default = YamlParser::get_optional_bool(yaml, "default")
-            .unwrap_or(false);
+        let default = YamlParser::get_optional_bool(yaml, "default").unwrap_or(false);
 
         // Parse action
         let action = Self::parse_action(yaml)?;
@@ -129,8 +132,7 @@ impl RulesetParser {
         let reason = YamlParser::get_optional_string(yaml, "reason");
 
         // Parse terminate flag
-        let terminate = YamlParser::get_optional_bool(yaml, "terminate")
-            .unwrap_or(false);
+        let terminate = YamlParser::get_optional_bool(yaml, "terminate").unwrap_or(false);
 
         Ok(DecisionRule {
             condition,
@@ -169,39 +171,40 @@ impl RulesetParser {
     }
 
     /// Parse decision template reference
-    fn parse_decision_template_ref(yaml: &YamlValue) -> Result<corint_core::ast::DecisionTemplateRef> {
+    fn parse_decision_template_ref(
+        yaml: &YamlValue,
+    ) -> Result<corint_core::ast::DecisionTemplateRef> {
         // Parse template ID
         let template = YamlParser::get_string(yaml, "template")?;
 
         // Parse optional params
         let params = if let Some(params_obj) = yaml.get("params") {
             let params_map: std::collections::HashMap<String, serde_json::Value> =
-                serde_yaml::from_value(params_obj.clone())
-                    .map_err(|e| ParseError::InvalidValue {
+                serde_yaml::from_value(params_obj.clone()).map_err(|e| {
+                    ParseError::InvalidValue {
                         field: "params".to_string(),
                         message: format!("Failed to parse params: {}", e),
-                    })?;
+                    }
+                })?;
             Some(params_map)
         } else {
             None
         };
 
-        Ok(corint_core::ast::DecisionTemplateRef {
-            template,
-            params,
-        })
+        Ok(corint_core::ast::DecisionTemplateRef { template, params })
     }
 
     /// Parse infer config
     fn parse_infer_config(yaml: &YamlValue) -> Result<InferConfig> {
-        let data_snapshot = if let Some(snapshot_array) = yaml.get("data_snapshot").and_then(|v| v.as_sequence()) {
-            snapshot_array
-                .iter()
-                .filter_map(|v| v.as_str().map(|s| s.to_string()))
-                .collect()
-        } else {
-            Vec::new()
-        };
+        let data_snapshot =
+            if let Some(snapshot_array) = yaml.get("data_snapshot").and_then(|v| v.as_sequence()) {
+                snapshot_array
+                    .iter()
+                    .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                    .collect()
+            } else {
+                Vec::new()
+            };
 
         Ok(InferConfig { data_snapshot })
     }

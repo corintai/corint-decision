@@ -13,8 +13,8 @@ pub mod tracing;
 #[cfg(feature = "otel")]
 pub mod otel;
 
-pub use metrics::{Metrics, MetricsCollector, Counter, Histogram};
-pub use tracing::{Tracer, Span, SpanContext};
+pub use metrics::{Counter, Histogram, Metrics, MetricsCollector};
+pub use tracing::{Span, SpanContext, Tracer};
 
 #[cfg(feature = "otel")]
-pub use otel::{OtelConfig, OtelContext, init_opentelemetry, meter, tracer};
+pub use otel::{init_opentelemetry, meter, tracer, OtelConfig, OtelContext};

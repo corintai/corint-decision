@@ -30,7 +30,10 @@ impl DeadCodeEliminator {
     }
 
     /// Compute which instructions are reachable via control flow analysis
-    fn compute_reachable_instructions(&self, program: &Program) -> std::collections::HashSet<usize> {
+    fn compute_reachable_instructions(
+        &self,
+        program: &Program,
+    ) -> std::collections::HashSet<usize> {
         use std::collections::{HashSet, VecDeque};
 
         let mut reachable = HashSet::new();
@@ -144,7 +147,7 @@ impl DeadCodeEliminator {
     pub fn optimize(&self, program: &Program) -> Program {
         let program = self.eliminate(program);
         let program = self.eliminate_duplicates(&program);
-        
+
         self.eliminate_nops(&program)
     }
 }
@@ -172,10 +175,7 @@ mod tests {
             Instruction::AddScore { value: 25 },  // Dead code
         ];
 
-        let program = Program::new(
-            instructions,
-            ProgramMetadata::for_rule("test".to_string()),
-        );
+        let program = Program::new(instructions, ProgramMetadata::for_rule("test".to_string()));
 
         let optimized = eliminator.eliminate(&program);
 
@@ -218,10 +218,7 @@ mod tests {
             Instruction::Return,
         ];
 
-        let program = Program::new(
-            instructions,
-            ProgramMetadata::for_rule("test".to_string()),
-        );
+        let program = Program::new(instructions, ProgramMetadata::for_rule("test".to_string()));
 
         let optimized = eliminator.eliminate_duplicates(&program);
 
@@ -247,10 +244,7 @@ mod tests {
             Instruction::Return,
         ];
 
-        let program = Program::new(
-            instructions,
-            ProgramMetadata::for_rule("test".to_string()),
-        );
+        let program = Program::new(instructions, ProgramMetadata::for_rule("test".to_string()));
 
         let optimized = eliminator.eliminate_duplicates(&program);
 
@@ -295,10 +289,7 @@ mod tests {
             Instruction::Return,
         ];
 
-        let program = Program::new(
-            instructions,
-            ProgramMetadata::for_rule("test".to_string()),
-        );
+        let program = Program::new(instructions, ProgramMetadata::for_rule("test".to_string()));
 
         let optimized = eliminator.eliminate_nops(&program);
 
@@ -320,10 +311,7 @@ mod tests {
             Instruction::Return,
         ];
 
-        let program = Program::new(
-            instructions,
-            ProgramMetadata::for_rule("test".to_string()),
-        );
+        let program = Program::new(instructions, ProgramMetadata::for_rule("test".to_string()));
 
         let optimized = eliminator.eliminate_nops(&program);
 
@@ -341,17 +329,14 @@ mod tests {
 
         let instructions = vec![
             Instruction::SetScore { value: 50 },
-            Instruction::AddScore { value: 0 },  // No-op
+            Instruction::AddScore { value: 0 }, // No-op
             Instruction::SetScore { value: 75 },
             Instruction::SetScore { value: 75 }, // Duplicate
             Instruction::Return,
             Instruction::SetScore { value: 100 }, // Dead code
         ];
 
-        let program = Program::new(
-            instructions,
-            ProgramMetadata::for_rule("test".to_string()),
-        );
+        let program = Program::new(instructions, ProgramMetadata::for_rule("test".to_string()));
 
         let optimized = eliminator.optimize(&program);
 

@@ -151,7 +151,11 @@ mod tests {
         let mut value = HashMap::new();
         value.insert("count".to_string(), Value::Number(42.0));
 
-        cache.set("test_key".to_string(), value.clone(), Duration::from_secs(1));
+        cache.set(
+            "test_key".to_string(),
+            value.clone(),
+            Duration::from_secs(1),
+        );
 
         // Should be valid immediately
         assert!(cache.get("test_key").is_some());

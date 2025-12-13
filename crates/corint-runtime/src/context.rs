@@ -5,10 +5,10 @@
 //! - Event data
 //! - Execution result
 
+use crate::error::{Result, RuntimeError};
+use crate::result::{DecisionResult, ExecutionResult};
 use corint_core::ast::Action;
 use corint_core::Value;
-use crate::error::{RuntimeError, Result};
-use crate::result::{DecisionResult, ExecutionResult};
 use std::collections::HashMap;
 
 /// Execution context for running IR programs
@@ -99,10 +99,11 @@ impl ExecutionContext {
                 }
                 "triggered_rules" => {
                     return Ok(Value::Array(
-                        self.result.triggered_rules
+                        self.result
+                            .triggered_rules
                             .iter()
                             .map(|s| Value::String(s.clone()))
-                            .collect()
+                            .collect(),
                     ));
                 }
                 "triggered_count" => {
@@ -318,7 +319,9 @@ mod tests {
         assert_eq!(value, Value::String("123".to_string()));
 
         // Load nested field
-        let value = ctx.load_field(&[String::from("user"), String::from("age")]).unwrap();
+        let value = ctx
+            .load_field(&[String::from("user"), String::from("age")])
+            .unwrap();
         assert_eq!(value, Value::Number(25.0));
     }
 

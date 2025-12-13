@@ -9,10 +9,7 @@ fn test_error_not_found_display() {
         path: "test/file.yaml".to_string(),
     };
 
-    assert_eq!(
-        error.to_string(),
-        "Artifact not found: test/file.yaml"
-    );
+    assert_eq!(error.to_string(), "Artifact not found: test/file.yaml");
 }
 
 #[test]
@@ -21,10 +18,7 @@ fn test_error_invalid_path_display() {
         path: PathBuf::from("/invalid/path"),
     };
 
-    assert_eq!(
-        error.to_string(),
-        "Invalid path: /invalid/path"
-    );
+    assert_eq!(error.to_string(), "Invalid path: /invalid/path");
 }
 
 #[test]
@@ -33,60 +27,42 @@ fn test_error_id_not_found_display() {
         id: "my_rule".to_string(),
     };
 
-    assert_eq!(
-        error.to_string(),
-        "Artifact ID not found: my_rule"
-    );
+    assert_eq!(error.to_string(), "Artifact ID not found: my_rule");
 }
 
 #[test]
 fn test_error_parser_display() {
     let error = RepositoryError::Parser("invalid syntax".to_string());
 
-    assert_eq!(
-        error.to_string(),
-        "Parser error: invalid syntax"
-    );
+    assert_eq!(error.to_string(), "Parser error: invalid syntax");
 }
 
 #[test]
 fn test_error_api_error_display() {
     let error = RepositoryError::ApiError("HTTP 404".to_string());
 
-    assert_eq!(
-        error.to_string(),
-        "API error: HTTP 404"
-    );
+    assert_eq!(error.to_string(), "API error: HTTP 404");
 }
 
 #[test]
 fn test_error_cache_display() {
     let error = RepositoryError::Cache("eviction failed".to_string());
 
-    assert_eq!(
-        error.to_string(),
-        "Cache error: eviction failed"
-    );
+    assert_eq!(error.to_string(), "Cache error: eviction failed");
 }
 
 #[test]
 fn test_error_parse_error_display() {
     let error = RepositoryError::ParseError("malformed YAML".to_string());
 
-    assert_eq!(
-        error.to_string(),
-        "Parse error: malformed YAML"
-    );
+    assert_eq!(error.to_string(), "Parse error: malformed YAML");
 }
 
 #[test]
 fn test_error_other_display() {
     let error = RepositoryError::Other("unknown error".to_string());
 
-    assert_eq!(
-        error.to_string(),
-        "Repository error: unknown error"
-    );
+    assert_eq!(error.to_string(), "Repository error: unknown error");
 }
 
 #[test]
@@ -161,7 +137,9 @@ async fn test_file_system_repo_id_not_found() {
     let repo_path = temp_dir.path();
 
     // Create library/rules directory but no file
-    fs::create_dir_all(repo_path.join("library/rules")).await.unwrap();
+    fs::create_dir_all(repo_path.join("library/rules"))
+        .await
+        .unwrap();
 
     let repo = FileSystemRepository::new(repo_path).unwrap();
 
@@ -186,15 +164,14 @@ async fn test_file_system_repo_parse_error() {
     let repo_path = temp_dir.path();
 
     // Create directory and invalid YAML file
-    fs::create_dir_all(repo_path.join("library/rules")).await.unwrap();
+    fs::create_dir_all(repo_path.join("library/rules"))
+        .await
+        .unwrap();
 
     let invalid_yaml = "invalid: yaml: syntax: :::";
-    fs::write(
-        repo_path.join("library/rules/invalid.yaml"),
-        invalid_yaml
-    )
-    .await
-    .unwrap();
+    fs::write(repo_path.join("library/rules/invalid.yaml"), invalid_yaml)
+        .await
+        .unwrap();
 
     let repo = FileSystemRepository::new(repo_path).unwrap();
 

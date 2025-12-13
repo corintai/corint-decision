@@ -1,9 +1,6 @@
 //! Unit tests for ServerError types
 
-use axum::{
-    http::StatusCode,
-    response::IntoResponse,
-};
+use axum::{http::StatusCode, response::IntoResponse};
 use serde_json::json;
 
 // Re-create the ServerError enum for testing since it's not exported as a library
@@ -49,19 +46,28 @@ impl IntoResponse for ServerError {
 #[test]
 fn test_engine_error_display() {
     let error = ServerError::EngineError("Pipeline compilation failed".to_string());
-    assert_eq!(error.to_string(), "Engine error: Pipeline compilation failed");
+    assert_eq!(
+        error.to_string(),
+        "Engine error: Pipeline compilation failed"
+    );
 }
 
 #[test]
 fn test_invalid_request_display() {
     let error = ServerError::InvalidRequest("Missing required field: event_data".to_string());
-    assert_eq!(error.to_string(), "Invalid request: Missing required field: event_data");
+    assert_eq!(
+        error.to_string(),
+        "Invalid request: Missing required field: event_data"
+    );
 }
 
 #[test]
 fn test_internal_error_display() {
     let error = ServerError::InternalError("Database connection lost".to_string());
-    assert_eq!(error.to_string(), "Internal error: Database connection lost");
+    assert_eq!(
+        error.to_string(),
+        "Internal error: Database connection lost"
+    );
 }
 
 #[test]

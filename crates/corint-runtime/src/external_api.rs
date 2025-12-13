@@ -3,10 +3,10 @@
 //! Provides a generic, configurable system for calling external APIs.
 
 use crate::context::ExecutionContext;
-use crate::error::{RuntimeError, Result};
+use crate::error::{Result, RuntimeError};
 use corint_core::Value;
-use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 /// External API configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -87,16 +87,17 @@ impl ExternalApiClient {
         ctx: &ExecutionContext,
     ) -> Result<Value> {
         // Get API configuration
-        let api_config = self.configs
-            .get(api_name)
-            .ok_or_else(|| RuntimeError::ExternalCallFailed(format!("Unknown API: {}", api_name)))?;
+        let api_config = self.configs.get(api_name).ok_or_else(|| {
+            RuntimeError::ExternalCallFailed(format!("Unknown API: {}", api_name))
+        })?;
 
         // Get endpoint configuration
-        let endpoint = api_config.endpoints
-            .get(endpoint_name)
-            .ok_or_else(|| RuntimeError::ExternalCallFailed(
-                format!("Unknown endpoint: {}::{}", api_name, endpoint_name)
-            ))?;
+        let endpoint = api_config.endpoints.get(endpoint_name).ok_or_else(|| {
+            RuntimeError::ExternalCallFailed(format!(
+                "Unknown endpoint: {}::{}",
+                api_name, endpoint_name
+            ))
+        })?;
 
         // Build the complete URL
         let url = self.build_url(api_config, endpoint, params, ctx)?;
@@ -108,34 +109,33 @@ impl ExternalApiClient {
             reqwest::Client::builder()
                 .timeout(std::time::Duration::from_millis(timeout_ms))
                 .build()
-                .map_err(|e| RuntimeError::ExternalCallFailed(format!("Failed to create HTTP client: {}", e)))?
+                .map_err(|e| {
+                    RuntimeError::ExternalCallFailed(format!("Failed to create HTTP client: {}", e))
+                })?
         } else {
             self.client.clone()
         };
 
         // Make HTTP request based on method
         let response = match endpoint.method {
-            HttpMethod::GET => {
-                client.get(&url)
-                    .send()
-                    .await
-                    .map_err(|e| RuntimeError::ExternalCallFailed(format!("HTTP request failed: {}", e)))?
-            }
+            HttpMethod::GET => client.get(&url).send().await.map_err(|e| {
+                RuntimeError::ExternalCallFailed(format!("HTTP request failed: {}", e))
+            })?,
             HttpMethod::POST => {
                 let mut request = client.post(&url);
                 if let Some(body_template) = &endpoint.body_template {
                     // TODO: Process body template with parameters
                     request = request.body(body_template.clone());
                 }
-                request
-                    .send()
-                    .await
-                    .map_err(|e| RuntimeError::ExternalCallFailed(format!("HTTP request failed: {}", e)))?
+                request.send().await.map_err(|e| {
+                    RuntimeError::ExternalCallFailed(format!("HTTP request failed: {}", e))
+                })?
             }
             _ => {
-                return Err(RuntimeError::ExternalCallFailed(
-                    format!("Unsupported HTTP method: {:?}", endpoint.method)
-                ));
+                return Err(RuntimeError::ExternalCallFailed(format!(
+                    "Unsupported HTTP method: {:?}",
+                    endpoint.method
+                )));
             }
         };
 
@@ -148,14 +148,15 @@ impl ExternalApiClient {
         }
 
         // Parse JSON response
-        let json: serde_json::Value = response
-            .json()
-            .await
-            .map_err(|e| RuntimeError::ExternalCallFailed(format!("Failed to parse JSON: {}", e)))?;
+        let json: serde_json::Value = response.json().await.map_err(|e| {
+            RuntimeError::ExternalCallFailed(format!("Failed to parse JSON: {}", e))
+        })?;
 
         // Print the raw API response
-        tracing::info!("External API raw response: {}",
-            serde_json::to_string_pretty(&json).unwrap_or_else(|_| format!("{:?}", json)));
+        tracing::info!(
+            "External API raw response: {}",
+            serde_json::to_string_pretty(&json).unwrap_or_else(|_| format!("{:?}", json))
+        );
 
         // Convert serde_json::Value to corint_core::Value
         Self::json_to_value(json)
@@ -226,7 +227,7 @@ impl ExternalApiClient {
             Value::Bool(b) => Ok(b.to_string()),
             Value::Null => Ok(String::new()),
             _ => Err(RuntimeError::TypeError(
-                "Cannot convert complex value to string for URL parameter".to_string()
+                "Cannot convert complex value to string for URL parameter".to_string(),
             )),
         }
     }
@@ -300,7 +301,9 @@ mod tests {
         let client = ExternalApiClient::new();
         let ctx = ExecutionContext::new(HashMap::new());
 
-        let url = client.build_url(&api_config, &endpoint, &params, &ctx).unwrap();
+        let url = client
+            .build_url(&api_config, &endpoint, &params, &ctx)
+            .unwrap();
         assert_eq!(url, "https://api.example.com/users/123");
     }
 
@@ -326,12 +329,17 @@ mod tests {
 
         let mut params = HashMap::new();
         params.insert("api_token".to_string(), Value::String("abc123".to_string()));
-        params.insert("response_format".to_string(), Value::String("json".to_string()));
+        params.insert(
+            "response_format".to_string(),
+            Value::String("json".to_string()),
+        );
 
         let client = ExternalApiClient::new();
         let ctx = ExecutionContext::new(HashMap::new());
 
-        let url = client.build_url(&api_config, &endpoint, &params, &ctx).unwrap();
+        let url = client
+            .build_url(&api_config, &endpoint, &params, &ctx)
+            .unwrap();
         // Query params may be in any order due to HashMap
         assert!(url.starts_with("https://api.example.com/data?"));
         assert!(url.contains("token=abc123"));

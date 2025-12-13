@@ -11,19 +11,35 @@ pub enum SdkError {
 
     /// Parser error
     #[error("Parser error: {0}")]
-    ParseError(#[from] #[source] corint_parser::error::ParseError),
+    ParseError(
+        #[from]
+        #[source]
+        corint_parser::error::ParseError,
+    ),
 
     /// Compiler error
     #[error("Compiler error: {0}")]
-    CompileError(#[from] #[source] corint_compiler::error::CompileError),
+    CompileError(
+        #[from]
+        #[source]
+        corint_compiler::error::CompileError,
+    ),
 
     /// Runtime error
     #[error("Runtime error: {0}")]
-    RuntimeError(#[from] #[source] corint_runtime::RuntimeError),
+    RuntimeError(
+        #[from]
+        #[source]
+        corint_runtime::RuntimeError,
+    ),
 
     /// I/O error
     #[error("I/O error: {0}")]
-    IoError(#[from] #[source] std::io::Error),
+    IoError(
+        #[from]
+        #[source]
+        std::io::Error,
+    ),
 
     /// Invalid rule file
     #[error("Invalid rule file: {0}")]

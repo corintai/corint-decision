@@ -2,9 +2,9 @@
 //!
 //! Performs type inference and validation on expressions.
 
+use crate::error::{CompileError, Result};
 use corint_core::ast::{Expression, Operator, UnaryOperator};
 use corint_core::Value;
-use crate::error::{CompileError, Result};
 use std::collections::HashMap;
 
 /// Type information for expressions
@@ -205,7 +205,12 @@ impl TypeChecker {
             }
 
             // Comparison operators require comparable operands
-            Operator::Eq | Operator::Ne | Operator::Gt | Operator::Ge | Operator::Lt | Operator::Le => {
+            Operator::Eq
+            | Operator::Ne
+            | Operator::Gt
+            | Operator::Ge
+            | Operator::Lt
+            | Operator::Le => {
                 if !left.is_comparable() && !matches!(left, TypeInfo::Unknown) {
                     return Err(CompileError::TypeError(
                         "Left operand must be comparable".to_string(),
@@ -217,12 +222,15 @@ impl TypeChecker {
                     ));
                 }
                 // Type compatibility check
-                if !left.is_compatible_with(right) && !right.is_compatible_with(left)
-                    && !matches!(left, TypeInfo::Unknown) && !matches!(right, TypeInfo::Unknown) {
-                        return Err(CompileError::TypeError(
-                            "Operands must have compatible types".to_string(),
-                        ));
-                    }
+                if !left.is_compatible_with(right)
+                    && !right.is_compatible_with(left)
+                    && !matches!(left, TypeInfo::Unknown)
+                    && !matches!(right, TypeInfo::Unknown)
+                {
+                    return Err(CompileError::TypeError(
+                        "Operands must have compatible types".to_string(),
+                    ));
+                }
                 Ok(TypeInfo::Boolean)
             }
 
@@ -245,7 +253,10 @@ impl TypeChecker {
 
             // In operator: left can be any, right should be array
             Operator::In => {
-                if !matches!(right, TypeInfo::Array(_) | TypeInfo::Unknown | TypeInfo::Any) {
+                if !matches!(
+                    right,
+                    TypeInfo::Array(_) | TypeInfo::Unknown | TypeInfo::Any
+                ) {
                     return Err(CompileError::TypeError(
                         "Right operand of 'in' must be an array".to_string(),
                     ));
@@ -255,7 +266,10 @@ impl TypeChecker {
 
             // NotIn operator: similar to In
             Operator::NotIn => {
-                if !matches!(right, TypeInfo::Array(_) | TypeInfo::Unknown | TypeInfo::Any) {
+                if !matches!(
+                    right,
+                    TypeInfo::Array(_) | TypeInfo::Unknown | TypeInfo::Any
+                ) {
                     return Err(CompileError::TypeError(
                         "Right operand of 'not in' must be an array".to_string(),
                     ));
@@ -345,10 +359,7 @@ mod tests {
             checker.infer_literal_type(&Value::Bool(true)),
             TypeInfo::Boolean
         );
-        assert_eq!(
-            checker.infer_literal_type(&Value::Null),
-            TypeInfo::Any
-        );
+        assert_eq!(checker.infer_literal_type(&Value::Null), TypeInfo::Any);
     }
 
     #[test]
@@ -451,10 +462,7 @@ mod tests {
     #[test]
     fn test_check_unary_not() {
         let checker = TypeChecker::new();
-        let expr = Expression::unary(
-            UnaryOperator::Not,
-            Expression::literal(Value::Bool(true)),
-        );
+        let expr = Expression::unary(UnaryOperator::Not, Expression::literal(Value::Bool(true)));
 
         let type_info = checker.check_expression(&expr).unwrap();
         assert_eq!(type_info, TypeInfo::Boolean);
@@ -463,10 +471,7 @@ mod tests {
     #[test]
     fn test_check_unary_not_type_error() {
         let checker = TypeChecker::new();
-        let expr = Expression::unary(
-            UnaryOperator::Not,
-            Expression::literal(Value::Number(42.0)),
-        );
+        let expr = Expression::unary(UnaryOperator::Not, Expression::literal(Value::Number(42.0)));
 
         let result = checker.check_expression(&expr);
         assert!(result.is_err());

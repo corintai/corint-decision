@@ -6,12 +6,11 @@ use corint_parser::RulesetParser;
 #[test]
 fn test_template_loading_and_application() {
     // Load ruleset that uses a template
-    let content = std::fs::read_to_string(
-        "../../repository/library/rulesets/payment_with_template.yaml"
-    ).expect("Failed to read payment_with_template.yaml");
+    let content =
+        std::fs::read_to_string("../../repository/library/rulesets/payment_with_template.yaml")
+            .expect("Failed to read payment_with_template.yaml");
 
-    let doc = RulesetParser::parse_with_imports(&content)
-        .expect("Failed to parse ruleset");
+    let doc = RulesetParser::parse_with_imports(&content).expect("Failed to parse ruleset");
 
     // Verify template reference exists in parsed document
     assert!(doc.definition.decision_template.is_some());
@@ -21,12 +20,16 @@ fn test_template_loading_and_application() {
     // Verify parameter overrides
     assert!(template_ref.params.is_some());
     let params = template_ref.params.as_ref().unwrap();
-    assert_eq!(params.get("critical_threshold"), Some(&serde_json::json!(150)));
+    assert_eq!(
+        params.get("critical_threshold"),
+        Some(&serde_json::json!(150))
+    );
     assert_eq!(params.get("high_threshold"), Some(&serde_json::json!(80)));
 
     // Resolve imports (this should load the template and apply it)
     let mut resolver = ImportResolver::new("../../repository");
-    let resolved = resolver.resolve_ruleset_imports(&doc)
+    let resolved = resolver
+        .resolve_ruleset_imports(&doc)
         .expect("Failed to resolve imports");
 
     // Verify rules were loaded
@@ -38,7 +41,10 @@ fn test_template_loading_and_application() {
 
     // After template application, decision_logic should be populated
     assert!(!ruleset.decision_logic.is_empty());
-    println!("Decision logic rules count: {}", ruleset.decision_logic.len());
+    println!(
+        "Decision logic rules count: {}",
+        ruleset.decision_logic.len()
+    );
 
     // Template reference should be cleared after resolution
     assert!(ruleset.decision_template.is_none());
@@ -56,9 +62,9 @@ fn test_template_loading_and_application() {
 
 #[test]
 fn test_template_param_substitution() {
-    let content = std::fs::read_to_string(
-        "../../repository/library/rulesets/payment_with_template.yaml"
-    ).expect("Failed to read payment_with_template.yaml");
+    let content =
+        std::fs::read_to_string("../../repository/library/rulesets/payment_with_template.yaml")
+            .expect("Failed to read payment_with_template.yaml");
 
     let doc = RulesetParser::parse_with_imports(&content).unwrap();
     let mut resolver = ImportResolver::new("../../repository");
@@ -71,8 +77,11 @@ fn test_template_param_substitution() {
     for rule in &ruleset.decision_logic {
         if let Some(reason) = &rule.reason {
             // Reasons should not contain "params." placeholders after substitution
-            assert!(!reason.contains("params."),
-                "Reason still contains unsubstituted params: {}", reason);
+            assert!(
+                !reason.contains("params."),
+                "Reason still contains unsubstituted params: {}",
+                reason
+            );
         }
     }
 }

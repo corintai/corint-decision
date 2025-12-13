@@ -9,10 +9,18 @@ async fn create_test_repo() -> (TempDir, FileSystemRepository) {
     let repo_path = temp_dir.path();
 
     // Create directory structure
-    fs::create_dir_all(repo_path.join("library/rules/fraud")).await.unwrap();
-    fs::create_dir_all(repo_path.join("library/rulesets")).await.unwrap();
-    fs::create_dir_all(repo_path.join("library/templates")).await.unwrap();
-    fs::create_dir_all(repo_path.join("pipelines")).await.unwrap();
+    fs::create_dir_all(repo_path.join("library/rules/fraud"))
+        .await
+        .unwrap();
+    fs::create_dir_all(repo_path.join("library/rulesets"))
+        .await
+        .unwrap();
+    fs::create_dir_all(repo_path.join("library/templates"))
+        .await
+        .unwrap();
+    fs::create_dir_all(repo_path.join("pipelines"))
+        .await
+        .unwrap();
 
     // Create a test rule
     let rule_content = r#"version: "0.1"
@@ -28,9 +36,12 @@ rule:
 
   score: 50
 "#;
-    fs::write(repo_path.join("library/rules/fraud/test_fraud_rule.yaml"), rule_content)
-        .await
-        .unwrap();
+    fs::write(
+        repo_path.join("library/rules/fraud/test_fraud_rule.yaml"),
+        rule_content,
+    )
+    .await
+    .unwrap();
 
     // Create a test ruleset
     let ruleset_content = r#"version: "0.1"
@@ -48,9 +59,12 @@ ruleset:
     - default: true
       action: approve
 "#;
-    fs::write(repo_path.join("library/rulesets/test_ruleset.yaml"), ruleset_content)
-        .await
-        .unwrap();
+    fs::write(
+        repo_path.join("library/rulesets/test_ruleset.yaml"),
+        ruleset_content,
+    )
+    .await
+    .unwrap();
 
     let repo = FileSystemRepository::new(repo_path).unwrap();
     (temp_dir, repo)

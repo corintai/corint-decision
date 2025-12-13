@@ -71,16 +71,16 @@ pub struct Filter {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "snake_case")]
 pub enum FilterOperator {
-    Eq,      // ==
-    Ne,      // !=
-    Gt,      // >
-    Ge,      // >=
-    Lt,      // <
-    Le,      // <=
-    In,      // IN
-    NotIn,   // NOT IN
-    Like,    // LIKE (for SQL)
-    Regex,   // Regex match
+    Eq,    // ==
+    Ne,    // !=
+    Gt,    // >
+    Ge,    // >=
+    Lt,    // <
+    Le,    // <=
+    In,    // IN
+    NotIn, // NOT IN
+    Like,  // LIKE (for SQL)
+    Regex, // Regex match
 }
 
 /// Time window specification
@@ -104,8 +104,8 @@ pub enum TimeWindowType {
 
     /// Absolute time range
     Absolute {
-        start: i64,  // Unix timestamp
-        end: i64,    // Unix timestamp
+        start: i64, // Unix timestamp
+        end: i64,   // Unix timestamp
     },
 }
 

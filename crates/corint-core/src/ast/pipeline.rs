@@ -13,19 +13,19 @@ pub struct Pipeline {
     /// Optional unique identifier for the pipeline
     #[serde(skip_serializing_if = "Option::is_none")]
     pub id: Option<String>,
-    
+
     /// Optional human-readable name
     #[serde(skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
-    
+
     /// Optional description
     #[serde(skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
-    
+
     /// Optional when condition - pipeline only executes if this matches
     #[serde(skip_serializing_if = "Option::is_none")]
     pub when: Option<super::rule::WhenBlock>,
-    
+
     /// The processing steps in execution order
     pub steps: Vec<Step>,
 }
@@ -201,7 +201,7 @@ pub enum ErrorAction {
 impl Pipeline {
     /// Create a new empty pipeline
     pub fn new() -> Self {
-        Self { 
+        Self {
             id: None,
             name: None,
             description: None,

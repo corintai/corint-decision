@@ -2,18 +2,18 @@
 //!
 //! Executes IR programs with support for async operations (features, LLM, services).
 
-use corint_core::ast::Operator;
-use corint_core::ir::{FeatureType, Instruction, Program};
-use corint_core::Value;
 use crate::context::ExecutionContext;
-use crate::error::{RuntimeError, Result};
+use crate::error::{Result, RuntimeError};
 use crate::external_api::ExternalApiClient;
-use crate::feature::{FeatureExtractor, FeatureExecutor};
+use crate::feature::{FeatureExecutor, FeatureExtractor};
 use crate::llm::LLMClient;
 use crate::observability::{Metrics, MetricsCollector};
 use crate::result::{DecisionResult, ExecutionResult};
 use crate::service::ServiceClient;
 use crate::storage::Storage;
+use corint_core::ast::Operator;
+use corint_core::ir::{FeatureType, Instruction, Program};
+use corint_core::Value;
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Instant;
@@ -88,7 +88,8 @@ impl PipelineExecutor {
         program: &Program,
         event_data: HashMap<String, Value>,
     ) -> Result<DecisionResult> {
-        self.execute_with_result(program, event_data, ExecutionResult::new()).await
+        self.execute_with_result(program, event_data, ExecutionResult::new())
+            .await
     }
 
     /// Execute an IR program with the given event data and existing result state
@@ -118,35 +119,52 @@ impl PipelineExecutor {
                     let value = if path.len() == 2 && path[0] == "features" {
                         // Explicit feature access: features.xxx
                         let feature_name = &path[1];
-                        
+
                         if let Some(ref feature_executor) = self.feature_executor {
                             if feature_executor.has_feature(feature_name) {
-                                tracing::debug!("Accessing feature '{}' via features namespace", feature_name);
-                                
+                                tracing::debug!(
+                                    "Accessing feature '{}' via features namespace",
+                                    feature_name
+                                );
+
                                 // Calculate feature on-demand
                                 match feature_executor.execute_feature(feature_name, &ctx).await {
                                     Ok(feature_value) => {
                                         // Cache the result in event_data for subsequent accesses
-                                        ctx.event_data.insert(feature_name.clone(), feature_value.clone());
-                                        tracing::debug!("Feature '{}' calculated: {:?}", feature_name, feature_value);
+                                        ctx.event_data
+                                            .insert(feature_name.clone(), feature_value.clone());
+                                        tracing::debug!(
+                                            "Feature '{}' calculated: {:?}",
+                                            feature_name,
+                                            feature_value
+                                        );
                                         feature_value
                                     }
                                     Err(e) => {
-                                        tracing::warn!("Failed to calculate feature '{}': {}", feature_name, e);
+                                        tracing::warn!(
+                                            "Failed to calculate feature '{}': {}",
+                                            feature_name,
+                                            e
+                                        );
                                         Value::Null
                                     }
                                 }
                             } else {
-                                return Err(RuntimeError::FieldNotFound(format!("Feature '{}' not found", feature_name)));
+                                return Err(RuntimeError::FieldNotFound(format!(
+                                    "Feature '{}' not found",
+                                    feature_name
+                                )));
                             }
                         } else {
-                            return Err(RuntimeError::FieldNotFound("Feature executor not available".to_string()));
+                            return Err(RuntimeError::FieldNotFound(
+                                "Feature executor not available".to_string(),
+                            ));
                         }
                     } else {
                         // Regular field access: event_data, variables, or special fields
                         ctx.load_field(path)?
                     };
-                    
+
                     ctx.push(value);
                     pc += 1;
                 }
@@ -183,7 +201,12 @@ impl PipelineExecutor {
 
                 Instruction::Jump { offset } => {
                     let new_pc = (pc as isize + offset) as usize;
-                    tracing::trace!("Jump at pc={}, offset={}, jumping to pc={}", pc, offset, new_pc);
+                    tracing::trace!(
+                        "Jump at pc={}, offset={}, jumping to pc={}",
+                        pc,
+                        offset,
+                        new_pc
+                    );
                     pc = new_pc;
                 }
 
@@ -198,8 +221,13 @@ impl PipelineExecutor {
 
                 Instruction::JumpIfFalse { offset } => {
                     let condition = ctx.pop()?;
-                    tracing::trace!("JumpIfFalse at pc={}, condition={:?}, offset={}, is_truthy={}",
-                             pc, condition, offset, Self::is_truthy(&condition));
+                    tracing::trace!(
+                        "JumpIfFalse at pc={}, condition={:?}, offset={}, is_truthy={}",
+                        pc,
+                        condition,
+                        offset,
+                        Self::is_truthy(&condition)
+                    );
                     if !Self::is_truthy(&condition) {
                         let new_pc = (pc as isize + offset) as usize;
                         tracing::trace!("Jumping to pc={}", new_pc);
@@ -215,16 +243,30 @@ impl PipelineExecutor {
                     let event_type = ctx
                         .load_field(&[String::from("event"), String::from("type")])
                         .ok()
-                        .filter(|v| *v != Value::Null)  // Filter out Null to try fallback
-                        .or_else(|| ctx.load_field(&[String::from("event_type")]).ok().filter(|v| *v != Value::Null))
-                        .or_else(|| ctx.load_field(&[String::from("type")]).ok().filter(|v| *v != Value::Null))  // Also try "type" directly
+                        .filter(|v| *v != Value::Null) // Filter out Null to try fallback
+                        .or_else(|| {
+                            ctx.load_field(&[String::from("event_type")])
+                                .ok()
+                                .filter(|v| *v != Value::Null)
+                        })
+                        .or_else(|| {
+                            ctx.load_field(&[String::from("type")])
+                                .ok()
+                                .filter(|v| *v != Value::Null)
+                        }) // Also try "type" directly
                         .unwrap_or(Value::Null);
 
                     // Get pipeline name and description for logging
-                    let pipeline_name = program.metadata.custom.get("name")
+                    let pipeline_name = program
+                        .metadata
+                        .custom
+                        .get("name")
                         .map(|s| format!(" - {}", s))
                         .unwrap_or_default();
-                    let pipeline_desc = program.metadata.custom.get("description")
+                    let pipeline_desc = program
+                        .metadata
+                        .custom
+                        .get("description")
                         .map(|s| format!(" ({})", s))
                         .unwrap_or_default();
 
@@ -279,7 +321,10 @@ impl PipelineExecutor {
                 Instruction::SetAction { action } => {
                     tracing::debug!("SetAction called with action: {:?}", action);
                     ctx.set_action(action.clone());
-                    tracing::trace!("After set_action, ctx.result.action = {:?}", ctx.result.action);
+                    tracing::trace!(
+                        "After set_action, ctx.result.action = {:?}",
+                        ctx.result.action
+                    );
                     pc += 1;
                 }
 
@@ -292,7 +337,10 @@ impl PipelineExecutor {
                     // Store the ruleset ID to be executed
                     // The actual execution will be handled by the DecisionEngine
                     tracing::debug!("CallRuleset: {}", ruleset_id);
-                    ctx.store_variable("__next_ruleset__".to_string(), Value::String(ruleset_id.clone()));
+                    ctx.store_variable(
+                        "__next_ruleset__".to_string(),
+                        Value::String(ruleset_id.clone()),
+                    );
                     pc += 1;
                 }
 
@@ -370,7 +418,9 @@ impl PipelineExecutor {
                     let value = if let Some(ref extractor) = self.feature_extractor {
                         // Real feature extraction with storage
                         // TODO: Convert filter expression to EventFilter
-                        extractor.extract(feature_type, field, time_window, None).await?
+                        extractor
+                            .extract(feature_type, field, time_window, None)
+                            .await?
                     } else {
                         // Fallback: return placeholder
                         Self::placeholder_feature(feature_type)
@@ -398,13 +448,18 @@ impl PipelineExecutor {
                     } else {
                         Value::String("LLM not configured".to_string())
                     };
-                    self.metrics.record_execution_time("llm_call", llm_start.elapsed());
+                    self.metrics
+                        .record_execution_time("llm_call", llm_start.elapsed());
                     ctx.push(value);
                     pc += 1;
                 }
 
                 // Service calls (internal)
-                Instruction::CallService { service, operation, params } => {
+                Instruction::CallService {
+                    service,
+                    operation,
+                    params,
+                } => {
                     let service_start = Instant::now();
                     let value = if let Some(ref client) = self.service_client {
                         use crate::service::ServiceRequest;
@@ -426,7 +481,8 @@ impl PipelineExecutor {
                     } else {
                         Value::Null
                     };
-                    self.metrics.record_execution_time("service_call", service_start.elapsed());
+                    self.metrics
+                        .record_execution_time("service_call", service_start.elapsed());
                     ctx.push(value);
                     pc += 1;
                 }
@@ -442,13 +498,22 @@ impl PipelineExecutor {
                     let api_start = Instant::now();
 
                     // Call external API using the generic client
-                    let value = match self.external_api_client.call(api, endpoint, params, *timeout, &ctx).await {
+                    let value = match self
+                        .external_api_client
+                        .call(api, endpoint, params, *timeout, &ctx)
+                        .await
+                    {
                         Ok(result) => {
                             tracing::debug!("External API {}::{} succeeded", api, endpoint);
                             result
                         }
                         Err(e) => {
-                            tracing::warn!("External API {}::{} failed: {}, using fallback", api, endpoint, e);
+                            tracing::warn!(
+                                "External API {}::{} failed: {}, using fallback",
+                                api,
+                                endpoint,
+                                e
+                            );
                             if let Some(fallback_val) = fallback {
                                 fallback_val.clone()
                             } else {
@@ -457,7 +522,8 @@ impl PipelineExecutor {
                         }
                     };
 
-                    self.metrics.record_execution_time("external_api_call", api_start.elapsed());
+                    self.metrics
+                        .record_execution_time("external_api_call", api_start.elapsed());
                     ctx.push(value);
                     pc += 1;
                 }
@@ -465,7 +531,8 @@ impl PipelineExecutor {
         }
 
         let duration = start_time.elapsed();
-        self.metrics.record_execution_time("program_execution", duration);
+        self.metrics
+            .record_execution_time("program_execution", duration);
 
         Ok(ctx.into_decision_result())
     }
@@ -473,11 +540,15 @@ impl PipelineExecutor {
     /// Placeholder feature value for when storage is not available
     fn placeholder_feature(feature_type: &FeatureType) -> Value {
         match feature_type {
-            FeatureType::Count | FeatureType::CountDistinct | FeatureType::Sum
-            | FeatureType::Avg | FeatureType::Min | FeatureType::Max
-            | FeatureType::Percentile { .. } | FeatureType::StdDev | FeatureType::Variance => {
-                Value::Number(0.0)
-            }
+            FeatureType::Count
+            | FeatureType::CountDistinct
+            | FeatureType::Sum
+            | FeatureType::Avg
+            | FeatureType::Min
+            | FeatureType::Max
+            | FeatureType::Percentile { .. }
+            | FeatureType::StdDev
+            | FeatureType::Variance => Value::Number(0.0),
         }
     }
 
@@ -489,7 +560,9 @@ impl PipelineExecutor {
             (Value::Null, _) | (_, Value::Null) => {
                 tracing::debug!(
                     "Null in binary operation: {:?} {:?} {:?}, returning Null",
-                    left, op, right
+                    left,
+                    op,
+                    right
                 );
                 return Ok(Value::Null);
             }
@@ -537,9 +610,7 @@ impl PipelineExecutor {
             }
 
             // In operator
-            (val, Operator::In, Value::Array(arr)) => {
-                Ok(Value::Bool(arr.iter().any(|v| v == val)))
-            }
+            (val, Operator::In, Value::Array(arr)) => Ok(Value::Bool(arr.iter().any(|v| v == val))),
             (val, Operator::NotIn, Value::Array(arr)) => {
                 Ok(Value::Bool(!arr.iter().any(|v| v == val)))
             }
@@ -559,7 +630,9 @@ impl PipelineExecutor {
             (Value::Null, _) | (_, Value::Null) => {
                 tracing::debug!(
                     "Null comparison: {:?} {:?} {:?}, returning false",
-                    left, op, right
+                    left,
+                    op,
+                    right
                 );
                 return Ok(false);
             }
@@ -623,23 +696,17 @@ impl Default for PipelineExecutor {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::storage::InMemoryStorage;
     use corint_core::ast::Action;
     use corint_core::ir::ProgramMetadata;
-    use crate::storage::InMemoryStorage;
 
     #[tokio::test]
     async fn test_execute_simple_program() {
         let executor = PipelineExecutor::new();
 
-        let instructions = vec![
-            Instruction::SetScore { value: 50 },
-            Instruction::Return,
-        ];
+        let instructions = vec![Instruction::SetScore { value: 50 }, Instruction::Return];
 
-        let program = Program::new(
-            instructions,
-            ProgramMetadata::for_rule("test".to_string()),
-        );
+        let program = Program::new(instructions, ProgramMetadata::for_rule("test".to_string()));
 
         let result = executor.execute(&program, HashMap::new()).await.unwrap();
 
@@ -661,10 +728,7 @@ mod tests {
             Instruction::Return,
         ];
 
-        let program = Program::new(
-            instructions,
-            ProgramMetadata::for_rule("test".to_string()),
-        );
+        let program = Program::new(instructions, ProgramMetadata::for_rule("test".to_string()));
 
         let result = executor.execute(&program, HashMap::new()).await.unwrap();
 
@@ -688,10 +752,7 @@ mod tests {
             Instruction::Return,
         ];
 
-        let program = Program::new(
-            instructions,
-            ProgramMetadata::for_rule("test".to_string()),
-        );
+        let program = Program::new(instructions, ProgramMetadata::for_rule("test".to_string()));
 
         let result = executor.execute(&program, HashMap::new()).await.unwrap();
 
@@ -712,10 +773,7 @@ mod tests {
             Instruction::Return,
         ];
 
-        let program = Program::new(
-            instructions,
-            ProgramMetadata::for_rule("test".to_string()),
-        );
+        let program = Program::new(instructions, ProgramMetadata::for_rule("test".to_string()));
 
         let result = executor.execute(&program, HashMap::new()).await.unwrap();
 
@@ -733,10 +791,7 @@ mod tests {
             Instruction::Return,
         ];
 
-        let program = Program::new(
-            instructions,
-            ProgramMetadata::for_rule("test".to_string()),
-        );
+        let program = Program::new(instructions, ProgramMetadata::for_rule("test".to_string()));
 
         let result = executor.execute(&program, HashMap::new()).await.unwrap();
 
@@ -754,10 +809,7 @@ mod tests {
             Instruction::Return,
         ];
 
-        let program = Program::new(
-            instructions,
-            ProgramMetadata::for_rule("test".to_string()),
-        );
+        let program = Program::new(instructions, ProgramMetadata::for_rule("test".to_string()));
 
         let result = executor.execute(&program, HashMap::new()).await.unwrap();
 
@@ -780,10 +832,7 @@ mod tests {
             Instruction::Return,
         ];
 
-        let program = Program::new(
-            instructions,
-            ProgramMetadata::for_rule("test".to_string()),
-        );
+        let program = Program::new(instructions, ProgramMetadata::for_rule("test".to_string()));
 
         let result = executor.execute(&program, HashMap::new()).await;
 
@@ -807,10 +856,7 @@ mod tests {
             Instruction::Return,
         ];
 
-        let program = Program::new(
-            instructions,
-            ProgramMetadata::for_rule("test".to_string()),
-        );
+        let program = Program::new(instructions, ProgramMetadata::for_rule("test".to_string()));
 
         let result = executor.execute(&program, HashMap::new()).await.unwrap();
 
@@ -852,10 +898,7 @@ mod tests {
             Instruction::Return,
         ];
 
-        let program = Program::new(
-            instructions,
-            ProgramMetadata::for_rule("test".to_string()),
-        );
+        let program = Program::new(instructions, ProgramMetadata::for_rule("test".to_string()));
 
         let result = executor.execute(&program, HashMap::new()).await.unwrap();
 
@@ -889,15 +932,9 @@ mod tests {
     async fn test_metrics_collection() {
         let executor = PipelineExecutor::new();
 
-        let instructions = vec![
-            Instruction::SetScore { value: 10 },
-            Instruction::Return,
-        ];
+        let instructions = vec![Instruction::SetScore { value: 10 }, Instruction::Return];
 
-        let program = Program::new(
-            instructions,
-            ProgramMetadata::for_rule("test".to_string()),
-        );
+        let program = Program::new(instructions, ProgramMetadata::for_rule("test".to_string()));
 
         executor.execute(&program, HashMap::new()).await.unwrap();
 

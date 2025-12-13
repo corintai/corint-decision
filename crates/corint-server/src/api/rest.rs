@@ -3,10 +3,10 @@
 use crate::error::ServerError;
 use axum::{
     extract::State,
+    http::StatusCode,
+    response::{IntoResponse, Response},
     routing::{get, post},
     Json, Router,
-    response::{IntoResponse, Response},
-    http::StatusCode,
 };
 use corint_core::Value;
 use corint_runtime::observability::otel::OtelContext;
@@ -115,7 +115,10 @@ async fn decide(
     State(state): State<AppState>,
     Json(payload): Json<DecideRequestPayload>,
 ) -> Result<Json<DecideResponsePayload>, ServerError> {
-    info!("Received decision request with {} event fields", payload.event_data.len());
+    info!(
+        "Received decision request with {} event fields",
+        payload.event_data.len()
+    );
 
     // Convert serde_json::Value to corint_core::Value
     let event_fields: HashMap<String, Value> = payload
@@ -128,16 +131,16 @@ async fn decide(
     // 1. Original nested structure under "event" key (semantic clarity)
     // 2. Completely flattened structure with dot notation (fast lookup)
     let mut event_data = HashMap::new();
-    
+
     // Store original nested structure
     let event_object = Value::Object(event_fields.clone());
     event_data.insert("event".to_string(), event_object.clone());
-    
+
     // Store top-level fields for backward compatibility
     for (key, value) in &event_fields {
         event_data.insert(key.clone(), value.clone());
     }
-    
+
     // Flatten the entire event object recursively
     flatten_object("event", &event_object, &mut event_data);
 
@@ -161,7 +164,6 @@ async fn decide(
     }))
 }
 
-
 /// Convert serde_json::Value to corint_core::Value
 fn json_to_value(v: serde_json::Value) -> Value {
     match v {
@@ -177,9 +179,7 @@ fn json_to_value(v: serde_json::Value) -> Value {
             }
         }
         serde_json::Value::String(s) => Value::String(s),
-        serde_json::Value::Array(arr) => {
-            Value::Array(arr.into_iter().map(json_to_value).collect())
-        }
+        serde_json::Value::Array(arr) => Value::Array(arr.into_iter().map(json_to_value).collect()),
         serde_json::Value::Object(obj) => {
             let map = obj
                 .into_iter()
@@ -245,7 +245,7 @@ mod tests {
         });
 
         let value = json_to_value(json);
-        
+
         if let Value::Object(map) = value {
             assert!(matches!(map.get("string"), Some(Value::String(_))));
             assert!(matches!(map.get("number"), Some(Value::Number(_))));
@@ -261,13 +261,16 @@ mod tests {
         let mut obj = HashMap::new();
         obj.insert("user_id".to_string(), Value::String("user_001".to_string()));
         obj.insert("amount".to_string(), Value::Number(1000.0));
-        
+
         let event = Value::Object(obj);
         let mut result = HashMap::new();
-        
+
         flatten_object("event", &event, &mut result);
-        
-        assert_eq!(result.get("event.user_id"), Some(&Value::String("user_001".to_string())));
+
+        assert_eq!(
+            result.get("event.user_id"),
+            Some(&Value::String("user_001".to_string()))
+        );
         assert_eq!(result.get("event.amount"), Some(&Value::Number(1000.0)));
     }
 
@@ -293,10 +296,19 @@ mod tests {
 
         // Check all levels are flattened
         assert!(result.contains_key("event.user"));
-        assert_eq!(result.get("event.user.id"), Some(&Value::String("user_001".to_string())));
+        assert_eq!(
+            result.get("event.user.id"),
+            Some(&Value::String("user_001".to_string()))
+        );
         assert!(result.contains_key("event.user.profile"));
-        assert_eq!(result.get("event.user.profile.tier"), Some(&Value::String("gold".to_string())));
-        assert_eq!(result.get("event.user.profile.age"), Some(&Value::Number(30.0)));
+        assert_eq!(
+            result.get("event.user.profile.tier"),
+            Some(&Value::String("gold".to_string()))
+        );
+        assert_eq!(
+            result.get("event.user.profile.age"),
+            Some(&Value::Number(30.0))
+        );
         assert_eq!(result.get("event.amount"), Some(&Value::Number(1000.0)));
     }
 
@@ -434,16 +446,22 @@ mod tests {
         flatten_object("event", &event, &mut result);
 
         // Non-object should just store the value itself
-        assert_eq!(result.get("event"), Some(&Value::String("test".to_string())));
+        assert_eq!(
+            result.get("event"),
+            Some(&Value::String("test".to_string()))
+        );
     }
 
     #[test]
     fn test_flatten_object_array_value() {
         let mut obj = HashMap::new();
-        obj.insert("tags".to_string(), Value::Array(vec![
-            Value::String("fraud".to_string()),
-            Value::String("suspicious".to_string()),
-        ]));
+        obj.insert(
+            "tags".to_string(),
+            Value::Array(vec![
+                Value::String("fraud".to_string()),
+                Value::String("suspicious".to_string()),
+            ]),
+        );
 
         let event = Value::Object(obj);
         let mut result = HashMap::new();
@@ -479,7 +497,10 @@ mod tests {
         flatten_object("event", &event, &mut result);
 
         // Check deeply nested value is accessible
-        assert_eq!(result.get("event.a.b.c.d"), Some(&Value::String("value".to_string())));
+        assert_eq!(
+            result.get("event.a.b.c.d"),
+            Some(&Value::String("value".to_string()))
+        );
     }
 
     #[test]
@@ -550,23 +571,21 @@ mod tests {
 }
 
 /// Metrics endpoint - returns Prometheus format metrics
-async fn metrics(
-    State(state): State<AppStateWithMetrics>,
-) -> Response {
+async fn metrics(State(state): State<AppStateWithMetrics>) -> Response {
     match state.otel_ctx.metrics() {
-        Ok(metrics_text) => {
-            (
-                StatusCode::OK,
-                [("Content-Type", "text/plain; version=0.0.4")],
-                metrics_text,
-            ).into_response()
-        }
+        Ok(metrics_text) => (
+            StatusCode::OK,
+            [("Content-Type", "text/plain; version=0.0.4")],
+            metrics_text,
+        )
+            .into_response(),
         Err(e) => {
             tracing::error!("Failed to get metrics: {}", e);
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 format!("Failed to get metrics: {}", e),
-            ).into_response()
+            )
+                .into_response()
         }
     }
 }
@@ -577,7 +596,10 @@ async fn decide_with_metrics(
     State(state): State<AppStateWithMetrics>,
     Json(payload): Json<DecideRequestPayload>,
 ) -> Result<Json<DecideResponsePayload>, ServerError> {
-    info!("Received decision request with {} event fields", payload.event_data.len());
+    info!(
+        "Received decision request with {} event fields",
+        payload.event_data.len()
+    );
 
     // Convert serde_json::Value to corint_core::Value
     let event_fields: HashMap<String, Value> = payload
@@ -620,4 +642,3 @@ async fn decide_with_metrics(
         processing_time_ms: response.processing_time_ms,
     }))
 }
-

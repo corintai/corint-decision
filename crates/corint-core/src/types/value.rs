@@ -69,11 +69,14 @@ mod tests {
             Value::Number(3.0),
         ]);
 
-        assert_eq!(val, Value::Array(vec![
-            Value::Number(1.0),
-            Value::Number(2.0),
-            Value::Number(3.0),
-        ]));
+        assert_eq!(
+            val,
+            Value::Array(vec![
+                Value::Number(1.0),
+                Value::Number(2.0),
+                Value::Number(3.0),
+            ])
+        );
     }
 
     #[test]

@@ -1,12 +1,12 @@
 //! LLM provider implementations for standard and thinking models
 
-use async_trait::async_trait;
 use crate::error::{Result, RuntimeError};
-use crate::llm::client::{LLMClient, LLMRequest, LLMResponse};
 use crate::llm::cache::LLMCache;
-use std::sync::Arc;
+use crate::llm::client::{LLMClient, LLMRequest, LLMResponse};
+use async_trait::async_trait;
 use reqwest::Client;
 use serde_json::json;
+use std::sync::Arc;
 
 /// LLM provider trait
 pub trait LLMProvider: LLMClient {
@@ -65,7 +65,9 @@ impl LLMClient for MockProvider {
 
         // Add thinking if enabled or if default thinking is set
         if request.enable_thinking.unwrap_or(false) || self.default_thinking.is_some() {
-            let thinking = self.default_thinking.clone()
+            let thinking = self
+                .default_thinking
+                .clone()
                 .unwrap_or_else(|| "Mock thinking process...".to_string());
             response = response.with_thinking(thinking);
         }
@@ -142,7 +144,8 @@ impl LLMClient for OpenAIProvider {
         let mut messages = Vec::new();
 
         // O1 models don't support system messages in the same way
-        let is_thinking_model = request.model.starts_with("o1-") || request.model.starts_with("o3-");
+        let is_thinking_model =
+            request.model.starts_with("o1-") || request.model.starts_with("o3-");
 
         if !is_thinking_model {
             if let Some(system) = &request.system {
@@ -180,28 +183,34 @@ impl LLMClient for OpenAIProvider {
         }
 
         // Make API call
-        let resp = self.client
+        let resp = self
+            .client
             .post(format!("{}/chat/completions", self.base_url))
             .header("Authorization", format!("Bearer {}", self.api_key))
             .header("Content-Type", "application/json")
             .json(&body)
             .send()
             .await
-            .map_err(|e| RuntimeError::ExternalCallFailed(format!("OpenAI API call failed: {}", e)))?;
+            .map_err(|e| {
+                RuntimeError::ExternalCallFailed(format!("OpenAI API call failed: {}", e))
+            })?;
 
         let status = resp.status();
-        let resp_text = resp.text().await
-            .map_err(|e| RuntimeError::ExternalCallFailed(format!("Failed to read response: {}", e)))?;
+        let resp_text = resp.text().await.map_err(|e| {
+            RuntimeError::ExternalCallFailed(format!("Failed to read response: {}", e))
+        })?;
 
         if !status.is_success() {
-            return Err(RuntimeError::ExternalCallFailed(
-                format!("OpenAI API error ({}): {}", status, resp_text)
-            ));
+            return Err(RuntimeError::ExternalCallFailed(format!(
+                "OpenAI API error ({}): {}",
+                status, resp_text
+            )));
         }
 
         // Parse response
-        let resp_json: serde_json::Value = serde_json::from_str(&resp_text)
-            .map_err(|e| RuntimeError::ExternalCallFailed(format!("Failed to parse response: {}", e)))?;
+        let resp_json: serde_json::Value = serde_json::from_str(&resp_text).map_err(|e| {
+            RuntimeError::ExternalCallFailed(format!("Failed to parse response: {}", e))
+        })?;
 
         let content = resp_json["choices"][0]["message"]["content"]
             .as_str()
@@ -213,9 +222,7 @@ impl LLMClient for OpenAIProvider {
             .unwrap_or("stop")
             .to_string();
 
-        let tokens_used = resp_json["usage"]["total_tokens"]
-            .as_u64()
-            .unwrap_or(0) as u32;
+        let tokens_used = resp_json["usage"]["total_tokens"].as_u64().unwrap_or(0) as u32;
 
         // Extract thinking content for O1 models
         let thinking = if is_thinking_model {
@@ -323,7 +330,8 @@ impl LLMClient for AnthropicProvider {
         }
 
         // Make API call
-        let resp = self.client
+        let resp = self
+            .client
             .post(format!("{}/messages", self.base_url))
             .header("x-api-key", &self.api_key)
             .header("anthropic-version", "2023-06-01")
@@ -331,26 +339,31 @@ impl LLMClient for AnthropicProvider {
             .json(&body)
             .send()
             .await
-            .map_err(|e| RuntimeError::ExternalCallFailed(format!("Anthropic API call failed: {}", e)))?;
+            .map_err(|e| {
+                RuntimeError::ExternalCallFailed(format!("Anthropic API call failed: {}", e))
+            })?;
 
         let status = resp.status();
-        let resp_text = resp.text().await
-            .map_err(|e| RuntimeError::ExternalCallFailed(format!("Failed to read response: {}", e)))?;
+        let resp_text = resp.text().await.map_err(|e| {
+            RuntimeError::ExternalCallFailed(format!("Failed to read response: {}", e))
+        })?;
 
         if !status.is_success() {
-            return Err(RuntimeError::ExternalCallFailed(
-                format!("Anthropic API error ({}): {}", status, resp_text)
-            ));
+            return Err(RuntimeError::ExternalCallFailed(format!(
+                "Anthropic API error ({}): {}",
+                status, resp_text
+            )));
         }
 
         // Parse response
-        let resp_json: serde_json::Value = serde_json::from_str(&resp_text)
-            .map_err(|e| RuntimeError::ExternalCallFailed(format!("Failed to parse response: {}", e)))?;
+        let resp_json: serde_json::Value = serde_json::from_str(&resp_text).map_err(|e| {
+            RuntimeError::ExternalCallFailed(format!("Failed to parse response: {}", e))
+        })?;
 
         // Extract content blocks
-        let content_blocks = resp_json["content"]
-            .as_array()
-            .ok_or_else(|| RuntimeError::ExternalCallFailed("No content in response".to_string()))?;
+        let content_blocks = resp_json["content"].as_array().ok_or_else(|| {
+            RuntimeError::ExternalCallFailed("No content in response".to_string())
+        })?;
 
         let mut main_content = String::new();
         let mut thinking_content = None;
@@ -489,27 +502,33 @@ impl LLMClient for GeminiProvider {
             self.base_url, request.model, self.api_key
         );
 
-        let resp = self.client
+        let resp = self
+            .client
             .post(&url)
             .header("Content-Type", "application/json")
             .json(&body)
             .send()
             .await
-            .map_err(|e| RuntimeError::ExternalCallFailed(format!("Gemini API call failed: {}", e)))?;
+            .map_err(|e| {
+                RuntimeError::ExternalCallFailed(format!("Gemini API call failed: {}", e))
+            })?;
 
         let status = resp.status();
-        let resp_text = resp.text().await
-            .map_err(|e| RuntimeError::ExternalCallFailed(format!("Failed to read response: {}", e)))?;
+        let resp_text = resp.text().await.map_err(|e| {
+            RuntimeError::ExternalCallFailed(format!("Failed to read response: {}", e))
+        })?;
 
         if !status.is_success() {
-            return Err(RuntimeError::ExternalCallFailed(
-                format!("Gemini API error ({}): {}", status, resp_text)
-            ));
+            return Err(RuntimeError::ExternalCallFailed(format!(
+                "Gemini API error ({}): {}",
+                status, resp_text
+            )));
         }
 
         // Parse response
-        let resp_json: serde_json::Value = serde_json::from_str(&resp_text)
-            .map_err(|e| RuntimeError::ExternalCallFailed(format!("Failed to parse response: {}", e)))?;
+        let resp_json: serde_json::Value = serde_json::from_str(&resp_text).map_err(|e| {
+            RuntimeError::ExternalCallFailed(format!("Failed to parse response: {}", e))
+        })?;
 
         let content = resp_json["candidates"][0]["content"]["parts"][0]["text"]
             .as_str()
@@ -615,28 +634,34 @@ impl LLMClient for DeepSeekProvider {
         }
 
         // Make API call
-        let resp = self.client
+        let resp = self
+            .client
             .post(format!("{}/chat/completions", self.base_url))
             .header("Authorization", format!("Bearer {}", self.api_key))
             .header("Content-Type", "application/json")
             .json(&body)
             .send()
             .await
-            .map_err(|e| RuntimeError::ExternalCallFailed(format!("DeepSeek API call failed: {}", e)))?;
+            .map_err(|e| {
+                RuntimeError::ExternalCallFailed(format!("DeepSeek API call failed: {}", e))
+            })?;
 
         let status = resp.status();
-        let resp_text = resp.text().await
-            .map_err(|e| RuntimeError::ExternalCallFailed(format!("Failed to read response: {}", e)))?;
+        let resp_text = resp.text().await.map_err(|e| {
+            RuntimeError::ExternalCallFailed(format!("Failed to read response: {}", e))
+        })?;
 
         if !status.is_success() {
-            return Err(RuntimeError::ExternalCallFailed(
-                format!("DeepSeek API error ({}): {}", status, resp_text)
-            ));
+            return Err(RuntimeError::ExternalCallFailed(format!(
+                "DeepSeek API error ({}): {}",
+                status, resp_text
+            )));
         }
 
         // Parse response
-        let resp_json: serde_json::Value = serde_json::from_str(&resp_text)
-            .map_err(|e| RuntimeError::ExternalCallFailed(format!("Failed to parse response: {}", e)))?;
+        let resp_json: serde_json::Value = serde_json::from_str(&resp_text).map_err(|e| {
+            RuntimeError::ExternalCallFailed(format!("Failed to parse response: {}", e))
+        })?;
 
         let content = resp_json["choices"][0]["message"]["content"]
             .as_str()
@@ -648,9 +673,7 @@ impl LLMClient for DeepSeekProvider {
             .unwrap_or("stop")
             .to_string();
 
-        let tokens_used = resp_json["usage"]["total_tokens"]
-            .as_u64()
-            .unwrap_or(0) as u32;
+        let tokens_used = resp_json["usage"]["total_tokens"].as_u64().unwrap_or(0) as u32;
 
         let response = LLMResponse::new(content, request.model.clone())
             .with_tokens(tokens_used)
@@ -693,8 +716,8 @@ mod tests {
     #[tokio::test]
     async fn test_mock_provider_with_thinking() {
         let provider = MockProvider::new();
-        let request = LLMRequest::new("Test".to_string(), "mock-model".to_string())
-            .with_thinking(true);
+        let request =
+            LLMRequest::new("Test".to_string(), "mock-model".to_string()).with_thinking(true);
 
         let response = provider.call(request).await.unwrap();
         assert!(response.thinking.is_some());

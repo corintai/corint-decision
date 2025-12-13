@@ -1,9 +1,9 @@
 //! LLM response caching
 
+use crate::llm::client::{LLMRequest, LLMResponse};
 use async_trait::async_trait;
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
-use crate::llm::client::{LLMRequest, LLMResponse};
 
 /// LLM cache trait
 #[async_trait]

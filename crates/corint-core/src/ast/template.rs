@@ -110,10 +110,7 @@ mod tests {
 
         assert_eq!(template.id, "test_template");
         assert_eq!(template.name, Some("Test Template".to_string()));
-        assert_eq!(
-            template.description,
-            Some("A test template".to_string())
-        );
+        assert_eq!(template.description, Some("A test template".to_string()));
         assert_eq!(template.decision_logic.len(), 1);
     }
 

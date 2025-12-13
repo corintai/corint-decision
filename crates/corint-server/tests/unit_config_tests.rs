@@ -266,7 +266,10 @@ fn test_config_with_all_repository_types() {
         },
         ..Default::default()
     };
-    assert!(matches!(config1.repository, RepositoryType::FileSystem { .. }));
+    assert!(matches!(
+        config1.repository,
+        RepositoryType::FileSystem { .. }
+    ));
 
     // Test with Database
     let config2 = ServerConfig {
@@ -276,7 +279,10 @@ fn test_config_with_all_repository_types() {
         },
         ..Default::default()
     };
-    assert!(matches!(config2.repository, RepositoryType::Database { .. }));
+    assert!(matches!(
+        config2.repository,
+        RepositoryType::Database { .. }
+    ));
 
     // Test with API
     let config3 = ServerConfig {
@@ -304,10 +310,7 @@ fn test_repository_type_is_clone() {
     let cloned = repo.clone();
 
     match (repo, cloned) {
-        (
-            RepositoryType::FileSystem { path: p1 },
-            RepositoryType::FileSystem { path: p2 },
-        ) => {
+        (RepositoryType::FileSystem { path: p1 }, RepositoryType::FileSystem { path: p2 }) => {
             assert_eq!(p1, p2);
         }
         _ => panic!("Clone should maintain the same variant"),

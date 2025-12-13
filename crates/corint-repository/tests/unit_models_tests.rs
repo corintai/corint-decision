@@ -153,7 +153,9 @@ async fn test_cached_artifact_expiration() {
     let repo_path = temp_dir.path();
 
     // Create directory and test file
-    fs::create_dir_all(repo_path.join("library/rules")).await.unwrap();
+    fs::create_dir_all(repo_path.join("library/rules"))
+        .await
+        .unwrap();
 
     let rule_content = r#"version: "0.1"
 
@@ -165,9 +167,12 @@ rule:
       - amount > 100
   score: 10
 "#;
-    fs::write(repo_path.join("library/rules/ttl_test_rule.yaml"), rule_content)
-        .await
-        .unwrap();
+    fs::write(
+        repo_path.join("library/rules/ttl_test_rule.yaml"),
+        rule_content,
+    )
+    .await
+    .unwrap();
 
     // Create repo with 1-second TTL
     let config = CacheConfig::new().with_ttl(Duration::from_millis(100));
@@ -181,7 +186,10 @@ rule:
     let _ = repo.load_rule("ttl_test_rule").await.unwrap();
     let stats_after = repo.cache_stats();
 
-    assert!(stats_after.hits > stats_before.hits, "Second load should be cache hit");
+    assert!(
+        stats_after.hits > stats_before.hits,
+        "Second load should be cache hit"
+    );
 
     // Wait for cache to expire
     tokio::time::sleep(Duration::from_millis(150)).await;
@@ -191,7 +199,10 @@ rule:
     let _ = repo.load_rule("ttl_test_rule").await.unwrap();
     let stats_after = repo.cache_stats();
 
-    assert!(stats_after.misses > stats_before.misses, "Load after TTL should be cache miss");
+    assert!(
+        stats_after.misses > stats_before.misses,
+        "Load after TTL should be cache miss"
+    );
 }
 
 #[tokio::test]
@@ -204,7 +215,9 @@ async fn test_cache_disabled() {
     let repo_path = temp_dir.path();
 
     // Create directory and test file
-    fs::create_dir_all(repo_path.join("library/rules")).await.unwrap();
+    fs::create_dir_all(repo_path.join("library/rules"))
+        .await
+        .unwrap();
 
     let rule_content = r#"version: "0.1"
 
@@ -216,9 +229,12 @@ rule:
       - amount > 100
   score: 10
 "#;
-    fs::write(repo_path.join("library/rules/no_cache_rule.yaml"), rule_content)
-        .await
-        .unwrap();
+    fs::write(
+        repo_path.join("library/rules/no_cache_rule.yaml"),
+        rule_content,
+    )
+    .await
+    .unwrap();
 
     // Create repo with caching disabled
     let config = CacheConfig::disabled();

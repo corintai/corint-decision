@@ -2,12 +2,12 @@
 //!
 //! Executes IR programs in a stack-based virtual machine.
 
+use crate::context::ExecutionContext;
+use crate::error::{Result, RuntimeError};
+use crate::result::ExecutionResult;
 use corint_core::ast::{Operator, UnaryOperator};
 use corint_core::ir::{Instruction, Program};
 use corint_core::Value;
-use crate::context::ExecutionContext;
-use crate::error::{RuntimeError, Result};
-use crate::result::ExecutionResult;
 use std::collections::HashMap;
 
 /// IR program executor
@@ -376,10 +376,7 @@ mod tests {
     #[test]
     fn test_execute_set_score() {
         let program = Program::new(
-            vec![
-                Instruction::SetScore { value: 50 },
-                Instruction::Return,
-            ],
+            vec![Instruction::SetScore { value: 50 }, Instruction::Return],
             ProgramMetadata::default(),
         );
 
@@ -412,7 +409,7 @@ mod tests {
                     value: Value::Bool(false),
                 },
                 Instruction::JumpIfFalse { offset: 2 }, // Skip next instruction
-                Instruction::SetScore { value: 100 },    // This should be skipped
+                Instruction::SetScore { value: 100 },   // This should be skipped
                 Instruction::Return,
             ],
             ProgramMetadata::default(),

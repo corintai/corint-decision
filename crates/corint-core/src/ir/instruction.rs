@@ -300,7 +300,10 @@ mod tests {
         let return_inst = Instruction::Return;
 
         assert!(matches!(jump, Instruction::Jump { offset: 10 }));
-        assert!(matches!(jump_if_true, Instruction::JumpIfTrue { offset: 5 }));
+        assert!(matches!(
+            jump_if_true,
+            Instruction::JumpIfTrue { offset: 5 }
+        ));
         assert!(matches!(
             jump_if_false,
             Instruction::JumpIfFalse { offset: -3 }
@@ -409,10 +412,7 @@ mod tests {
         assert_eq!(FeatureType::CountDistinct.name(), "count_distinct");
         assert_eq!(FeatureType::Sum.name(), "sum");
         assert_eq!(FeatureType::Avg.name(), "avg");
-        assert_eq!(
-            FeatureType::Percentile { p: 0.95 }.name(),
-            "percentile"
-        );
+        assert_eq!(FeatureType::Percentile { p: 0.95 }.name(), "percentile");
 
         assert!(!FeatureType::Count.is_aggregate());
         assert!(FeatureType::Sum.is_aggregate());

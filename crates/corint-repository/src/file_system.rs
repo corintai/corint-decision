@@ -10,9 +10,7 @@ use std::sync::{Arc, Mutex};
 use tokio::fs;
 use tokio::sync::RwLock;
 
-use crate::{
-    error::RepositoryError, models::*, traits::*, CacheStats, RepositoryResult,
-};
+use crate::{error::RepositoryError, models::*, traits::*, CacheStats, RepositoryResult};
 
 /// File system based repository
 ///
@@ -227,17 +225,22 @@ impl Repository for FileSystemRepository {
         };
 
         // Load and parse
-        let content = fs::read_to_string(&path).await.map_err(|_| {
-            RepositoryError::NotFound {
+        let content = fs::read_to_string(&path)
+            .await
+            .map_err(|_| RepositoryError::NotFound {
                 path: path.display().to_string(),
-            }
-        })?;
+            })?;
 
         let doc = RuleParser::parse_with_imports(&content)?;
 
         // Store in cache
-        self.store_in_cache(&self.rule_cache, identifier, doc.definition.clone(), content.clone())
-            .await;
+        self.store_in_cache(
+            &self.rule_cache,
+            identifier,
+            doc.definition.clone(),
+            content.clone(),
+        )
+        .await;
 
         Ok((doc.definition, content))
     }
@@ -259,11 +262,11 @@ impl Repository for FileSystemRepository {
         };
 
         // Load and parse
-        let content = fs::read_to_string(&path).await.map_err(|_| {
-            RepositoryError::NotFound {
+        let content = fs::read_to_string(&path)
+            .await
+            .map_err(|_| RepositoryError::NotFound {
                 path: path.display().to_string(),
-            }
-        })?;
+            })?;
 
         let doc = RulesetParser::parse_with_imports(&content)?;
 
@@ -279,7 +282,10 @@ impl Repository for FileSystemRepository {
         Ok((doc.definition, content))
     }
 
-    async fn load_template(&self, identifier: &str) -> RepositoryResult<(DecisionTemplate, String)> {
+    async fn load_template(
+        &self,
+        identifier: &str,
+    ) -> RepositoryResult<(DecisionTemplate, String)> {
         // Check cache first
         if let Some(cached) = self.check_cache(&self.template_cache, identifier).await {
             return Ok(cached);
@@ -296,11 +302,11 @@ impl Repository for FileSystemRepository {
         };
 
         // Load and parse
-        let content = fs::read_to_string(&path).await.map_err(|_| {
-            RepositoryError::NotFound {
+        let content = fs::read_to_string(&path)
+            .await
+            .map_err(|_| RepositoryError::NotFound {
                 path: path.display().to_string(),
-            }
-        })?;
+            })?;
 
         let doc = TemplateParser::parse_with_imports(&content)?;
 
@@ -333,11 +339,11 @@ impl Repository for FileSystemRepository {
         };
 
         // Load and parse
-        let content = fs::read_to_string(&path).await.map_err(|_| {
-            RepositoryError::NotFound {
+        let content = fs::read_to_string(&path)
+            .await
+            .map_err(|_| RepositoryError::NotFound {
                 path: path.display().to_string(),
-            }
-        })?;
+            })?;
 
         let doc = PipelineParser::parse_with_imports(&content)?;
 
@@ -412,7 +418,8 @@ impl FileSystemRepository {
         dir: &'a Path,
         root: &'a Path,
         files: &'a mut Vec<String>,
-    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = RepositoryResult<()>> + Send + 'a>> {
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = RepositoryResult<()>> + Send + 'a>>
+    {
         Box::pin(async move {
             let mut entries = fs::read_dir(dir).await?;
 

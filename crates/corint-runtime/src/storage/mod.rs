@@ -2,9 +2,9 @@
 //!
 //! Provides async interfaces for querying event history to support feature extraction.
 
+use crate::error::Result;
 use async_trait::async_trait;
 use corint_core::Value;
-use crate::error::Result;
 use std::collections::HashMap;
 
 /// Time range for queries (start, end) in seconds since epoch
@@ -101,9 +101,7 @@ pub struct InMemoryStorage {
 impl InMemoryStorage {
     /// Create a new in-memory storage
     pub fn new() -> Self {
-        Self {
-            events: Vec::new(),
-        }
+        Self { events: Vec::new() }
     }
 
     /// Add an event to storage
@@ -132,7 +130,8 @@ impl Storage for InMemoryStorage {
     ) -> Result<Vec<Event>> {
         let (start, end) = time_range;
 
-        let mut results: Vec<Event> = self.events
+        let mut results: Vec<Event> = self
+            .events
             .iter()
             .filter(|event| event.timestamp >= start && event.timestamp < end)
             .cloned()
@@ -152,7 +151,10 @@ mod tests {
 
     fn create_test_event(timestamp: i64, event_type: &str, amount: f64) -> Event {
         let mut data = HashMap::new();
-        data.insert("event_type".to_string(), Value::String(event_type.to_string()));
+        data.insert(
+            "event_type".to_string(),
+            Value::String(event_type.to_string()),
+        );
         data.insert("amount".to_string(), Value::Number(amount));
 
         Event { timestamp, data }

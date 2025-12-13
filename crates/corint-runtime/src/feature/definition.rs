@@ -89,12 +89,13 @@ impl FeatureDefinition {
     /// Infer feature type from operator
     pub fn infer_type(operator: &Operator) -> FeatureType {
         match operator {
-            Operator::Count(_) | Operator::Sum(_) | Operator::Avg(_)
-            | Operator::Max(_) | Operator::Min(_) => FeatureType::Aggregation,
+            Operator::Count(_)
+            | Operator::Sum(_)
+            | Operator::Avg(_)
+            | Operator::Max(_)
+            | Operator::Min(_) => FeatureType::Aggregation,
 
-            Operator::CountDistinct(_) | Operator::CrossDimensionCount(_) => {
-                FeatureType::Distinct
-            }
+            Operator::CountDistinct(_) | Operator::CrossDimensionCount(_) => FeatureType::Distinct,
 
             Operator::FirstSeen(_) | Operator::LastSeen(_) | Operator::TimeSince(_) => {
                 FeatureType::Temporal
@@ -102,9 +103,7 @@ impl FeatureDefinition {
 
             Operator::Velocity(_) => FeatureType::Velocity,
 
-            Operator::FeatureStoreLookup(_) | Operator::ProfileLookup(_) => {
-                FeatureType::Lookup
-            }
+            Operator::FeatureStoreLookup(_) | Operator::ProfileLookup(_) => FeatureType::Lookup,
 
             Operator::Expression(_) => FeatureType::Expression,
         }

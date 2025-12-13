@@ -12,9 +12,7 @@ pub mod query;
 
 pub use cache::{CacheStrategy, CachedResult};
 pub use client::DataSourceClient;
-pub use config::{
-    DataSourceConfig, DataSourceType, FeatureStoreConfig, OLAPConfig, SQLConfig,
-};
+pub use config::{DataSourceConfig, DataSourceType, FeatureStoreConfig, OLAPConfig, SQLConfig};
 pub use query::{
     Aggregation, AggregationType, Filter, FilterOperator, Query, QueryResult, QueryType,
     RelativeWindow, TimeUnit, TimeWindow, TimeWindowType,

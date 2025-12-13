@@ -2,10 +2,10 @@
 //!
 //! Compiles Ruleset AST nodes into IR programs.
 
+use crate::codegen::expression_codegen::ExpressionCompiler;
+use crate::error::Result;
 use corint_core::ast::{Action, Ruleset};
 use corint_core::ir::{Instruction, Program, ProgramMetadata};
-use crate::error::Result;
-use crate::codegen::expression_codegen::ExpressionCompiler;
 
 /// Ruleset compiler
 pub struct RulesetCompiler;
@@ -27,10 +27,9 @@ impl RulesetCompiler {
 
         // Store the rule IDs in custom metadata so DecisionEngine can execute them first
         if !ruleset.rules.is_empty() {
-            metadata.custom.insert(
-                "rules".to_string(),
-                ruleset.rules.join(",")
-            );
+            metadata
+                .custom
+                .insert("rules".to_string(), ruleset.rules.join(","));
         }
 
         Ok(Program::new(instructions, metadata))
@@ -71,7 +70,8 @@ impl RulesetCompiler {
                     let remaining_rules = ruleset.decision_logic.len() - idx - 1;
                     if remaining_rules > 0 {
                         // Add a jump to skip the remaining decision logic
-                        action_instructions.push(Instruction::Jump { offset: 999 }); // Placeholder, will be fixed in second pass
+                        action_instructions.push(Instruction::Jump { offset: 999 });
+                        // Placeholder, will be fixed in second pass
                     }
                 }
 
@@ -79,7 +79,9 @@ impl RulesetCompiler {
                 // Offset is relative to current instruction, so we need to skip:
                 // +1 to get past the JumpIfFalse itself, then skip all action_instructions
                 let jump_offset = (action_instructions.len() + 1) as isize;
-                instructions.push(Instruction::JumpIfFalse { offset: jump_offset });
+                instructions.push(Instruction::JumpIfFalse {
+                    offset: jump_offset,
+                });
 
                 // Add the action instructions
                 instructions.extend(action_instructions);
@@ -138,7 +140,9 @@ impl RulesetCompiler {
             Action::Infer { config } => {
                 // Set action to infer with configuration
                 instructions.push(Instruction::SetAction {
-                    action: Action::Infer { config: config.clone() },
+                    action: Action::Infer {
+                        config: config.clone(),
+                    },
                 });
             }
         }
@@ -171,7 +175,9 @@ mod tests {
         assert_eq!(instructions.len(), 1);
         assert!(matches!(
             instructions[0],
-            Instruction::SetAction { action: Action::Approve }
+            Instruction::SetAction {
+                action: Action::Approve
+            }
         ));
     }
 
@@ -182,7 +188,9 @@ mod tests {
         assert_eq!(instructions.len(), 1);
         assert!(matches!(
             instructions[0],
-            Instruction::SetAction { action: Action::Deny }
+            Instruction::SetAction {
+                action: Action::Deny
+            }
         ));
     }
 
@@ -193,7 +201,9 @@ mod tests {
         assert_eq!(instructions.len(), 1);
         assert!(matches!(
             instructions[0],
-            Instruction::SetAction { action: Action::Review }
+            Instruction::SetAction {
+                action: Action::Review
+            }
         ));
     }
 
@@ -204,15 +214,13 @@ mod tests {
             name: Some("Decision Ruleset".to_string()),
             extends: None,
             rules: vec![],
-            decision_logic: vec![
-                DecisionRule {
-                    condition: None,
-                    default: true,
-                    action: Action::Approve,
-                    reason: Some("Default action".to_string()),
-                    terminate: true,
-                },
-            ],
+            decision_logic: vec![DecisionRule {
+                condition: None,
+                default: true,
+                action: Action::Approve,
+                reason: Some("Default action".to_string()),
+                terminate: true,
+            }],
             decision_template: None,
             description: None,
             metadata: None,
@@ -283,7 +291,9 @@ mod tests {
             decision_logic: vec![
                 DecisionRule {
                     condition: Some(Expression::Binary {
-                        left: Box::new(Expression::FieldAccess(vec!["transaction_amount".to_string()])),
+                        left: Box::new(Expression::FieldAccess(vec![
+                            "transaction_amount".to_string()
+                        ])),
                         op: Operator::Gt,
                         right: Box::new(Expression::Literal(Value::Number(10000.0))),
                     }),
@@ -294,7 +304,9 @@ mod tests {
                 },
                 DecisionRule {
                     condition: Some(Expression::Binary {
-                        left: Box::new(Expression::FieldAccess(vec!["transaction_amount".to_string()])),
+                        left: Box::new(Expression::FieldAccess(vec![
+                            "transaction_amount".to_string()
+                        ])),
                         op: Operator::Gt,
                         right: Box::new(Expression::Literal(Value::Number(1000.0))),
                     }),
@@ -305,7 +317,9 @@ mod tests {
                 },
                 DecisionRule {
                     condition: Some(Expression::Binary {
-                        left: Box::new(Expression::FieldAccess(vec!["transaction_amount".to_string()])),
+                        left: Box::new(Expression::FieldAccess(vec![
+                            "transaction_amount".to_string()
+                        ])),
                         op: Operator::Gt,
                         right: Box::new(Expression::Literal(Value::Number(100.0))),
                     }),
@@ -339,10 +353,10 @@ mod tests {
 }
 #[test]
 fn test_compile_simple_ruleset() {
-    use corint_core::ast::{DecisionRule, Expression, Operator, Ruleset};
-    use corint_core::ast::Action;
-    use corint_core::Value;
     use crate::codegen::RulesetCompiler;
+    use corint_core::ast::Action;
+    use corint_core::ast::{DecisionRule, Expression, Operator, Ruleset};
+    use corint_core::Value;
 
     let ruleset = Ruleset {
         id: "test_ruleset".to_string(),

@@ -71,7 +71,6 @@ The repository includes a Supabase-based risk assessment pipeline that demonstra
 **Files:**
 - `configs/datasources/supabase_events.yaml` - Supabase PostgreSQL connection config
 - `pipelines/supabase_feature_ruleset.yaml` - Risk assessment pipeline with feature-based rules
-- `examples/supabase_feature_ruleset.yaml` - Example ruleset with feature references
 
 **Feature Calculation:**
 Rules reference features using the `features.` prefix (e.g., `features.transaction_sum_7d > 5000`), and the engine automatically calculates them from Supabase during rule execution.
@@ -255,6 +254,6 @@ See [RULE_REFACTOR.md](../RULE_REFACTOR.md) for:
 
 ## 📚 Resources
 
-- [Examples Directory](../examples/): Tutorial and learning resources
+- [Examples Directory](../docs/dsl/examples/): Tutorial and learning resources
 - [Documentation](../docs/): API and usage guides
 - [Tests](../tests/): Integration tests and fixtures

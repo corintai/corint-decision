@@ -13,7 +13,11 @@ use thiserror::Error;
 pub enum ServerError {
     /// Decision engine error
     #[error("Engine error: {0}")]
-    EngineError(#[from] #[source] corint_sdk::error::SdkError),
+    EngineError(
+        #[from]
+        #[source]
+        corint_sdk::error::SdkError,
+    ),
 
     /// Invalid request
     #[error("Invalid request: {0}")]
@@ -21,7 +25,11 @@ pub enum ServerError {
 
     /// Internal server error
     #[error("Internal error: {0}")]
-    InternalError(#[from] #[source] anyhow::Error),
+    InternalError(
+        #[from]
+        #[source]
+        anyhow::Error,
+    ),
 
     /// Not found
     #[error("Not found: {0}")]
@@ -138,5 +146,3 @@ mod tests {
         assert_send_sync::<ServerError>();
     }
 }
-
-

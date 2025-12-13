@@ -1,8 +1,8 @@
 //! LLM client interface and types
 
+use crate::error::Result;
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
-use crate::error::Result;
 
 /// Request to an LLM
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -144,7 +144,10 @@ mod tests {
         assert_eq!(request.model, "gpt-4");
         assert_eq!(request.max_tokens, Some(100));
         assert_eq!(request.temperature, Some(0.7));
-        assert_eq!(request.system, Some("You are a helpful assistant".to_string()));
+        assert_eq!(
+            request.system,
+            Some("You are a helpful assistant".to_string())
+        );
     }
 
     #[test]
@@ -161,11 +164,8 @@ mod tests {
 
     #[test]
     fn test_thinking_request_builder() {
-        let request = LLMRequest::new(
-            "Solve this problem".to_string(),
-            "o1-preview".to_string(),
-        )
-        .with_thinking(true);
+        let request = LLMRequest::new("Solve this problem".to_string(), "o1-preview".to_string())
+            .with_thinking(true);
 
         assert_eq!(request.prompt, "Solve this problem");
         assert_eq!(request.model, "o1-preview");

@@ -10,7 +10,8 @@ use mockito::{Mock, Server};
 /// Helper to create a mock manifest response
 fn create_mock_manifest(server: &mut Server) -> Mock {
     let base_url = server.url();
-    let manifest_json = format!(r#"{{
+    let manifest_json = format!(
+        r#"{{
         "registry": "{base_url}/registry.yaml",
         "pipelines": [
             {{
@@ -40,7 +41,8 @@ fn create_mock_manifest(server: &mut Server) -> Mock {
                 "description": "Test template"
             }}
         ]
-    }}"#);
+    }}"#
+    );
 
     server
         .mock("GET", "/manifest")
@@ -86,10 +88,7 @@ async fn test_api_repository_with_api_key() {
 async fn test_api_repository_manifest_fetch_failure() {
     let mut server = Server::new_async().await;
 
-    let _m = server
-        .mock("GET", "/manifest")
-        .with_status(404)
-        .create();
+    let _m = server.mock("GET", "/manifest").with_status(404).create();
 
     let result = ApiRepository::new(&server.url(), None::<String>).await;
 
@@ -360,7 +359,10 @@ async fn test_list_templates() {
         .await
         .expect("Failed to create repository");
 
-    let templates = repo.list_templates().await.expect("Failed to list templates");
+    let templates = repo
+        .list_templates()
+        .await
+        .expect("Failed to list templates");
 
     assert_eq!(templates.len(), 1);
     assert_eq!(templates[0], "test_template");
@@ -375,7 +377,10 @@ async fn test_list_pipelines() {
         .await
         .expect("Failed to create repository");
 
-    let pipelines = repo.list_pipelines().await.expect("Failed to list pipelines");
+    let pipelines = repo
+        .list_pipelines()
+        .await
+        .expect("Failed to list pipelines");
 
     assert_eq!(pipelines.len(), 1);
     assert_eq!(pipelines[0], "test_pipeline");
@@ -416,10 +421,7 @@ async fn test_load_registry_not_found() {
     let mut server = Server::new_async().await;
     let _m = create_mock_manifest(&mut server);
 
-    let _registry_mock = server
-        .mock("GET", "/registry")
-        .with_status(404)
-        .create();
+    let _registry_mock = server.mock("GET", "/registry").with_status(404).create();
 
     let repo = ApiRepository::new(&server.url(), None::<String>)
         .await
@@ -440,7 +442,8 @@ async fn test_api_with_authentication_header() {
         .match_header("Authorization", "Bearer secret_key")
         .with_status(200)
         .with_header("content-type", "application/json")
-        .with_body(format!(r#"{{
+        .with_body(format!(
+            r#"{{
             "rules": [{{
                 "id": "secure_rule",
                 "url": "{base_url}/rules/secure_rule.yaml"
@@ -448,7 +451,8 @@ async fn test_api_with_authentication_header() {
             "rulesets": [],
             "templates": [],
             "pipelines": []
-        }}"#))
+        }}"#
+        ))
         .create();
 
     let rule_yaml = r#"id: secure_rule
@@ -519,6 +523,9 @@ async fn test_empty_manifest() {
     let rules = repo.list_rules().await.expect("Failed to list rules");
     assert_eq!(rules.len(), 0);
 
-    let exists = repo.exists("any_rule").await.expect("Failed to check exists");
+    let exists = repo
+        .exists("any_rule")
+        .await
+        .expect("Failed to check exists");
     assert!(!exists);
 }

@@ -492,7 +492,7 @@ The server can be configured via:
 ```bash
 CORINT_HOST=127.0.0.1
 CORINT_PORT=8080
-CORINT_RULES_DIR=examples/pipelines
+CORINT_RULES_DIR=repository/pipelines
 CORINT_ENABLE_METRICS=true
 CORINT_ENABLE_TRACING=true
 CORINT_LOG_LEVEL=info
@@ -502,7 +502,7 @@ CORINT_LOG_LEVEL=info
 ```yaml
 host: "127.0.0.1"
 port: 8080
-rules_dir: "examples/pipelines"
+rules_dir: "repository/pipelines"
 enable_metrics: true
 enable_tracing: true
 log_level: "info"
@@ -514,8 +514,8 @@ The server supports on-demand feature calculation from Supabase PostgreSQL:
 
 1. **Prerequisites:**
    - Supabase database configured with test data (see `docs/schema/postgres-examples.sql`)
-   - Data source configured (`examples/configs/datasources/supabase_events.yaml`)
-   - Rules reference features (e.g., `examples/pipelines/supabase_feature_ruleset.yaml`)
+   - Data source configured (`repository/configs/datasources/supabase_events.yaml`)
+   - Rules reference features (e.g., `repository/pipelines/supabase_feature_ruleset.yaml`)
 
 2. **Workflow:**
    - Start the server: `cargo run -p corint-server`
@@ -574,7 +574,7 @@ See [Server Quick Start Guide](crates/corint-server/QUICKSTART.md).
 
 **Server won't start:**
 - Check if port is in use: `lsof -i :8080`
-- Verify rules directory exists: `ls -la examples/pipelines`
+- Verify rules directory exists: `ls -la repository/pipelines`
 - View detailed logs: `RUST_LOG=debug cargo run -p corint-server`
 
 **Rules not loading:**
@@ -584,7 +584,7 @@ See [Server Quick Start Guide](crates/corint-server/QUICKSTART.md).
 
 **Feature calculation fails:**
 - Verify Supabase database connection
-- Check data source configuration (`examples/configs/datasources/supabase_events.yaml`)
+- Check data source configuration (`repository/configs/datasources/supabase_events.yaml`)
 - View SQL queries and errors: `RUST_LOG=corint_runtime::datasource=debug cargo run -p corint-server`
 - Verify test data exists in database
 
@@ -623,6 +623,7 @@ See [Server Quick Start Guide](crates/corint-server/QUICKSTART.md).
 |----------|-------------|
 | [**error-handling.md**](doc/dsl/error-handling.md) | Error handling strategies |
 | [**observability.md**](doc/dsl/observability.md) | Monitoring, logging, and tracing |
+| [**QUICK_START_OTEL.md**](docs/QUICK_START_OTEL.md) ⭐ | **OpenTelemetry quick start guide** |
 | [**test.md**](doc/dsl/test.md) | Testing framework and patterns |
 | [**performance.md**](doc/dsl/performance.md) | Performance optimization guide |
 

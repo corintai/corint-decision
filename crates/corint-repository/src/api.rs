@@ -170,7 +170,10 @@ impl ApiRepository {
     /// - Failed to fetch manifest from API
     /// - API returned non-success status
     /// - Failed to parse manifest JSON
-    pub async fn new(base_url: impl Into<String>, api_key: Option<impl Into<String>>) -> RepositoryResult<Self> {
+    pub async fn new(
+        base_url: impl Into<String>,
+        api_key: Option<impl Into<String>>,
+    ) -> RepositoryResult<Self> {
         let base_url = base_url.into();
         let api_key = api_key.map(|k| k.into());
 
@@ -178,7 +181,9 @@ impl ApiRepository {
         let client = Client::builder()
             .timeout(Duration::from_secs(30))
             .build()
-            .map_err(|e| RepositoryError::ApiError(format!("Failed to create HTTP client: {}", e)))?;
+            .map_err(|e| {
+                RepositoryError::ApiError(format!("Failed to create HTTP client: {}", e))
+            })?;
 
         // Fetch manifest
         let manifest_url = format!("{}/manifest", base_url);
@@ -248,7 +253,7 @@ impl ApiRepository {
             .find(|a| a.id == id)
             .map(|a| a.url.clone())
             .ok_or_else(|| RepositoryError::NotFound {
-                path: format!("Artifact not found: {}", id)
+                path: format!("Artifact not found: {}", id),
             })
     }
 }
@@ -279,8 +284,9 @@ impl Repository for ApiRepository {
     async fn load_ruleset(&self, identifier: &str) -> RepositoryResult<(Ruleset, String)> {
         // Check cache first
         if let Some(cached) = self.cache.get(identifier) {
-            let ruleset = serde_yaml::from_str(&cached.content)
-                .map_err(|e| RepositoryError::ParseError(format!("Failed to parse ruleset: {}", e)))?;
+            let ruleset = serde_yaml::from_str(&cached.content).map_err(|e| {
+                RepositoryError::ParseError(format!("Failed to parse ruleset: {}", e))
+            })?;
             return Ok((ruleset, cached.content.clone()));
         }
 
@@ -297,11 +303,15 @@ impl Repository for ApiRepository {
         Ok((ruleset, content))
     }
 
-    async fn load_template(&self, identifier: &str) -> RepositoryResult<(DecisionTemplate, String)> {
+    async fn load_template(
+        &self,
+        identifier: &str,
+    ) -> RepositoryResult<(DecisionTemplate, String)> {
         // Check cache first
         if let Some(cached) = self.cache.get(identifier) {
-            let template = serde_yaml::from_str(&cached.content)
-                .map_err(|e| RepositoryError::ParseError(format!("Failed to parse template: {}", e)))?;
+            let template = serde_yaml::from_str(&cached.content).map_err(|e| {
+                RepositoryError::ParseError(format!("Failed to parse template: {}", e))
+            })?;
             return Ok((template, cached.content.clone()));
         }
 
@@ -321,8 +331,9 @@ impl Repository for ApiRepository {
     async fn load_pipeline(&self, identifier: &str) -> RepositoryResult<(Pipeline, String)> {
         // Check cache first
         if let Some(cached) = self.cache.get(identifier) {
-            let pipeline = serde_yaml::from_str(&cached.content)
-                .map_err(|e| RepositoryError::ParseError(format!("Failed to parse pipeline: {}", e)))?;
+            let pipeline = serde_yaml::from_str(&cached.content).map_err(|e| {
+                RepositoryError::ParseError(format!("Failed to parse pipeline: {}", e))
+            })?;
             return Ok((pipeline, cached.content.clone()));
         }
 
@@ -340,12 +351,10 @@ impl Repository for ApiRepository {
     }
 
     async fn exists(&self, identifier: &str) -> RepositoryResult<bool> {
-        Ok(
-            self.manifest.rules.iter().any(|r| r.id == identifier)
+        Ok(self.manifest.rules.iter().any(|r| r.id == identifier)
             || self.manifest.rulesets.iter().any(|r| r.id == identifier)
             || self.manifest.templates.iter().any(|t| t.id == identifier)
-            || self.manifest.pipelines.iter().any(|p| p.id == identifier)
-        )
+            || self.manifest.pipelines.iter().any(|p| p.id == identifier))
     }
 
     async fn list_rules(&self) -> RepositoryResult<Vec<String>> {
@@ -353,15 +362,30 @@ impl Repository for ApiRepository {
     }
 
     async fn list_rulesets(&self) -> RepositoryResult<Vec<String>> {
-        Ok(self.manifest.rulesets.iter().map(|r| r.id.clone()).collect())
+        Ok(self
+            .manifest
+            .rulesets
+            .iter()
+            .map(|r| r.id.clone())
+            .collect())
     }
 
     async fn list_templates(&self) -> RepositoryResult<Vec<String>> {
-        Ok(self.manifest.templates.iter().map(|t| t.id.clone()).collect())
+        Ok(self
+            .manifest
+            .templates
+            .iter()
+            .map(|t| t.id.clone())
+            .collect())
     }
 
     async fn list_pipelines(&self) -> RepositoryResult<Vec<String>> {
-        Ok(self.manifest.pipelines.iter().map(|p| p.id.clone()).collect())
+        Ok(self
+            .manifest
+            .pipelines
+            .iter()
+            .map(|p| p.id.clone())
+            .collect())
     }
 
     async fn load_registry(&self) -> RepositoryResult<String> {
@@ -372,7 +396,10 @@ impl Repository for ApiRepository {
             request = request.header("X-API-Key", api_key);
         }
 
-        let response = request.send().await.map_err(|e| RepositoryError::Other(format!("HTTP error: {}", e)))?;
+        let response = request
+            .send()
+            .await
+            .map_err(|e| RepositoryError::Other(format!("HTTP error: {}", e)))?;
 
         if !response.status().is_success() {
             return Err(RepositoryError::NotFound {

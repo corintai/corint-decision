@@ -204,7 +204,8 @@ pub trait Repository: Send + Sync {
     /// ```
     ///
     /// Templates are loaded by the compiler and instantiated with specific parameters.
-    async fn load_template(&self, identifier: &str) -> RepositoryResult<(DecisionTemplate, String)>;
+    async fn load_template(&self, identifier: &str)
+        -> RepositoryResult<(DecisionTemplate, String)>;
 
     /// Load a pipeline by path or ID
     ///

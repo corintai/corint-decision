@@ -10,9 +10,9 @@
 //! - Function calls: `count(user.logins)`, `sum(amounts, last_7d)`
 //! - Parentheses for grouping: `(a + b) * c`
 
+use crate::error::{ParseError, Result};
 use corint_core::ast::{Expression, Operator, UnaryOperator};
 use corint_core::Value;
-use crate::error::{ParseError, Result};
 
 /// Expression parser
 pub struct ExpressionParser;
@@ -23,7 +23,9 @@ impl ExpressionParser {
         let input = input.trim();
 
         if input.is_empty() {
-            return Err(ParseError::InvalidExpression("Empty expression".to_string()));
+            return Err(ParseError::InvalidExpression(
+                "Empty expression".to_string(),
+            ));
         }
 
         Self::parse_expression(input)
@@ -42,7 +44,17 @@ impl ExpressionParser {
         }
 
         // Try to parse as binary expression with keyword operators (contains, in, not_in, etc.)
-        if let Some((left, op, right)) = Self::split_by_keyword_operator(input, &["contains", "not_in", "in", "starts_with", "ends_with", "regex"]) {
+        if let Some((left, op, right)) = Self::split_by_keyword_operator(
+            input,
+            &[
+                "contains",
+                "not_in",
+                "in",
+                "starts_with",
+                "ends_with",
+                "regex",
+            ],
+        ) {
             let op = Self::parse_operator(op)?;
             return Ok(Expression::binary(
                 Self::parse_expression(left)?,
@@ -52,7 +64,9 @@ impl ExpressionParser {
         }
 
         // Try to parse as binary expression with comparison operators
-        if let Some((left, op, right)) = Self::split_by_operator(input, &["==", "!=", "<=", ">=", "<", ">"]) {
+        if let Some((left, op, right)) =
+            Self::split_by_operator(input, &["==", "!=", "<=", ">=", "<", ">"])
+        {
             let op = Self::parse_operator(op)?;
             return Ok(Expression::binary(
                 Self::parse_expression(left)?,
@@ -106,12 +120,12 @@ impl ExpressionParser {
 
         // Check for parentheses
         if input.starts_with('(') && input.ends_with(')') {
-            return Self::parse_expression(&input[1..input.len()-1]);
+            return Self::parse_expression(&input[1..input.len() - 1]);
         }
 
         // Check for string literals
         if input.starts_with('"') && input.ends_with('"') {
-            let s = &input[1..input.len()-1];
+            let s = &input[1..input.len() - 1];
             return Ok(Expression::literal(Value::String(s.to_string())));
         }
 
@@ -135,7 +149,7 @@ impl ExpressionParser {
         if let Some(paren_pos) = input.find('(') {
             if input.ends_with(')') {
                 let func_name = input[..paren_pos].trim();
-                let args_str = &input[paren_pos+1..input.len()-1];
+                let args_str = &input[paren_pos + 1..input.len() - 1];
 
                 let args = if args_str.trim().is_empty() {
                     Vec::new()
@@ -158,11 +172,17 @@ impl ExpressionParser {
             return Ok(Expression::field_access(vec![input.to_string()]));
         }
 
-        Err(ParseError::InvalidExpression(format!("Cannot parse: {}", input)))
+        Err(ParseError::InvalidExpression(format!(
+            "Cannot parse: {}",
+            input
+        )))
     }
 
     /// Split input by binary operator (respecting parentheses)
-    fn split_by_operator<'a>(input: &'a str, operators: &[&str]) -> Option<(&'a str, &'a str, &'a str)> {
+    fn split_by_operator<'a>(
+        input: &'a str,
+        operators: &[&str],
+    ) -> Option<(&'a str, &'a str, &'a str)> {
         let mut paren_depth = 0;
         let bytes = input.as_bytes();
 
@@ -178,16 +198,17 @@ impl ExpressionParser {
 
             if paren_depth == 0 {
                 for &op in operators {
-                    if i + op.len() <= input.len() && &input[i..i+op.len()] == op {
+                    if i + op.len() <= input.len() && &input[i..i + op.len()] == op {
                         // Make sure it's not part of another operator
-                        let is_valid = (i == 0 || !Self::is_operator_char(bytes[i-1] as char))
-                            && (i + op.len() >= input.len() || !Self::is_operator_char(bytes[i+op.len()] as char));
+                        let is_valid = (i == 0 || !Self::is_operator_char(bytes[i - 1] as char))
+                            && (i + op.len() >= input.len()
+                                || !Self::is_operator_char(bytes[i + op.len()] as char));
 
                         if is_valid {
                             return Some((
                                 input[..i].trim(),
-                                &input[i..i+op.len()],
-                                input[i+op.len()..].trim(),
+                                &input[i..i + op.len()],
+                                input[i + op.len()..].trim(),
                             ));
                         }
                     }
@@ -199,7 +220,10 @@ impl ExpressionParser {
     }
 
     /// Split input by keyword operator (respecting parentheses and word boundaries)
-    fn split_by_keyword_operator<'a>(input: &'a str, operators: &[&str]) -> Option<(&'a str, &'a str, &'a str)> {
+    fn split_by_keyword_operator<'a>(
+        input: &'a str,
+        operators: &[&str],
+    ) -> Option<(&'a str, &'a str, &'a str)> {
         let mut paren_depth = 0;
         let bytes = input.as_bytes();
 
@@ -215,16 +239,17 @@ impl ExpressionParser {
 
             if paren_depth == 0 {
                 for &op in operators {
-                    if i + op.len() <= input.len() && &input[i..i+op.len()] == op {
+                    if i + op.len() <= input.len() && &input[i..i + op.len()] == op {
                         // For keyword operators, check word boundaries
-                        let has_space_before = i == 0 || bytes[i-1].is_ascii_whitespace();
-                        let has_space_after = i + op.len() >= input.len() || bytes[i+op.len()].is_ascii_whitespace();
+                        let has_space_before = i == 0 || bytes[i - 1].is_ascii_whitespace();
+                        let has_space_after = i + op.len() >= input.len()
+                            || bytes[i + op.len()].is_ascii_whitespace();
 
                         if has_space_before && has_space_after {
                             return Some((
                                 input[..i].trim(),
-                                &input[i..i+op.len()],
-                                input[i+op.len()..].trim(),
+                                &input[i..i + op.len()],
+                                input[i + op.len()..].trim(),
                             ));
                         }
                     }
@@ -237,7 +262,10 @@ impl ExpressionParser {
 
     /// Check if a character is part of an operator
     fn is_operator_char(c: char) -> bool {
-        matches!(c, '=' | '!' | '<' | '>' | '&' | '|' | '+' | '-' | '*' | '/' | '%')
+        matches!(
+            c,
+            '=' | '!' | '<' | '>' | '&' | '|' | '+' | '-' | '*' | '/' | '%'
+        )
     }
 
     /// Parse function arguments
@@ -316,7 +344,10 @@ mod tests {
     #[test]
     fn test_parse_string_literal() {
         let expr = ExpressionParser::parse(r#""hello world""#).unwrap();
-        assert_eq!(expr, Expression::literal(Value::String("hello world".to_string())));
+        assert_eq!(
+            expr,
+            Expression::literal(Value::String("hello world".to_string()))
+        );
     }
 
     #[test]

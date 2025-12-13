@@ -6,16 +6,16 @@
 //! - Handles batch feature execution
 //! - Manages feature dependencies
 
+use crate::context::ExecutionContext;
 use crate::datasource::DataSourceClient;
-use corint_core::Value;
 use crate::feature::definition::FeatureDefinition;
 use crate::feature::operator::{CacheBackend, CacheConfig, Operator};
-use crate::context::ExecutionContext;
 use anyhow::{Context as AnyhowContext, Result};
+use corint_core::Value;
 use std::collections::HashMap;
-use std::sync::Arc;
 use std::future::Future;
 use std::pin::Pin;
+use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::sync::RwLock;
 use tracing::{debug, info, warn};
@@ -139,9 +139,7 @@ impl FeatureExecutor {
         feature_name: &'a str,
         context: &'a ExecutionContext,
     ) -> Pin<Box<dyn Future<Output = Result<Value>> + Send + 'a>> {
-        Box::pin(async move {
-            self.execute_feature_impl(feature_name, context).await
-        })
+        Box::pin(async move { self.execute_feature_impl(feature_name, context).await })
     }
 
     /// Implementation of execute_feature (internal)
@@ -312,13 +310,41 @@ impl FeatureExecutor {
             Operator::ProfileLookup(op) => op.datasource.clone(),
 
             // Operators with OperatorParams (check params.datasource)
-            Operator::Count(op) => op.params.datasource.clone().unwrap_or_else(|| "default".to_string()),
-            Operator::Sum(op) => op.params.datasource.clone().unwrap_or_else(|| "default".to_string()),
-            Operator::Avg(op) => op.params.datasource.clone().unwrap_or_else(|| "default".to_string()),
-            Operator::Max(op) => op.params.datasource.clone().unwrap_or_else(|| "default".to_string()),
-            Operator::Min(op) => op.params.datasource.clone().unwrap_or_else(|| "default".to_string()),
-            Operator::CountDistinct(op) => op.params.datasource.clone().unwrap_or_else(|| "default".to_string()),
-            Operator::Velocity(op) => op.params.datasource.clone().unwrap_or_else(|| "default".to_string()),
+            Operator::Count(op) => op
+                .params
+                .datasource
+                .clone()
+                .unwrap_or_else(|| "default".to_string()),
+            Operator::Sum(op) => op
+                .params
+                .datasource
+                .clone()
+                .unwrap_or_else(|| "default".to_string()),
+            Operator::Avg(op) => op
+                .params
+                .datasource
+                .clone()
+                .unwrap_or_else(|| "default".to_string()),
+            Operator::Max(op) => op
+                .params
+                .datasource
+                .clone()
+                .unwrap_or_else(|| "default".to_string()),
+            Operator::Min(op) => op
+                .params
+                .datasource
+                .clone()
+                .unwrap_or_else(|| "default".to_string()),
+            Operator::CountDistinct(op) => op
+                .params
+                .datasource
+                .clone()
+                .unwrap_or_else(|| "default".to_string()),
+            Operator::Velocity(op) => op
+                .params
+                .datasource
+                .clone()
+                .unwrap_or_else(|| "default".to_string()),
 
             // Other operators use default
             _ => "default".to_string(),
@@ -335,9 +361,9 @@ impl FeatureExecutor {
             Operator::Min(op) => op.params.cache.as_ref(),
             Operator::CountDistinct(op) => op.params.cache.as_ref(),
             Operator::CrossDimensionCount(_) => None, // No cache support for this operator
-            Operator::FirstSeen(_) => None, // No cache support for this operator
-            Operator::LastSeen(_) => None, // No cache support for this operator
-            Operator::TimeSince(_) => None, // No cache support for this operator
+            Operator::FirstSeen(_) => None,           // No cache support for this operator
+            Operator::LastSeen(_) => None,            // No cache support for this operator
+            Operator::TimeSince(_) => None,           // No cache support for this operator
             Operator::Velocity(op) => op.params.cache.as_ref(),
             _ => None,
         }
@@ -473,8 +499,14 @@ impl FeatureExecutor {
         };
 
         info!("=== Feature Executor Cache Statistics ===");
-        info!("L1 Hits: {}, Misses: {}, Hit Rate: {:.2}%", stats.l1_hits, stats.l1_misses, l1_hit_rate);
-        info!("L2 Hits: {}, Misses: {}, Hit Rate: {:.2}%", stats.l2_hits, stats.l2_misses, l2_hit_rate);
+        info!(
+            "L1 Hits: {}, Misses: {}, Hit Rate: {:.2}%",
+            stats.l1_hits, stats.l1_misses, l1_hit_rate
+        );
+        info!(
+            "L2 Hits: {}, Misses: {}, Hit Rate: {:.2}%",
+            stats.l2_hits, stats.l2_misses, l2_hit_rate
+        );
         info!("Total Computations: {}", stats.compute_count);
     }
 }
@@ -488,9 +520,9 @@ impl Default for FeatureExecutor {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::feature::operator::Operator;
     use std::time::Duration;
     use tokio::time::sleep;
-    use crate::feature::operator::Operator;
 
     #[test]
     fn test_cache_entry_expiration() {
@@ -519,7 +551,10 @@ mod tests {
         let executor = FeatureExecutor::new();
         let mut context = HashMap::new();
         context.insert("user_id".to_string(), Value::String("user123".to_string()));
-        context.insert("device_id".to_string(), Value::String("device456".to_string()));
+        context.insert(
+            "device_id".to_string(),
+            Value::String("device456".to_string()),
+        );
 
         let key = executor.build_cache_key("login_count_24h", &context);
         assert!(key.contains("login_count_24h"));
@@ -689,8 +724,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_concurrent_feature_registration() {
-        use tokio::task::JoinSet;
         use crate::feature::operator::{CountOperator, WindowConfig, WindowUnit};
+        use tokio::task::JoinSet;
 
         let executor = Arc::new(tokio::sync::RwLock::new(FeatureExecutor::new()));
         let mut tasks = JoinSet::new();
@@ -753,22 +788,43 @@ mod tests {
         let key = "overwrite_key";
 
         executor.set_to_l1_cache(key, Value::Number(1.0), 300).await;
-        assert_eq!(executor.get_from_l1_cache(key).await, Some(Value::Number(1.0)));
+        assert_eq!(
+            executor.get_from_l1_cache(key).await,
+            Some(Value::Number(1.0))
+        );
 
         executor.set_to_l1_cache(key, Value::Number(2.0), 300).await;
-        assert_eq!(executor.get_from_l1_cache(key).await, Some(Value::Number(2.0)));
+        assert_eq!(
+            executor.get_from_l1_cache(key).await,
+            Some(Value::Number(2.0))
+        );
     }
 
     #[tokio::test]
     async fn test_multiple_cache_keys() {
         let executor = FeatureExecutor::new();
 
-        executor.set_to_l1_cache("key1", Value::Number(1.0), 300).await;
-        executor.set_to_l1_cache("key2", Value::Number(2.0), 300).await;
-        executor.set_to_l1_cache("key3", Value::Number(3.0), 300).await;
+        executor
+            .set_to_l1_cache("key1", Value::Number(1.0), 300)
+            .await;
+        executor
+            .set_to_l1_cache("key2", Value::Number(2.0), 300)
+            .await;
+        executor
+            .set_to_l1_cache("key3", Value::Number(3.0), 300)
+            .await;
 
-        assert_eq!(executor.get_from_l1_cache("key1").await, Some(Value::Number(1.0)));
-        assert_eq!(executor.get_from_l1_cache("key2").await, Some(Value::Number(2.0)));
-        assert_eq!(executor.get_from_l1_cache("key3").await, Some(Value::Number(3.0)));
+        assert_eq!(
+            executor.get_from_l1_cache("key1").await,
+            Some(Value::Number(1.0))
+        );
+        assert_eq!(
+            executor.get_from_l1_cache("key2").await,
+            Some(Value::Number(2.0))
+        );
+        assert_eq!(
+            executor.get_from_l1_cache("key3").await,
+            Some(Value::Number(3.0))
+        );
     }
 }

@@ -25,7 +25,10 @@ fn test_import_resolver_load_rule() {
         }
         Err(e) => {
             // This is expected if repository files don't exist yet
-            println!("⚠ Import resolution failed (expected if repository not set up): {}", e);
+            println!(
+                "⚠ Import resolution failed (expected if repository not set up): {}",
+                e
+            );
         }
     }
 }
@@ -42,7 +45,10 @@ fn test_compiler_with_import_resolver() {
     let compiler = Compiler::with_options(options);
 
     // Verify import resolver is initialized with correct base path
-    assert_eq!(compiler.import_resolver().library_base_path(), PathBuf::from("repository"));
+    assert_eq!(
+        compiler.import_resolver().library_base_path(),
+        PathBuf::from("repository")
+    );
 }
 
 #[test]
@@ -64,7 +70,9 @@ fn create_test_document() -> RdlDocument<()> {
     use corint_core::ast::Imports;
 
     let mut imports = Imports::default();
-    imports.rules.push("library/rules/fraud/fraud_farm.yaml".to_string());
+    imports
+        .rules
+        .push("library/rules/fraud/fraud_farm.yaml".to_string());
 
     RdlDocument::with_imports("0.1".to_string(), imports, ())
 }

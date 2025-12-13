@@ -298,10 +298,16 @@ pipeline:
     assert!(doc.has_imports());
     let imports = doc.imports();
     assert_eq!(imports.rulesets.len(), 1);
-    assert_eq!(imports.rulesets[0], "library/rulesets/fraud_detection_core.yaml");
+    assert_eq!(
+        imports.rulesets[0],
+        "library/rulesets/fraud_detection_core.yaml"
+    );
 
     // Check pipeline
-    assert_eq!(doc.definition.id, Some("fraud_detection_pipeline".to_string()));
+    assert_eq!(
+        doc.definition.id,
+        Some("fraud_detection_pipeline".to_string())
+    );
     assert_eq!(doc.definition.steps.len(), 1);
 }
 

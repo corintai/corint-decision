@@ -157,12 +157,7 @@ mod tests {
                 Expression::literal(Value::Number(18.0)),
             ));
 
-        let rule = Rule::new(
-            "test_rule".to_string(),
-            "Test Rule".to_string(),
-            when,
-            50,
-        );
+        let rule = Rule::new("test_rule".to_string(), "Test Rule".to_string(), when, 50);
 
         assert_eq!(rule.id, "test_rule");
         assert_eq!(rule.name, "Test Rule");
@@ -173,13 +168,8 @@ mod tests {
     #[test]
     fn test_rule_with_description() {
         let when = WhenBlock::new();
-        let rule = Rule::new(
-            "test_rule".to_string(),
-            "Test Rule".to_string(),
-            when,
-            50,
-        )
-        .with_description("This is a test rule".to_string());
+        let rule = Rule::new("test_rule".to_string(), "Test Rule".to_string(), when, 50)
+            .with_description("This is a test rule".to_string());
 
         assert_eq!(rule.description, Some("This is a test rule".to_string()));
     }

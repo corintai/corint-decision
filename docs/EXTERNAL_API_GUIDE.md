@@ -7,7 +7,7 @@ CORINT Decision Engine provides a generic, configurable system for integrating w
 ## How It Works
 
 1. **API Configuration Files**: Define external APIs in YAML files
-2. **Automatic Loading**: The engine loads all API configs from `examples/configs/apis/`
+2. **Automatic Loading**: The engine loads all API configs from `repository/configs/apis/`
 3. **Generic HTTP Client**: A unified client handles all API calls based on the configuration
 4. **Flexible URL Building**: Supports path parameters, query parameters, and multiple HTTP methods
 
@@ -32,7 +32,7 @@ endpoints:
 ### Example: IPInfo API
 
 ```yaml
-# File: examples/configs/apis/ipinfo.yaml
+# File: repository/configs/apis/ipinfo.yaml
 
 name: ipinfo
 base_url: "https://ipinfo.io"
@@ -190,7 +190,7 @@ timeout: 5000  # 5 seconds
 
 ### Step 1: Create Configuration File
 
-Create `examples/configs/apis/your_api.yaml`:
+Create `repository/configs/apis/your_api.yaml`:
 
 ```yaml
 name: your_api
@@ -290,7 +290,7 @@ This produces URLs like: `https://api.example.com/v2/search/products?q=laptop&li
 RuntimeError: Unknown API: your_api
 ```
 
-**Solution**: Check that your YAML file is in `examples/configs/apis/` and has `.yaml` extension.
+**Solution**: Check that your YAML file is in `repository/configs/apis/` and has `.yaml` extension.
 
 ### Missing Parameter Error
 

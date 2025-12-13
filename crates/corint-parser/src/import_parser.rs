@@ -2,9 +2,9 @@
 //!
 //! Parses YAML import declarations into Import AST nodes.
 
-use corint_core::ast::Imports;
 use crate::error::{ParseError, Result};
 use crate::yaml_parser::YamlParser;
+use corint_core::ast::Imports;
 use serde_yaml::Value as YamlValue;
 
 /// Import parser
@@ -233,7 +233,10 @@ imports:
         let imports = ImportParser::parse_from_yaml(&yaml).unwrap().unwrap();
 
         assert_eq!(imports.rulesets.len(), 1);
-        assert_eq!(imports.rulesets[0], "library/rulesets/fraud_detection_core.yaml");
+        assert_eq!(
+            imports.rulesets[0],
+            "library/rulesets/fraud_detection_core.yaml"
+        );
         assert!(imports.rules.is_empty());
     }
 

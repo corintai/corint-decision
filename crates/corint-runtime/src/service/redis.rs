@@ -1,9 +1,9 @@
 //! Redis service client
 
-use async_trait::async_trait;
-use corint_core::Value;
 use crate::error::Result;
 use crate::service::client::{ServiceClient, ServiceRequest, ServiceResponse};
+use async_trait::async_trait;
+use corint_core::Value;
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 
@@ -111,15 +111,16 @@ impl RedisClient for MockRedisClient {
 #[async_trait]
 impl ServiceClient for MockRedisClient {
     async fn call(&self, request: ServiceRequest) -> Result<ServiceResponse> {
-        let command = RedisCommand::new(request.operation.clone())
-            .with_args(
-                request.params.values()
-                    .filter_map(|v| match v {
-                        Value::String(s) => Some(s.clone()),
-                        _ => None,
-                    })
-                    .collect()
-            );
+        let command = RedisCommand::new(request.operation.clone()).with_args(
+            request
+                .params
+                .values()
+                .filter_map(|v| match v {
+                    Value::String(s) => Some(s.clone()),
+                    _ => None,
+                })
+                .collect(),
+        );
 
         let result = self.execute(command).await?;
         Ok(ServiceResponse::new(result))
@@ -146,8 +147,7 @@ mod tests {
         assert_eq!(set_result, Value::String("OK".to_string()));
 
         // Get the value
-        let get_cmd = RedisCommand::new("GET".to_string())
-            .with_arg("key1".to_string());
+        let get_cmd = RedisCommand::new("GET".to_string()).with_arg("key1".to_string());
         let get_result = client.execute(get_cmd).await.unwrap();
         assert_eq!(get_result, Value::String("value1".to_string()));
     }
@@ -159,14 +159,12 @@ mod tests {
         client.set("key1".to_string(), "value1".to_string());
 
         // Delete the key
-        let del_cmd = RedisCommand::new("DEL".to_string())
-            .with_arg("key1".to_string());
+        let del_cmd = RedisCommand::new("DEL".to_string()).with_arg("key1".to_string());
         let del_result = client.execute(del_cmd).await.unwrap();
         assert_eq!(del_result, Value::Number(1.0));
 
         // Verify it's deleted
-        let get_cmd = RedisCommand::new("GET".to_string())
-            .with_arg("key1".to_string());
+        let get_cmd = RedisCommand::new("GET".to_string()).with_arg("key1".to_string());
         let get_result = client.execute(get_cmd).await.unwrap();
         assert_eq!(get_result, Value::Null);
     }
@@ -178,14 +176,13 @@ mod tests {
         client.set("key1".to_string(), "value1".to_string());
 
         // Check existence
-        let exists_cmd = RedisCommand::new("EXISTS".to_string())
-            .with_arg("key1".to_string());
+        let exists_cmd = RedisCommand::new("EXISTS".to_string()).with_arg("key1".to_string());
         let exists_result = client.execute(exists_cmd).await.unwrap();
         assert_eq!(exists_result, Value::Number(1.0));
 
         // Check non-existent key
-        let exists_cmd2 = RedisCommand::new("EXISTS".to_string())
-            .with_arg("nonexistent".to_string());
+        let exists_cmd2 =
+            RedisCommand::new("EXISTS".to_string()).with_arg("nonexistent".to_string());
         let exists_result2 = client.execute(exists_cmd2).await.unwrap();
         assert_eq!(exists_result2, Value::Number(0.0));
     }
@@ -204,13 +201,12 @@ mod tests {
 
     #[tokio::test]
     async fn test_redis_command_with_multiple_args() {
-        let cmd = RedisCommand::new("MSET".to_string())
-            .with_args(vec![
-                "key1".to_string(),
-                "value1".to_string(),
-                "key2".to_string(),
-                "value2".to_string(),
-            ]);
+        let cmd = RedisCommand::new("MSET".to_string()).with_args(vec![
+            "key1".to_string(),
+            "value1".to_string(),
+            "key2".to_string(),
+            "value2".to_string(),
+        ]);
 
         assert_eq!(cmd.args.len(), 4);
     }
@@ -235,8 +231,7 @@ mod tests {
     async fn test_redis_get_nonexistent_key() {
         let client = MockRedisClient::new();
 
-        let cmd = RedisCommand::new("GET".to_string())
-            .with_arg("nonexistent".to_string());
+        let cmd = RedisCommand::new("GET".to_string()).with_arg("nonexistent".to_string());
         let result = client.execute(cmd).await.unwrap();
 
         assert_eq!(result, Value::Null);
@@ -246,8 +241,7 @@ mod tests {
     async fn test_redis_del_nonexistent_key() {
         let client = MockRedisClient::new();
 
-        let cmd = RedisCommand::new("DEL".to_string())
-            .with_arg("nonexistent".to_string());
+        let cmd = RedisCommand::new("DEL".to_string()).with_arg("nonexistent".to_string());
         let result = client.execute(cmd).await.unwrap();
 
         assert_eq!(result, Value::Number(0.0));
@@ -265,8 +259,7 @@ mod tests {
         assert_eq!(set_result, Value::String("OK".to_string()));
 
         // Test mixed case command
-        let get_cmd = RedisCommand::new("GeT".to_string())
-            .with_arg("key1".to_string());
+        let get_cmd = RedisCommand::new("GeT".to_string()).with_arg("key1".to_string());
         let get_result = client.execute(get_cmd).await.unwrap();
         assert_eq!(get_result, Value::String("value1".to_string()));
     }

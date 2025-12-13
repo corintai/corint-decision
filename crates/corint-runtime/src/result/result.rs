@@ -143,9 +143,6 @@ mod tests {
         assert_eq!(result.triggered_rules.len(), 1);
 
         result.store_variable("temp".to_string(), Value::Number(42.0));
-        assert_eq!(
-            result.load_variable("temp"),
-            Some(&Value::Number(42.0))
-        );
+        assert_eq!(result.load_variable("temp"), Some(&Value::Number(42.0)));
     }
 }

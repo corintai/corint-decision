@@ -167,10 +167,7 @@ mod tests {
 
     #[test]
     fn test_program_modification() {
-        let mut program = Program::new(
-            vec![],
-            ProgramMetadata::for_rule("test".to_string()),
-        );
+        let mut program = Program::new(vec![], ProgramMetadata::for_rule("test".to_string()));
 
         assert!(program.is_empty());
 
@@ -268,7 +265,10 @@ mod tests {
         eprintln!("Generated JSON:\n{}", json);
 
         // Check for the fields (they should exist in the metadata object)
-        assert!(json.contains("test_rule"), "JSON should contain 'test_rule'");
+        assert!(
+            json.contains("test_rule"),
+            "JSON should contain 'test_rule'"
+        );
         assert!(json.contains("rule"), "JSON should contain 'rule'");
 
         // Deserialize back

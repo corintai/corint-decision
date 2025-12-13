@@ -339,7 +339,10 @@ mod tests {
         let mut obj = HashMap::new();
         obj.insert(
             "numbers".to_string(),
-            Value::Array(vec![Value::Number(1.0), Value::String("not a number".to_string())]),
+            Value::Array(vec![
+                Value::Number(1.0),
+                Value::String("not a number".to_string()),
+            ]),
         );
 
         let value = Value::Object(obj);
@@ -347,10 +350,7 @@ mod tests {
         assert!(result.is_err());
 
         let errors = result.unwrap_err();
-        assert!(matches!(
-            errors[0],
-            ValidationError::ArrayItemError { .. }
-        ));
+        assert!(matches!(errors[0], ValidationError::ArrayItemError { .. }));
     }
 
     #[test]
@@ -367,7 +367,10 @@ mod tests {
 
         // Valid nested object
         let mut address = HashMap::new();
-        address.insert("street".to_string(), Value::String("123 Main St".to_string()));
+        address.insert(
+            "street".to_string(),
+            Value::String("123 Main St".to_string()),
+        );
         address.insert("city".to_string(), Value::String("Boston".to_string()));
 
         let mut user = HashMap::new();
@@ -379,7 +382,10 @@ mod tests {
 
         // Invalid nested object (missing required field)
         let mut address = HashMap::new();
-        address.insert("street".to_string(), Value::String("123 Main St".to_string()));
+        address.insert(
+            "street".to_string(),
+            Value::String("123 Main St".to_string()),
+        );
         // Missing 'city'
 
         let mut user = HashMap::new();
@@ -401,24 +407,27 @@ mod tests {
 
         let errors = result.unwrap_err();
         assert_eq!(errors.len(), 1);
-        assert!(matches!(
-            errors[0],
-            ValidationError::TypeMismatch { .. }
-        ));
+        assert!(matches!(errors[0], ValidationError::TypeMismatch { .. }));
     }
 
     #[test]
     fn test_all_field_types() {
         let schema = Schema::new("AllTypes".to_string())
             .add_field(SchemaField::new("null_field".to_string(), FieldType::Null))
-            .add_field(SchemaField::new("bool_field".to_string(), FieldType::Boolean))
+            .add_field(SchemaField::new(
+                "bool_field".to_string(),
+                FieldType::Boolean,
+            ))
             .add_field(SchemaField::new("num_field".to_string(), FieldType::Number))
             .add_field(SchemaField::new("str_field".to_string(), FieldType::String))
             .add_field(SchemaField::new(
                 "arr_field".to_string(),
                 FieldType::array(FieldType::String),
             ))
-            .add_field(SchemaField::new("obj_field".to_string(), FieldType::object()))
+            .add_field(SchemaField::new(
+                "obj_field".to_string(),
+                FieldType::object(),
+            ))
             .add_field(SchemaField::new("any_field".to_string(), FieldType::Any));
 
         let mut obj = HashMap::new();

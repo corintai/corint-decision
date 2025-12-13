@@ -56,10 +56,10 @@ else
 fi
 
 # Copy rule files
-if [ -d examples/pipelines ]; then
-    cp -r examples/pipelines deploy/
+if [ -d repository/pipelines ]; then
+    cp -r repository/pipelines deploy/
 else
-    echo "Warning: examples/pipelines directory not found"
+    echo "Warning: repository/pipelines directory not found"
 fi
 
 # Create health check script

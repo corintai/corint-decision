@@ -2,15 +2,15 @@
 //!
 //! Parses YAML pipeline definitions into Pipeline AST nodes.
 
-use corint_core::ast::{
-    Branch, FeatureDefinition, MergeStrategy, Pipeline, PromptTemplate,
-    RdlDocument, Schema, SchemaProperty, Step, WhenBlock,
-};
-use corint_core::ast::pipeline::{ErrorAction, ErrorHandling};
 use crate::error::{ParseError, Result};
 use crate::expression_parser::ExpressionParser;
 use crate::import_parser::ImportParser;
 use crate::yaml_parser::YamlParser;
+use corint_core::ast::pipeline::{ErrorAction, ErrorHandling};
+use corint_core::ast::{
+    Branch, FeatureDefinition, MergeStrategy, Pipeline, PromptTemplate, RdlDocument, Schema,
+    SchemaProperty, Step, WhenBlock,
+};
 use serde_yaml::Value as YamlValue;
 use std::collections::HashMap;
 
@@ -89,7 +89,13 @@ impl PipelineParser {
             Vec::new()
         };
 
-        Ok(Pipeline { id, name, description, when, steps })
+        Ok(Pipeline {
+            id,
+            name,
+            description,
+            when,
+            steps,
+        })
     }
 
     /// Parse when block (similar to rule when block)
@@ -101,23 +107,24 @@ impl PipelineParser {
             .or_else(|| YamlParser::get_nested_string(when_obj, "event.type"));
 
         // Parse conditions (optional for pipeline when block)
-        let conditions = if let Some(cond_array) = when_obj.get("conditions").and_then(|v| v.as_sequence()) {
-            cond_array
-                .iter()
-                .map(|cond| {
-                    if let Some(s) = cond.as_str() {
-                        ExpressionParser::parse(s)
-                    } else {
-                        Err(ParseError::InvalidValue {
-                            field: "condition".to_string(),
-                            message: "Condition must be a string expression".to_string(),
-                        })
-                    }
-                })
-                .collect::<Result<Vec<_>>>()?
-        } else {
-            Vec::new()
-        };
+        let conditions =
+            if let Some(cond_array) = when_obj.get("conditions").and_then(|v| v.as_sequence()) {
+                cond_array
+                    .iter()
+                    .map(|cond| {
+                        if let Some(s) = cond.as_str() {
+                            ExpressionParser::parse(s)
+                        } else {
+                            Err(ParseError::InvalidValue {
+                                field: "condition".to_string(),
+                                message: "Condition must be a string expression".to_string(),
+                            })
+                        }
+                    })
+                    .collect::<Result<Vec<_>>>()?
+            } else {
+                Vec::new()
+            };
 
         Ok(WhenBlock {
             event_type,
@@ -160,14 +167,15 @@ impl PipelineParser {
     fn parse_extract_step(yaml: &YamlValue) -> Result<Step> {
         let id = YamlParser::get_string(yaml, "id")?;
 
-        let features = if let Some(features_array) = yaml.get("features").and_then(|v| v.as_sequence()) {
-            features_array
-                .iter()
-                .map(Self::parse_feature_definition)
-                .collect::<Result<Vec<_>>>()?
-        } else {
-            Vec::new()
-        };
+        let features =
+            if let Some(features_array) = yaml.get("features").and_then(|v| v.as_sequence()) {
+                features_array
+                    .iter()
+                    .map(Self::parse_feature_definition)
+                    .collect::<Result<Vec<_>>>()?
+            } else {
+                Vec::new()
+            };
 
         Ok(Step::Extract { id, features })
     }
@@ -210,18 +218,19 @@ impl PipelineParser {
     fn parse_schema(yaml: &YamlValue) -> Result<Schema> {
         let schema_type = YamlParser::get_string(yaml, "type")?;
 
-        let properties = if let Some(props_obj) = yaml.get("properties").and_then(|v| v.as_mapping()) {
-            let mut map = HashMap::new();
-            for (key, value) in props_obj {
-                if let Some(key_str) = key.as_str() {
-                    let prop = Self::parse_schema_property(value)?;
-                    map.insert(key_str.to_string(), prop);
+        let properties =
+            if let Some(props_obj) = yaml.get("properties").and_then(|v| v.as_mapping()) {
+                let mut map = HashMap::new();
+                for (key, value) in props_obj {
+                    if let Some(key_str) = key.as_str() {
+                        let prop = Self::parse_schema_property(value)?;
+                        map.insert(key_str.to_string(), prop);
+                    }
                 }
-            }
-            Some(map)
-        } else {
-            None
-        };
+                Some(map)
+            } else {
+                None
+            };
 
         Ok(Schema {
             schema_type,
@@ -361,14 +370,15 @@ impl PipelineParser {
 
     /// Parse branch step
     fn parse_branch_step(yaml: &YamlValue) -> Result<Step> {
-        let branches = if let Some(branches_array) = yaml.get("branches").and_then(|v| v.as_sequence()) {
-            branches_array
-                .iter()
-                .map(Self::parse_branch)
-                .collect::<Result<Vec<_>>>()?
-        } else {
-            Vec::new()
-        };
+        let branches =
+            if let Some(branches_array) = yaml.get("branches").and_then(|v| v.as_sequence()) {
+                branches_array
+                    .iter()
+                    .map(Self::parse_branch)
+                    .collect::<Result<Vec<_>>>()?
+            } else {
+                Vec::new()
+            };
 
         Ok(Step::Branch { branches })
     }
@@ -378,7 +388,8 @@ impl PipelineParser {
         let condition_str = YamlParser::get_string(yaml, "condition")?;
         let condition = ExpressionParser::parse(&condition_str)?;
 
-        let pipeline = if let Some(steps_array) = yaml.get("pipeline").and_then(|v| v.as_sequence()) {
+        let pipeline = if let Some(steps_array) = yaml.get("pipeline").and_then(|v| v.as_sequence())
+        {
             steps_array
                 .iter()
                 .map(Self::parse_step)

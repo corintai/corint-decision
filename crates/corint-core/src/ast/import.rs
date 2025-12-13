@@ -220,10 +220,8 @@ mod tests {
 
     #[test]
     fn test_imports_with_multiple() {
-        let imports = Imports::new().with_rules(vec![
-            "rule1.yaml".to_string(),
-            "rule2.yaml".to_string(),
-        ]);
+        let imports =
+            Imports::new().with_rules(vec!["rule1.yaml".to_string(), "rule2.yaml".to_string()]);
 
         assert_eq!(imports.rules.len(), 2);
     }
@@ -256,7 +254,12 @@ mod tests {
             id: String,
         }
 
-        let doc = RdlDocument::new("0.1".to_string(), TestDef { id: "test".to_string() });
+        let doc = RdlDocument::new(
+            "0.1".to_string(),
+            TestDef {
+                id: "test".to_string(),
+            },
+        );
 
         assert_eq!(doc.version, "0.1");
         assert!(!doc.has_imports());
@@ -274,7 +277,9 @@ mod tests {
         let doc = RdlDocument::with_imports(
             "0.1".to_string(),
             imports.clone(),
-            TestDef { id: "test".to_string() },
+            TestDef {
+                id: "test".to_string(),
+            },
         );
 
         assert!(doc.has_imports());
@@ -290,10 +295,7 @@ mod tests {
         let context = ImportContext::with_repository_root(base_dir.clone(), repo_root.clone());
 
         let resolved = context.resolve_path("library/rules/fraud_farm.yaml");
-        assert_eq!(
-            resolved,
-            repo_root.join("library/rules/fraud_farm.yaml")
-        );
+        assert_eq!(resolved, repo_root.join("library/rules/fraud_farm.yaml"));
     }
 
     #[test]

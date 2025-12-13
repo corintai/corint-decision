@@ -21,8 +21,8 @@
 //! ```
 
 use corint_runtime::{
-    LLMClient, LLMRequest,
-    OpenAIProvider, AnthropicProvider, GeminiProvider, DeepSeekProvider, MockProvider,
+    AnthropicProvider, DeepSeekProvider, GeminiProvider, LLMClient, LLMRequest, MockProvider,
+    OpenAIProvider,
 };
 use std::env;
 
@@ -37,8 +37,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     match provider_name {
         "openai" => {
-            let api_key = env::var("OPENAI_API_KEY")
-                .expect("OPENAI_API_KEY environment variable not set");
+            let api_key =
+                env::var("OPENAI_API_KEY").expect("OPENAI_API_KEY environment variable not set");
 
             let provider = OpenAIProvider::new(api_key);
 
@@ -63,8 +63,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
 
         "openai-thinking" => {
-            let api_key = env::var("OPENAI_API_KEY")
-                .expect("OPENAI_API_KEY environment variable not set");
+            let api_key =
+                env::var("OPENAI_API_KEY").expect("OPENAI_API_KEY environment variable not set");
 
             let provider = OpenAIProvider::new(api_key);
 
@@ -136,7 +136,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             )
             .with_max_tokens(2000)
             .with_temperature(0.7)
-            .with_thinking(true);  // Enable extended thinking
+            .with_thinking(true); // Enable extended thinking
 
             match provider.call(request).await {
                 Ok(response) => {
@@ -157,8 +157,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
 
         "gemini" => {
-            let api_key = env::var("GEMINI_API_KEY")
-                .expect("GEMINI_API_KEY environment variable not set");
+            let api_key =
+                env::var("GEMINI_API_KEY").expect("GEMINI_API_KEY environment variable not set");
 
             let provider = GeminiProvider::new(api_key);
 
@@ -220,11 +220,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
             println!("🧠 Testing mock provider with thinking mode...\n");
 
-            let request = LLMRequest::new(
-                "What is Rust?".to_string(),
-                "mock-thinking".to_string(),
-            )
-            .with_thinking(true);
+            let request = LLMRequest::new("What is Rust?".to_string(), "mock-thinking".to_string())
+                .with_thinking(true);
 
             match provider.call(request).await {
                 Ok(response) => {
@@ -250,10 +247,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
             println!("📝 Testing mock provider (standard mode)...\n");
 
-            let request = LLMRequest::new(
-                "What is Rust?".to_string(),
-                "mock-model".to_string(),
-            );
+            let request = LLMRequest::new("What is Rust?".to_string(), "mock-model".to_string());
 
             match provider.call(request).await {
                 Ok(response) => {

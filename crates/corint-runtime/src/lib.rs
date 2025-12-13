@@ -24,15 +24,17 @@ pub use datasource::{
     TimeWindowType,
 };
 pub use engine::PipelineExecutor;
-pub use error::{RuntimeError, Result};
+pub use error::{Result, RuntimeError};
 pub use executor::Executor;
 pub use external_api::{ApiConfig, EndpointConfig, ExternalApiClient, HttpMethod};
 pub use feature::FeatureExtractor;
 pub use llm::{
-    LLMClient, LLMRequest, LLMResponse,
-    LLMProvider, OpenAIProvider, AnthropicProvider, GeminiProvider, DeepSeekProvider, MockProvider,
+    AnthropicProvider, DeepSeekProvider, GeminiProvider, LLMClient, LLMProvider, LLMRequest,
+    LLMResponse, MockProvider, OpenAIProvider,
 };
 pub use observability::{Metrics, MetricsCollector};
-pub use result::{DecisionRecord, DecisionResultWriter, DecisionResult, ExecutionResult, RuleExecutionRecord};
+pub use result::{
+    DecisionRecord, DecisionResult, DecisionResultWriter, ExecutionResult, RuleExecutionRecord,
+};
 pub use service::{ServiceClient, ServiceRequest, ServiceResponse};
 pub use storage::{Event, EventFilter, InMemoryStorage, Storage, TimeRange};

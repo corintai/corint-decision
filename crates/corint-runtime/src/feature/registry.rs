@@ -87,7 +87,10 @@ impl FeatureRegistry {
 
         info!(
             "Loaded {} features from: {}",
-            self.feature_files.get(&file_key).map(|v| v.len()).unwrap_or(0),
+            self.feature_files
+                .get(&file_key)
+                .map(|v| v.len())
+                .unwrap_or(0),
             path.display()
         );
 
@@ -185,10 +188,7 @@ impl FeatureRegistry {
 
     /// Get all enabled features
     pub fn enabled_features(&self) -> Vec<&FeatureDefinition> {
-        self.features
-            .values()
-            .filter(|f| f.is_enabled())
-            .collect()
+        self.features.values().filter(|f| f.is_enabled()).collect()
     }
 
     /// Get features by type
@@ -308,8 +308,7 @@ impl FeatureRegistry {
     /// Export all features to a single YAML file
     pub fn export_to_file(&self, path: impl AsRef<Path>) -> Result<()> {
         let path = path.as_ref();
-        let features: Vec<FeatureDefinition> =
-            self.features.values().cloned().collect();
+        let features: Vec<FeatureDefinition> = self.features.values().cloned().collect();
 
         let collection = FeatureCollection {
             features,
@@ -390,7 +389,9 @@ mod tests {
         assert!(!registry.contains("test_feature"));
 
         // Manually insert for testing
-        registry.features.insert("test_feature".to_string(), feature);
+        registry
+            .features
+            .insert("test_feature".to_string(), feature);
 
         assert_eq!(registry.count(), 1);
         assert!(registry.contains("test_feature"));

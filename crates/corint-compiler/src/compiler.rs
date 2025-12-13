@@ -2,13 +2,13 @@
 //!
 //! Provides a unified interface for compiling different AST node types.
 
-use corint_core::ast::{Rule, Ruleset, Pipeline};
-use corint_core::ir::Program;
+use crate::codegen::{PipelineCompiler, RuleCompiler, RulesetCompiler};
 use crate::error::Result;
-use crate::codegen::{RuleCompiler, RulesetCompiler, PipelineCompiler};
-use crate::semantic::SemanticAnalyzer;
-use crate::optimizer::{ConstantFolder, DeadCodeEliminator};
 use crate::import_resolver::ImportResolver;
+use crate::optimizer::{ConstantFolder, DeadCodeEliminator};
+use crate::semantic::SemanticAnalyzer;
+use corint_core::ast::{Pipeline, Rule, Ruleset};
+use corint_core::ir::Program;
 use corint_parser::PipelineParser;
 use std::path::Path;
 
@@ -172,18 +172,20 @@ impl Compiler {
     /// ```
     pub fn compile_pipeline_file(&mut self, file_path: &Path) -> Result<Program> {
         // 1. Load the file
-        let content = std::fs::read_to_string(file_path)
-            .map_err(|e| crate::error::CompileError::ImportNotFound {
+        let content = std::fs::read_to_string(file_path).map_err(|e| {
+            crate::error::CompileError::ImportNotFound {
                 path: file_path.display().to_string(),
                 source: e,
-            })?;
+            }
+        })?;
 
         // 2. Parse the pipeline with imports
-        let document = PipelineParser::parse_with_imports(&content)
-            .map_err(|e| crate::error::CompileError::ParseError {
+        let document = PipelineParser::parse_with_imports(&content).map_err(|e| {
+            crate::error::CompileError::ParseError {
                 path: file_path.display().to_string(),
                 message: e.to_string(),
-            })?;
+            }
+        })?;
 
         // 3. Resolve imports
         let _resolved = self.import_resolver.resolve_imports(&document)?;
@@ -222,12 +224,7 @@ mod tests {
             Expression::literal(Value::Number(18.0)),
         ));
 
-        let rule = Rule::new(
-            "test".to_string(),
-            "Test".to_string(),
-            when,
-            50,
-        );
+        let rule = Rule::new("test".to_string(), "Test".to_string(), when, 50);
 
         let program = compiler.compile_rule(&rule).unwrap();
 
@@ -253,12 +250,7 @@ mod tests {
         let mut compiler = Compiler::with_options(options);
 
         let when = WhenBlock::new();
-        let rule = Rule::new(
-            "test".to_string(),
-            "Test".to_string(),
-            when,
-            50,
-        );
+        let rule = Rule::new("test".to_string(), "Test".to_string(), when, 50);
 
         let program = compiler.compile_rule(&rule).unwrap();
         assert_eq!(program.metadata.source_type, "rule");

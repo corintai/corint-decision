@@ -106,10 +106,9 @@ impl ServerConfig {
             .build();
 
         match config_result {
-            Ok(cfg) => {
-                cfg.try_deserialize()
-                    .map_err(|e| anyhow::anyhow!("Failed to deserialize config: {}", e))
-            }
+            Ok(cfg) => cfg
+                .try_deserialize()
+                .map_err(|e| anyhow::anyhow!("Failed to deserialize config: {}", e)),
             Err(_) => {
                 // Use default config if no config file found
                 tracing::info!("No config file found, using default configuration");
@@ -232,7 +231,10 @@ mod tests {
         assert!(config.enable_metrics);
         assert!(!config.enable_tracing);
         assert_eq!(config.log_level, "debug");
-        assert_eq!(config.database_url, Some("postgresql://localhost/test".to_string()));
+        assert_eq!(
+            config.database_url,
+            Some("postgresql://localhost/test".to_string())
+        );
     }
 
     #[test]
@@ -258,7 +260,9 @@ mod tests {
         };
         let cloned = repo.clone();
 
-        if let (RepositoryType::FileSystem { path: p1 }, RepositoryType::FileSystem { path: p2 }) = (&repo, &cloned) {
+        if let (RepositoryType::FileSystem { path: p1 }, RepositoryType::FileSystem { path: p2 }) =
+            (&repo, &cloned)
+        {
             assert_eq!(p1, p2);
         } else {
             panic!("Clone failed");
@@ -283,4 +287,3 @@ mod tests {
         assert!(debug_str.contains("8080"));
     }
 }
-

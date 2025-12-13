@@ -10,13 +10,13 @@ pub mod repository_loader;
 use crate::config::ServerConfig;
 use crate::repository_loader::load_rules_from_repository;
 use anyhow::Result;
-use corint_sdk::DecisionEngineBuilder;
 use corint_runtime::datasource::{DataSourceClient, DataSourceConfig};
 use corint_runtime::feature::{FeatureExecutor, FeatureRegistry};
-use corint_runtime::observability::otel::{OtelConfig, OtelContext, init_opentelemetry};
+use corint_runtime::observability::otel::{init_opentelemetry, OtelConfig, OtelContext};
+use corint_sdk::DecisionEngineBuilder;
 use std::sync::Arc;
 use tokio::net::TcpListener;
-use tracing::{info, error, warn};
+use tracing::{error, info, warn};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 #[tokio::main]
@@ -58,8 +58,9 @@ async fn main() -> Result<()> {
 fn init_tracing() -> Result<()> {
     tracing_subscriber::registry()
         .with(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "corint_server=info,corint_sdk=info,corint_runtime=info,tower_http=debug".into()),
+            tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| {
+                "corint_server=info,corint_sdk=info,corint_runtime=info,tower_http=debug".into()
+            }),
         )
         .with(tracing_subscriber::fmt::layer())
         .try_init()
@@ -107,16 +108,18 @@ async fn init_engine(config: &ServerConfig) -> Result<corint_sdk::DecisionEngine
         // Try to get database URL from config first, then fall back to environment variable
         info!("Checking database configuration...");
         info!("  Config database_url: {:?}", config.database_url);
-        
-        let database_url = config.database_url.clone()
-            .or_else(|| {
-                let env_url = std::env::var("DATABASE_URL").ok();
-                info!("  Environment DATABASE_URL: {:?}", env_url.is_some());
-                env_url
-            });
-        
+
+        let database_url = config.database_url.clone().or_else(|| {
+            let env_url = std::env::var("DATABASE_URL").ok();
+            info!("  Environment DATABASE_URL: {:?}", env_url.is_some());
+            env_url
+        });
+
         if let Some(database_url) = database_url {
-            info!("Initializing decision result writer with database: {}", database_url);
+            info!(
+                "Initializing decision result writer with database: {}",
+                database_url
+            );
             match sqlx::postgres::PgPoolOptions::new()
                 .max_connections(5)
                 .connect(&database_url)
@@ -148,7 +151,7 @@ async fn init_engine(config: &ServerConfig) -> Result<corint_sdk::DecisionEngine
 
     // Build engine
     let engine = builder.build().await?;
-    
+
     Ok(engine)
 }
 
@@ -173,7 +176,7 @@ async fn init_feature_executor() -> Result<Option<FeatureExecutor>> {
     // Load datasource configurations
     info!("Loading datasources from: {:?}", datasource_dir);
     let mut datasource_count = 0;
-    
+
     if let Ok(entries) = std::fs::read_dir(datasource_dir) {
         for entry in entries.flatten() {
             let path = entry.path();
@@ -188,20 +191,26 @@ async fn init_feature_executor() -> Result<Option<FeatureExecutor>> {
                                         executor.add_datasource(&datasource_name, client);
                                         info!("  ✓ Loaded datasource: {}", datasource_name);
                                         datasource_count += 1;
-                                        
+
                                         // Also register as "default" if it's the first datasource
                                         if datasource_count == 1 {
                                             // Need to create another client for "default"
                                             let content_clone = std::fs::read_to_string(&path)?;
-                                            let config_clone: DataSourceConfig = serde_yaml::from_str(&content_clone)?;
-                                            if let Ok(client_clone) = DataSourceClient::new(config_clone).await {
+                                            let config_clone: DataSourceConfig =
+                                                serde_yaml::from_str(&content_clone)?;
+                                            if let Ok(client_clone) =
+                                                DataSourceClient::new(config_clone).await
+                                            {
                                                 executor.add_datasource("default", client_clone);
                                                 info!("  ✓ Registered as default datasource");
                                             }
                                         }
                                     }
                                     Err(e) => {
-                                        warn!("  ✗ Failed to create datasource {}: {}", datasource_name, e);
+                                        warn!(
+                                            "  ✗ Failed to create datasource {}: {}",
+                                            datasource_name, e
+                                        );
                                     }
                                 }
                             }
@@ -260,7 +269,10 @@ async fn init_feature_executor() -> Result<Option<FeatureExecutor>> {
         return Ok(None);
     }
 
-    info!("✓ Loaded {} datasources, {} features", datasource_count, feature_count);
-    
+    info!(
+        "✓ Loaded {} datasources, {} features",
+        datasource_count, feature_count
+    );
+
     Ok(Some(executor))
 }

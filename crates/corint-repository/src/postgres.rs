@@ -9,9 +9,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use tokio::sync::RwLock;
 
-use crate::{
-    error::RepositoryError, models::*, traits::*, CacheStats, RepositoryResult,
-};
+use crate::{error::RepositoryError, models::*, traits::*, CacheStats, RepositoryResult};
 
 /// PostgreSQL database repository
 ///
@@ -169,8 +167,13 @@ impl Repository for PostgresRepository {
         let doc = RuleParser::parse_with_imports(&content)?;
 
         // Store in cache
-        self.store_in_cache(&self.rule_cache, identifier, doc.definition.clone(), content.clone())
-            .await;
+        self.store_in_cache(
+            &self.rule_cache,
+            identifier,
+            doc.definition.clone(),
+            content.clone(),
+        )
+        .await;
 
         Ok((doc.definition, content))
     }
@@ -216,7 +219,10 @@ impl Repository for PostgresRepository {
         Ok((doc.definition, content))
     }
 
-    async fn load_template(&self, identifier: &str) -> RepositoryResult<(DecisionTemplate, String)> {
+    async fn load_template(
+        &self,
+        identifier: &str,
+    ) -> RepositoryResult<(DecisionTemplate, String)> {
         // Check cache first
         if let Some(cached) = self.check_cache(&self.template_cache, identifier).await {
             return Ok(cached);
@@ -523,7 +529,9 @@ impl WritableRepository for PostgresRepository {
         let content = serde_yaml::to_string(template)
             .map_err(|e| RepositoryError::Other(format!("Failed to serialize template: {}", e)))?;
 
-        let params_json = template.params.as_ref()
+        let params_json = template
+            .params
+            .as_ref()
             .and_then(|p| serde_json::to_value(p).ok());
 
         sqlx::query(
@@ -550,9 +558,10 @@ impl WritableRepository for PostgresRepository {
         let content = serde_yaml::to_string(pipeline)
             .map_err(|e| RepositoryError::Other(format!("Failed to serialize pipeline: {}", e)))?;
 
-        let pipeline_id = pipeline.id.as_ref().ok_or_else(||
-            RepositoryError::Other("Pipeline must have an id".to_string())
-        )?;
+        let pipeline_id = pipeline
+            .id
+            .as_ref()
+            .ok_or_else(|| RepositoryError::Other("Pipeline must have an id".to_string()))?;
 
         sqlx::query(
             r#"

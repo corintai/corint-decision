@@ -12,11 +12,21 @@ async fn create_test_repo() -> (TempDir, FileSystemRepository) {
     let repo_path = temp_dir.path();
 
     // Create directory structure
-    fs::create_dir_all(repo_path.join("library/rules/fraud")).await.unwrap();
-    fs::create_dir_all(repo_path.join("library/rules/kyc")).await.unwrap();
-    fs::create_dir_all(repo_path.join("library/rulesets")).await.unwrap();
-    fs::create_dir_all(repo_path.join("library/templates")).await.unwrap();
-    fs::create_dir_all(repo_path.join("pipelines")).await.unwrap();
+    fs::create_dir_all(repo_path.join("library/rules/fraud"))
+        .await
+        .unwrap();
+    fs::create_dir_all(repo_path.join("library/rules/kyc"))
+        .await
+        .unwrap();
+    fs::create_dir_all(repo_path.join("library/rulesets"))
+        .await
+        .unwrap();
+    fs::create_dir_all(repo_path.join("library/templates"))
+        .await
+        .unwrap();
+    fs::create_dir_all(repo_path.join("pipelines"))
+        .await
+        .unwrap();
 
     // Create test rules
     let fraud_rule = r#"version: "0.1"
@@ -105,12 +115,9 @@ pipeline:
   stages:
     - ruleset: test_ruleset
 "#;
-    fs::write(
-        repo_path.join("pipelines/test_pipeline.yaml"),
-        pipeline,
-    )
-    .await
-    .unwrap();
+    fs::write(repo_path.join("pipelines/test_pipeline.yaml"), pipeline)
+        .await
+        .unwrap();
 
     // Create registry
     let registry = r#"version: "0.1"
@@ -120,7 +127,9 @@ registry:
     - event_type: transaction
       pipeline: test_pipeline
 "#;
-    fs::write(repo_path.join("registry.yaml"), registry).await.unwrap();
+    fs::write(repo_path.join("registry.yaml"), registry)
+        .await
+        .unwrap();
 
     let repo = FileSystemRepository::new(repo_path).unwrap();
     (temp_dir, repo)
@@ -361,7 +370,10 @@ async fn test_cache_enable_disable() {
     let _ = repo.load_rule("fraud_check").await.unwrap();
 
     let stats = repo.cache_stats();
-    assert_eq!(stats.hits, 0, "With cache disabled, there should be no hits");
+    assert_eq!(
+        stats.hits, 0,
+        "With cache disabled, there should be no hits"
+    );
 
     // Re-enable cache
     repo.set_cache_enabled(true);
@@ -372,7 +384,10 @@ async fn test_cache_enable_disable() {
     let _ = repo.load_rule("kyc_verification").await.unwrap();
 
     let stats_after_enable = repo.cache_stats();
-    assert!(stats_after_enable.hits > 0, "After enabling, cache should work");
+    assert!(
+        stats_after_enable.hits > 0,
+        "After enabling, cache should work"
+    );
 }
 
 // ==================================================
@@ -404,7 +419,10 @@ async fn test_list_rulesets() {
 async fn test_list_templates() {
     let (_temp, repo) = create_test_repo().await;
 
-    let templates = repo.list_templates().await.expect("Failed to list templates");
+    let templates = repo
+        .list_templates()
+        .await
+        .expect("Failed to list templates");
 
     assert_eq!(templates.len(), 1);
     assert!(templates.iter().any(|t| t.contains("score_template")));
@@ -414,7 +432,10 @@ async fn test_list_templates() {
 async fn test_list_pipelines() {
     let (_temp, repo) = create_test_repo().await;
 
-    let pipelines = repo.list_pipelines().await.expect("Failed to list pipelines");
+    let pipelines = repo
+        .list_pipelines()
+        .await
+        .expect("Failed to list pipelines");
 
     assert_eq!(pipelines.len(), 1);
     assert!(pipelines.iter().any(|p| p.contains("test_pipeline")));
@@ -477,9 +498,7 @@ async fn test_concurrent_loads() {
     let mut handles = vec![];
     for _ in 0..10 {
         let repo_clone = repo.clone();
-        let handle = tokio::spawn(async move {
-            repo_clone.load_rule("fraud_check").await
-        });
+        let handle = tokio::spawn(async move { repo_clone.load_rule("fraud_check").await });
         handles.push(handle);
     }
 
@@ -537,7 +556,9 @@ async fn test_load_with_special_characters_in_id() {
     let temp_dir = TempDir::new().unwrap();
     let repo_path = temp_dir.path();
 
-    fs::create_dir_all(repo_path.join("library/rules")).await.unwrap();
+    fs::create_dir_all(repo_path.join("library/rules"))
+        .await
+        .unwrap();
 
     let rule = r#"version: "0.1"
 
@@ -571,7 +592,9 @@ async fn test_yml_extension_support() {
     let temp_dir = TempDir::new().unwrap();
     let repo_path = temp_dir.path();
 
-    fs::create_dir_all(repo_path.join("library/rules")).await.unwrap();
+    fs::create_dir_all(repo_path.join("library/rules"))
+        .await
+        .unwrap();
 
     let rule = r#"version: "0.1"
 

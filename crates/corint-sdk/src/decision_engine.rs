@@ -3,11 +3,13 @@
 use crate::config::EngineConfig;
 use crate::error::{Result, SdkError};
 use corint_compiler::{Compiler, CompilerOptions as CompilerOpts};
+use corint_core::ast::{Expression, Operator, PipelineRegistry, WhenBlock};
 use corint_core::ir::Program;
 use corint_core::Value;
-use corint_core::ast::{PipelineRegistry, WhenBlock, Expression, Operator};
-use corint_parser::{RuleParser, RulesetParser, PipelineParser, RegistryParser};
-use corint_runtime::{DecisionResult, PipelineExecutor, MetricsCollector, ExternalApiClient, ApiConfig};
+use corint_parser::{PipelineParser, RegistryParser, RuleParser, RulesetParser};
+use corint_runtime::{
+    ApiConfig, DecisionResult, ExternalApiClient, MetricsCollector, PipelineExecutor,
+};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::Path;
@@ -92,7 +94,7 @@ impl DecisionEngine {
     /// Generate a unique request ID
     /// Format: req_YYYYMMDDHHmmss_xxx
     /// Example: req_20231209143052_a3f
-    /// 
+    ///
     /// Uses chrono to correctly handle leap years and variable month lengths
     fn generate_request_id() -> String {
         use chrono::Utc;
@@ -168,11 +170,17 @@ impl DecisionEngine {
             // Load registry from content string using RegistryParser
             match RegistryParser::parse(registry_content) {
                 Ok(reg) => {
-                    tracing::info!("✓ Loaded pipeline registry from content: {} entries", reg.registry.len());
+                    tracing::info!(
+                        "✓ Loaded pipeline registry from content: {} entries",
+                        reg.registry.len()
+                    );
                     Some(reg)
                 }
                 Err(e) => {
-                    tracing::warn!("Failed to parse registry content: {}. Continuing without registry.", e);
+                    tracing::warn!(
+                        "Failed to parse registry content: {}. Continuing without registry.",
+                        e
+                    );
                     None
                 }
             }
@@ -180,11 +188,17 @@ impl DecisionEngine {
             // Fall back to loading from file
             match Self::load_registry(registry_file).await {
                 Ok(reg) => {
-                    tracing::info!("✓ Loaded pipeline registry from file: {} entries", reg.registry.len());
+                    tracing::info!(
+                        "✓ Loaded pipeline registry from file: {} entries",
+                        reg.registry.len()
+                    );
                     Some(reg)
                 }
                 Err(e) => {
-                    tracing::warn!("Failed to load registry file: {}. Continuing without registry.", e);
+                    tracing::warn!(
+                        "Failed to load registry file: {}. Continuing without registry.",
+                        e
+                    );
                     None
                 }
             }
@@ -195,8 +209,8 @@ impl DecisionEngine {
         // Load external API configurations
         let mut api_client = ExternalApiClient::new();
 
-        // Load API configs from examples/configs/apis directory
-        let api_config_dir = Path::new("examples/configs/apis");
+        // Load API configs from repository/configs/apis directory
+        let api_config_dir = Path::new("repository/configs/apis");
         if api_config_dir.exists() {
             if let Ok(entries) = std::fs::read_dir(api_config_dir) {
                 for entry in entries.flatten() {
@@ -214,13 +228,14 @@ impl DecisionEngine {
         }
 
         // Create executor with API client
-        let mut pipeline_executor = PipelineExecutor::new().with_external_api_client(Arc::new(api_client));
-        
+        let mut pipeline_executor =
+            PipelineExecutor::new().with_external_api_client(Arc::new(api_client));
+
         // Set feature executor if provided (for lazy feature calculation)
         if let Some(feature_executor) = feature_executor {
             pipeline_executor = pipeline_executor.with_feature_executor(feature_executor);
         }
-        
+
         let executor = Arc::new(pipeline_executor);
         let metrics = executor.metrics();
 
@@ -315,10 +330,20 @@ impl DecisionEngine {
         match op {
             Operator::Eq => left_val == right_val,
             Operator::Ne => left_val != right_val,
-            Operator::Lt => Self::compare_values(&left_val, &right_val) == Some(std::cmp::Ordering::Less),
-            Operator::Gt => Self::compare_values(&left_val, &right_val) == Some(std::cmp::Ordering::Greater),
-            Operator::Le => matches!(Self::compare_values(&left_val, &right_val), Some(std::cmp::Ordering::Less | std::cmp::Ordering::Equal)),
-            Operator::Ge => matches!(Self::compare_values(&left_val, &right_val), Some(std::cmp::Ordering::Greater | std::cmp::Ordering::Equal)),
+            Operator::Lt => {
+                Self::compare_values(&left_val, &right_val) == Some(std::cmp::Ordering::Less)
+            }
+            Operator::Gt => {
+                Self::compare_values(&left_val, &right_val) == Some(std::cmp::Ordering::Greater)
+            }
+            Operator::Le => matches!(
+                Self::compare_values(&left_val, &right_val),
+                Some(std::cmp::Ordering::Less | std::cmp::Ordering::Equal)
+            ),
+            Operator::Ge => matches!(
+                Self::compare_values(&left_val, &right_val),
+                Some(std::cmp::Ordering::Greater | std::cmp::Ordering::Equal)
+            ),
             Operator::And => Self::is_truthy(&left_val) && Self::is_truthy(&right_val),
             Operator::Or => Self::is_truthy(&left_val) || Self::is_truthy(&right_val),
             Operator::In => {
@@ -392,15 +417,12 @@ impl DecisionEngine {
     }
 
     /// Load and compile rules from a file
-    async fn load_and_compile_rules(
-        path: &Path,
-        compiler: &mut Compiler,
-    ) -> Result<Vec<Program>> {
+    async fn load_and_compile_rules(path: &Path, compiler: &mut Compiler) -> Result<Vec<Program>> {
         use corint_parser::YamlParser;
 
         // Read file
         let content = tokio::fs::read_to_string(path).await?;
-        
+
         tracing::debug!("Loading file: {}", path.display());
 
         let mut programs = Vec::new();
@@ -430,7 +452,7 @@ impl DecisionEngine {
             if let Ok(pipeline) = PipelineParser::parse_from_yaml(doc) {
                 has_pipeline = true;
                 pipeline_count += 1;
-                
+
                 // Validate: Pipeline must have when condition
                 if pipeline.when.is_none() {
                     return Err(SdkError::InvalidRuleFile(format!(
@@ -440,7 +462,7 @@ impl DecisionEngine {
                         path.display()
                     )));
                 }
-                
+
                 tracing::debug!(
                     "Parsed pipeline: when={:?}, steps={}",
                     pipeline.when,
@@ -510,7 +532,11 @@ impl DecisionEngine {
                 return Err(SdkError::InvalidRuleFile(format!(
                     "Pipeline '{}' from '{}' is missing mandatory 'when' condition. \
                      All pipelines must specify when conditions to filter events.",
-                    document.definition.id.as_ref().unwrap_or(&"<unnamed>".to_string()),
+                    document
+                        .definition
+                        .id
+                        .as_ref()
+                        .unwrap_or(&"<unnamed>".to_string()),
                     id
                 )));
             }
@@ -523,7 +549,9 @@ impl DecisionEngine {
             );
 
             // Resolve imports and compile dependencies
-            let resolved = compiler.import_resolver_mut().resolve_imports(&document)
+            let resolved = compiler
+                .import_resolver_mut()
+                .resolve_imports(&document)
                 .map_err(SdkError::CompileError)?;
 
             tracing::debug!(
@@ -595,49 +623,49 @@ impl DecisionEngine {
             // Fallback: Parse as multi-document YAML for individual rules/rulesets
             let documents = YamlParser::parse_multi_document(content)?;
 
-        // Try to parse each document
-        for doc in documents.iter() {
-            // Try rule first
-            if let Ok(rule) = RuleParser::parse_from_yaml(doc) {
-                let prog = compiler.compile_rule(&rule)?;
-                programs.push(prog);
-                continue;
-            }
-
-            // Try ruleset
-            if let Ok(ruleset) = RulesetParser::parse_from_yaml(doc) {
-                let prog = compiler.compile_ruleset(&ruleset)?;
-                programs.push(prog);
-                continue;
-            }
-
-            // Try pipeline (without imports, since parse_with_imports already failed above)
-            if let Ok(pipeline) = PipelineParser::parse_from_yaml(doc) {
-                has_pipeline = true;
-                pipeline_count += 1;
-
-                // Validate: Pipeline must have when condition
-                if pipeline.when.is_none() {
-                    return Err(SdkError::InvalidRuleFile(format!(
-                        "Pipeline '{}' from '{}' is missing mandatory 'when' condition. \
-                         All pipelines must specify when conditions to filter events.",
-                        pipeline.id.as_ref().unwrap_or(&"<unnamed>".to_string()),
-                        id
-                    )));
+            // Try to parse each document
+            for doc in documents.iter() {
+                // Try rule first
+                if let Ok(rule) = RuleParser::parse_from_yaml(doc) {
+                    let prog = compiler.compile_rule(&rule)?;
+                    programs.push(prog);
+                    continue;
                 }
 
-                let prog = compiler.compile_pipeline(&pipeline)?;
-                tracing::debug!(
-                    "Compiled pipeline (no imports): {} instructions",
-                    prog.instructions.len()
-                );
-                programs.push(prog);
-                continue;
-            }
+                // Try ruleset
+                if let Ok(ruleset) = RulesetParser::parse_from_yaml(doc) {
+                    let prog = compiler.compile_ruleset(&ruleset)?;
+                    programs.push(prog);
+                    continue;
+                }
 
-            // Skip documents that don't match any known type (e.g., metadata sections)
-        }
-    } // Close the else block
+                // Try pipeline (without imports, since parse_with_imports already failed above)
+                if let Ok(pipeline) = PipelineParser::parse_from_yaml(doc) {
+                    has_pipeline = true;
+                    pipeline_count += 1;
+
+                    // Validate: Pipeline must have when condition
+                    if pipeline.when.is_none() {
+                        return Err(SdkError::InvalidRuleFile(format!(
+                            "Pipeline '{}' from '{}' is missing mandatory 'when' condition. \
+                         All pipelines must specify when conditions to filter events.",
+                            pipeline.id.as_ref().unwrap_or(&"<unnamed>".to_string()),
+                            id
+                        )));
+                    }
+
+                    let prog = compiler.compile_pipeline(&pipeline)?;
+                    tracing::debug!(
+                        "Compiled pipeline (no imports): {} instructions",
+                        prog.instructions.len()
+                    );
+                    programs.push(prog);
+                    continue;
+                }
+
+                // Skip documents that don't match any known type (e.g., metadata sections)
+            }
+        } // Close the else block
 
         // If no valid documents were found, return error
         if programs.is_empty() {
@@ -683,7 +711,9 @@ impl DecisionEngine {
             existing_id.clone()
         } else {
             let new_id = Self::generate_request_id();
-            request.metadata.insert("request_id".to_string(), new_id.clone());
+            request
+                .metadata
+                .insert("request_id".to_string(), new_id.clone());
             tracing::debug!("Generated new request_id: {}", new_id);
             new_id
         };
@@ -708,15 +738,26 @@ impl DecisionEngine {
 
         // PRIORITY 1: Use Registry-based routing if available
         if let Some(ref registry) = self.registry {
-            tracing::debug!("Using registry-based routing with {} entries", registry.registry.len());
+            tracing::debug!(
+                "Using registry-based routing with {} entries",
+                registry.registry.len()
+            );
 
             // Find the first matching registry entry (top-to-bottom order)
             for (idx, entry) in registry.registry.iter().enumerate() {
-                tracing::debug!("Checking registry entry {}: pipeline={}", idx, entry.pipeline);
+                tracing::debug!(
+                    "Checking registry entry {}: pipeline={}",
+                    idx,
+                    entry.pipeline
+                );
 
                 // Evaluate when block against event data
                 if Self::evaluate_when_block(&entry.when, &request.event_data) {
-                    tracing::info!("✓ Registry matched entry {}: pipeline={}", idx, entry.pipeline);
+                    tracing::info!(
+                        "✓ Registry matched entry {}: pipeline={}",
+                        idx,
+                        entry.pipeline
+                    );
 
                     // Record the matched pipeline ID
                     matched_pipeline_id = Some(entry.pipeline.clone());
@@ -724,14 +765,21 @@ impl DecisionEngine {
                     // Get the pipeline program
                     if let Some(pipeline_program) = self.pipeline_map.get(&entry.pipeline) {
                         // Log pipeline execution at INFO level
-                        tracing::info!("🚀 Executing pipeline: {} (request_id={})", entry.pipeline, request_id);
+                        tracing::info!(
+                            "🚀 Executing pipeline: {} (request_id={})",
+                            entry.pipeline,
+                            request_id
+                        );
 
                         // Execute the matched pipeline
-                        let result = self.executor.execute_with_result(
-                            pipeline_program,
-                            request.event_data.clone(),
-                            execution_result.clone()
-                        ).await?;
+                        let result = self
+                            .executor
+                            .execute_with_result(
+                                pipeline_program,
+                                request.event_data.clone(),
+                                execution_result.clone(),
+                            )
+                            .await?;
 
                         pipeline_matched = true;
 
@@ -739,13 +787,17 @@ impl DecisionEngine {
                         execution_result.variables = result.context.clone();
 
                         // Check if pipeline set a __next_ruleset__ variable
-                        if let Some(Value::String(ruleset_id)) = result.context.get("__next_ruleset__") {
+                        if let Some(Value::String(ruleset_id)) =
+                            result.context.get("__next_ruleset__")
+                        {
                             tracing::debug!("Pipeline routing to ruleset: {}", ruleset_id);
 
                             // Execute the specified ruleset
                             if let Some(ruleset_program) = self.ruleset_map.get(ruleset_id) {
                                 // Execute rules first
-                                if let Some(rules_str) = ruleset_program.metadata.custom.get("rules") {
+                                if let Some(rules_str) =
+                                    ruleset_program.metadata.custom.get("rules")
+                                {
                                     let mut seen = std::collections::HashSet::new();
                                     let rule_ids: Vec<&str> = rules_str
                                         .split(',')
@@ -754,49 +806,66 @@ impl DecisionEngine {
 
                                     for rule_id in rule_ids {
                                         if let Some(rule_program) = self.rule_map.get(rule_id) {
-                                            tracing::info!("Executing rule (via ruleset {}): {}", ruleset_id, rule_id);
+                                            tracing::info!(
+                                                "Executing rule (via ruleset {}): {}",
+                                                ruleset_id,
+                                                rule_id
+                                            );
 
                                             let rule_start = std::time::Instant::now();
                                             let prev_score = execution_result.score;
 
-                                            let rule_result = self.executor.execute_with_result(
-                                                rule_program,
-                                                request.event_data.clone(),
-                                                execution_result.clone()
-                                            ).await?;
+                                            let rule_result = self
+                                                .executor
+                                                .execute_with_result(
+                                                    rule_program,
+                                                    request.event_data.clone(),
+                                                    execution_result.clone(),
+                                                )
+                                                .await?;
 
-                                            let rule_time_ms = rule_start.elapsed().as_millis() as u64;
+                                            let rule_time_ms =
+                                                rule_start.elapsed().as_millis() as u64;
                                             let rule_score = rule_result.score - prev_score;
-                                            let triggered = rule_result.triggered_rules.contains(&rule_id.to_string());
+                                            let triggered = rule_result
+                                                .triggered_rules
+                                                .contains(&rule_id.to_string());
 
                                             // Record rule execution
-                                            rule_executions.push(Self::create_rule_execution_record(
-                                                &request_id,
-                                                rule_id,
-                                                triggered,
-                                                rule_score,
-                                                rule_time_ms,
-                                            ));
+                                            rule_executions.push(
+                                                Self::create_rule_execution_record(
+                                                    &request_id,
+                                                    rule_id,
+                                                    triggered,
+                                                    rule_score,
+                                                    rule_time_ms,
+                                                ),
+                                            );
 
                                             execution_result.score = rule_result.score;
-                                            execution_result.triggered_rules = rule_result.triggered_rules;
+                                            execution_result.triggered_rules =
+                                                rule_result.triggered_rules;
                                         }
                                     }
                                 }
 
                                 // Execute ruleset decision logic
-                                let ruleset_result = self.executor.execute_with_result(
-                                    ruleset_program,
-                                    request.event_data.clone(),
-                                    execution_result.clone()
-                                ).await?;
+                                let ruleset_result = self
+                                    .executor
+                                    .execute_with_result(
+                                        ruleset_program,
+                                        request.event_data.clone(),
+                                        execution_result.clone(),
+                                    )
+                                    .await?;
 
                                 if ruleset_result.action.is_some() {
                                     combined_result.action = ruleset_result.action;
                                 }
                                 combined_result.explanation = ruleset_result.explanation;
                                 combined_result.score = execution_result.score;
-                                combined_result.triggered_rules = execution_result.triggered_rules.clone();
+                                combined_result.triggered_rules =
+                                    execution_result.triggered_rules.clone();
                             }
                         }
 
@@ -808,7 +877,11 @@ impl DecisionEngine {
                         // First match wins - stop evaluating registry
                         break;
                     } else {
-                        tracing::warn!("Registry entry {} references unknown pipeline: {}", idx, entry.pipeline);
+                        tracing::warn!(
+                            "Registry entry {} references unknown pipeline: {}",
+                            idx,
+                            entry.pipeline
+                        );
                     }
                 } else {
                     tracing::trace!("Registry entry {} did not match", idx);
@@ -840,137 +913,169 @@ impl DecisionEngine {
             // Rules may depend on context variables set by pipelines
             // Only execute the first pipeline whose event_type matches (pre-filter by metadata)
             if !pipeline_programs.is_empty() {
-            // Extract request event_type
-            let req_event_type = request
-                .event_data
-                .get("event_type")
-                .and_then(|v| if let Value::String(s) = v { Some(s.clone()) } else { None });
+                // Extract request event_type
+                let req_event_type = request.event_data.get("event_type").and_then(|v| {
+                    if let Value::String(s) = v {
+                        Some(s.clone())
+                    } else {
+                        None
+                    }
+                });
 
-            // Find the first matching pipeline by event_type hint (if present)
-            let mut selected_pipeline: Option<&Program> = None;
-            for pipeline_program in &pipeline_programs {
-                if let Some(evt) = pipeline_program.metadata.custom.get("event_type") {
-                    if let Some(ref req_evt) = req_event_type {
-                        if evt != req_evt {
-                            continue; // event_type 不匹配，跳过
+                // Find the first matching pipeline by event_type hint (if present)
+                let mut selected_pipeline: Option<&Program> = None;
+                for pipeline_program in &pipeline_programs {
+                    if let Some(evt) = pipeline_program.metadata.custom.get("event_type") {
+                        if let Some(ref req_evt) = req_event_type {
+                            if evt != req_evt {
+                                continue; // event_type 不匹配，跳过
+                            }
                         }
                     }
-                }
-                selected_pipeline = Some(*pipeline_program);
-                break;
-            }
-
-            if let Some(pipeline_program) = selected_pipeline {
-                // Record the matched pipeline ID
-                matched_pipeline_id = Some(pipeline_program.metadata.source_id.clone());
-
-                // Log pipeline execution at INFO level
-                tracing::info!("🚀 Executing pipeline: {} (request_id={})",
-                    pipeline_program.metadata.source_id, request_id);
-
-                // 记录执行前的状态，用于判断是否匹配
-                let before_score = execution_result.score;
-                let before_triggers_len = execution_result.triggered_rules.len();
-
-                // Execute the pipeline
-                let result = self.executor.execute_with_result(
-                    pipeline_program,
-                    request.event_data.clone(),
-                    execution_result.clone()
-                ).await?;
-
-                // 判断该 pipeline 是否匹配了当前事件（when 条件命中）
-                let matched = result.score != before_score
-                    || result.triggered_rules.len() != before_triggers_len
-                    || result.action.is_some()
-                    || !result.context.is_empty();
-
-                if matched {
-                    pipeline_matched = true;
+                    selected_pipeline = Some(*pipeline_program);
+                    break;
                 }
 
-                // Update execution_result with pipeline context (important for subsequent rules)
-                execution_result.variables = result.context.clone();
+                if let Some(pipeline_program) = selected_pipeline {
+                    // Record the matched pipeline ID
+                    matched_pipeline_id = Some(pipeline_program.metadata.source_id.clone());
 
-                // Check if pipeline set a __next_ruleset__ variable
-                tracing::debug!("Pipeline result context: {:?}", result.context.keys().collect::<Vec<_>>());
-                if let Some(Value::String(ruleset_id)) = result.context.get("__next_ruleset__") {
-                    tracing::debug!("Pipeline routing to ruleset: {}", ruleset_id);
-                    // 有 __next_ruleset__ 视为命中
-                    pipeline_matched = true;
-                    // Execute the specified ruleset
-                    if let Some(ruleset_program) = self.ruleset_map.get(ruleset_id) {
-                        // IMPORTANT: Execute rules FIRST before decision logic
-                        // Get the list of rules from ruleset metadata
-                        if let Some(rules_str) = ruleset_program.metadata.custom.get("rules") {
-                            // Dedup rule IDs to avoid accidental double execution
-                            let mut seen = std::collections::HashSet::new();
-                            let rule_ids: Vec<&str> = rules_str
-                                .split(',')
-                                .filter(|rid| seen.insert(*rid))
-                                .collect();
-                            tracing::debug!("Executing {} rules for ruleset {}: {:?}", rule_ids.len(), ruleset_id, rule_ids);
+                    // Log pipeline execution at INFO level
+                    tracing::info!(
+                        "🚀 Executing pipeline: {} (request_id={})",
+                        pipeline_program.metadata.source_id,
+                        request_id
+                    );
 
-                            // Execute each rule and accumulate results
-                            for rule_id in rule_ids {
-                                if let Some(rule_program) = self.rule_map.get(rule_id) {
-                                    tracing::info!("Executing rule (via ruleset {}): {}", ruleset_id, rule_id);
+                    // 记录执行前的状态，用于判断是否匹配
+                    let before_score = execution_result.score;
+                    let before_triggers_len = execution_result.triggered_rules.len();
 
-                                    let rule_start = std::time::Instant::now();
-                                    let prev_score = execution_result.score;
+                    // Execute the pipeline
+                    let result = self
+                        .executor
+                        .execute_with_result(
+                            pipeline_program,
+                            request.event_data.clone(),
+                            execution_result.clone(),
+                        )
+                        .await?;
 
-                                    let rule_result = self.executor.execute_with_result(
-                                        rule_program,
-                                        request.event_data.clone(),
-                                        execution_result.clone()
-                                    ).await?;
+                    // 判断该 pipeline 是否匹配了当前事件（when 条件命中）
+                    let matched = result.score != before_score
+                        || result.triggered_rules.len() != before_triggers_len
+                        || result.action.is_some()
+                        || !result.context.is_empty();
 
-                                    let rule_time_ms = rule_start.elapsed().as_millis() as u64;
-                                    let rule_score = rule_result.score - prev_score;
-                                    let triggered = rule_result.triggered_rules.contains(&rule_id.to_string());
+                    if matched {
+                        pipeline_matched = true;
+                    }
 
-                                    // Record rule execution
-                                    rule_executions.push(Self::create_rule_execution_record(
-                                        &request_id,
-                                        rule_id,
-                                        triggered,
-                                        rule_score,
-                                        rule_time_ms,
-                                    ));
+                    // Update execution_result with pipeline context (important for subsequent rules)
+                    execution_result.variables = result.context.clone();
 
-                                    // Update execution_result with the returned state
-                                    // (execute_with_result already includes previous state + new additions)
-                                    execution_result.score = rule_result.score;
-                                    execution_result.triggered_rules = rule_result.triggered_rules;
+                    // Check if pipeline set a __next_ruleset__ variable
+                    tracing::debug!(
+                        "Pipeline result context: {:?}",
+                        result.context.keys().collect::<Vec<_>>()
+                    );
+                    if let Some(Value::String(ruleset_id)) = result.context.get("__next_ruleset__")
+                    {
+                        tracing::debug!("Pipeline routing to ruleset: {}", ruleset_id);
+                        // 有 __next_ruleset__ 视为命中
+                        pipeline_matched = true;
+                        // Execute the specified ruleset
+                        if let Some(ruleset_program) = self.ruleset_map.get(ruleset_id) {
+                            // IMPORTANT: Execute rules FIRST before decision logic
+                            // Get the list of rules from ruleset metadata
+                            if let Some(rules_str) = ruleset_program.metadata.custom.get("rules") {
+                                // Dedup rule IDs to avoid accidental double execution
+                                let mut seen = std::collections::HashSet::new();
+                                let rule_ids: Vec<&str> = rules_str
+                                    .split(',')
+                                    .filter(|rid| seen.insert(*rid))
+                                    .collect();
+                                tracing::debug!(
+                                    "Executing {} rules for ruleset {}: {:?}",
+                                    rule_ids.len(),
+                                    ruleset_id,
+                                    rule_ids
+                                );
+
+                                // Execute each rule and accumulate results
+                                for rule_id in rule_ids {
+                                    if let Some(rule_program) = self.rule_map.get(rule_id) {
+                                        tracing::info!(
+                                            "Executing rule (via ruleset {}): {}",
+                                            ruleset_id,
+                                            rule_id
+                                        );
+
+                                        let rule_start = std::time::Instant::now();
+                                        let prev_score = execution_result.score;
+
+                                        let rule_result = self
+                                            .executor
+                                            .execute_with_result(
+                                                rule_program,
+                                                request.event_data.clone(),
+                                                execution_result.clone(),
+                                            )
+                                            .await?;
+
+                                        let rule_time_ms = rule_start.elapsed().as_millis() as u64;
+                                        let rule_score = rule_result.score - prev_score;
+                                        let triggered = rule_result
+                                            .triggered_rules
+                                            .contains(&rule_id.to_string());
+
+                                        // Record rule execution
+                                        rule_executions.push(Self::create_rule_execution_record(
+                                            &request_id,
+                                            rule_id,
+                                            triggered,
+                                            rule_score,
+                                            rule_time_ms,
+                                        ));
+
+                                        // Update execution_result with the returned state
+                                        // (execute_with_result already includes previous state + new additions)
+                                        execution_result.score = rule_result.score;
+                                        execution_result.triggered_rules =
+                                            rule_result.triggered_rules;
+                                    }
                                 }
+
+                                // Mark that pipeline routing handled rule execution
+                                pipeline_handled_rules = true;
                             }
 
-                            // Mark that pipeline routing handled rule execution
-                            pipeline_handled_rules = true;
-                        }
+                            // NOW execute the ruleset's decision logic with accumulated results
+                            let ruleset_result = self
+                                .executor
+                                .execute_with_result(
+                                    ruleset_program,
+                                    request.event_data.clone(),
+                                    execution_result.clone(),
+                                )
+                                .await?;
 
-                        // NOW execute the ruleset's decision logic with accumulated results
-                        let ruleset_result = self.executor.execute_with_result(
-                            ruleset_program,
-                            request.event_data.clone(),
-                            execution_result.clone()
-                        ).await?;
-
-                        // Update combined result with ruleset decision
-                        if ruleset_result.action.is_some() {
-                            combined_result.action = ruleset_result.action;
+                            // Update combined result with ruleset decision
+                            if ruleset_result.action.is_some() {
+                                combined_result.action = ruleset_result.action;
+                            }
+                            combined_result.explanation = ruleset_result.explanation;
+                            combined_result.score = execution_result.score;
+                            combined_result.triggered_rules =
+                                execution_result.triggered_rules.clone();
                         }
-                        combined_result.explanation = ruleset_result.explanation;
-                        combined_result.score = execution_result.score;
-                        combined_result.triggered_rules = execution_result.triggered_rules.clone();
+                    }
+
+                    // Update state from pipeline execution
+                    if result.action.is_some() {
+                        combined_result.action = result.action;
                     }
                 }
-
-                // Update state from pipeline execution
-                if result.action.is_some() {
-                    combined_result.action = result.action;
-                }
-            }
             }
 
             // Execute all rule programs ONLY if pipeline routing didn't handle them
@@ -987,11 +1092,14 @@ impl DecisionEngine {
                     let rule_start = std::time::Instant::now();
                     let prev_score = execution_result.score;
 
-                    let result = self.executor.execute_with_result(
-                        program,
-                        request.event_data.clone(),
-                        execution_result.clone()
-                    ).await?;
+                    let result = self
+                        .executor
+                        .execute_with_result(
+                            program,
+                            request.event_data.clone(),
+                            execution_result.clone(),
+                        )
+                        .await?;
 
                     let rule_time_ms = rule_start.elapsed().as_millis() as u64;
                     let rule_score = result.score - prev_score;
@@ -1023,11 +1131,14 @@ impl DecisionEngine {
             // If no pipelines, execute rulesets sequentially (old behavior)
             if pipeline_programs.is_empty() && !ruleset_programs.is_empty() {
                 for program in &ruleset_programs {
-                    let result = self.executor.execute_with_result(
-                        program,
-                        request.event_data.clone(),
-                        execution_result.clone()
-                    ).await?;
+                    let result = self
+                        .executor
+                        .execute_with_result(
+                            program,
+                            request.event_data.clone(),
+                            execution_result.clone(),
+                        )
+                        .await?;
 
                     // Update combined result with decision from ruleset
                     if result.action.is_some() {
@@ -1041,36 +1152,47 @@ impl DecisionEngine {
 
         // Persist decision result asynchronously if result writer is configured
         tracing::debug!("Checking result_writer in DecisionEngine.decide()...");
-        tracing::debug!("  Engine has result_writer: {}", self.result_writer.is_some());
-        
+        tracing::debug!(
+            "  Engine has result_writer: {}",
+            self.result_writer.is_some()
+        );
+
         if let Some(ref result_writer) = self.result_writer {
             tracing::debug!("Result writer is configured, preparing to persist decision result");
-            
+
             // Extract request_id and event_id from metadata
             // request_id was already generated at the beginning of decide(), so just retrieve it
-            let request_id = request.metadata.get("request_id")
+            let request_id = request
+                .metadata
+                .get("request_id")
                 .cloned()
                 .expect("request_id should have been generated at the start of decide()");
             let event_id = request.metadata.get("event_id").cloned();
-            
+
             tracing::debug!("Request ID: {}, Event ID: {:?}", request_id, event_id);
-            
+
             // Determine pipeline_id (use first matched pipeline or default)
             let pipeline_id = if let Some(ref registry) = self.registry {
                 // Find the matched pipeline from registry
-                registry.registry.iter()
+                registry
+                    .registry
+                    .iter()
                     .find(|entry| Self::evaluate_when_block(&entry.when, &request.event_data))
                     .map(|entry| entry.pipeline.clone())
                     .unwrap_or("unknown".to_string())
             } else if !self.pipeline_map.is_empty() {
                 // Use first pipeline ID
-                self.pipeline_map.keys().next().cloned().unwrap_or("unknown".to_string())
+                self.pipeline_map
+                    .keys()
+                    .next()
+                    .cloned()
+                    .unwrap_or("unknown".to_string())
             } else {
                 "unknown".to_string()
             };
-            
+
             tracing::debug!("Pipeline ID: {}", pipeline_id);
-            
+
             // Create decision record
             let decision_record = corint_runtime::DecisionRecord::from_decision_result(
                 request_id.clone(),
@@ -1080,17 +1202,28 @@ impl DecisionEngine {
                 processing_time_ms,
                 rule_executions, // Rule execution tracking implemented
             );
-            
-            tracing::info!("Queuing decision record for persistence: request_id={}, score={}, action={:?}", 
-                request_id, combined_result.score, combined_result.action);
-            
+
+            tracing::info!(
+                "Queuing decision record for persistence: request_id={}, score={}, action={:?}",
+                request_id,
+                combined_result.score,
+                combined_result.action
+            );
+
             // Write asynchronously (non-blocking)
             match result_writer.write_decision(decision_record) {
                 Ok(()) => {
-                    tracing::info!("Decision record queued successfully for request_id: {}", request_id);
+                    tracing::info!(
+                        "Decision record queued successfully for request_id: {}",
+                        request_id
+                    );
                 }
                 Err(e) => {
-                    tracing::error!("Failed to queue decision record for request_id {}: {}", request_id, e);
+                    tracing::error!(
+                        "Failed to queue decision record for request_id {}: {}",
+                        request_id,
+                        e
+                    );
                 }
             }
         } else {
@@ -1126,7 +1259,7 @@ impl DecisionEngine {
             triggered,
             score: if triggered { Some(score) } else { None },
             execution_time_ms: Some(execution_time_ms),
-            feature_values: None, // Could be enhanced to extract from context
+            feature_values: None,  // Could be enhanced to extract from context
             rule_conditions: None, // Could be enhanced to include rule conditions
         }
     }
@@ -1270,8 +1403,11 @@ ruleset:
         println!("  Action: {:?}", response.result.action);
         println!("  Score: {}", response.result.score);
         println!("  Triggered Rules: {:?}", response.result.triggered_rules);
-        assert!(matches!(response.result.action, Some(Action::Approve)),
-            "Expected Some(Approve) but got {:?}", response.result.action);
+        assert!(
+            matches!(response.result.action, Some(Action::Approve)),
+            "Expected Some(Approve) but got {:?}",
+            response.result.action
+        );
 
         // Test Case 2: High value (5000.0) - should review
         event_data.insert("transaction_amount".to_string(), Value::Number(5000.0));
@@ -1284,7 +1420,10 @@ ruleset:
         event_data.insert("transaction_amount".to_string(), Value::Number(15000.0));
         let request = DecisionRequest::new(event_data);
         let response = engine.decide(request).await.unwrap();
-        println!("Test Case 3 (15000.0): Action: {:?}", response.result.action);
+        println!(
+            "Test Case 3 (15000.0): Action: {:?}",
+            response.result.action
+        );
         assert!(matches!(response.result.action, Some(Action::Deny)));
     }
 
@@ -1385,9 +1524,18 @@ ruleset:
         let response = engine.decide(request).await.unwrap();
 
         // Verify metadata is preserved in response
-        assert_eq!(response.metadata.get("event_id"), Some(&"evt_123".to_string()));
-        assert_eq!(response.metadata.get("source"), Some(&"mobile_app".to_string()));
-        assert_eq!(response.metadata.get("user_agent"), Some(&"iOS/14.5".to_string()));
+        assert_eq!(
+            response.metadata.get("event_id"),
+            Some(&"evt_123".to_string())
+        );
+        assert_eq!(
+            response.metadata.get("source"),
+            Some(&"mobile_app".to_string())
+        );
+        assert_eq!(
+            response.metadata.get("user_agent"),
+            Some(&"iOS/14.5".to_string())
+        );
         // Note: request_id may also be added to metadata, so length could be 3 or 4
         assert!(response.metadata.len() >= 3);
 
@@ -1597,6 +1745,9 @@ ruleset:
         let response = engine.decide(request).await.unwrap();
 
         assert!(response.request_id.starts_with("req_"));
-        println!("Config test passed with request_id: {}", response.request_id);
+        println!(
+            "Config test passed with request_id: {}",
+            response.request_id
+        );
     }
 }

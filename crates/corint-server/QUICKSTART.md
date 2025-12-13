@@ -25,7 +25,7 @@ Create `config/server.yaml`:
 ```yaml
 host: "127.0.0.1"
 port: 8080
-rules_dir: "examples/pipelines"
+rules_dir: "repository/pipelines"
 enable_metrics: true
 enable_tracing: true
 log_level: "info"
@@ -131,10 +131,10 @@ cp target/release/corint-server deploy/corint-server/bin/
 cp config/server.yaml deploy/corint-server/config/
 
 # Copy rule files
-cp -r examples/pipelines deploy/corint-server/
+cp -r repository/pipelines deploy/corint-server/
 
 # Copy data source configs (if needed)
-cp -r examples/configs deploy/corint-server/config/
+cp -r repository/configs deploy/corint-server/config/
 
 # Create necessary directories
 mkdir -p deploy/corint-server/logs
@@ -602,7 +602,7 @@ lsof -i :8080
 2. Check if rules directory exists:
 
 ```bash
-ls -la examples/pipelines
+ls -la repository/pipelines
 ```
 
 3. View detailed logs:
@@ -622,8 +622,8 @@ RUST_LOG=debug cargo run -p corint-server
 3. View server startup logs for rule loading information:
 
 ```
-INFO corint_server: Loading rules from directory: "examples/pipelines"
-INFO corint_server: Loading rule file: "examples/pipelines/simple_rule.yaml"
+INFO corint_server: Loading rules from directory: "repository/pipelines"
+INFO corint_server: Loading rule file: "repository/pipelines/simple_rule.yaml"
 ```
 
 ### Issue 3: Feature Calculation Fails
@@ -638,7 +638,7 @@ INFO corint_server: Loading rule file: "examples/pipelines/simple_rule.yaml"
 psql "postgresql://postgres.PROJECT_REF:PASSWORD@HOST:PORT/postgres" -c "SELECT 1"
 ```
 
-2. Check data source configuration `examples/configs/datasources/supabase_events.yaml`
+2. Check data source configuration `repository/configs/datasources/supabase_events.yaml`
 
 3. View SQL queries and errors in logs:
 

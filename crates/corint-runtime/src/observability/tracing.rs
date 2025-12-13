@@ -185,18 +185,13 @@ impl Default for InMemoryTracer {
 
 impl Tracer for InMemoryTracer {
     fn start_span(&self, operation: String) -> Span {
-        let context = SpanContext::new(
-            self.next_trace_id(),
-            self.next_span_id(),
-        );
+        let context = SpanContext::new(self.next_trace_id(), self.next_span_id());
         Span::new(context, operation)
     }
 
     fn start_child_span(&self, parent: &Span, operation: String) -> Span {
-        let context = SpanContext::new(
-            parent.context.trace_id.clone(),
-            self.next_span_id(),
-        ).with_parent(parent.context.span_id.clone());
+        let context = SpanContext::new(parent.context.trace_id.clone(), self.next_span_id())
+            .with_parent(parent.context.span_id.clone());
 
         Span::new(context, operation)
     }
@@ -285,7 +280,10 @@ mod tests {
         let child = tracer.start_child_span(&parent, "child_operation".to_string());
 
         assert_eq!(child.context.trace_id, parent.context.trace_id);
-        assert_eq!(child.context.parent_id, Some(parent.context.span_id.clone()));
+        assert_eq!(
+            child.context.parent_id,
+            Some(parent.context.span_id.clone())
+        );
     }
 
     #[test]

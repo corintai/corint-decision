@@ -38,7 +38,7 @@ The server can be configured via:
 ```bash
 CORINT_HOST=127.0.0.1
 CORINT_PORT=8080
-CORINT_RULES_DIR=examples/pipelines
+CORINT_RULES_DIR=repository/pipelines
 CORINT_ENABLE_METRICS=true
 CORINT_ENABLE_TRACING=true
 CORINT_LOG_LEVEL=info
@@ -53,7 +53,7 @@ Create `config/server.yaml`:
 ```yaml
 host: "127.0.0.1"
 port: 8080
-rules_dir: "examples/pipelines"
+rules_dir: "repository/pipelines"
 enable_metrics: true
 enable_tracing: true
 log_level: "info"
@@ -645,7 +645,6 @@ The server is ready for development and testing environments, and can be enhance
 - [Quick Start & Deployment Guide](QUICKSTART.md) - Step-by-step operations guide
 - [Development Guide](../../docs/DEV_GUIDE.md) - Complete development guide
 - [Rule Syntax](../../docs/dsl/rule.md) - Rule definition syntax
-- [Feature Calculation Example](../../examples/supabase_feature_example.rs) - Feature calculation example
 
 ## License
 

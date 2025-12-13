@@ -35,7 +35,11 @@ pub enum RuntimeError {
 
     /// Core error (from corint-core)
     #[error("Core error: {0}")]
-    CoreError(#[from] #[source] corint_core::error::CoreError),
+    CoreError(
+        #[from]
+        #[source]
+        corint_core::error::CoreError,
+    ),
 
     /// Generic runtime error
     #[error("Runtime error: {0}")]

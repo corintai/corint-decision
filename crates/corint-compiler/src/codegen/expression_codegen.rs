@@ -2,11 +2,11 @@
 //!
 //! Compiles Expression AST nodes into IR instructions.
 
-use corint_core::ast::{Expression, Operator};
+use crate::error::{CompileError, Result};
 #[cfg(test)]
 use corint_core::ast::UnaryOperator;
+use corint_core::ast::{Expression, Operator};
 use corint_core::ir::Instruction;
-use crate::error::{CompileError, Result};
 
 /// Expression compiler
 pub struct ExpressionCompiler;
@@ -24,9 +24,7 @@ impl ExpressionCompiler {
 
             Expression::FieldAccess(path) => {
                 // Load field value onto stack
-                Ok(vec![Instruction::LoadField {
-                    path: path.clone(),
-                }])
+                Ok(vec![Instruction::LoadField { path: path.clone() }])
             }
 
             Expression::Binary { left, op, right } => {
@@ -109,12 +107,7 @@ impl ExpressionCompiler {
     fn is_comparison_op(op: &Operator) -> bool {
         matches!(
             op,
-            Operator::Eq
-                | Operator::Ne
-                | Operator::Lt
-                | Operator::Gt
-                | Operator::Le
-                | Operator::Ge
+            Operator::Eq | Operator::Ne | Operator::Lt | Operator::Gt | Operator::Le | Operator::Ge
         )
     }
 }
@@ -130,10 +123,7 @@ mod tests {
         let instructions = ExpressionCompiler::compile(&expr).unwrap();
 
         assert_eq!(instructions.len(), 1);
-        assert!(matches!(
-            instructions[0],
-            Instruction::LoadConst { .. }
-        ));
+        assert!(matches!(instructions[0], Instruction::LoadConst { .. }));
     }
 
     #[test]

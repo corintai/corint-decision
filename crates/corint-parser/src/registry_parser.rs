@@ -2,10 +2,10 @@
 //!
 //! Parses YAML registry definitions into PipelineRegistry AST nodes.
 
-use corint_core::ast::{PipelineRegistry, RegistryEntry, WhenBlock};
 use crate::error::{ParseError, Result};
 use crate::expression_parser::ExpressionParser;
 use crate::yaml_parser::YamlParser;
+use corint_core::ast::{PipelineRegistry, RegistryEntry, WhenBlock};
 use serde_yaml::Value as YamlValue;
 
 /// Registry parser
@@ -49,8 +49,8 @@ impl RegistryParser {
     /// Parse a single registry entry
     fn parse_entry(yaml: &YamlValue, index: usize) -> Result<RegistryEntry> {
         // Get pipeline ID
-        let pipeline = YamlParser::get_string(yaml, "pipeline")
-            .map_err(|_| ParseError::MissingField {
+        let pipeline =
+            YamlParser::get_string(yaml, "pipeline").map_err(|_| ParseError::MissingField {
                 field: format!("registry[{}].pipeline", index),
             })?;
 
@@ -88,7 +88,8 @@ impl RegistryParser {
                                     } else {
                                         return Err(ParseError::InvalidValue {
                                             field: "condition".to_string(),
-                                            message: "Condition must be a string expression".to_string(),
+                                            message: "Condition must be a string expression"
+                                                .to_string(),
                                         });
                                     }
                                 }
@@ -97,10 +98,14 @@ impl RegistryParser {
                         // All other fields are treated as direct field filters
                         _ => {
                             // Parse the field path (e.g., "event.type" -> ["event", "type"])
-                            let field_path: Vec<String> = key_str.split('.').map(|s| s.to_string()).collect();
+                            let field_path: Vec<String> =
+                                key_str.split('.').map(|s| s.to_string()).collect();
 
                             // Special case: event.type gets stored in event_type field for optimization
-                            if field_path.len() == 2 && field_path[0] == "event" && field_path[1] == "type" {
+                            if field_path.len() == 2
+                                && field_path[0] == "event"
+                                && field_path[1] == "type"
+                            {
                                 if let Some(value_str) = value.as_str() {
                                     event_type = Some(value_str.to_string());
                                     continue;
@@ -110,16 +115,16 @@ impl RegistryParser {
                             // Convert direct field filter to an equality condition
                             // e.g., event.channel: stripe  ->  event.channel == "stripe"
                             let value_expr = if let Some(s) = value.as_str() {
-                                use corint_core::Value;
                                 use corint_core::ast::Expression;
+                                use corint_core::Value;
                                 Expression::literal(Value::String(s.to_string()))
                             } else if let Some(n) = value.as_f64() {
-                                use corint_core::Value;
                                 use corint_core::ast::Expression;
+                                use corint_core::Value;
                                 Expression::literal(Value::Number(n))
                             } else if let Some(b) = value.as_bool() {
-                                use corint_core::Value;
                                 use corint_core::ast::Expression;
+                                use corint_core::Value;
                                 Expression::literal(Value::Bool(b))
                             } else {
                                 continue; // Skip unsupported value types
@@ -130,7 +135,8 @@ impl RegistryParser {
                             let field_expr = Expression::field_access(field_path);
 
                             // Create equality condition: field == value
-                            let condition = Expression::binary(field_expr, Operator::Eq, value_expr);
+                            let condition =
+                                Expression::binary(field_expr, Operator::Eq, value_expr);
                             conditions.push(condition);
                         }
                     }
@@ -169,9 +175,15 @@ registry:
         assert_eq!(registry.version, Some("0.1".to_string()));
         assert_eq!(registry.registry.len(), 2);
         assert_eq!(registry.registry[0].pipeline, "login_pipeline");
-        assert_eq!(registry.registry[0].when.event_type, Some("login".to_string()));
+        assert_eq!(
+            registry.registry[0].when.event_type,
+            Some("login".to_string())
+        );
         assert_eq!(registry.registry[1].pipeline, "payment_pipeline");
-        assert_eq!(registry.registry[1].when.event_type, Some("payment".to_string()));
+        assert_eq!(
+            registry.registry[1].when.event_type,
+            Some("payment".to_string())
+        );
     }
 
     #[test]
@@ -225,7 +237,10 @@ registry:
 
         // First entry: event.type and event.channel
         assert_eq!(registry.registry[0].pipeline, "stripe_pipeline");
-        assert_eq!(registry.registry[0].when.event_type, Some("payment".to_string()));
+        assert_eq!(
+            registry.registry[0].when.event_type,
+            Some("payment".to_string())
+        );
         // event.channel should be converted to a condition
         assert_eq!(registry.registry[0].when.conditions.len(), 1);
 
@@ -235,7 +250,10 @@ registry:
 
         // Third entry: multiple fields
         assert_eq!(registry.registry[2].pipeline, "multi_field_pipeline");
-        assert_eq!(registry.registry[2].when.event_type, Some("transaction".to_string()));
+        assert_eq!(
+            registry.registry[2].when.event_type,
+            Some("transaction".to_string())
+        );
         // event.channel and event.currency should be converted to conditions
         assert_eq!(registry.registry[2].when.conditions.len(), 2);
     }

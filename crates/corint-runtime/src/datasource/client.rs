@@ -70,10 +70,11 @@ impl DataSourceClient {
         // Cache result if applicable
         if !result.rows.is_empty() {
             if let Some(row) = result.rows.first() {
-                self.cache
-                    .lock()
-                    .unwrap()
-                    .set(cache_key, row.clone(), std::time::Duration::from_secs(300));
+                self.cache.lock().unwrap().set(
+                    cache_key,
+                    row.clone(),
+                    std::time::Duration::from_secs(300),
+                );
             }
         }
 
@@ -86,11 +87,7 @@ impl DataSourceClient {
     }
 
     /// Get a feature from feature store
-    pub async fn get_feature(
-        &self,
-        feature_name: &str,
-        entity_key: &str,
-    ) -> Result<Option<Value>> {
+    pub async fn get_feature(&self, feature_name: &str, entity_key: &str) -> Result<Option<Value>> {
         let cache_key = format!("feature:{}:{}", feature_name, entity_key);
 
         // Check cache
@@ -128,7 +125,7 @@ impl DataSourceClient {
             query.entity.clone(),
             serde_json::to_string(&query.filters).unwrap_or_default(),
         ];
-        
+
         // Include time window in cache key
         if let Some(ref time_window) = query.time_window {
             key_parts.push(format!(
@@ -137,7 +134,7 @@ impl DataSourceClient {
                 serde_json::to_string(&time_window.window_type).unwrap_or_default()
             ));
         }
-        
+
         // Include aggregations in cache key (different aggregations should have different cache keys)
         if !query.aggregations.is_empty() {
             key_parts.push(format!(
@@ -145,17 +142,17 @@ impl DataSourceClient {
                 serde_json::to_string(&query.aggregations).unwrap_or_default()
             ));
         }
-        
+
         // Include group_by in cache key
         if !query.group_by.is_empty() {
             key_parts.push(format!("group_by:{}", query.group_by.join(",")));
         }
-        
+
         // Include limit in cache key
         if let Some(limit) = query.limit {
             key_parts.push(format!("limit:{}", limit));
         }
-        
+
         format!("query:{}", key_parts.join(":"))
     }
 
@@ -214,7 +211,11 @@ impl FeatureStoreClient {
     }
 
     /// Get feature from Redis
-    async fn get_redis_feature(&self, feature_name: &str, entity_key: &str) -> Result<Option<Value>> {
+    async fn get_redis_feature(
+        &self,
+        feature_name: &str,
+        entity_key: &str,
+    ) -> Result<Option<Value>> {
         // TODO: Use redis crate to fetch feature
         // For now, return mock data
 
@@ -289,22 +290,18 @@ impl DataSourceImpl for FeatureStoreClient {
 #[async_trait::async_trait]
 impl FeatureStoreOps for FeatureStoreClient {
     async fn get_feature(&self, feature_name: &str, entity_key: &str) -> Result<Option<Value>> {
-        tracing::debug!(
-            "Getting feature {} for entity {}",
-            feature_name,
-            entity_key
-        );
+        tracing::debug!("Getting feature {} for entity {}", feature_name, entity_key);
 
         match self.config.provider {
             super::config::FeatureStoreProvider::Redis => {
                 self.get_redis_feature(feature_name, entity_key).await
             }
-            super::config::FeatureStoreProvider::Feast => {
-                Err(RuntimeError::RuntimeError("Feast not yet implemented".to_string()))
-            }
-            super::config::FeatureStoreProvider::Http => {
-                Err(RuntimeError::RuntimeError("HTTP feature store not yet implemented".to_string()))
-            }
+            super::config::FeatureStoreProvider::Feast => Err(RuntimeError::RuntimeError(
+                "Feast not yet implemented".to_string(),
+            )),
+            super::config::FeatureStoreProvider::Http => Err(RuntimeError::RuntimeError(
+                "HTTP feature store not yet implemented".to_string(),
+            )),
         }
     }
 }
@@ -333,15 +330,15 @@ impl DataSourceImpl for OLAPClient {
         // Execute query based on provider
         match self.config.provider {
             super::config::OLAPProvider::ClickHouse => self.execute_clickhouse(&sql).await,
-            super::config::OLAPProvider::Druid => {
-                Err(RuntimeError::RuntimeError("Druid not yet implemented".to_string()))
-            }
-            super::config::OLAPProvider::TimescaleDB => {
-                Err(RuntimeError::RuntimeError("TimescaleDB not yet implemented".to_string()))
-            }
-            super::config::OLAPProvider::InfluxDB => {
-                Err(RuntimeError::RuntimeError("InfluxDB not yet implemented".to_string()))
-            }
+            super::config::OLAPProvider::Druid => Err(RuntimeError::RuntimeError(
+                "Druid not yet implemented".to_string(),
+            )),
+            super::config::OLAPProvider::TimescaleDB => Err(RuntimeError::RuntimeError(
+                "TimescaleDB not yet implemented".to_string(),
+            )),
+            super::config::OLAPProvider::InfluxDB => Err(RuntimeError::RuntimeError(
+                "InfluxDB not yet implemented".to_string(),
+            )),
         }
     }
 }
@@ -545,36 +542,42 @@ impl SQLClient {
     #[cfg_attr(not(feature = "sqlx"), allow(unused_variables))]
     async fn new(config: super::config::SQLConfig, pool_size: u32) -> Result<Self> {
         tracing::info!("Initializing SQL client: {:?}", config.provider);
-        
+
         #[cfg(feature = "sqlx")]
         let pool = if matches!(config.provider, super::config::SQLProvider::PostgreSQL) {
             use sqlx::postgres::PgPoolOptions;
-            
+
             tracing::info!("Creating PostgreSQL connection pool");
             // Use provided pool_size or get from config options, default to 10
-            let effective_pool_size = config.options
+            let effective_pool_size = config
+                .options
                 .get("max_connections")
                 .and_then(|s| s.parse::<u32>().ok())
                 .unwrap_or_else(|| pool_size.max(1));
-            
+
             let pool = PgPoolOptions::new()
                 .max_connections(effective_pool_size)
                 .connect(&config.connection_string)
                 .await
-                .map_err(|e| RuntimeError::RuntimeError(format!("Failed to connect to PostgreSQL: {}", e)))?;
-            
-            tracing::info!("✓ PostgreSQL connection pool created successfully (max_connections: {})", effective_pool_size);
+                .map_err(|e| {
+                    RuntimeError::RuntimeError(format!("Failed to connect to PostgreSQL: {}", e))
+                })?;
+
+            tracing::info!(
+                "✓ PostgreSQL connection pool created successfully (max_connections: {})",
+                effective_pool_size
+            );
             Some(pool)
         } else {
             None
         };
-        
+
         #[cfg(not(feature = "sqlx"))]
         let _pool = ();
-        
+
         #[cfg(feature = "sqlx")]
         return Ok(Self { config, pool });
-        
+
         #[cfg(not(feature = "sqlx"))]
         Ok(Self { config })
     }
@@ -592,12 +595,12 @@ impl DataSourceImpl for SQLClient {
         // Execute query based on provider
         match self.config.provider {
             super::config::SQLProvider::PostgreSQL => self.execute_postgresql(&sql).await,
-            super::config::SQLProvider::MySQL => {
-                Err(RuntimeError::RuntimeError("MySQL not yet implemented".to_string()))
-            }
-            super::config::SQLProvider::SQLite => {
-                Err(RuntimeError::RuntimeError("SQLite not yet implemented".to_string()))
-            }
+            super::config::SQLProvider::MySQL => Err(RuntimeError::RuntimeError(
+                "MySQL not yet implemented".to_string(),
+            )),
+            super::config::SQLProvider::SQLite => Err(RuntimeError::RuntimeError(
+                "SQLite not yet implemented".to_string(),
+            )),
         }
     }
 }
@@ -675,18 +678,19 @@ impl SQLClient {
     /// Build aggregation clause
     fn build_aggregation(&self, agg: &super::query::Aggregation) -> String {
         let field = agg.field.as_deref().unwrap_or("*");
-        
+
         // For PostgreSQL, if field contains JSONB access (->>), wrap it with type cast for numeric aggregations
-        let needs_numeric_cast = matches!(
-            agg.agg_type,
-            super::query::AggregationType::Sum
-                | super::query::AggregationType::Avg
-                | super::query::AggregationType::Min
-                | super::query::AggregationType::Max
-                | super::query::AggregationType::Stddev
-                | super::query::AggregationType::Percentile { .. }
-        ) && (field.contains("->>") || field == "amount" || field.starts_with("attributes"));
-        
+        let needs_numeric_cast =
+            matches!(
+                agg.agg_type,
+                super::query::AggregationType::Sum
+                    | super::query::AggregationType::Avg
+                    | super::query::AggregationType::Min
+                    | super::query::AggregationType::Max
+                    | super::query::AggregationType::Stddev
+                    | super::query::AggregationType::Percentile { .. }
+            ) && (field.contains("->>") || field == "amount" || field.starts_with("attributes"));
+
         // Build field expression with type cast if needed
         let field_expr = if needs_numeric_cast {
             if field.contains("->>") {
@@ -708,13 +712,18 @@ impl SQLClient {
 
         let expr = match agg.agg_type {
             super::query::AggregationType::Count => format!("COUNT({})", field_expr),
-            super::query::AggregationType::CountDistinct => format!("COUNT(DISTINCT {})", field_expr),
+            super::query::AggregationType::CountDistinct => {
+                format!("COUNT(DISTINCT {})", field_expr)
+            }
             super::query::AggregationType::Sum => format!("SUM({})", field_expr),
             super::query::AggregationType::Avg => format!("AVG({})", field_expr),
             super::query::AggregationType::Min => format!("MIN({})", field_expr),
             super::query::AggregationType::Max => format!("MAX({})", field_expr),
             super::query::AggregationType::Median => {
-                format!("PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY {})", field_expr)
+                format!(
+                    "PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY {})",
+                    field_expr
+                )
             }
             super::query::AggregationType::Stddev => format!("STDDEV_POP({})", field_expr),
             super::query::AggregationType::Percentile { p } => {
@@ -799,31 +808,33 @@ impl SQLClient {
 
         #[cfg(feature = "sqlx")]
         {
-            let pool = self.pool.as_ref()
-                .ok_or_else(|| RuntimeError::RuntimeError("PostgreSQL connection pool not available. Enable 'sqlx' feature.".to_string()))?;
-            
+            let pool = self.pool.as_ref().ok_or_else(|| {
+                RuntimeError::RuntimeError(
+                    "PostgreSQL connection pool not available. Enable 'sqlx' feature.".to_string(),
+                )
+            })?;
+
             let start = Instant::now();
-            
+
             // Execute query
-            let rows = sqlx::query(sql)
-                .fetch_all(pool)
-                .await
-                .map_err(|e| RuntimeError::RuntimeError(format!("Failed to execute PostgreSQL query: {}", e)))?;
-            
+            let rows = sqlx::query(sql).fetch_all(pool).await.map_err(|e| {
+                RuntimeError::RuntimeError(format!("Failed to execute PostgreSQL query: {}", e))
+            })?;
+
             let execution_time_ms = start.elapsed().as_millis() as u64;
-            
+
             // Convert rows to QueryResult format
             let mut result_rows = Vec::new();
-            
+
             for row in rows {
                 let mut map = HashMap::new();
-                
+
                 // Get column names and values
                 for (idx, column) in row.columns().iter().enumerate() {
                     let column_name = column.name().to_string();
-                    
+
                     tracing::debug!("Column {}: name={}", idx, column_name);
-                    
+
                     // Try to get value based on type
                     // PostgreSQL aggregate functions (SUM, AVG, MAX, MIN) return NULL when no rows match
                     // PostgreSQL numeric type needs special handling - use BigDecimal for numeric type
@@ -903,14 +914,14 @@ impl SQLClient {
                             Value::Null
                         }
                     };
-                    
+
                     tracing::debug!("Extracted value for {}: {:?}", column_name, value);
                     map.insert(column_name, value);
                 }
-                
+
                 result_rows.push(map);
             }
-            
+
             Ok(QueryResult {
                 rows: result_rows,
                 execution_time_ms,
@@ -918,11 +929,11 @@ impl SQLClient {
                 from_cache: false,
             })
         }
-        
+
         #[cfg(not(feature = "sqlx"))]
         {
             Err(RuntimeError::RuntimeError(
-                "PostgreSQL queries require 'sqlx' feature to be enabled".to_string()
+                "PostgreSQL queries require 'sqlx' feature to be enabled".to_string(),
             ))
         }
     }

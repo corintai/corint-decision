@@ -5,7 +5,7 @@ use crate::import_parser::ImportParser;
 use crate::ruleset_parser::RulesetParser;
 use crate::yaml_parser::YamlParser;
 use corint_core::ast::{DecisionRule, DecisionTemplate, RdlDocument};
-use serde::{Deserialize as _};
+use serde::Deserialize as _;
 use serde_yaml::Value;
 use std::collections::HashMap;
 
@@ -20,9 +20,7 @@ impl TemplateParser {
             .collect();
 
         if docs.is_empty() {
-            return Err(ParseError::ParseError(
-                "Empty YAML document".to_string(),
-            ));
+            return Err(ParseError::ParseError("Empty YAML document".to_string()));
         }
 
         // Single document: just template
@@ -58,7 +56,9 @@ impl TemplateParser {
     pub fn parse_template(value: &Value) -> Result<DecisionTemplate, ParseError> {
         let template_obj = value
             .get("template")
-            .ok_or_else(|| ParseError::MissingField { field: "template".to_string() })?;
+            .ok_or_else(|| ParseError::MissingField {
+                field: "template".to_string(),
+            })?;
 
         let id = YamlParser::get_string(template_obj, "id")?;
         let name = YamlParser::get_optional_string(template_obj, "name");
@@ -90,11 +90,11 @@ impl TemplateParser {
         // Parse decision_logic
         let decision_logic_array = template_obj
             .get("decision_logic")
-            .ok_or_else(|| ParseError::MissingField { field: "decision_logic".to_string() })?
+            .ok_or_else(|| ParseError::MissingField {
+                field: "decision_logic".to_string(),
+            })?
             .as_sequence()
-            .ok_or_else(|| {
-                ParseError::ParseError("decision_logic must be an array".to_string())
-            })?;
+            .ok_or_else(|| ParseError::ParseError("decision_logic must be an array".to_string()))?;
 
         let decision_logic: Vec<DecisionRule> = decision_logic_array
             .iter()
@@ -102,9 +102,9 @@ impl TemplateParser {
             .collect::<Result<Vec<_>, _>>()?;
 
         // Parse metadata
-        let metadata = template_obj.get("metadata").and_then(|v| {
-            serde_yaml::from_value(v.clone()).ok()
-        });
+        let metadata = template_obj
+            .get("metadata")
+            .and_then(|v| serde_yaml::from_value(v.clone()).ok());
 
         Ok(DecisionTemplate {
             id,
@@ -167,7 +167,10 @@ template:
         assert!(doc.definition.params.is_some());
 
         let params = doc.definition.params.unwrap();
-        assert_eq!(params.get("critical_threshold"), Some(&serde_json::json!(200)));
+        assert_eq!(
+            params.get("critical_threshold"),
+            Some(&serde_json::json!(200))
+        );
         assert_eq!(params.get("high_threshold"), Some(&serde_json::json!(100)));
         assert_eq!(doc.definition.decision_logic.len(), 2);
     }
@@ -209,6 +212,9 @@ id: test_template
 
         let result = TemplateParser::parse_with_imports(yaml);
         assert!(result.is_err());
-        assert!(matches!(result.unwrap_err(), ParseError::MissingField { .. }));
+        assert!(matches!(
+            result.unwrap_err(),
+            ParseError::MissingField { .. }
+        ));
     }
 }

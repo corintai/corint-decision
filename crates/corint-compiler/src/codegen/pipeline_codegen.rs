@@ -2,9 +2,9 @@
 //!
 //! Compiles Pipeline AST nodes into IR programs.
 
-use corint_core::ast::{Pipeline, Step};
-use corint_core::ir::{Instruction, Program, ProgramMetadata, FeatureType, TimeWindow};
 use crate::error::Result;
+use corint_core::ast::{Pipeline, Step};
+use corint_core::ir::{FeatureType, Instruction, Program, ProgramMetadata, TimeWindow};
 use std::collections::HashMap;
 
 /// Pipeline compiler
@@ -26,7 +26,7 @@ impl PipelineCompiler {
             // 2. Compile when conditions (if any)
             if !when_block.conditions.is_empty() {
                 use crate::codegen::expression_codegen::ExpressionCompiler;
-                
+
                 // Compile all conditions
                 let mut condition_blocks = Vec::new();
                 for condition in &when_block.conditions {
@@ -49,11 +49,12 @@ impl PipelineCompiler {
                     let mut remaining_instruction_count = steps_instruction_count;
 
                     for remaining_block in &condition_blocks[idx + 1..] {
-                        remaining_instruction_count += remaining_block.len() + 1; // +1 for JumpIfFalse
+                        remaining_instruction_count += remaining_block.len() + 1;
+                        // +1 for JumpIfFalse
                     }
 
                     instructions.push(Instruction::JumpIfFalse {
-                        offset: remaining_instruction_count as isize
+                        offset: remaining_instruction_count as isize,
                     });
                 }
             }
@@ -68,20 +69,27 @@ impl PipelineCompiler {
         instructions.push(Instruction::Return);
 
         // Create program metadata with pipeline id, name, description
-        let pipeline_id = pipeline.id.clone().unwrap_or_else(|| "pipeline".to_string());
+        let pipeline_id = pipeline
+            .id
+            .clone()
+            .unwrap_or_else(|| "pipeline".to_string());
         let mut metadata = ProgramMetadata::for_pipeline(pipeline_id);
-        
+
         // Add name and description to custom metadata
         if let Some(ref name) = pipeline.name {
             metadata.custom.insert("name".to_string(), name.clone());
         }
         if let Some(ref description) = pipeline.description {
-            metadata.custom.insert("description".to_string(), description.clone());
+            metadata
+                .custom
+                .insert("description".to_string(), description.clone());
         }
         // Add event_type hint for pre-filtering pipelines at runtime
         if let Some(ref when_block) = pipeline.when {
             if let Some(ref event_type) = when_block.event_type {
-                metadata.custom.insert("event_type".to_string(), event_type.clone());
+                metadata
+                    .custom
+                    .insert("event_type".to_string(), event_type.clone());
             }
         }
 
@@ -227,7 +235,7 @@ impl PipelineCompiler {
                         // JumpIfFalse offset = length of body + 1 (for the Jump instruction) + 1 (to skip past JumpIfFalse itself)
                         let jump_if_false_offset = (compiled.body.len() + 1 + 1) as isize;
                         instructions.push(Instruction::JumpIfFalse {
-                            offset: jump_if_false_offset
+                            offset: jump_if_false_offset,
                         });
 
                         // Add branch body
@@ -246,13 +254,13 @@ impl PipelineCompiler {
 
                         // +1 to skip past the Jump instruction itself
                         instructions.push(Instruction::Jump {
-                            offset: (remaining_size + 1) as isize
+                            offset: (remaining_size + 1) as isize,
                         });
                     } else {
                         // Last branch: just JumpIfFalse and body
                         // +1 to skip past the JumpIfFalse instruction itself
                         instructions.push(Instruction::JumpIfFalse {
-                            offset: (compiled.body.len() + 1) as isize
+                            offset: (compiled.body.len() + 1) as isize,
                         });
                         instructions.extend(compiled.body.clone());
                     }
@@ -275,7 +283,7 @@ impl PipelineCompiler {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use corint_core::ast::{FeatureDefinition, Expression, PromptTemplate};
+    use corint_core::ast::{Expression, FeatureDefinition, PromptTemplate};
 
     #[test]
     fn test_compile_empty_pipeline() {
@@ -306,10 +314,7 @@ mod tests {
         let instructions = PipelineCompiler::compile_step(&step).unwrap();
 
         assert!(!instructions.is_empty());
-        assert!(matches!(
-            instructions[0],
-            Instruction::CallFeature { .. }
-        ));
+        assert!(matches!(instructions[0], Instruction::CallFeature { .. }));
     }
 
     #[test]
@@ -327,10 +332,7 @@ mod tests {
         let instructions = PipelineCompiler::compile_step(&step).unwrap();
 
         assert!(!instructions.is_empty());
-        assert!(matches!(
-            instructions[0],
-            Instruction::CallLLM { .. }
-        ));
+        assert!(matches!(instructions[0], Instruction::CallLLM { .. }));
     }
 
     #[test]
@@ -347,14 +349,8 @@ mod tests {
 
         // Should generate CallService + Store
         assert_eq!(instructions.len(), 2);
-        assert!(matches!(
-            instructions[0],
-            Instruction::CallService { .. }
-        ));
-        assert!(matches!(
-            instructions[1],
-            Instruction::Store { .. }
-        ));
+        assert!(matches!(instructions[0], Instruction::CallService { .. }));
+        assert!(matches!(instructions[1], Instruction::Store { .. }));
     }
 
     #[test]
@@ -367,10 +363,7 @@ mod tests {
 
         // Include step produces one CallRuleset instruction
         assert_eq!(instructions.len(), 1);
-        assert!(matches!(
-            instructions[0],
-            Instruction::CallRuleset { .. }
-        ));
+        assert!(matches!(instructions[0], Instruction::CallRuleset { .. }));
     }
 
     #[test]

@@ -59,12 +59,7 @@ impl Operator {
     pub fn is_comparison(&self) -> bool {
         matches!(
             self,
-            Operator::Eq
-                | Operator::Ne
-                | Operator::Gt
-                | Operator::Ge
-                | Operator::Lt
-                | Operator::Le
+            Operator::Eq | Operator::Ne | Operator::Gt | Operator::Ge | Operator::Lt | Operator::Le
         )
     }
 

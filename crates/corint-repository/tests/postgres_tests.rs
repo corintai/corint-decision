@@ -11,7 +11,9 @@
 #[cfg(feature = "postgres")]
 mod postgres_tests {
     use corint_core::ast::{Expression, Rule, WhenBlock};
-    use corint_repository::{PostgresRepository, Repository, WritableRepository, CacheableRepository};
+    use corint_repository::{
+        CacheableRepository, PostgresRepository, Repository, WritableRepository,
+    };
     use sqlx::postgres::PgPool;
 
     /// Get database URL from environment or use default test database
@@ -70,9 +72,7 @@ mod postgres_tests {
         let rule = create_test_rule("test_rule_1");
 
         // Save the rule
-        repo.save_rule(&rule)
-            .await
-            .expect("Failed to save rule");
+        repo.save_rule(&rule).await.expect("Failed to save rule");
 
         // Load the rule back
         let (loaded_rule, _content) = repo

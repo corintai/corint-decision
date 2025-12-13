@@ -130,19 +130,26 @@ impl DecisionEngineBuilder {
     /// Build the decision engine
     pub async fn build(self) -> Result<DecisionEngine> {
         #[cfg_attr(not(feature = "sqlx"), allow(unused_mut))]
-        let mut engine = DecisionEngine::new_with_feature_executor(self.config, self.feature_executor).await?;
-        
+        let mut engine =
+            DecisionEngine::new_with_feature_executor(self.config, self.feature_executor).await?;
+
         // Set result writer if configured
         #[cfg(feature = "sqlx")]
         {
             tracing::info!("Builder.build() - Checking result_writer in builder...");
-            tracing::info!("  Builder has result_writer: {}", self.result_writer.is_some());
-            
+            tracing::info!(
+                "  Builder has result_writer: {}",
+                self.result_writer.is_some()
+            );
+
             if let Some(result_writer) = self.result_writer {
                 tracing::info!("Setting result_writer on DecisionEngine");
                 engine.result_writer = Some(result_writer);
                 tracing::info!("Result writer successfully set on DecisionEngine");
-                tracing::info!("  Engine has result_writer: {}", engine.result_writer.is_some());
+                tracing::info!(
+                    "  Engine has result_writer: {}",
+                    engine.result_writer.is_some()
+                );
             } else {
                 tracing::warn!("No result_writer configured in builder - this should not happen if database_url was set!");
             }
@@ -151,7 +158,7 @@ impl DecisionEngineBuilder {
         {
             tracing::warn!("sqlx feature not enabled, result persistence will not be available");
         }
-        
+
         Ok(engine)
     }
 }

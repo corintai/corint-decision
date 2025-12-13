@@ -38,7 +38,7 @@
 - ✅ `crates/corint-server/src/main.rs` - Server集成OTel
 - ✅ `crates/corint-server/src/api/rest.rs` - 添加/metrics endpoint
 - ✅ `crates/corint-runtime/Cargo.toml` - 添加otel feature
-- ✅ `examples/opentelemetry_metrics.rs` - 使用示例
+- ✅ `crates/corint-runtime/examples/opentelemetry_metrics.rs` - 使用示例
 - ✅ `crates/corint-runtime/README.md` - 完整文档（Observability章节）
 
 **功能特性:**
@@ -652,7 +652,7 @@
   - ✅ 配置Prometheus exporter暴露/metrics endpoint（支持Prometheus抓取）
   - ✅ 实现分布式追踪传播（trace context propagation）
   - ✅ 支持traces导出到Jaeger/Zipkin等后端
-  - ✅ 完整的文档和示例 (OPENTELEMETRY.md)
+  - ✅ 完整的文档和示例 (crates/corint-runtime/README.md)
 
 **待完成项:**
 - [ ] 添加决策审计日志

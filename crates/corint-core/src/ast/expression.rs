@@ -1,7 +1,7 @@
 //! Expression AST nodes
 
-use crate::types::Value;
 use super::operator::Operator;
+use crate::types::Value;
 use serde::{Deserialize, Serialize};
 
 /// Expression AST node
@@ -27,10 +27,7 @@ pub enum Expression {
     },
 
     /// Function call
-    FunctionCall {
-        name: String,
-        args: Vec<Expression>,
-    },
+    FunctionCall { name: String, args: Vec<Expression> },
 
     /// Ternary conditional (condition ? true_expr : false_expr)
     Ternary {

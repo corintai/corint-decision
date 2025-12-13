@@ -2,10 +2,10 @@
 //!
 //! Extracts statistical features from historical data.
 
+use crate::error::{Result, RuntimeError};
+use crate::storage::{Event, EventFilter, Storage, TimeRange};
 use corint_core::ir::{FeatureType, TimeWindow};
 use corint_core::Value;
-use crate::error::{RuntimeError, Result};
-use crate::storage::{Event, EventFilter, Storage, TimeRange};
 use std::collections::HashSet;
 use std::sync::Arc;
 
@@ -198,15 +198,17 @@ impl FeatureExtractor {
         }
 
         let mean = values.iter().sum::<f64>() / values.len() as f64;
-        let variance = values.iter()
-            .map(|v| (v - mean).powi(2))
-            .sum::<f64>() / values.len() as f64;
+        let variance = values.iter().map(|v| (v - mean).powi(2)).sum::<f64>() / values.len() as f64;
 
         Ok(Value::Number(variance))
     }
 
     /// Get field value from event data using path
-    fn get_field_value(&self, data: &std::collections::HashMap<String, Value>, field: &[String]) -> Option<Value> {
+    fn get_field_value(
+        &self,
+        data: &std::collections::HashMap<String, Value>,
+        field: &[String],
+    ) -> Option<Value> {
         if field.is_empty() {
             return None;
         }
@@ -445,9 +447,18 @@ mod tests {
         data3.insert("user_id".to_string(), Value::String("user1".to_string()));
 
         let events = vec![
-            Event { timestamp: now - 300, data: data1 },
-            Event { timestamp: now - 200, data: data2 },
-            Event { timestamp: now - 100, data: data3 },
+            Event {
+                timestamp: now - 300,
+                data: data1,
+            },
+            Event {
+                timestamp: now - 200,
+                data: data2,
+            },
+            Event {
+                timestamp: now - 100,
+                data: data3,
+            },
         ];
 
         let storage = create_storage_with_events(events);
