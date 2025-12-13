@@ -1,0 +1,6 @@
+[advisories]
+ignore = [
+    "RUSTSEC-2023-0071",  # rsa - Marvin Attack (no fix available, comes from sqlx-mysql which we don't use)
+    "RUSTSEC-2024-0437",  # protobuf - Uncontrolled recursion (comes from prometheus 0.13 via opentelemetry-prometheus 0.27)
+                           # Waiting for opentelemetry-prometheus to upgrade to prometheus 0.14+
+]

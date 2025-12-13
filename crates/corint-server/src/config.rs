@@ -97,7 +97,7 @@ impl ServerConfig {
     /// Load configuration from environment variables and config file
     pub fn load() -> anyhow::Result<Self> {
         // Load .env file if exists
-        dotenv::dotenv().ok();
+        dotenvy::dotenv().ok();
 
         // Try to read from config file
         let config_result = config::Config::builder()
