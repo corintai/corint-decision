@@ -32,9 +32,14 @@ fn test_error_id_not_found_display() {
 
 #[test]
 fn test_error_parser_display() {
-    let error = RepositoryError::Parser("invalid syntax".to_string());
+    use corint_parser::error::ParseError;
+    let parse_err = ParseError::MissingField {
+        field: "version".to_string(),
+    };
+    let error = RepositoryError::Parser(parse_err);
 
-    assert_eq!(error.to_string(), "Parser error: invalid syntax");
+    assert!(error.to_string().contains("Parser error"));
+    assert!(error.to_string().contains("version"));
 }
 
 #[test]
@@ -197,7 +202,7 @@ async fn test_file_system_repo_exists_error_handling() {
     let result = repo.exists("nonexistent.yaml").await;
 
     assert!(result.is_ok());
-    assert_eq!(result.unwrap(), false);
+    assert!(!result.unwrap());
 }
 
 #[tokio::test]

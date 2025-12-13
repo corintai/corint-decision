@@ -51,8 +51,8 @@ mod tests {
         let val = Value::Number(42.0);
         assert_eq!(val, Value::Number(42.0));
 
-        let val2 = Value::Number(3.14);
-        assert_eq!(val2, Value::Number(3.14));
+        let val2 = Value::Number(3.5);
+        assert_eq!(val2, Value::Number(3.5));
     }
 
     #[test]

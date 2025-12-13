@@ -100,14 +100,18 @@ mod tests {
     fn test_result_ok() {
         let result: Result<i32> = Ok(42);
         assert!(result.is_ok());
-        assert_eq!(result.unwrap(), 42);
+        if let Ok(value) = result {
+            assert_eq!(value, 42);
+        }
     }
 
     #[test]
     fn test_result_err() {
         let result: Result<i32> = Err(SdkError::NotInitialized);
         assert!(result.is_err());
-        assert_eq!(result.unwrap_err().to_string(), "Engine not initialized");
+        if let Err(error) = result {
+            assert_eq!(error.to_string(), "Engine not initialized");
+        }
     }
 
     #[test]
@@ -119,7 +123,7 @@ mod tests {
 
     #[test]
     fn test_multiple_error_types() {
-        let errors = vec![
+        let errors = [
             SdkError::ConfigError("config".to_string()),
             SdkError::InvalidRuleFile("rule.yaml".to_string()),
             SdkError::NotInitialized,

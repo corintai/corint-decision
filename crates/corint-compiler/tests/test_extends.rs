@@ -100,7 +100,7 @@ fn test_extends_decision_logic_override() {
             "📊 Decision logic rules: {}",
             doc.definition.decision_logic.len()
         );
-        assert!(doc.definition.decision_logic.len() > 0);
+        assert!(!doc.definition.decision_logic.is_empty());
 
         // Verify it has different thresholds than base
         // (payment_standard_v2 has more nuanced logic with multiple thresholds)

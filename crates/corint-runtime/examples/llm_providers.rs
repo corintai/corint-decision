@@ -240,7 +240,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         }
 
-        "mock" | _ => {
+        _ => {
             let provider = MockProvider::with_response(
                 "Rust is a systems programming language that focuses on safety, speed, and concurrency.".to_string()
             );

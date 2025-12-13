@@ -261,10 +261,10 @@ disabled: false
 
         let yaml = YamlParser::parse(yaml_str).unwrap();
         let enabled = YamlParser::get_bool(&yaml, "enabled").unwrap();
-        assert_eq!(enabled, true);
+        assert!(enabled);
 
         let disabled = YamlParser::get_bool(&yaml, "disabled").unwrap();
-        assert_eq!(disabled, false);
+        assert!(!disabled);
     }
 
     #[test]

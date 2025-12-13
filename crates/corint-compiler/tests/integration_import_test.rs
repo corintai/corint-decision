@@ -5,7 +5,7 @@
 
 use corint_compiler::{Compiler, CompilerOptions, ImportResolver};
 use corint_core::ast::RdlDocument;
-use corint_parser::{RuleParser, RulesetParser};
+use corint_parser::RuleParser;
 use std::path::PathBuf;
 
 #[test]

@@ -337,8 +337,8 @@ mod tests {
         let expr = ExpressionParser::parse("42").unwrap();
         assert_eq!(expr, Expression::literal(Value::Number(42.0)));
 
-        let expr = ExpressionParser::parse("3.14").unwrap();
-        assert_eq!(expr, Expression::literal(Value::Number(3.14)));
+        let expr = ExpressionParser::parse("3.5").unwrap();
+        assert_eq!(expr, Expression::literal(Value::Number(3.5)));
     }
 
     #[test]

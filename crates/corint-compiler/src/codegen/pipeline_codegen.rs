@@ -298,7 +298,7 @@ mod tests {
         let program = PipelineCompiler::compile(&pipeline).unwrap();
 
         assert_eq!(program.metadata.source_type, "pipeline");
-        assert!(program.instructions.len() >= 1); // At least Return
+        assert!(!program.instructions.is_empty()); // At least Return
     }
 
     #[test]

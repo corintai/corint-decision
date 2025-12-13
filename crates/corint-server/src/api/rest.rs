@@ -342,11 +342,11 @@ mod tests {
 
     #[test]
     fn test_json_to_value_number_float() {
-        let json = serde_json::json!(3.14);
+        let json = serde_json::json!(3.5);
         let value = json_to_value(json);
 
         if let Value::Number(n) = value {
-            assert!((n - 3.14).abs() < 0.001);
+            assert!((n - 3.5).abs() < 0.001);
         } else {
             panic!("Expected Number");
         }

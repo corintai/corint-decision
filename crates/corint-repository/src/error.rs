@@ -159,7 +159,9 @@ mod tests {
         let result: RepositoryResult<i32> = Ok(42);
 
         assert!(result.is_ok());
-        assert_eq!(result.unwrap(), 42);
+        if let Ok(value) = result {
+            assert_eq!(value, 42);
+        }
     }
 
     #[test]
