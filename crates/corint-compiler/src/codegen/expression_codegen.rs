@@ -171,8 +171,9 @@ impl ExpressionCompiler {
         // Compile the last condition - its result is the final answer if we reach here
         instructions.extend(Self::compile(&conditions[conditions.len() - 1])?);
 
-        // Jump over the "return true" section
-        instructions.push(Instruction::Jump { offset: 1 });
+        // Jump over the "return true" section (skip LoadConst instruction)
+        // Jump { offset: 2 } means: pc = current_pc + 2, skipping the next instruction
+        instructions.push(Instruction::Jump { offset: 2 });
 
         // This is where we land if any condition was true
         // We need to push true onto the stack
@@ -182,8 +183,10 @@ impl ExpressionCompiler {
         });
 
         // Fix all "jump to true" offsets
+        // JumpIfTrue at position X should jump to true_label_pos
+        // offset = true_label_pos - X (since pc = X + offset after jump)
         for jump_pos in jump_to_true_offsets {
-            let offset = (true_label_pos - jump_pos - 1) as isize;
+            let offset = (true_label_pos - jump_pos) as isize;
             if let Instruction::JumpIfTrue { offset: ref mut o } = instructions[jump_pos] {
                 *o = offset;
             }
@@ -243,8 +246,9 @@ impl ExpressionCompiler {
         // Compile the last condition - its result is the final answer if we reach here
         instructions.extend(Self::compile(&conditions[conditions.len() - 1])?);
 
-        // Jump over the "return false" section
-        instructions.push(Instruction::Jump { offset: 1 });
+        // Jump over the "return false" section (skip LoadConst instruction)
+        // Jump { offset: 2 } means: pc = current_pc + 2, skipping the next instruction
+        instructions.push(Instruction::Jump { offset: 2 });
 
         // This is where we land if any condition was false
         // We need to push false onto the stack
@@ -254,8 +258,10 @@ impl ExpressionCompiler {
         });
 
         // Fix all "jump to false" offsets
+        // JumpIfFalse at position X should jump to false_label_pos
+        // offset = false_label_pos - X (since pc = X + offset after jump)
         for jump_pos in jump_to_false_offsets {
-            let offset = (false_label_pos - jump_pos - 1) as isize;
+            let offset = (false_label_pos - jump_pos) as isize;
             if let Instruction::JumpIfFalse { offset: ref mut o } = instructions[jump_pos] {
                 *o = offset;
             }

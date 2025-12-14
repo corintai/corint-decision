@@ -36,6 +36,11 @@ registry:
       event.type: login
     description: Account takeover detection for login attempts
 
+  - pipeline: comprehensive_risk_assessment
+    when:
+      event.type: test1
+    description: Comprehensive risk assessment for test1 event
+
   # Loan application events
   # - pipeline: loan_application_pipeline
   #   when:

@@ -1,0 +1,404 @@
+version: "0.1"
+
+# ============================================================================
+# COMPREHENSIVE DSL DEMONSTRATION
+# ============================================================================
+# This file demonstrates core DSL features in a single integrated example
+# Features demonstrated:
+#   - Basic rule conditions with logical operators (AND, OR)
+#   - Comparison operators (>, <, ==, !=, >=, <=)
+#   - String operations (in, contains)
+#   - Arithmetic expressions
+#   - Nested logical groups (any, all)
+#   - Negative scoring
+#   - Ruleset composition
+#   - Decision logic with multiple outcomes
+#   - Conditional branching in pipelines
+# ============================================================================
+
+# ----------------------------------------------------------------------------
+# Rule 1: High Value Transaction Detection
+# ----------------------------------------------------------------------------
+---
+
+rule:
+  id: high_value_transaction
+  name: High Value Transaction Detection
+  description: Detect transactions with unusually high amounts
+
+  when:
+    conditions:
+      - event.transaction.amount > 10000
+      - event.transaction.currency == "USD"
+
+  score: 75
+
+  metadata:
+    category: transaction_monitoring
+    severity: high
+    tags: [high_value, aml]
+    rule_version: "1.0.0"
+
+# ----------------------------------------------------------------------------
+# Rule 2: Suspicious User Behavior (OR logic)
+# ----------------------------------------------------------------------------
+---
+
+rule:
+  id: suspicious_user_behavior
+  name: Suspicious User Behavior Pattern
+  description: Detect various suspicious behaviors using OR logic
+
+  when:
+    conditions:
+      - any:
+          - event.user.login_attempts > 5
+          - event.user.session_duration < 60
+          - event.user.ip_country != event.user.registered_country
+
+  score: 60
+
+  metadata:
+    category: user_behavior
+    severity: medium
+    tags: [behavior, suspicious]
+
+# ----------------------------------------------------------------------------
+# Rule 3: Confirmed Fraud Pattern (AND logic)
+# ----------------------------------------------------------------------------
+---
+
+rule:
+  id: confirmed_fraud_pattern
+  name: Confirmed Fraud Pattern
+  description: Multiple indicators must all be present
+
+  when:
+    conditions:
+      - all:
+          - event.transaction.amount > 5000
+          - event.user.account_age_days < 7
+          - event.transaction.recipient_new == true
+
+  score: 95
+
+  metadata:
+    category: fraud
+    severity: critical
+    tags: [fraud, high_confidence]
+
+# ----------------------------------------------------------------------------
+# Rule 4: Complex Fraud Detection (Nested logic)
+# ----------------------------------------------------------------------------
+---
+
+rule:
+  id: complex_fraud_detection
+  name: Complex Fraud Detection Logic
+  description: Nested AND/OR conditions
+
+  when:
+    conditions:
+      - event.transaction.amount > 1000
+      - any:
+          - all:
+              - event.user.vip_status == false
+              - event.transaction.international == true
+          - all:
+              - event.user.verified == false
+              - event.transaction.payment_method == "crypto"
+
+  score: 80
+
+  metadata:
+    category: fraud
+    severity: high
+    tags: [fraud, complex_pattern]
+
+# ----------------------------------------------------------------------------
+# Rule 5: Risk Threshold Check (Comparison operators)
+# ----------------------------------------------------------------------------
+---
+
+rule:
+  id: risk_threshold_check
+  name: Risk Threshold Validation
+  description: Various comparison operators
+
+  when:
+    conditions:
+      - event.risk_score >= 70
+      - event.risk_score <= 90
+      - event.confidence_level != "low"
+      - event.transaction.count < 100
+
+  score: 65
+
+  metadata:
+    category: risk_management
+    severity: medium
+
+# ----------------------------------------------------------------------------
+# Rule 6: Payment Method Check (String operations)
+# ----------------------------------------------------------------------------
+---
+
+rule:
+  id: payment_method_check
+  name: Restricted Payment Method Detection
+  description: Check for restricted payment methods
+
+  when:
+    conditions:
+      - event.transaction.payment_method in ["crypto", "gift_card", "money_order"]
+      - event.transaction.description contains "urgent"
+
+  score: 70
+
+  metadata:
+    category: payment_fraud
+    severity: high
+    tags: [payment, restricted_method]
+
+# ----------------------------------------------------------------------------
+# Rule 7: Velocity Check (Arithmetic in conditions)
+# ----------------------------------------------------------------------------
+---
+
+rule:
+  id: velocity_check
+  name: Transaction Velocity Check
+  description: Arithmetic operations in conditions
+
+  when:
+    conditions:
+      # Transaction amount is more than 3x user's average
+      - event.transaction.amount > event.user.average_transaction * 3
+      # Transaction count is more than 2x user's daily average
+      - event.transaction.count_24h > event.user.avg_daily_count * 2
+
+  score: 55
+
+  metadata:
+    category: velocity
+    severity: medium
+
+# ----------------------------------------------------------------------------
+# Rule 8: Trusted User Bonus (Negative scoring)
+# ----------------------------------------------------------------------------
+---
+
+rule:
+  id: trusted_user_bonus
+  name: Trusted User Negative Score
+  description: Reduce risk score for trusted users
+
+  when:
+    conditions:
+      - event.user.verified == true
+      - event.user.account_age_days > 365
+      - event.user.dispute_count == 0
+
+  score: -20
+
+  metadata:
+    category: trust_signals
+    severity: low
+    tags: [bonus, trusted]
+
+# ----------------------------------------------------------------------------
+# Ruleset 1: Transaction Monitoring
+# ----------------------------------------------------------------------------
+---
+
+ruleset:
+  id: transaction_monitoring_ruleset
+  name: Transaction Monitoring
+  description: Monitor transaction patterns and anomalies
+
+  rules:
+    - high_value_transaction
+    - velocity_check
+    - payment_method_check
+
+  decision_logic:
+    # High score threshold
+    - condition: total_score >= 100
+      action: review
+      reason: "High transaction risk score"
+
+    # Default
+    - default: true
+      action: approve
+      reason: "Transaction monitoring passed"
+
+  metadata:
+    domain: transactions
+    owner: risk_team
+
+# ----------------------------------------------------------------------------
+# Ruleset 2: User Behavior Analysis
+# ----------------------------------------------------------------------------
+---
+
+ruleset:
+  id: user_behavior_ruleset
+  name: User Behavior Analysis
+  description: Analyze user behavioral patterns
+
+  rules:
+    - suspicious_user_behavior
+    - trusted_user_bonus
+
+  decision_logic:
+    # Suspicious behavior
+    - condition: total_score >= 50
+      action: review
+      reason: "Suspicious user behavior detected"
+
+    # Default
+    - default: true
+      action: approve
+      reason: "User behavior normal"
+
+  metadata:
+    domain: user_behavior
+    owner: fraud_team
+
+# ----------------------------------------------------------------------------
+# Ruleset 3: Fraud Detection
+# ----------------------------------------------------------------------------
+---
+
+ruleset:
+  id: fraud_detection_ruleset
+  name: Fraud Detection
+  description: Comprehensive fraud detection rules
+
+  rules:
+    - confirmed_fraud_pattern
+    - complex_fraud_detection
+    - risk_threshold_check
+
+  decision_logic:
+    # Critical fraud
+    - condition: total_score >= 90
+      action: deny
+      reason: "Critical fraud risk detected"
+      terminate: true
+
+    # High fraud risk
+    - condition: total_score >= 70
+      action: review
+      reason: "High fraud risk - requires review"
+
+    # Default
+    - default: true
+      action: approve
+      reason: "Fraud checks passed"
+
+  metadata:
+    domain: fraud
+    owner: fraud_team
+
+# ----------------------------------------------------------------------------
+# PIPELINE: Comprehensive Risk Assessment
+# ----------------------------------------------------------------------------
+---
+
+pipeline:
+  id: comprehensive_risk_assessment
+  name: Comprehensive Risk Assessment Pipeline
+  description: |
+    End-to-end risk assessment demonstrating core DSL features:
+    - Conditional branching based on transaction amount
+    - Multiple ruleset evaluation
+    - Combined decision logic
+
+  version: "1.0.0"
+
+  # Execute for all test1 events
+  when:
+    event.type: test1
+
+  steps:
+    # Branch based on transaction amount
+    - branch:
+        when:
+          # Branch 1: High-value transactions (>10000)
+          - condition: event.transaction.amount > 10000
+            pipeline:
+              # Evaluate all three rulesets for high-value transactions
+              - include:
+                  ruleset: transaction_monitoring_ruleset
+              - include:
+                  ruleset: user_behavior_ruleset
+              - include:
+                  ruleset: fraud_detection_ruleset
+
+          # Branch 2: Medium-value transactions (1000-10000)
+          - condition: event.transaction.amount > 1000
+            pipeline:
+              # Evaluate transaction and fraud rulesets
+              - include:
+                  ruleset: transaction_monitoring_ruleset
+              - include:
+                  ruleset: fraud_detection_ruleset
+
+          # Branch 3: Low-value transactions (<=1000)
+          - condition: event.transaction.amount <= 1000
+            pipeline:
+              # Only basic transaction monitoring
+              - include:
+                  ruleset: transaction_monitoring_ruleset
+
+  # Final decision logic (combines all ruleset results)
+  decision_logic:
+    # Case 1: Transaction monitoring denied
+    - condition: context.transaction_monitoring_ruleset.action == "deny"
+      action: deny
+      reason: "Transaction denied by monitoring rules"
+
+    # Case 2: Fraud detection denied
+    - condition: context.fraud_detection_ruleset.action == "deny"
+      action: deny
+      reason: "Transaction denied by fraud detection"
+
+    # Case 3: Transaction monitoring requires review
+    - condition: context.transaction_monitoring_ruleset.action == "review"
+      action: review
+      reason: "Transaction monitoring flagged for review"
+      review_priority: "high"
+
+    # Case 4: User behavior requires review
+    - condition: context.user_behavior_ruleset.action == "review"
+      action: review
+      reason: "User behavior flagged for review"
+      review_priority: "medium"
+
+    # Case 5: Fraud detection requires review
+    - condition: context.fraud_detection_ruleset.action == "review"
+      action: review
+      reason: "Fraud detection flagged for review"
+      review_priority: "high"
+
+    # Case 6: All rulesets approved
+    - default: true
+      action: approve
+      reason: "All risk checks passed"
+
+  # Pipeline metadata
+  metadata:
+    author: "Risk Engineering Team"
+    version: "1.0.0"
+    last_updated: "2025-12-14"
+    features_demonstrated:
+      - "Logical operators (any/all)"
+      - "Comparison operators (>, <, ==, !=, >=, <=)"
+      - "String operations (contains, in)"
+      - "Arithmetic expressions"
+      - "Nested conditions"
+      - "Negative scoring"
+      - "Ruleset composition"
+      - "Conditional branching"
+      - "Decision logic with multiple outcomes"
