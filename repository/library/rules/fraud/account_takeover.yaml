@@ -1,19 +1,14 @@
 version: "0.1"
 
-# Reusable account takeover detection rule
+# Reusable account takeover detection rule - New Device
 rule:
-  id: account_takeover_pattern
-  name: Account Takeover Detection
-  description: Detect unauthorized access from new device with suspicious activity
+  id: account_takeover_new_device
+  name: Account Takeover - New Device
+  description: Detect unauthorized access from new device
 
   when:
     conditions:
-      # New device never seen before
-      - new_device_indicator == true
-      # Multiple failed login attempts in past hour
-      - failed_login_count_1h >= 3
-      # Geographic location changed
-      - country_changed == true
+      - features.is_new_device == true
 
   score: 85
 
@@ -22,10 +17,10 @@ rule:
     severity: high
     tags: [credential_stuffing, phishing, malware]
     rule_version: "1.0.0"
-    last_updated: "2024-12-11"
+    last_updated: "2025-12-14"
     description_detail: "Unauthorized access from new device with suspicious activity"
-    detection: "new_device_indicator AND failed_login_count_1h >= 3 AND country_changed"
+    detection: "is_new_device OR failed_login_count_1h >= 3 OR country_changed"
     features:
-      - new_device_indicator: "Device never seen before"
+      - is_new_device: "Device never seen before"
       - failed_login_count_1h: "Failed attempts in last hour"
       - country_changed: "Geographic location changed"

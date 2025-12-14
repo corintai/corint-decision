@@ -17,7 +17,7 @@ pub mod rule;
 pub mod ruleset;
 pub mod template;
 
-pub use expression::{Expression, UnaryOperator};
+pub use expression::{Expression, LogicalGroupOp, UnaryOperator};
 pub use import::{ImportContext, Imports, RdlDocument};
 pub use operator::Operator;
 pub use pipeline::{

@@ -38,11 +38,31 @@ pub struct HealthResponse {
     pub version: String,
 }
 
-/// Decision request payload
+/// Decision request payload (supports Phase 5 multi-namespace format)
 #[derive(Debug, Deserialize)]
 pub struct DecideRequestPayload {
-    /// Event data
-    pub event_data: HashMap<String, serde_json::Value>,
+    /// Event data (required)
+    pub event: HashMap<String, serde_json::Value>,
+
+    /// Feature computation results (optional)
+    #[serde(default)]
+    pub features: Option<HashMap<String, serde_json::Value>>,
+
+    /// External API results (optional)
+    #[serde(default)]
+    pub api: Option<HashMap<String, serde_json::Value>>,
+
+    /// Service call results (optional)
+    #[serde(default)]
+    pub service: Option<HashMap<String, serde_json::Value>>,
+
+    /// LLM analysis results (optional)
+    #[serde(default)]
+    pub llm: Option<HashMap<String, serde_json::Value>>,
+
+    /// Variables (optional)
+    #[serde(default)]
+    pub vars: Option<HashMap<String, serde_json::Value>>,
 }
 
 /// Decision response payload
@@ -117,35 +137,38 @@ async fn decide(
 ) -> Result<Json<DecideResponsePayload>, ServerError> {
     info!(
         "Received decision request with {} event fields",
-        payload.event_data.len()
+        payload.event.len()
     );
 
-    // Convert serde_json::Value to corint_core::Value
-    let event_fields: HashMap<String, Value> = payload
-        .event_data
-        .into_iter()
-        .map(|(k, v)| (k, json_to_value(v)))
-        .collect();
+    // Helper function to convert namespace
+    let convert_namespace = |ns: HashMap<String, serde_json::Value>| -> HashMap<String, Value> {
+        ns.into_iter()
+            .map(|(k, v)| (k, json_to_value(v)))
+            .collect()
+    };
 
-    // Create event_data with dual structure:
-    // 1. Original nested structure under "event" key (semantic clarity)
-    // 2. Completely flattened structure with dot notation (fast lookup)
-    let mut event_data = HashMap::new();
+    // Convert event data (required)
+    let event_data = convert_namespace(payload.event);
 
-    // Store original nested structure
-    let event_object = Value::Object(event_fields.clone());
-    event_data.insert("event".to_string(), event_object.clone());
+    // Create decision request with multi-namespace support
+    let mut request = DecisionRequest::new(event_data);
 
-    // Store top-level fields for backward compatibility
-    for (key, value) in &event_fields {
-        event_data.insert(key.clone(), value.clone());
+    // Add optional namespaces if provided
+    if let Some(features) = payload.features {
+        request = request.with_features(convert_namespace(features));
     }
-
-    // Flatten the entire event object recursively
-    flatten_object("event", &event_object, &mut event_data);
-
-    // Create decision request
-    let request = DecisionRequest::new(event_data);
+    if let Some(api) = payload.api {
+        request = request.with_api(convert_namespace(api));
+    }
+    if let Some(service) = payload.service {
+        request = request.with_service(convert_namespace(service));
+    }
+    if let Some(llm) = payload.llm {
+        request = request.with_llm(convert_namespace(llm));
+    }
+    if let Some(vars) = payload.vars {
+        request = request.with_vars(convert_namespace(vars));
+    }
 
     // Execute decision
     let response = state.engine.decide(request).await?;
@@ -190,46 +213,6 @@ fn json_to_value(v: serde_json::Value) -> Value {
     }
 }
 
-/// Recursively flatten nested objects into dot-notation keys
-///
-/// Example:
-/// ```text
-/// event = {
-///   user: {
-///     id: "123",
-///     profile: {
-///       tier: "gold"
-///     }
-///   },
-///   amount: 1000
-/// }
-/// ```
-///
-/// Produces:
-/// ```text
-/// event.user.id = "123"
-/// event.user.profile.tier = "gold"
-/// event.amount = 1000
-/// ```
-fn flatten_object(prefix: &str, value: &Value, result: &mut HashMap<String, Value>) {
-    match value {
-        Value::Object(map) => {
-            for (key, val) in map {
-                let new_prefix = format!("{}.{}", prefix, key);
-                // Store this level
-                result.insert(new_prefix.clone(), val.clone());
-                // Recursively flatten if it's an object
-                if matches!(val, Value::Object(_)) {
-                    flatten_object(&new_prefix, val, result);
-                }
-            }
-        }
-        _ => {
-            // For non-object values, just store as-is
-            result.insert(prefix.to_string(), value.clone());
-        }
-    }
-}
 
 #[cfg(test)]
 mod tests {
@@ -256,61 +239,6 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_flatten_object_simple() {
-        let mut obj = HashMap::new();
-        obj.insert("user_id".to_string(), Value::String("user_001".to_string()));
-        obj.insert("amount".to_string(), Value::Number(1000.0));
-
-        let event = Value::Object(obj);
-        let mut result = HashMap::new();
-
-        flatten_object("event", &event, &mut result);
-
-        assert_eq!(
-            result.get("event.user_id"),
-            Some(&Value::String("user_001".to_string()))
-        );
-        assert_eq!(result.get("event.amount"), Some(&Value::Number(1000.0)));
-    }
-
-    #[test]
-    fn test_flatten_object_nested() {
-        // Create nested structure: event.user.profile.tier = "gold"
-        let mut profile = HashMap::new();
-        profile.insert("tier".to_string(), Value::String("gold".to_string()));
-        profile.insert("age".to_string(), Value::Number(30.0));
-
-        let mut user = HashMap::new();
-        user.insert("id".to_string(), Value::String("user_001".to_string()));
-        user.insert("profile".to_string(), Value::Object(profile));
-
-        let mut event_obj = HashMap::new();
-        event_obj.insert("user".to_string(), Value::Object(user));
-        event_obj.insert("amount".to_string(), Value::Number(1000.0));
-
-        let event = Value::Object(event_obj);
-        let mut result = HashMap::new();
-
-        flatten_object("event", &event, &mut result);
-
-        // Check all levels are flattened
-        assert!(result.contains_key("event.user"));
-        assert_eq!(
-            result.get("event.user.id"),
-            Some(&Value::String("user_001".to_string()))
-        );
-        assert!(result.contains_key("event.user.profile"));
-        assert_eq!(
-            result.get("event.user.profile.tier"),
-            Some(&Value::String("gold".to_string()))
-        );
-        assert_eq!(
-            result.get("event.user.profile.age"),
-            Some(&Value::Number(30.0))
-        );
-        assert_eq!(result.get("event.amount"), Some(&Value::Number(1000.0)));
-    }
 
     #[test]
     fn test_json_to_value_null() {
@@ -427,81 +355,6 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_flatten_object_empty() {
-        let event = Value::Object(HashMap::new());
-        let mut result = HashMap::new();
-
-        flatten_object("event", &event, &mut result);
-
-        // Empty object should produce no flattened keys
-        assert_eq!(result.len(), 0);
-    }
-
-    #[test]
-    fn test_flatten_object_non_object() {
-        let event = Value::String("test".to_string());
-        let mut result = HashMap::new();
-
-        flatten_object("event", &event, &mut result);
-
-        // Non-object should just store the value itself
-        assert_eq!(
-            result.get("event"),
-            Some(&Value::String("test".to_string()))
-        );
-    }
-
-    #[test]
-    fn test_flatten_object_array_value() {
-        let mut obj = HashMap::new();
-        obj.insert(
-            "tags".to_string(),
-            Value::Array(vec![
-                Value::String("fraud".to_string()),
-                Value::String("suspicious".to_string()),
-            ]),
-        );
-
-        let event = Value::Object(obj);
-        let mut result = HashMap::new();
-
-        flatten_object("event", &event, &mut result);
-
-        // Array should be stored as-is, not flattened
-        if let Some(Value::Array(tags)) = result.get("event.tags") {
-            assert_eq!(tags.len(), 2);
-        } else {
-            panic!("Expected array value");
-        }
-    }
-
-    #[test]
-    fn test_flatten_object_deep_nesting() {
-        // Create 4 levels deep: event.a.b.c.d = "value"
-        let mut level_d = HashMap::new();
-        level_d.insert("d".to_string(), Value::String("value".to_string()));
-
-        let mut level_c = HashMap::new();
-        level_c.insert("c".to_string(), Value::Object(level_d));
-
-        let mut level_b = HashMap::new();
-        level_b.insert("b".to_string(), Value::Object(level_c));
-
-        let mut level_a = HashMap::new();
-        level_a.insert("a".to_string(), Value::Object(level_b));
-
-        let event = Value::Object(level_a);
-        let mut result = HashMap::new();
-
-        flatten_object("event", &event, &mut result);
-
-        // Check deeply nested value is accessible
-        assert_eq!(
-            result.get("event.a.b.c.d"),
-            Some(&Value::String("value".to_string()))
-        );
-    }
 
     #[test]
     fn test_health_response_fields() {
@@ -538,10 +391,15 @@ mod tests {
     #[test]
     fn test_decide_request_payload_empty() {
         let payload = DecideRequestPayload {
-            event_data: HashMap::new(),
+            event: HashMap::new(),
+            features: None,
+            api: None,
+            service: None,
+            llm: None,
+            vars: None,
         };
 
-        assert_eq!(payload.event_data.len(), 0);
+        assert_eq!(payload.event.len(), 0);
     }
 
     #[test]
@@ -598,33 +456,38 @@ async fn decide_with_metrics(
 ) -> Result<Json<DecideResponsePayload>, ServerError> {
     info!(
         "Received decision request with {} event fields",
-        payload.event_data.len()
+        payload.event.len()
     );
 
-    // Convert serde_json::Value to corint_core::Value
-    let event_fields: HashMap<String, Value> = payload
-        .event_data
-        .into_iter()
-        .map(|(k, v)| (k, json_to_value(v)))
-        .collect();
+    // Helper function to convert namespace
+    let convert_namespace = |ns: HashMap<String, serde_json::Value>| -> HashMap<String, Value> {
+        ns.into_iter()
+            .map(|(k, v)| (k, json_to_value(v)))
+            .collect()
+    };
 
-    // Create event_data with dual structure (same as decide())
-    let mut event_data = HashMap::new();
+    // Convert event data (required)
+    let event_data = convert_namespace(payload.event);
 
-    // Store original nested structure
-    let event_object = Value::Object(event_fields.clone());
-    event_data.insert("event".to_string(), event_object.clone());
+    // Create decision request with multi-namespace support
+    let mut request = DecisionRequest::new(event_data);
 
-    // Store top-level fields for backward compatibility
-    for (key, value) in &event_fields {
-        event_data.insert(key.clone(), value.clone());
+    // Add optional namespaces if provided
+    if let Some(features) = payload.features {
+        request = request.with_features(convert_namespace(features));
     }
-
-    // Flatten the entire event object recursively
-    flatten_object("event", &event_object, &mut event_data);
-
-    // Create decision request
-    let request = DecisionRequest::new(event_data);
+    if let Some(api) = payload.api {
+        request = request.with_api(convert_namespace(api));
+    }
+    if let Some(service) = payload.service {
+        request = request.with_service(convert_namespace(service));
+    }
+    if let Some(llm) = payload.llm {
+        request = request.with_llm(convert_namespace(llm));
+    }
+    if let Some(vars) = payload.vars {
+        request = request.with_vars(convert_namespace(vars));
+    }
 
     // Execute decision
     let response = state.engine.decide(request).await?;

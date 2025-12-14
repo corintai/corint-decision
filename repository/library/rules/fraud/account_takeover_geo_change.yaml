@@ -1,0 +1,24 @@
+version: "0.1"
+
+# Account takeover detection - Geographic Change
+rule:
+  id: account_takeover_geo_change
+  name: Account Takeover - Geographic Change
+  description: Detect login from changed country
+
+  when:
+    conditions:
+      - features.country_changed == true
+
+  score: 85
+
+  metadata:
+    category: fraud
+    severity: high
+    tags: [location_anomaly, account_takeover]
+    rule_version: "1.0.0"
+    last_updated: "2025-12-14"
+    description_detail: "Login from changed geographic location"
+    detection: "country_changed == true"
+    features:
+      - country_changed: "Whether user's country has changed"

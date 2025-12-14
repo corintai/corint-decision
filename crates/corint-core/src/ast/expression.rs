@@ -35,6 +35,23 @@ pub enum Expression {
         true_expr: Box<Expression>,
         false_expr: Box<Expression>,
     },
+
+    /// Logical grouping (any/all conditions)
+    LogicalGroup {
+        /// Type of logical operation: "any" (OR) or "all" (AND)
+        op: LogicalGroupOp,
+        /// List of conditions to evaluate
+        conditions: Vec<Expression>,
+    },
+}
+
+/// Logical group operation type
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum LogicalGroupOp {
+    /// Any condition must be true (OR logic)
+    Any,
+    /// All conditions must be true (AND logic)
+    All,
 }
 
 /// Unary operators

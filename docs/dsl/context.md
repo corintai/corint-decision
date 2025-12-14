@@ -1,824 +1,789 @@
 # CORINT Risk Definition Language (RDL)
-## Context and Variable Management Specification (v0.1)
+## Context and Variable Management Specification (v0.2)
 
-Context management is critical for passing data between pipeline steps, maintaining state, and enabling complex decision flows.  
+Context management is critical for passing data between pipeline steps, maintaining state, and enabling complex decision flows.
 This document defines how CORINT manages variables, context, and data flow throughout rule execution.
 
 ---
 
 ## 1. Overview
 
-### 1.1 Context Layers
+### 1.1 Flattened Namespace Architecture
 
-CORINT maintains multiple context layers:
+CORINT uses a **flattened namespace architecture** where all data sources are organized at the same level. This design classifies data by **processing method** rather than data source.
 
-| Layer | Scope | Mutability | Description |
-|-------|-------|------------|-------------|
-| `event` | Request | Read-only | Input event data |
-| `vars` | Pipeline | Read-only | Pipeline-level variables |
-| `context` | Pipeline | Read-write | Step outputs and intermediate results |
-| `sys` | System | Read-only | System-provided variables |
-| `env` | Environment | Read-only | Configuration and environment variables |
+| Namespace | Mutability | Description | Use Cases |
+|-----------|------------|-------------|-----------|
+| `event` | Read-only | User request raw data | Business data from API requests |
+| `features` | Writable | Complex feature computations | Database aggregations, historical analysis |
+| `api` | Writable | External API call results | Device fingerprinting, IP geolocation |
+| `service` | Writable | Internal service call results | User profiles, risk history |
+| `llm` | Writable | LLM analysis results | Fraud analysis, content moderation |
+| `vars` | Writable | Simple variables and calculations | Config parameters, thresholds |
+| `sys` | Read-only | System injected metadata | request_id, timestamp, environment |
+| `env` | Read-only | Environment configuration | Feature flags, API keys |
+
+**Core Principles**:
+1. **Classify by processing method**, not data source
+2. **All namespaces at same level** - no nesting confusion
+3. **Clear read-only vs writable distinction**
+4. **No `ctx.` prefix needed** - namespace names are sufficient
 
 ---
 
-## 2. Event Context
+## 2. event - User Request Raw Data
 
-### 2.1 Event Structure
+### 2.1 Description
 
-The event is the primary input to a pipeline:
+The `event` namespace contains **raw business data** from API requests, **unprocessed** and as submitted by users.
 
 ```yaml
-# Event data is automatically available
+Mutability: Read-only
+Source: User API requests
+Validation: Schema validated, reserved fields prohibited
+```
+
+### 2.2 Event Structure
+
+```yaml
 event:
-  type: string                  # Event type
-  timestamp: datetime
-  id: string
-  
-  # Event-specific fields
+  # Common fields
+  type: string                  # Event type: login, transaction, etc.
+  timestamp: datetime           # User-submitted timestamp (if any)
+
+  # User data
   user:
     id: string
     email: string
+    account_age_days: number
     profile: object
-    
+
+  # Transaction data
   transaction:
     id: string
     amount: number
     currency: string
-    
+    merchant: string
+
+  # Device data
   device:
     id: string
     type: string
-    fingerprint: string
-    
+    ip: string
+    user_agent: string
+
+  # Geolocation data
   geo:
     country: string
-    ip: string
     city: string
+    coordinates: object
 ```
 
-### 2.2 Accessing Event Data
+### 2.3 Reserved Fields
+
+These fields cannot be submitted by users in the event data:
+
+```rust
+// Forbidden in event namespace
+- total_score
+- triggered_rules
+- sys_*
+- features_*
+- api_*
+- service_*
+- llm_*
+```
+
+### 2.4 Accessing Event Data
 
 ```yaml
-# In conditions
+# In rule conditions
 conditions:
-  - event.type == "login"
+  - event.type == "transaction"
   - event.user.id exists
   - event.transaction.amount > 1000
-
-# In prompts
-prompt:
-  template: |
-    User {event.user.id} is attempting a {event.type} 
-    from {event.geo.country}
-```
-
----
-
-## 3. Pipeline Variables
-
-### 3.1 Defining Variables
-
-```yaml
-pipeline:
-  # Define variables at pipeline start
-  - vars:
-      # Static values
-      risk_threshold: 80
-      max_transaction: 10000
-      high_risk_countries: ["RU", "NG", "UA", "CN"]
-      
-      # Computed values
-      user_age_days: days_between(event.user.created_at, now())
-      is_new_user: days_between(event.user.created_at, now()) < 30
-      
-      # References to event data
-      current_amount: event.transaction.amount
-      user_tier: event.user.profile.tier
-```
-
-### 3.2 Using Variables
-
-```yaml
-# In conditions
-conditions:
-  - event.user.risk_score > vars.risk_threshold
-  - event.transaction.amount <= vars.max_transaction
-  - event.geo.country in vars.high_risk_countries
-  - vars.is_new_user == true
+  - event.device.ip != ""
 
 # In expressions
-score: vars.risk_threshold * 1.5
-
-# In prompts
-prompt:
-  template: |
-    Risk threshold: {vars.risk_threshold}
-    User age: {vars.user_age_days} days
-```
-
-### 3.3 Variable Scope
-
-```yaml
-pipeline:
-  # Global pipeline variables
-  - vars:
-      global_threshold: 80
-      
-  - branch:
-      when:
-        - condition: "event.type == 'login'"
-          pipeline:
-            # Branch-specific variables
-            - vars:
-                login_risk_weight: 1.5
-                
-            - conditions:
-                # Can access both global and branch vars
-                - vars.global_threshold exists
-                - vars.login_risk_weight == 1.5
+score: event.transaction.amount / 100
 ```
 
 ---
 
-## 4. Context (Step Results)
+## 3. features - Complex Feature Computations
 
-### 4.1 Step Output Definition
+### 3.1 Description
 
-```yaml
-- type: extract
-  id: extract_device_info
-  
-  # Define output structure
-  output:
-    device_info:
-      fingerprint: string
-      is_trusted: boolean
-      risk_score: number
-```
-
-### 4.2 Storing Step Results
+The `features` namespace contains results from **complex feature calculations** that require historical data queries or database aggregations.
 
 ```yaml
-- type: reason
-  id: llm_behavior_analysis
-  provider: openai
-  model: gpt-4-turbo
-  
-  # Results automatically stored in context
-  output_schema:
-    risk_score: float
-    reason: string
-    tags: array<string>
-    
-# Results available as:
-# context.llm_behavior_analysis.risk_score
-# context.llm_behavior_analysis.reason
-# context.llm_behavior_analysis.tags
+Mutability: Writable (by feature steps only)
+Source: Pipeline feature steps
+Processing: Database queries, time-window statistics, ML models
 ```
 
-### 4.3 Accessing Context Data
+### 3.2 Use Cases
+
+- Database aggregation queries (SUM, AVG, COUNT)
+- Time window statistics (7 days, 30 days, 90 days)
+- Historical behavior analysis
+- Complex scoring models
+- User behavioral patterns
+
+### 3.3 Example Features
 
 ```yaml
-# In later steps
-- type: rules
-  id: combined_check
-  
-  # Access previous step results
-  conditions:
-    - context.extract_device_info.risk_score > 70
-    - context.llm_behavior_analysis.risk_score > 0.8
-    - "suspicious" in context.llm_behavior_analysis.tags
-    
-# In aggregation
-- aggregate:
-    method: weighted
-    weights:
-      context.rules_engine.score: 0.5
-      context.llm_analysis.score: 0.3
-      context.api_check.score: 0.2
+features:
+  # Transaction patterns
+  user_transaction_count_7d: 15
+  avg_transaction_amount_30d: 3200.5
+  max_transaction_amount_90d: 15000.0
+
+  # Device history
+  device_first_seen_days: 45
+  device_transaction_count: 127
+
+  # Behavioral scores
+  velocity_score: 0.75
+  anomaly_score: 0.42
 ```
 
-### 4.4 Explicit Context Updates
-
-```yaml
-- type: custom
-  id: compute_derived_metrics
-  
-  # Explicitly set context values
-  set_context:
-    velocity_score: sum(event.user.transactions, last_24h) / vars.max_daily_transactions
-    is_high_velocity: context.velocity_score > 0.8
-    combined_risk: (context.rules_score + context.llm_score) / 2
-```
-
----
-
-## 5. System Context
-
-### 5.1 System Variables
-
-Built-in system variables are automatically available:
-
-```yaml
-sys:
-  # Request metadata
-  request_id: string            # Unique request ID
-  timestamp: datetime           # Current timestamp
-  
-  # Execution context
-  pipeline_id: string           # Current pipeline ID
-  pipeline_version: string      # Pipeline version
-  
-  # Environment
-  environment: string           # dev | staging | production
-  region: string                # Deployment region
-  
-  # Performance
-  execution_time_ms: number     # Current execution time
-  
-  # User context
-  tenant_id: string             # Multi-tenant ID
-```
-
-### 5.2 Using System Variables
+### 3.4 Accessing Features
 
 ```yaml
 conditions:
-  # Time-based logic
-  - hour(sys.timestamp) >= 22 || hour(sys.timestamp) <= 6
-  - sys.execution_time_ms < 5000
-  
+  - features.user_transaction_count_7d > 20
+  - features.avg_transaction_amount_30d < 1000
+  - features.velocity_score > 0.8
+```
+
+---
+
+## 4. api - External API Call Results
+
+### 4.1 Description
+
+The `api` namespace contains results from calling **external third-party APIs**.
+
+```yaml
+Mutability: Writable (by api steps only)
+Source: Pipeline api steps
+Examples: Device fingerprinting, IP geolocation, credit checks
+```
+
+### 4.2 Use Cases
+
+- Device fingerprinting (FingerprintJS, Seon)
+- IP geolocation queries
+- Email/phone verification
+- Credit score queries
+- KYC/AML checks
+- Blockchain analysis
+
+### 4.3 Example API Results
+
+```yaml
+api:
+  device_fingerprint:
+    risk_score: 0.75
+    is_vpn: true
+    is_proxy: false
+    confidence: 0.92
+
+  ip_geolocation:
+    country: "US"
+    city: "New York"
+    is_datacenter: false
+
+  email_verification:
+    is_valid: true
+    is_disposable: false
+    mx_records_valid: true
+```
+
+### 4.4 Accessing API Results
+
+```yaml
+conditions:
+  - api.device_fingerprint.risk_score > 0.7
+  - api.ip_geolocation.country != event.user.registered_country
+  - api.email_verification.is_disposable == true
+```
+
+---
+
+## 5. service - Internal Service Call Results
+
+### 5.1 Description
+
+The `service` namespace contains results from calling **internal microservices**.
+
+```yaml
+Mutability: Writable (by service steps only)
+Source: Pipeline service steps
+Examples: User profiles, risk history, inventory
+```
+
+### 5.2 Use Cases
+
+- User profile service
+- Risk history records
+- Inventory query service
+- Order management service
+- Points/membership system
+- Internal fraud database
+
+### 5.3 Example Service Results
+
+```yaml
+service:
+  user_profile:
+    vip_level: "gold"
+    account_status: "active"
+    lifetime_value: 15000.0
+
+  risk_history:
+    blacklist_hit: false
+    previous_fraud_count: 0
+    last_suspicious_activity: null
+
+  inventory:
+    stock_available: 100
+    reserved_count: 5
+```
+
+### 5.4 Accessing Service Results
+
+```yaml
+conditions:
+  - service.user_profile.vip_level == "gold"
+  - service.risk_history.previous_fraud_count > 0
+  - service.inventory.stock_available >= event.transaction.quantity
+```
+
+---
+
+## 6. llm - LLM Analysis Results
+
+### 6.1 Description
+
+The `llm` namespace contains results from **large language model analysis**.
+
+```yaml
+Mutability: Writable (by llm steps only)
+Source: Pipeline llm steps
+Examples: Fraud analysis, content moderation, address verification
+```
+
+### 6.2 Use Cases
+
+- Address authenticity verification
+- Text content moderation
+- Fraud reason analysis
+- Anomaly behavior explanation
+- Intelligent Q&A/dialogue
+- Pattern recognition in text
+
+### 6.3 Example LLM Results
+
+```yaml
+llm:
+  address_verification:
+    is_suspicious: true
+    confidence: 0.85
+    reason: "Address format inconsistent with stated country"
+
+  content_moderation:
+    category: "spam"
+    severity: "medium"
+    flagged_terms: ["urgent", "limited time"]
+
+  fraud_analysis:
+    risk_level: "high"
+    risk_reason: "Multiple inconsistencies detected in transaction details"
+    recommended_action: "manual_review"
+```
+
+### 6.4 Accessing LLM Results
+
+```yaml
+conditions:
+  - llm.address_verification.is_suspicious == true
+  - llm.fraud_analysis.risk_level == "high"
+  - llm.content_moderation.category in ["spam", "fraud"]
+```
+
+---
+
+## 7. vars - Simple Variables and Calculations
+
+### 7.1 Description
+
+The `vars` namespace contains **pipeline variables**, **configuration parameters**, and **simple calculations** that don't require external data.
+
+```yaml
+Mutability: Writable
+Source: Pipeline vars config + rule calculations
+Processing: Arithmetic, string operations, boolean logic
+```
+
+### 7.2 Difference from features
+
+| Aspect | vars | features |
+|--------|------|----------|
+| **Complexity** | Simple | Complex |
+| **Data needs** | No external data | Requires historical data |
+| **Examples** | amount × rate | SUM(transactions, 7d) |
+| **Performance** | Instant | May require DB query |
+
+### 7.3 Example Variables
+
+```yaml
+vars:
+  # Configuration
+  high_risk_threshold: 80
+  min_transaction_amount: 100
+  max_daily_limit: 50000
+
+  # Simple calculations
+  risk_multiplier: 1.5
+  total_fee: 15.5              # Calculated: amount * 0.031
+  is_high_value: true          # Calculated: amount > 10000
+
+  # String operations
+  user_display_name: "John D." # Calculated: first_name + " " + last_initial
+```
+
+### 7.4 Using Variables
+
+```yaml
+# Defining variables
+pipeline:
+  steps:
+    - step_type: vars
+      config:
+        high_risk_threshold: 80
+        processing_fee_rate: 0.031
+
+# Accessing in conditions
+conditions:
+  - event.transaction.amount > vars.high_risk_threshold
+  - vars.is_high_value == true
+
+# Using in calculations
+score: event.transaction.amount * vars.risk_multiplier
+```
+
+---
+
+## 8. sys - System Injected Metadata
+
+### 8.1 Description
+
+The `sys` namespace contains **system auto-generated metadata** and context information.
+
+```yaml
+Mutability: Read-only
+Source: System auto-generated
+Lifecycle: Generated per request
+```
+
+### 8.2 System Variable Categories
+
+#### 8.2.1 Request Identification
+```yaml
+sys.request_id: "550e8400-e29b-41d4-a716-446655440000"
+sys.correlation_id: "parent-request-12345"  # Optional
+```
+
+#### 8.2.2 Time Information
+```yaml
+sys.timestamp: "2024-01-15T10:30:00Z"       # ISO 8601
+sys.timestamp_ms: 1705315800000              # Unix milliseconds
+sys.date: "2024-01-15"                       # YYYY-MM-DD
+sys.time: "10:30:00"                         # HH:MM:SS
+sys.hour: 10                                 # 0-23
+sys.day_of_week: "monday"                    # monday-sunday
+sys.is_weekend: false                        # boolean
+```
+
+#### 8.2.3 Environment Information
+```yaml
+sys.environment: "production"                # development/staging/production
+sys.region: "us-west-1"                      # Deployment region
+sys.tenant_id: "tenant_abc123"               # Multi-tenant ID (optional)
+```
+
+#### 8.2.4 Execution Context
+```yaml
+sys.pipeline_id: "fraud_detection_pipeline"
+sys.pipeline_version: "2.1.0"
+sys.ruleset_id: "account_takeover_rules"
+sys.rule_id: "impossible_travel_detection"  # Available within rule
+```
+
+#### 8.2.5 Performance Metrics
+```yaml
+sys.execution_time_ms: 245                   # Current execution time
+sys.execution_step: 5                        # Current step number
+sys.timeout_ms: 5000                         # Execution timeout limit
+```
+
+#### 8.2.6 Version Information
+```yaml
+sys.corint_version: "1.2.3"                  # CORINT engine version
+sys.api_version: "v1"                        # API version
+```
+
+#### 8.2.7 Client Information
+```yaml
+sys.client_id: "mobile_app_ios_v2.1"
+sys.client_ip: "203.0.113.42"                # Client IP (if different from event)
+sys.user_agent: "Mozilla/5.0 ..."
+```
+
+#### 8.2.8 Debug Information
+```yaml
+sys.debug_mode: false
+sys.trace_enabled: true
+```
+
+### 8.3 Using System Variables
+
+```yaml
+conditions:
+  # Time-based rules
+  - sys.hour >= 22 || sys.hour <= 6          # Late night
+  - sys.is_weekend == true                    # Weekend
+  - sys.day_of_week in ["monday", "friday"]  # Specific days
+
   # Environment-specific rules
   - sys.environment == "production"
-  
-# In logging
-observability:
-  log:
-    include:
-      - sys.request_id
-      - sys.pipeline_id
-      - sys.execution_time_ms
+  - sys.region in ["us-east-1", "eu-west-1"]
+
+  # Performance monitoring
+  - sys.execution_time_ms < sys.timeout_ms - 1000  # Buffer check
 ```
 
 ---
 
-## 6. Environment Variables
+## 9. env - Environment Configuration
 
-### 6.1 Configuration via Environment
+### 9.1 Description
+
+The `env` namespace contains **configuration** loaded from environment variables and config files.
 
 ```yaml
-# Define environment-specific configuration
+Mutability: Read-only
+Source: Environment variables, config files
+Lifecycle: Loaded at startup
+```
+
+### 9.2 Use Cases
+
+- Database connection configuration
+- API keys and secrets
+- Timeout settings
+- Feature flags
+- Environment-specific configuration
+- External service endpoints
+
+### 9.3 Example Configuration
+
+```yaml
 env:
-  # Feature flags
-  ENABLE_LLM_REASONING: boolean
-  ENABLE_ADVANCED_ANALYTICS: boolean
-  
-  # Thresholds
-  FRAUD_THRESHOLD: number
-  REVIEW_THRESHOLD: number
-  
-  # API endpoints
-  CHAINALYSIS_ENDPOINT: string
-  LLM_SERVICE_URL: string
+  # Database
+  database_url: "postgresql://..."
+  db_pool_size: 20
+
+  # API Configuration
+  api_timeout_ms: 3000
+  max_retries: 3
+
+  # Feature Flags
+  feature_flags:
+    new_ml_model: true
+    advanced_analytics: false
+    llm_enabled: true
+
+  # External Services
+  seon_api_key: "***"
+  openai_api_key: "***"
 ```
 
-### 6.2 Using Environment Variables
+### 9.4 Using Environment Variables
 
 ```yaml
-- type: reason
-  id: optional_llm_check
-  # Conditional execution based on feature flag
-  if: "env.ENABLE_LLM_REASONING == true"
-  
 conditions:
-  - event.risk_score > env.FRAUD_THRESHOLD
-  
+  - env.feature_flags.new_ml_model == true
+  - event.risk_score > env.custom_threshold
+
 # In API configuration
-- type: api
-  id: external_check
-  endpoint: env.CHAINALYSIS_ENDPOINT
-```
-
----
-
-## 7. Data Transformation
-
-### 7.1 Transform Step
-
-```yaml
-- type: transform
-  id: normalize_data
-  
-  transforms:
-    # Create new fields
-    - set: normalized_amount
-      value: event.transaction.amount / event.transaction.currency_rate
-      
-    - set: risk_category
-      value: |
-        event.risk_score < 30 ? "low" :
-        event.risk_score < 60 ? "medium" :
-        event.risk_score < 85 ? "high" : "critical"
-        
-    # Compute aggregate values
-    - set: velocity_24h
-      value: count(event.user.transactions, last_24h)
-      
-    - set: avg_transaction_30d
-      value: avg(event.user.transactions.amount, last_30d)
-      
-  # Results stored in context
-  output_to: context.normalized_data
-```
-
-### 7.2 Enrichment Step
-
-```yaml
-- type: enrich
-  id: add_user_features
-  
-  # Load data from external sources
-  enrich:
-    user_profile:
-      source: database
-      query: "SELECT * FROM users WHERE id = {event.user.id}"
-      cache_ttl: 3600
-      
-    historical_behavior:
-      source: analytics_service
-      endpoint: /user/{event.user.id}/behavior
-      cache_ttl: 300
-      
-  # Merge into context
-  merge_into: event.user
-```
-
----
-
-## 8. Context Lifecycle
-
-### 8.1 Context Evolution
-
-```yaml
 pipeline:
-  # Step 1: Initial context = event only
-  - type: extract
-    id: step1
-    # Now context includes: context.step1
-    
-  # Step 2: Context accumulates
-  - type: reason
-    id: step2
-    # Now context includes: context.step1, context.step2
-    
-  # Step 3: Access all previous results
-  - type: rules
-    id: step3
-    conditions:
-      - context.step1.device_score > 50
-      - context.step2.risk_score > 0.7
-    # Now context includes: context.step1, context.step2, context.step3
-```
-
-### 8.2 Context Cleanup
-
-```yaml
-- type: cleanup
-  id: remove_sensitive_data
-  
-  # Remove fields from context before logging
-  remove:
-    - event.user.ssn
-    - event.user.password
-    - context.api_response.raw_data
+  steps:
+    - step_type: api
+      config:
+        endpoint: env.seon_endpoint
+        api_key: env.seon_api_key
+        timeout_ms: env.api_timeout_ms
 ```
 
 ---
 
-## 9. Conditional Context
+## 10. Data Classification Decision Tree
 
-### 9.1 Conditional Variable Definition
+When receiving or computing data, use this tree to determine the correct namespace:
 
-```yaml
-- vars:
-    # Different thresholds based on user tier
-    risk_threshold: |
-      event.user.tier == "premium" ? 90 :
-      event.user.tier == "standard" ? 70 : 50
-      
-    # Conditional feature flags
-    use_advanced_checks: |
-      event.transaction.amount > 10000 && 
-      env.ENABLE_ADVANCED_ANALYTICS == true
 ```
-
-### 9.2 Conditional Context Updates
-
-```yaml
-- type: custom
-  id: conditional_enrichment
-  
-  # Only set context if condition met
-  set_context:
-    - if: event.transaction.amount > 10000
-      set:
-        requires_enhanced_due_diligence: true
-        edd_level: 2
-        
-    - if: event.user.risk_score > 80
-      set:
-        auto_review: true
-        review_priority: "high"
-```
-
----
-
-## 10. Context Inheritance
-
-### 10.1 Sub-Pipeline Context
-
-```yaml
-pipeline:
-  - vars:
-      parent_threshold: 80
-      
-  - branch:
-      when:
-        - condition: "event.type == 'login'"
-          pipeline:
-            # Sub-pipeline inherits parent context
-            - conditions:
-                - vars.parent_threshold exists     # ✓ Available
-                - context.parent_step exists       # ✓ Available
-                
-            # Sub-pipeline adds to context
-            - type: extract
-              id: login_features
-              
-  # After branch, login_features is available
-  - conditions:
-      - context.login_features exists             # ✓ Available
-```
-
-### 10.2 Parallel Context Isolation
-
-```yaml
-- parallel:
-    # Each parallel branch has isolated context
-    - pipeline:
-        - type: api
-          id: check_a
-          # Sets context.check_a
-          
-    - pipeline:
-        - type: api
-          id: check_b
-          # Sets context.check_b
-          # Cannot access context.check_a during execution
-          
-  merge:
-    method: all
-    
-# After merge, both are available
-- conditions:
-    - context.check_a exists                      # ✓ Available
-    - context.check_b exists                      # ✓ Available
+Received a piece of data, where should it go?
+│
+├─ Is it raw data from user API request?
+│  └─ Yes → event
+│
+├─ Is it system auto-generated metadata?
+│  └─ Yes → sys
+│
+├─ Is it loaded from environment variables/config files?
+│  └─ Yes → env
+│
+├─ Is it computed result based on existing data?
+│  │
+│  ├─ Simple calculation (arithmetic, string concat)?
+│  │  └─ Yes → vars
+│  │
+│  ├─ Requires querying historical data/database aggregation?
+│  │  └─ Yes → features
+│  │
+│  ├─ Obtained by calling external third-party API?
+│  │  └─ Yes → api
+│  │
+│  ├─ Obtained by calling internal microservice?
+│  │  └─ Yes → service
+│  │
+│  └─ Obtained through LLM analysis?
+│     └─ Yes → llm
 ```
 
 ---
 
-## 11. Context Passing
+## 11. Complete Usage Example
 
-### 11.1 Explicit Context Passing
-
-```yaml
-- type: custom
-  id: process_data
-  
-  # Explicitly specify which context to pass
-  inputs:
-    user_data: event.user
-    device_data: context.extract_device
-    risk_data: context.llm_analysis
-    
-  # Access as function parameters
-  function: |
-    analyze_risk(inputs.user_data, inputs.device_data, inputs.risk_data)
-```
-
-### 11.2 Context Aliasing
-
-```yaml
-- type: alias
-  id: create_shortcuts
-  
-  # Create aliases for complex paths
-  aliases:
-    current_risk: context.llm_analysis.risk_score
-    device_trust: context.device_check.trust_level
-    user_tier: event.user.profile.tier
-    
-# Use shorter names in subsequent steps
-- conditions:
-    - alias.current_risk > 0.8
-    - alias.device_trust < 0.5
-    - alias.user_tier == "premium"
-```
-
----
-
-## 12. Debugging Context
-
-### 12.1 Context Inspection
-
-```yaml
-- type: debug
-  id: inspect_context
-  
-  # Print current context state
-  print_context:
-    - event
-    - vars
-    - context
-    
-  # Filter what to print
-  filter:
-    - event.user
-    - context.*.risk_score
-    
-  # Only in specific environments
-  enabled: sys.environment != "production"
-```
-
-### 12.2 Context Snapshots
-
-```yaml
-observability:
-  context_snapshots:
-    enabled: true
-    
-    # Take snapshots at specific points
-    capture_at:
-      - after_step: extract_features
-      - after_step: llm_analysis
-      - after_step: final_decision
-      
-    # What to include
-    include:
-      - event.user.id
-      - event.transaction.id
-      - context.*.risk_score
-      - vars.*
-```
-
----
-
-## 13. Context in Different Constructs
-
-### 13.1 Context in Rules
+### 11.1 Comprehensive Rule
 
 ```yaml
 rule:
-  id: context_aware_rule
-  
+  id: comprehensive_fraud_check
+  name: Comprehensive Fraud Detection
+
   when:
-    event.type: transaction
     conditions:
-      # Rules can access event and vars only
-      # (no context from other steps unless in pipeline)
-      - event.amount > vars.threshold
-      - event.user.risk_score > 70
+      # 1. event - Raw request data
+      - event.transaction.amount > 10000
+      - event.user.account_age_days < 30
+      - event.device.ip != ""
+
+      # 2. features - Historical features
+      - features.user_transaction_count_7d > 20
+      - features.avg_transaction_amount_30d < 1000
+      - features.velocity_score > 0.8
+
+      # 3. api - External validation
+      - api.device_fingerprint.risk_score > 0.7
+      - api.ip_geolocation.country != event.user.registered_country
+
+      # 4. service - Internal services
+      - service.user_profile.vip_level == "normal"
+      - service.risk_history.previous_fraud_count > 0
+
+      # 5. llm - AI analysis
+      - llm.behavior_analysis.is_suspicious == true
+
+      # 6. vars - Configuration and calculations
+      - event.transaction.amount > vars.high_risk_threshold
+
+      # 7. sys - System information
+      - sys.hour >= 22 || sys.hour <= 6        # Late night
+      - sys.environment == "production"
+
+      # 8. env - Environment config
+      - env.feature_flags.strict_mode == true
+
+  score: 90
+  action: review
 ```
 
-### 13.2 Context in Rulesets
-
-```yaml
-ruleset:
-  id: login_rules
-  rules:
-    - rule_1
-    - rule_2
-    
-  # Ruleset-level variables
-  vars:
-    login_threshold: 75
-    
-# When included in pipeline
-- include:
-    ruleset: login_rules
-    # Pass context to ruleset
-    with_vars:
-      login_threshold: vars.custom_threshold
-```
-
-### 13.3 Context in Aggregation
-
-```yaml
-- aggregate:
-    method: weighted
-    
-    # Reference multiple context values
-    sources:
-      - path: context.rules_engine.score
-        weight: 0.5
-        
-      - path: context.llm_analysis.risk_score
-        weight: 0.3
-        normalize: 0-1 to 0-100
-        
-      - path: context.api_check.score
-        weight: 0.2
-        
-    # Store result in context
-    output: context.final_risk_score
-```
-
----
-
-## 14. Memory and Performance
-
-### 14.1 Context Size Management
+### 11.2 Pipeline with All Namespaces
 
 ```yaml
 pipeline:
-  # Limit context size
-  context_config:
-    max_size_mb: 10
-    
-    # What to do when limit exceeded
-    on_overflow:
-      action: prune
-      keep_essential: true
-      
-    # Auto-cleanup
-    auto_cleanup:
-      - type: api
-        keep_only: [score, status]
-        discard: [raw_response]
-```
+  id: fraud_detection
+  name: Fraud Detection Pipeline
 
-### 14.2 Lazy Loading
+  steps:
+    # 1. Configure variables
+    - step_type: vars
+      config:
+        high_risk_threshold: 50000
+        api_timeout_ms: 3000
 
-```yaml
-- type: enrich
-  id: expensive_lookup
-  
-  # Load data only when accessed
-  lazy_load: true
-  
-  enrich:
-    detailed_profile:
-      source: database
-      query: expensive_query
-      
-# Data loaded only if accessed
-- conditions:
-    # This triggers the load
-    - context.expensive_lookup.detailed_profile.score > 80
+    # 2. Compute features
+    - step_type: feature
+      config:
+        - name: user_transaction_count_7d
+          query: "SELECT COUNT(*) FROM transactions WHERE user_id = $1 AND created_at > NOW() - INTERVAL '7 days'"
+          params:
+            - event.user.id
+
+    # 3. Call external API
+    - step_type: api
+      config:
+        name: device_fingerprint
+        endpoint: "https://api.seon.io/device"
+        timeout_ms: env.api_timeout_ms
+        body:
+          device_id: event.device.id
+          ip: event.device.ip
+
+    # 4. Call internal service
+    - step_type: service
+      config:
+        name: user_profile
+        endpoint: "http://user-service/profile"
+        params:
+          user_id: event.user.id
+
+    # 5. LLM analysis
+    - step_type: llm
+      config:
+        id: behavior_analysis
+        prompt: "Analyze if the following transaction is anomalous: {event}"
+        model: "gpt-4"
+
+    # 6. Execute rules
+    - step_type: ruleset
+      config:
+        rules:
+          - comprehensive_fraud_check
 ```
 
 ---
 
-## 15. Best Practices
+## 12. Migration from Old Context Model
 
-### 15.1 Naming Conventions
+### 12.1 Old vs New
+
+| Old Model | New Model | Notes |
+|-----------|-----------|-------|
+| `event.field` | `event.field` | ✅ No change |
+| `vars.field` | `vars.field` | ✅ No change |
+| `context.step_result` | `features.*` / `api.*` / `service.*` / `llm.*` | Split by processing type |
+| Not available | `sys.*` | New system namespace |
+| `env.field` | `env.field` | ✅ No change |
+
+### 12.2 Migration Examples
+
+**Before:**
+```yaml
+conditions:
+  - context.feature_computation.user_count > 10
+  - context.api_call_result.risk_score > 0.7
+```
+
+**After:**
+```yaml
+conditions:
+  - features.user_count > 10
+  - api.device_fingerprint.risk_score > 0.7
+```
+
+---
+
+## 13. Best Practices
+
+### 13.1 Naming Conventions
 
 ✅ **Good:**
 ```yaml
-- vars:
-    risk_threshold_high: 80
-    is_new_user: true
-    user_account_age_days: 30
-    
-- type: extract
-  id: extract_device_features      # Descriptive
-  output: device_features
+vars:
+  risk_threshold_high: 80
+  is_new_user: true
+  user_account_age_days: 30
+
+features:
+  user_transaction_count_7d: 15
+  avg_transaction_amount_30d: 3200.5
 ```
 
 ❌ **Bad:**
 ```yaml
-- vars:
-    t: 80                           # Unclear
-    flag: true                      # Ambiguous
-    x: 30                           # Meaningless
-    
-- type: extract
-  id: step1                         # Non-descriptive
-  output: data
+vars:
+  t: 80                        # Unclear
+  flag: true                   # Ambiguous
+  x: 30                        # Meaningless
 ```
 
-### 15.2 Context Organization
+### 13.2 Namespace Selection
 
-✅ **Good:** Organize related data
+✅ **Correct:**
 ```yaml
-set_context:
-  risk:
-    score: 85
-    level: "high"
-    factors:
-      device: 0.7
-      location: 0.9
-      behavior: 0.6
+# Simple math → vars
+vars.total_fee: event.amount * 0.031
+
+# Database query → features
+features.transaction_count_7d: COUNT(...)
+
+# External API → api
+api.device_fingerprint.score: 0.75
+
+# LLM analysis → llm
+llm.fraud_analysis.reason: "..."
 ```
 
-❌ **Bad:** Flat structure
+❌ **Incorrect:**
 ```yaml
-set_context:
-  risk_score: 85
+# Don't mix namespaces
+features.simple_addition: 1 + 1     # Should be vars
+vars.historical_count: COUNT(...)   # Should be features
+```
+
+### 13.3 Avoid Namespace Pollution
+
+✅ **Good:** Clean, minimal data
+```yaml
+api.ip_check:
+  score: 0.75
   risk_level: "high"
-  device_factor: 0.7
-  location_factor: 0.9
-  behavior_factor: 0.6
+  country: "US"
 ```
 
-### 15.3 Avoid Context Pollution
-
+❌ **Bad:** Storing unnecessary data
 ```yaml
-# Good: Clean, minimal context
-- type: api
-  id: ip_check
-  output:
-    ip_score: number
-    ip_risk_level: string
-    
-# Bad: Storing unnecessary data
-- type: api
-  id: ip_check
-  output:
-    raw_response: object          # Large, unused
-    debug_info: object            # Not needed in production
-    internal_state: object        # Implementation detail
+api.ip_check:
+  raw_response: { ... }       # Large, unused
+  debug_info: { ... }         # Not needed
+  internal_state: { ... }     # Implementation detail
 ```
 
 ---
 
-## 16. Context Schema
+## 14. Summary
 
-### 16.1 Full Context Structure
+CORINT's flattened namespace architecture provides:
 
-```yaml
-# Complete context structure at runtime
-{
-  # Input event (read-only)
-  "event": {
-    "type": "login",
-    "user": {...},
-    "device": {...},
-    "geo": {...}
-  },
-  
-  # Pipeline variables (read-only)
-  "vars": {
-    "risk_threshold": 80,
-    "is_new_user": true
-  },
-  
-  # Step results (read-write)
-  "context": {
-    "extract_device": {
-      "device_score": 75,
-      "is_trusted": false
-    },
-    "llm_analysis": {
-      "risk_score": 0.85,
-      "reason": "...",
-      "tags": ["suspicious"]
-    }
-  },
-  
-  # System context (read-only)
-  "sys": {
-    "request_id": "req_123",
-    "timestamp": "2024-01-15T10:30:00Z",
-    "environment": "production"
-  },
-  
-  # Environment (read-only)
-  "env": {
-    "ENABLE_LLM": true,
-    "FRAUD_THRESHOLD": 85
-  }
-}
-```
+- **Clear data separation** - 8 distinct namespaces by processing method
+- **Simple access** - No `ctx.` prefix needed, direct namespace access
+- **Type safety** - Read-only vs writable enforcement
+- **Extensibility** - Easy to add new data sources
+- **Observability** - Clear tracking of data origin and processing
 
----
+**The 8 Namespaces:**
+1. `event` - User request raw data (read-only)
+2. `features` - Complex computations (writable)
+3. `api` - External API results (writable)
+4. `service` - Internal service results (writable)
+5. `llm` - LLM analysis (writable)
+6. `vars` - Simple variables (writable)
+7. `sys` - System metadata (read-only)
+8. `env` - Environment config (read-only)
 
-## 17. Summary
-
-CORINT's context management provides:
-
-- **Layered context model** for clear data separation
-- **Pipeline variables** for reusable values
-- **Step result tracking** for data flow
-- **System and environment integration** for dynamic behavior
-- **Context transformation** for data enrichment
-- **Scope management** for branches and sub-pipelines
-- **Memory optimization** for large-scale processing
-
-Proper context management enables:
-- Complex multi-step decision flows
-- Data sharing between pipeline components
-- Maintainable and debuggable pipelines
-- Efficient resource utilization
-
+For complete implementation details, see [CONTEXT_GUIDE.md](../CONTEXT_GUIDE.md).

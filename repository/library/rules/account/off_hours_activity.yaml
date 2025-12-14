@@ -1,0 +1,28 @@
+version: "0.1"
+
+# Off-Hours Activity Detection Rule
+rule:
+  id: off_hours_activity
+  name: Off-Hours Activity Detection
+  description: Detect suspicious activity during non-business hours
+
+  when:
+    event.type: transaction
+    conditions:
+      # Check if transaction happens during off-hours (22:00 - 06:00)
+      - features.is_off_hours == true
+      # And transaction amount is significant
+      - event.amount > 5000
+
+  score: 35
+
+  metadata:
+    category: account
+    severity: medium
+    tags: [off_hours, time_anomaly, suspicious_timing]
+    rule_version: "1.0.0"
+    last_updated: "2025-12-14"
+    description_detail: "Detects high-value transactions during off-hours (22:00-06:00)"
+    detection: "is_off_hours == true AND amount > 5000"
+    features:
+      - is_off_hours: "Whether transaction is during off-hours (22:00-06:00)"

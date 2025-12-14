@@ -1,0 +1,45 @@
+version: "0.1"
+
+# Login Risk Assessment Pipeline
+# Comprehensive login security pipeline with device trust, location analysis, and behavior monitoring
+
+imports:
+  rulesets:
+    - library/rulesets/login_risk.yaml
+
+---
+
+pipeline:
+  id: login_risk_pipeline
+  name: Login Risk Assessment Pipeline
+  description: |
+    Production-grade login risk assessment pipeline.
+
+    Flow:
+    1. Event validation (only process login events)
+    2. Execute login risk ruleset (5 security rules)
+    3. Final decision based on risk score and patterns
+
+    Covered Risk Dimensions:
+    - Device Trust (emulators, spoofing, rooted devices)
+    - Location Anomalies (impossible travel)
+    - Account Takeover Patterns
+    - Password Security
+    - Failed Login Monitoring
+
+  # Pipeline only executes for login-related events
+  when:
+    event.type: login
+
+  steps:
+    # ==========================================
+    # Step 1: Execute Login Risk Ruleset
+    # ==========================================
+    - include:
+        ruleset: login_risk
+
+  metadata:
+    version: "1.0.0"
+    last_updated: "2025-12-14"
+    owner: "security_team"
+    tags: [login, authentication, security]

@@ -123,20 +123,72 @@ impl RuleParser {
         if let Some(s) = yaml.as_str() {
             // Simple string condition - parse as expression
             ExpressionParser::parse(s)
-        } else if let Some(_obj) = yaml.as_mapping() {
-            // Object-based condition (for complex conditions)
-            // For now, convert to string and parse
-            // TODO: Support more complex YAML-based condition syntax
-            let yaml_str =
-                serde_yaml::to_string(yaml).map_err(|e| ParseError::ParseError(e.to_string()))?;
-            Err(ParseError::InvalidValue {
-                field: "condition".to_string(),
-                message: format!("Object-based conditions not yet supported: {}", yaml_str),
-            })
+        } else if let Some(obj) = yaml.as_mapping() {
+            // Object-based condition (for complex conditions like any/all)
+            Self::parse_logical_group(obj)
         } else {
             Err(ParseError::InvalidValue {
                 field: "condition".to_string(),
-                message: "Condition must be a string expression".to_string(),
+                message: "Condition must be a string expression or logical group (any/all)".to_string(),
+            })
+        }
+    }
+
+    /// Parse logical group conditions (any/all)
+    fn parse_logical_group(obj: &serde_yaml::Mapping) -> Result<Expression> {
+        use corint_core::ast::LogicalGroupOp;
+
+        // Check if it's an 'any' or 'all' logical group
+        if let Some(any_conditions) = obj.get(&YamlValue::String("any".to_string())) {
+            // Parse 'any' logical group (OR logic)
+            let conditions = Self::parse_condition_list(any_conditions)?;
+            Ok(Expression::LogicalGroup {
+                op: LogicalGroupOp::Any,
+                conditions,
+            })
+        } else if let Some(all_conditions) = obj.get(&YamlValue::String("all".to_string())) {
+            // Parse 'all' logical group (AND logic)
+            let conditions = Self::parse_condition_list(all_conditions)?;
+            Ok(Expression::LogicalGroup {
+                op: LogicalGroupOp::All,
+                conditions,
+            })
+        } else {
+            // Unknown object structure
+            let yaml_str =
+                serde_yaml::to_string(obj).map_err(|e| ParseError::ParseError(e.to_string()))?;
+            Err(ParseError::InvalidValue {
+                field: "condition".to_string(),
+                message: format!(
+                    "Unknown object-based condition. Expected 'any' or 'all', got: {}",
+                    yaml_str
+                ),
+            })
+        }
+    }
+
+    /// Parse a list of conditions from YAML array
+    fn parse_condition_list(yaml: &YamlValue) -> Result<Vec<Expression>> {
+        if let Some(seq) = yaml.as_sequence() {
+            seq.iter()
+                .map(|item| {
+                    if let Some(s) = item.as_str() {
+                        ExpressionParser::parse(s)
+                    } else if let Some(obj) = item.as_mapping() {
+                        // Nested logical group
+                        Self::parse_logical_group(obj)
+                    } else {
+                        Err(ParseError::InvalidValue {
+                            field: "condition".to_string(),
+                            message: "Each condition must be a string or nested logical group".to_string(),
+                        })
+                    }
+                })
+                .collect()
+        } else {
+            Err(ParseError::InvalidValue {
+                field: "condition".to_string(),
+                message: "Logical group conditions must be an array".to_string(),
             })
         }
     }

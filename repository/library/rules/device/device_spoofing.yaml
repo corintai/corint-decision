@@ -1,0 +1,29 @@
+version: "0.1"
+
+# Device Spoofing Detection Rule
+rule:
+  id: device_spoofing_detection
+  name: Device Spoofing Detection
+  description: Detect device fingerprint spoofing attempts
+
+  when:
+    conditions:
+      # Device fingerprint changed recently
+      - features.device_fingerprint_changed_24h > 0
+      # Hardware characteristics mismatch
+      - device.hardware_mismatch == true
+
+  score: 85
+
+  metadata:
+    category: device
+    severity: critical
+    tags: [spoofing, fingerprint_fraud, device_manipulation]
+    rule_version: "1.0.0"
+    last_updated: "2025-12-14"
+    description_detail: "Detects attempts to spoof device fingerprints or manipulate device characteristics"
+    detection: "fingerprint_changed_24h AND hardware_mismatch"
+    features:
+      - device_fingerprint_changed_24h: "Whether device fingerprint changed in last 24h"
+      - device.hardware_mismatch: "Whether hardware characteristics don't match fingerprint"
+    common_in: [sophisticated_fraud, account_takeover, credential_stuffing]

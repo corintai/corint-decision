@@ -434,6 +434,7 @@ dependencies = [
  "anyhow",
  "async-trait",
  "bigdecimal",
+ "chrono",
  "corint-core",
  "opentelemetry",
  "opentelemetry-otlp",
@@ -450,6 +451,7 @@ dependencies = [
  "tokio",
  "tracing",
  "urlencoding",
+ "uuid",
 ]
 
 [[package]]

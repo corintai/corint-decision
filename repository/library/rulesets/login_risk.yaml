@@ -1,0 +1,139 @@
+version: "0.1"
+
+# Login Risk Assessment Ruleset
+# Comprehensive login security rules with device, location, and behavior analysis
+
+imports:
+  rules:
+    - library/rules/account/impossible_travel.yaml
+    - library/rules/account/off_hours_activity.yaml
+    - library/rules/account/password_change_risk.yaml
+    - library/rules/device/device_emulator.yaml
+    - library/rules/device/device_spoofing.yaml
+    - library/rules/fraud/account_takeover.yaml
+    - library/rules/fraud/account_takeover_failed_logins.yaml
+    - library/rules/fraud/account_takeover_geo_change.yaml
+
+---
+
+ruleset:
+  id: login_risk
+  name: Login Risk Assessment Ruleset
+  description: |
+    Specialized ruleset for login scenario risk assessment.
+
+    Covers multiple risk dimensions:
+    1. Device Trust (80-85pts) - Emulators, spoofing, rooted devices
+    2. Location Anomalies (75pts) - Impossible travel patterns
+    3. Account Takeover (85pts) - Combined takeover indicators
+    4. Password Security (70pts) - High-risk password changes
+
+    Total risk scoring with multi-layer decision logic.
+
+  # Reference imported rules by their IDs
+  rules:
+    - impossible_travel_detection
+    - device_emulator_detection
+    - device_spoofing_detection
+    - account_takeover_new_device
+    - account_takeover_failed_logins
+    - account_takeover_geo_change
+    - password_change_risk
+
+  # Multi-layer decision logic
+  decision_logic:
+    # ==========================================
+    # Priority 1: Critical Device Threats
+    # ==========================================
+
+    # Emulator/Virtual device - immediate deny
+    - condition: triggered_rules contains "device_emulator_detection"
+      action: deny
+      reason: "Critical: Emulator or virtual device detected"
+      terminate: true
+
+    # Device spoofing - immediate deny
+    - condition: triggered_rules contains "device_spoofing_detection"
+      action: deny
+      reason: "Critical: Device fingerprint spoofing detected"
+      terminate: true
+
+    # ==========================================
+    # Priority 2: Account Takeover Patterns
+    # ==========================================
+
+    # Impossible travel + account takeover indicators
+    - condition: |
+        triggered_rules contains "impossible_travel_detection" &&
+        (triggered_rules contains "account_takeover_new_device" ||
+         triggered_rules contains "account_takeover_failed_logins" ||
+         triggered_rules contains "account_takeover_geo_change")
+      action: deny
+      reason: "Critical: Impossible travel with account takeover pattern"
+      terminate: true
+
+    # Account takeover with password change
+    - condition: |
+        (triggered_rules contains "account_takeover_new_device" ||
+         triggered_rules contains "account_takeover_failed_logins" ||
+         triggered_rules contains "account_takeover_geo_change") &&
+        triggered_rules contains "password_change_risk"
+      action: deny
+      reason: "Critical: Account takeover with password change attempt"
+      terminate: true
+
+    # ==========================================
+    # Priority 3: Score-Based Thresholds
+    # ==========================================
+
+    # Critical Risk >= 150 (multiple high-severity patterns)
+    - condition: total_score >= 150
+      action: deny
+      reason: "Critical risk - multiple security threats (score: {total_score})"
+      terminate: true
+
+    # Very High Risk >= 100
+    - condition: total_score >= 100
+      action: deny
+      reason: "Very high risk - clear security threat (score: {total_score})"
+      terminate: true
+
+    # High Risk >= 70 - Requires additional verification
+    - condition: total_score >= 70
+      action: review
+      reason: "High risk login - requires MFA or manual review (score: {total_score})"
+      terminate: false
+
+    # Medium Risk >= 50 - Enhanced monitoring
+    - condition: total_score >= 50
+      action: review
+      reason: "Medium risk - enhanced monitoring required (score: {total_score})"
+      terminate: false
+
+    # ==========================================
+    # Priority 4: Multiple Indicators
+    # ==========================================
+
+    # Multiple risk indicators present (2 or more)
+    - condition: triggered_count >= 2
+      action: review
+      reason: "Multiple risk indicators detected ({triggered_count} patterns)"
+
+    # ==========================================
+    # Priority 5: Default Action
+    # ==========================================
+
+    # Low Risk (default) - approve with logging
+    - default: true
+      action: approve
+      reason: "Low risk - normal login pattern"
+
+  metadata:
+    version: "1.0.0"
+    last_updated: "2025-12-14"
+    owner: "security_team"
+    tags: [login, authentication, account_security, device_trust]
+    change_log:
+      - version: "1.0.0"
+        date: "2025-12-14"
+        changes: "Initial release with 7 login security rules (account_takeover split into 3 rules to work around 'any:' compiler bug)"

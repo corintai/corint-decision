@@ -289,6 +289,11 @@ impl SemanticAnalyzer {
                 self.collect_variable_references(true_expr, references);
                 self.collect_variable_references(false_expr, references);
             }
+            Expression::LogicalGroup { conditions, .. } => {
+                for condition in conditions {
+                    self.collect_variable_references(condition, references);
+                }
+            }
             Expression::Literal(_) => {
                 // Literals don't reference variables
             }
@@ -352,6 +357,14 @@ impl SemanticAnalyzer {
                 self.analyze_expression(condition)?;
                 self.analyze_expression(true_expr)?;
                 self.analyze_expression(false_expr)?;
+                Ok(())
+            }
+
+            Expression::LogicalGroup { conditions, .. } => {
+                // Analyze all conditions in the group
+                for condition in conditions {
+                    self.analyze_expression(condition)?;
+                }
                 Ok(())
             }
         }

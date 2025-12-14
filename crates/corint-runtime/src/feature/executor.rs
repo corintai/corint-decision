@@ -157,8 +157,8 @@ impl FeatureExecutor {
             return Ok(Value::Null);
         }
 
-        // Build context map from ExecutionContext
-        let context_map = context.event_data.clone();
+        // Build context map from ExecutionContext (use event namespace)
+        let context_map = context.event.clone();
 
         // Check dependencies first
         let mut dep_values = HashMap::new();

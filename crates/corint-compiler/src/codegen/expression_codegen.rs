@@ -5,7 +5,7 @@
 use crate::error::{CompileError, Result};
 #[cfg(test)]
 use corint_core::ast::UnaryOperator;
-use corint_core::ast::{Expression, Operator};
+use corint_core::ast::{Expression, LogicalGroupOp, Operator};
 use corint_core::ir::Instruction;
 
 /// Expression compiler
@@ -100,7 +100,112 @@ impl ExpressionCompiler {
 
                 Ok(instructions)
             }
+
+            Expression::LogicalGroup { op, conditions } => {
+                match op {
+                    LogicalGroupOp::Any => Self::compile_any_conditions(conditions),
+                    LogicalGroupOp::All => Self::compile_all_conditions(conditions),
+                }
+            }
         }
+    }
+
+    /// Compile 'any' logical group (OR logic with short-circuit evaluation)
+    /// Returns true if ANY condition is true
+    fn compile_any_conditions(conditions: &[Expression]) -> Result<Vec<Instruction>> {
+        if conditions.is_empty() {
+            // Empty 'any' evaluates to false
+            return Ok(vec![Instruction::LoadConst {
+                value: corint_core::Value::Bool(false),
+            }]);
+        }
+
+        if conditions.len() == 1 {
+            // Single condition - just compile it directly
+            return Self::compile(&conditions[0]);
+        }
+
+        let mut instructions = Vec::new();
+        let mut jump_to_end_offsets = Vec::new();
+
+        for (i, condition) in conditions.iter().enumerate() {
+            // Compile this condition
+            instructions.extend(Self::compile(condition)?);
+
+            // If this is not the last condition
+            if i < conditions.len() - 1 {
+                // Duplicate the result on stack for the jump check
+                instructions.push(Instruction::Dup);
+
+                // If true, jump to end (short-circuit OR)
+                // We'll fix the offset later
+                jump_to_end_offsets.push(instructions.len());
+                instructions.push(Instruction::JumpIfTrue { offset: 0 });
+
+                // If false, pop the false value and continue to next condition
+                instructions.push(Instruction::Pop);
+            }
+        }
+
+        // Fix all jump offsets to point to the end
+        let end_position = instructions.len();
+        for jump_pos in jump_to_end_offsets {
+            let offset = (end_position - jump_pos - 1) as isize;
+            if let Instruction::JumpIfTrue { offset: ref mut o } = instructions[jump_pos] {
+                *o = offset;
+            }
+        }
+
+        Ok(instructions)
+    }
+
+    /// Compile 'all' logical group (AND logic with short-circuit evaluation)
+    /// Returns true if ALL conditions are true
+    fn compile_all_conditions(conditions: &[Expression]) -> Result<Vec<Instruction>> {
+        if conditions.is_empty() {
+            // Empty 'all' evaluates to true
+            return Ok(vec![Instruction::LoadConst {
+                value: corint_core::Value::Bool(true),
+            }]);
+        }
+
+        if conditions.len() == 1 {
+            // Single condition - just compile it directly
+            return Self::compile(&conditions[0]);
+        }
+
+        let mut instructions = Vec::new();
+        let mut jump_to_end_offsets = Vec::new();
+
+        for (i, condition) in conditions.iter().enumerate() {
+            // Compile this condition
+            instructions.extend(Self::compile(condition)?);
+
+            // If this is not the last condition
+            if i < conditions.len() - 1 {
+                // Duplicate the result on stack for the jump check
+                instructions.push(Instruction::Dup);
+
+                // If false, jump to end (short-circuit AND)
+                // We'll fix the offset later
+                jump_to_end_offsets.push(instructions.len());
+                instructions.push(Instruction::JumpIfFalse { offset: 0 });
+
+                // If true, pop the true value and continue to next condition
+                instructions.push(Instruction::Pop);
+            }
+        }
+
+        // Fix all jump offsets to point to the end
+        let end_position = instructions.len();
+        for jump_pos in jump_to_end_offsets {
+            let offset = (end_position - jump_pos - 1) as isize;
+            if let Instruction::JumpIfFalse { offset: ref mut o } = instructions[jump_pos] {
+                *o = offset;
+            }
+        }
+
+        Ok(instructions)
     }
 
     /// Check if operator is a comparison operator

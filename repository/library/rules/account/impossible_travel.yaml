@@ -1,0 +1,32 @@
+version: "0.1"
+
+# Impossible Travel Detection Rule
+rule:
+  id: impossible_travel_detection
+  name: Impossible Travel Detection
+  description: Detect physically impossible geographic location changes between logins
+
+  when:
+    event.type: login
+    conditions:
+      # Calculate if travel speed exceeds 800 km/h (approx aircraft speed)
+      # distance(geo.location, user.last_login_location) / hours_since(user.last_login_time) > 800
+      # For testing, we use simpler conditions based on available features
+      - features.hours_since_last_login < 2
+      - features.geo_distance_from_last_login > 1000
+      # Speed = 1000km / 2h = 500km/h is suspicious but possible
+      # Speed > 800km/h would be impossible
+
+  score: 75
+
+  metadata:
+    category: account
+    severity: high
+    tags: [impossible_travel, location_anomaly, account_takeover]
+    rule_version: "1.0.0"
+    last_updated: "2025-12-14"
+    description_detail: "Detects when user logs in from a location that is physically impossible to reach in the time since last login"
+    detection: "geo distance > 1000km AND time < 2h"
+    features:
+      - hours_since_last_login: "Time since last login (hours)"
+      - geo_distance_from_last_login: "Distance from last login location (km)"

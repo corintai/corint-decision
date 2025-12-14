@@ -19,7 +19,7 @@ impl Executor {
         program: &Program,
         event_data: HashMap<String, Value>,
     ) -> Result<ExecutionResult> {
-        let mut ctx = ExecutionContext::new(event_data);
+        let mut ctx = ExecutionContext::from_event(event_data)?;
         let mut pc = 0; // Program Counter
 
         while pc < program.instructions.len() {

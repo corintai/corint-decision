@@ -299,7 +299,7 @@ mod tests {
         params.insert("user_id".to_string(), Value::String("123".to_string()));
 
         let client = ExternalApiClient::new();
-        let ctx = ExecutionContext::new(HashMap::new());
+        let ctx = ExecutionContext::from_event(HashMap::new()).unwrap();
 
         let url = client
             .build_url(&api_config, &endpoint, &params, &ctx)
@@ -335,7 +335,7 @@ mod tests {
         );
 
         let client = ExternalApiClient::new();
-        let ctx = ExecutionContext::new(HashMap::new());
+        let ctx = ExecutionContext::from_event(HashMap::new()).unwrap();
 
         let url = client
             .build_url(&api_config, &endpoint, &params, &ctx)

@@ -156,6 +156,21 @@ impl TypeChecker {
                     Ok(TypeInfo::Any)
                 }
             }
+
+            Expression::LogicalGroup { conditions, .. } => {
+                // All conditions must be boolean
+                for condition in conditions {
+                    let condition_type = self.check_expression(condition)?;
+                    if !condition_type.is_boolean() && !matches!(condition_type, TypeInfo::Unknown)
+                    {
+                        return Err(CompileError::TypeError(
+                            "Logical group conditions must be boolean".to_string(),
+                        ));
+                    }
+                }
+                // Result is always boolean
+                Ok(TypeInfo::Boolean)
+            }
         }
     }
 

@@ -88,21 +88,22 @@ impl PipelineExecutor {
         program: &Program,
         event_data: HashMap<String, Value>,
     ) -> Result<DecisionResult> {
-        self.execute_with_result(program, event_data, ExecutionResult::new())
+        let context_input = crate::ContextInput::new(event_data);
+        self.execute_with_result(program, context_input, ExecutionResult::new())
             .await
     }
 
-    /// Execute an IR program with the given event data and existing result state
+    /// Execute an IR program with the given context input and existing result state
     pub async fn execute_with_result(
         &self,
         program: &Program,
-        event_data: HashMap<String, Value>,
+        context_input: crate::ContextInput,
         existing_result: ExecutionResult,
     ) -> Result<DecisionResult> {
         let start_time = Instant::now();
         self.metrics.counter("executions_total").inc();
 
-        let mut ctx = ExecutionContext::with_result(event_data, existing_result);
+        let mut ctx = ExecutionContext::with_result(context_input, existing_result)?;
         let mut pc = 0; // Program Counter
 
         tracing::debug!("Program has {} instructions", program.instructions.len());
@@ -120,19 +121,27 @@ impl PipelineExecutor {
                         // Explicit feature access: features.xxx
                         let feature_name = &path[1];
 
-                        if let Some(ref feature_executor) = self.feature_executor {
+                        // First, check if the feature value was pre-provided in the request
+                        if let Some(existing_value) = ctx.features.get(feature_name) {
+                            tracing::debug!(
+                                "Using pre-provided feature '{}': {:?}",
+                                feature_name,
+                                existing_value
+                            );
+                            existing_value.clone()
+                        } else if let Some(ref feature_executor) = self.feature_executor {
+                            // Feature not pre-provided, try to calculate it
                             if feature_executor.has_feature(feature_name) {
                                 tracing::debug!(
-                                    "Accessing feature '{}' via features namespace",
+                                    "Calculating feature '{}' via FeatureExtractor",
                                     feature_name
                                 );
 
                                 // Calculate feature on-demand
                                 match feature_executor.execute_feature(feature_name, &ctx).await {
                                     Ok(feature_value) => {
-                                        // Cache the result in event_data for subsequent accesses
-                                        ctx.event_data
-                                            .insert(feature_name.clone(), feature_value.clone());
+                                        // Store the result in features namespace
+                                        ctx.store_feature(feature_name, feature_value.clone());
                                         tracing::debug!(
                                             "Feature '{}' calculated: {:?}",
                                             feature_name,
@@ -151,14 +160,16 @@ impl PipelineExecutor {
                                 }
                             } else {
                                 return Err(RuntimeError::FieldNotFound(format!(
-                                    "Feature '{}' not found",
+                                    "Feature '{}' not found in pre-provided features or FeatureExtractor",
                                     feature_name
                                 )));
                             }
                         } else {
-                            return Err(RuntimeError::FieldNotFound(
-                                "Feature executor not available".to_string(),
-                            ));
+                            // No pre-provided value and no feature executor
+                            return Err(RuntimeError::FieldNotFound(format!(
+                                "Feature '{}' not found: no pre-provided value and FeatureExtractor not available",
+                                feature_name
+                            )));
                         }
                     } else {
                         // Regular field access: event_data, variables, or special fields

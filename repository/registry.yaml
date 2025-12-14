@@ -31,10 +31,10 @@ registry:
       velocity monitoring, and Brazil-specific rules.
 
   # Login events - Authentication Risk Pipeline
-  # - pipeline: login_risk_pipeline
-  #   when:
-  #     event.type: login
-  #   description: Account takeover detection for login attempts
+  - pipeline: login_risk_pipeline
+    when:
+      event.type: login
+    description: Account takeover detection for login attempts
 
   # Loan application events
   # - pipeline: loan_application_pipeline

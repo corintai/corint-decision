@@ -8,18 +8,38 @@ use corint_core::ir::Program;
 use corint_core::Value;
 use corint_parser::{PipelineParser, RegistryParser, RuleParser, RulesetParser};
 use corint_runtime::{
-    ApiConfig, DecisionResult, ExternalApiClient, MetricsCollector, PipelineExecutor,
+    ApiConfig, ContextInput, DecisionResult, ExternalApiClient, MetricsCollector, PipelineExecutor,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Arc;
 
-/// Decision request
+/// Decision request (supports Phase 5 multi-namespace format)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DecisionRequest {
-    /// Event data
+    /// Event data (required)
     pub event_data: HashMap<String, Value>,
+
+    /// Feature computation results (optional)
+    #[serde(default)]
+    pub features: Option<HashMap<String, Value>>,
+
+    /// External API results (optional)
+    #[serde(default)]
+    pub api: Option<HashMap<String, Value>>,
+
+    /// Service call results (optional)
+    #[serde(default)]
+    pub service: Option<HashMap<String, Value>>,
+
+    /// LLM analysis results (optional)
+    #[serde(default)]
+    pub llm: Option<HashMap<String, Value>>,
+
+    /// Variables (optional)
+    #[serde(default)]
+    pub vars: Option<HashMap<String, Value>>,
 
     /// Request metadata
     pub metadata: HashMap<String, String>,
@@ -30,6 +50,11 @@ impl DecisionRequest {
     pub fn new(event_data: HashMap<String, Value>) -> Self {
         Self {
             event_data,
+            features: None,
+            api: None,
+            service: None,
+            llm: None,
+            vars: None,
             metadata: HashMap::new(),
         }
     }
@@ -38,6 +63,59 @@ impl DecisionRequest {
     pub fn with_metadata(mut self, key: String, value: String) -> Self {
         self.metadata.insert(key, value);
         self
+    }
+
+    /// Add features
+    pub fn with_features(mut self, features: HashMap<String, Value>) -> Self {
+        self.features = Some(features);
+        self
+    }
+
+    /// Add API results
+    pub fn with_api(mut self, api: HashMap<String, Value>) -> Self {
+        self.api = Some(api);
+        self
+    }
+
+    /// Add service results
+    pub fn with_service(mut self, service: HashMap<String, Value>) -> Self {
+        self.service = Some(service);
+        self
+    }
+
+    /// Add LLM results
+    pub fn with_llm(mut self, llm: HashMap<String, Value>) -> Self {
+        self.llm = Some(llm);
+        self
+    }
+
+    /// Add variables
+    pub fn with_vars(mut self, vars: HashMap<String, Value>) -> Self {
+        self.vars = Some(vars);
+        self
+    }
+
+    /// Convert to ContextInput for runtime execution
+    pub(crate) fn to_context_input(&self) -> ContextInput {
+        let mut input = ContextInput::new(self.event_data.clone());
+
+        if let Some(features) = &self.features {
+            input = input.with_features(features.clone());
+        }
+        if let Some(api) = &self.api {
+            input = input.with_api(api.clone());
+        }
+        if let Some(service) = &self.service {
+            input = input.with_service(service.clone());
+        }
+        if let Some(llm) = &self.llm {
+            input = input.with_llm(llm.clone());
+        }
+        if let Some(vars) = &self.vars {
+            input = input.with_vars(vars.clone());
+        }
+
+        input
     }
 }
 
@@ -314,6 +392,24 @@ impl DecisionEngine {
                 // Ternary expressions not supported in this simple evaluator
                 false
             }
+            Expression::LogicalGroup { op, conditions } => {
+                // Evaluate logical group (any/all)
+                use corint_core::ast::LogicalGroupOp;
+                match op {
+                    LogicalGroupOp::Any => {
+                        // OR logic: return true if ANY condition is true
+                        conditions
+                            .iter()
+                            .any(|cond| Self::evaluate_expression(cond, event_data))
+                    }
+                    LogicalGroupOp::All => {
+                        // AND logic: return true if ALL conditions are true
+                        conditions
+                            .iter()
+                            .all(|cond| Self::evaluate_expression(cond, event_data))
+                    }
+                }
+            }
         }
     }
 
@@ -372,6 +468,19 @@ impl DecisionEngine {
             Expression::Unary { .. } => Value::Null,
             Expression::FunctionCall { .. } => Value::Null,
             Expression::Ternary { .. } => Value::Null,
+            Expression::LogicalGroup { op, conditions } => {
+                // Convert logical group to boolean value
+                use corint_core::ast::LogicalGroupOp;
+                let result = match op {
+                    LogicalGroupOp::Any => conditions
+                        .iter()
+                        .any(|cond| Self::evaluate_expression(cond, event_data)),
+                    LogicalGroupOp::All => conditions
+                        .iter()
+                        .all(|cond| Self::evaluate_expression(cond, event_data)),
+                };
+                Value::Bool(result)
+            }
         }
     }
 
@@ -776,7 +885,7 @@ impl DecisionEngine {
                             .executor
                             .execute_with_result(
                                 pipeline_program,
-                                request.event_data.clone(),
+                                request.to_context_input(),
                                 execution_result.clone(),
                             )
                             .await?;
@@ -819,7 +928,7 @@ impl DecisionEngine {
                                                 .executor
                                                 .execute_with_result(
                                                     rule_program,
-                                                    request.event_data.clone(),
+                                                    request.to_context_input(),
                                                     execution_result.clone(),
                                                 )
                                                 .await?;
@@ -854,7 +963,7 @@ impl DecisionEngine {
                                     .executor
                                     .execute_with_result(
                                         ruleset_program,
-                                        request.event_data.clone(),
+                                        request.to_context_input(),
                                         execution_result.clone(),
                                     )
                                     .await?;
@@ -956,7 +1065,7 @@ impl DecisionEngine {
                         .executor
                         .execute_with_result(
                             pipeline_program,
-                            request.event_data.clone(),
+                            request.to_context_input(),
                             execution_result.clone(),
                         )
                         .await?;
@@ -1018,7 +1127,7 @@ impl DecisionEngine {
                                             .executor
                                             .execute_with_result(
                                                 rule_program,
-                                                request.event_data.clone(),
+                                                request.to_context_input(),
                                                 execution_result.clone(),
                                             )
                                             .await?;
@@ -1055,7 +1164,7 @@ impl DecisionEngine {
                                 .executor
                                 .execute_with_result(
                                     ruleset_program,
-                                    request.event_data.clone(),
+                                    request.to_context_input(),
                                     execution_result.clone(),
                                 )
                                 .await?;
@@ -1096,7 +1205,7 @@ impl DecisionEngine {
                         .executor
                         .execute_with_result(
                             program,
-                            request.event_data.clone(),
+                            request.to_context_input(),
                             execution_result.clone(),
                         )
                         .await?;
@@ -1135,7 +1244,7 @@ impl DecisionEngine {
                         .executor
                         .execute_with_result(
                             program,
-                            request.event_data.clone(),
+                            request.to_context_input(),
                             execution_result.clone(),
                         )
                         .await?;

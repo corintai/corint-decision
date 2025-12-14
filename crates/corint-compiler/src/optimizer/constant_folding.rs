@@ -90,6 +90,17 @@ impl ConstantFolder {
                     false_expr: Box::new(self.fold(false_expr)),
                 }
             }
+
+            Expression::LogicalGroup { op, conditions } => {
+                // Fold all conditions
+                let folded_conditions: Vec<Expression> =
+                    conditions.iter().map(|cond| self.fold(cond)).collect();
+
+                Expression::LogicalGroup {
+                    op: *op,
+                    conditions: folded_conditions,
+                }
+            }
         }
     }
 

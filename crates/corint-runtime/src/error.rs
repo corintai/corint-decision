@@ -33,6 +33,15 @@ pub enum RuntimeError {
     #[error("External API call failed: {0}")]
     ExternalCallFailed(String),
 
+    /// Reserved field in event data
+    #[error("Reserved field '{field}': {reason}")]
+    ReservedField {
+        /// The reserved field name
+        field: String,
+        /// Reason why it's reserved
+        reason: String,
+    },
+
     /// Core error (from corint-core)
     #[error("Core error: {0}")]
     CoreError(

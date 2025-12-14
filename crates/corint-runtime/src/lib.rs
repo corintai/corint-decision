@@ -15,9 +15,10 @@ pub mod observability;
 pub mod result;
 pub mod service;
 pub mod storage;
+pub mod validation;
 
 // Re-export main types
-pub use context::ExecutionContext;
+pub use context::{ContextInput, ExecutionContext};
 pub use datasource::{
     Aggregation, AggregationType, DataSourceClient, DataSourceConfig, DataSourceType, Filter,
     FilterOperator, Query, QueryResult, QueryType, RelativeWindow, TimeUnit, TimeWindow,
