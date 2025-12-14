@@ -21,6 +21,45 @@
 
 ---
 
+## 🎉 最新更新 (2025-12-14 v1.6)
+
+### any:/all: 逻辑组编译器Bug修复完成 (第五轮)
+
+✅ **已完成关键Bug修复:**
+
+1. **修复栈管理问题** - 解决了`any:`和`all:`逻辑组导致的Stack underflow错误
+2. **重构编译策略** - 移除错误的Dup+Jump+Pop模式，改用直接消费栈值的方式
+3. **添加完整测试** - 新增6个单元测试覆盖空、单条件、多条件场景
+4. **集成测试验证** - 通过实际server运行验证无栈溢出错误
+
+**实现细节:**
+- ✅ `crates/corint-compiler/src/codegen/expression_codegen.rs` - 重写compile_any_conditions()和compile_all_conditions()
+- ✅ 单元测试 - 新增test_compile_any_logical_group_* 和 test_compile_all_logical_group_* 系列测试
+- ✅ `test_any_all_conditions.yaml` - 创建测试规则文件
+- ✅ `/tmp/test_any_rule_integrated.sh` - 集成测试脚本
+
+**核心修复:**
+- **问题根因**: JumpIfTrue/JumpIfFalse指令会POP栈值，原实现使用Dup导致双重POP
+- **解决方案**:
+  - `any:` - 让每个条件自然被JumpIfTrue消费，跳转到"push true"段，最后一个条件的结果作为最终值
+  - `all:` - 让每个条件自然被JumpIfFalse消费，跳转到"push false"段，最后一个条件的结果作为最终值
+- **短路求值**: 正确实现OR/AND的短路逻辑，提升性能
+
+**测试覆盖:**
+- 空逻辑组: any:返回false, all:返回true
+- 单条件逻辑组: 直接编译为条件本身
+- 多条件逻辑组: 正确生成跳转指令序列
+- 集成测试: 验证实际server运行无错误
+
+**影响:**
+- 修复关键Bug：解决使用`any:`时的runtime崩溃
+- 功能完整性：支持完整的OR/AND逻辑组合
+- 代码质量：700+测试全部通过
+- 生产就绪：经过集成测试验证，可安全使用
+- 规则优化：合并三个拆分的account_takeover规则为单个统一规则
+
+---
+
 ## 🎉 最新更新 (2025-12-12 v1.4)
 
 ### OpenTelemetry可观测性集成完成 (第四轮)
@@ -729,12 +768,12 @@
 | ~~修复3个失败测试~~ | ~~context.rs, decision_engine.rs~~ | ~~1天~~ | ✅ 已完成 |
 | 实现Redis缓存 | executor.rs | 2天 | 优化建议 |
 | 实现LLM providers | provider.rs | 3天 | 优化建议 |
-| **[新增] 修复any:逻辑组编译器Bug** | **expression_codegen.rs** | **3天** | **规则改进** |
+| ~~**[新增] 修复any:逻辑组编译器Bug**~~ | ~~**expression_codegen.rs**~~ | ~~**3天**~~ | **✅ 已完成** |
 | **[新增] 特征工程测试套件** | **feature_engineering_tests.rs** | **2天** | **规则改进** |
 | **[新增] 表达式语言测试** | **expression_tests.rs** | **1天** | **规则改进** |
 | **[新增] 上下文管理测试** | **context_tests.rs** | **1天** | **规则改进** |
 
-**总计: ~12天** (原9天，新增3天 - 已完成项已划线)
+**总计: ~9天** (原9天，已完成修复any:逻辑组Bug - 已完成项已划线)
 
 ---
 
@@ -881,30 +920,32 @@
 
 ## 规则DSL功能增强 (来自RULE_IMPROVEMENT_RECOMMENDATIONS.md)
 
-### 16. 🔴 [P0] any:逻辑组编译器Bug
+### 16. ~~🔴 [P0] any:逻辑组编译器Bug~~ ✅ 已完成
 
 **问题描述:**
-当前在使用 `any:` 逻辑组时会导致运行时 "Stack underflow" 错误。
+~~当前在使用 `any:` 逻辑组时会导致运行时 "Stack underflow" 错误。~~
 
 **影响:**
-- 无法在规则中使用OR逻辑组合多个条件
-- 必须将OR条件拆分成多个独立规则
+- ~~无法在规则中使用OR逻辑组合多个条件~~
+- ~~必须将OR条件拆分成多个独立规则~~
 
-**临时解决方案:**
-已将 `account_takeover.yaml` 拆分成三个独立规则:
-- `account_takeover_new_device.yaml` - 检查新设备
-- `account_takeover_failed_logins.yaml` - 检查失败登录
-- `account_takeover_geo_change.yaml` - 检查地理位置变化
+**~~临时解决方案:~~**
+~~已将 `account_takeover.yaml` 拆分成三个独立规则:~~
+- ~~`account_takeover_new_device.yaml` - 检查新设备~~
+- ~~`account_takeover_failed_logins.yaml` - 检查失败登录~~
+- ~~`account_takeover_geo_change.yaml` - 检查地理位置变化~~
 
-**TODO:**
-- [ ] 调试 `expression_codegen.rs` 中的 `compile_any_conditions()` 函数
-- [ ] 修复JumpIfTrue/JumpIfFalse指令的栈操作逻辑
-- [ ] 添加any:逻辑组的集成测试
-- [ ] 验证修复后将三个规则合并回单个规则
+**✅ 解决方案 (已完成 - 2025-12-14):**
+- ✅ 调试并修复 `expression_codegen.rs` 中的 `compile_any_conditions()` 函数
+- ✅ 修复JumpIfTrue/JumpIfFalse指令的栈操作逻辑 - 移除错误的Dup+Jump+Pop模式
+- ✅ 添加6个单元测试覆盖any:/all:逻辑组
+- ✅ 添加集成测试验证无栈溢出
+- ✅ 将三个拆分规则合并回单个统一的 `account_takeover.yaml`
 
 **相关文件:**
-- [crates/corint-compiler/src/codegen/expression_codegen.rs](crates/corint-compiler/src/codegen/expression_codegen.rs#L115-L160)
+- [crates/corint-compiler/src/codegen/expression_codegen.rs](crates/corint-compiler/src/codegen/expression_codegen.rs#L113-L267) - ✅ 已修复
 - [crates/corint-runtime/src/executor.rs](crates/corint-runtime/src/executor.rs#L67-L83)
+- [repository/library/rules/fraud/account_takeover.yaml](repository/library/rules/fraud/account_takeover.yaml) - ✅ 已合并
 
 ---
 
@@ -1510,8 +1551,9 @@ cargo audit
 | 2025-12-12 | 1.3 | **错误处理优化完成(第三轮)**: 完成错误链追踪改进 - ✅ 添加#[source]属性到所有#[from]错误（10+处）- ✅ RuntimeError添加CoreError变体 - ✅ ServerError重构为使用thiserror - ✅ 完整的错误链支持 - ✅ 所有测试100%通过 |
 | 2025-12-12 | 1.4 | **OpenTelemetry可观测性集成完成(第四轮)**: 实现完整的OTel支持 - ✅ OpenTelemetry初始化模块（otel.rs）- ✅ Prometheus metrics导出 - ✅ 分布式追踪支持（OTLP）- ✅ corint-server集成（/metrics endpoint）- ✅ 示例代码和完整文档（runtime/README.md）- ✅ 所有测试通过（Clippy 0警告）|
 | 2025-12-14 | 1.5 | **规则改进建议合并**: 将RULE_IMPROVEMENT_RECOMMENDATIONS.md中的未实现优化项合并到optimize.md - ✅ 新增P0任务：any:逻辑组Bug修复、特征工程测试、表达式测试、上下文测试（共4项）- ✅ 新增P1任务：动态阈值、规则依赖/优先级、并行执行、外部API集成（共17项）- ✅ 新增P2任务：规则场景补充、特征工程增强、测试覆盖补充（共18项）- ✅ 新增P3任务：Web3/加密货币规则（共3项）- ✅ 新增Future任务：LLM集成(暂缓)、SDK客户端、管理界面等 - ✅ 标记已完成项：impossible_travel、password_change_risk、device_emulator、device_spoofing等规则 - 总计新增42+个待办项，覆盖DSL功能增强、规则场景、特征工程、测试等领域 |
+| 2025-12-14 | 1.6 | **any:/all:逻辑组编译器Bug修复完成(第五轮)**: 修复关键的Stack underflow错误 - ✅ 重写compile_any_conditions()和compile_all_conditions()移除错误的Dup+Jump+Pop模式 - ✅ 新增6个单元测试（empty/single/multiple条件场景）- ✅ 创建集成测试验证无栈溢出 - ✅ 合并三个拆分的account_takeover规则为单个统一规则 - ✅ 700+测试全部通过 - 解决了无法在规则中使用OR/AND逻辑组合的关键问题，生产就绪 |
 
 ---
 
 **文档维护者:** Claude Code
-**最后更新:** 2025-12-14 (v1.5 - 规则改进建议合并)
+**最后更新:** 2025-12-14 (v1.6 - any:/all:逻辑组Bug修复完成)

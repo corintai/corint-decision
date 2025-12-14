@@ -10,9 +10,7 @@ imports:
     - library/rules/account/password_change_risk.yaml
     - library/rules/device/device_emulator.yaml
     - library/rules/device/device_spoofing.yaml
-    - library/rules/fraud/account_takeover.yaml
-    - library/rules/fraud/account_takeover_failed_logins.yaml
-    - library/rules/fraud/account_takeover_geo_change.yaml
+    - library/rules/fraud/account_takeover.yaml 
 
 ---
 
