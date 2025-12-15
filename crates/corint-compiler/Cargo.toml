@@ -10,5 +10,6 @@ corint-core = { path = "../corint-core" }
 corint-parser = { path = "../corint-parser" }
 thiserror = { workspace = true }
 anyhow = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 serde_yaml = { workspace = true }

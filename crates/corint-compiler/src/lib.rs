@@ -8,6 +8,7 @@ pub mod error;
 pub mod import_resolver;
 pub mod optimizer;
 pub mod semantic;
+pub mod validator;
 
 // Re-export main types
 pub use compiler::{Compiler, CompilerOptions};
@@ -27,3 +28,8 @@ pub use semantic::{SemanticAnalyzer, TypeChecker, TypeInfo};
 
 // Re-export optimizer types
 pub use optimizer::{ConstantFolder, DeadCodeEliminator};
+
+// Re-export validator types
+pub use validator::{
+    Diagnostic, DiagnosticSeverity, DocumentMetadata, DslType, DslValidator, ValidationResult,
+};
