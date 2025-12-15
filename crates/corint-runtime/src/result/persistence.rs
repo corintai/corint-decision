@@ -23,6 +23,9 @@ pub struct RuleExecutionRecord {
     /// Request ID (links to risk_decisions)
     pub request_id: String,
 
+    /// Ruleset ID (for grouping rules in trace)
+    pub ruleset_id: Option<String>,
+
     /// Rule ID
     pub rule_id: String,
 
@@ -41,8 +44,12 @@ pub struct RuleExecutionRecord {
     /// Feature values used in this rule
     pub feature_values: Option<HashMap<String, Value>>,
 
-    /// Rule conditions (optional)
+    /// Rule conditions (optional) - legacy string format
     pub rule_conditions: Option<serde_json::Value>,
+
+    /// Structured conditions as JSON array for detailed tracing
+    /// Each element is a structured object with type, expression, nested conditions, etc.
+    pub conditions_json: Option<String>,
 }
 
 /// Decision result record for persistence

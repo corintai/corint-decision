@@ -26,7 +26,7 @@ curl -X POST http://localhost:8080/v1/decide \
       "type": "test1",
       "transaction": {
         "amount": 15000,
-        "currency": "USD",
+        "currency": "CNY",
         "payment_method": "credit_card",
         "description": "Large purchase",
         "recipient_new": false,
@@ -39,7 +39,7 @@ curl -X POST http://localhost:8080/v1/decide \
         "ip_country": "US",
         "registered_country": "US",
         "verified": true,
-        "account_age_days": 500,
+        "account_age_days": 3,
         "dispute_count": 0,
         "average_transaction": 3000,
         "avg_daily_count": 5,

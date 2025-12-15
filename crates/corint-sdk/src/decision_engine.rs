@@ -3,17 +3,26 @@
 use crate::config::EngineConfig;
 use crate::error::{Result, SdkError};
 use corint_compiler::{Compiler, CompilerOptions as CompilerOpts};
-use corint_core::ast::{Expression, Operator, PipelineRegistry, WhenBlock};
+use corint_core::ast::{Action, Expression, Operator, PipelineRegistry, WhenBlock};
 use corint_core::ir::Program;
 use corint_core::Value;
 use corint_parser::{PipelineParser, RegistryParser, RuleParser, RulesetParser};
 use corint_runtime::{
-    ApiConfig, ContextInput, DecisionResult, ExternalApiClient, MetricsCollector, PipelineExecutor,
+    ApiConfig, ConditionTrace, ContextInput, DecisionResult, ExecutionTrace, ExternalApiClient,
+    MetricsCollector, PipelineExecutor, PipelineTrace, RuleTrace, RulesetTrace,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Arc;
+
+/// Decision request options
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct DecisionOptions {
+    /// Enable detailed execution tracing
+    #[serde(default)]
+    pub enable_trace: bool,
+}
 
 /// Decision request (supports Phase 5 multi-namespace format)
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -42,7 +51,12 @@ pub struct DecisionRequest {
     pub vars: Option<HashMap<String, Value>>,
 
     /// Request metadata
+    #[serde(default)]
     pub metadata: HashMap<String, String>,
+
+    /// Request options (including trace enablement)
+    #[serde(default)]
+    pub options: DecisionOptions,
 }
 
 impl DecisionRequest {
@@ -56,7 +70,14 @@ impl DecisionRequest {
             llm: None,
             vars: None,
             metadata: HashMap::new(),
+            options: DecisionOptions::default(),
         }
+    }
+
+    /// Enable execution tracing
+    pub fn with_trace(mut self) -> Self {
+        self.options.enable_trace = true;
+        self
     }
 
     /// Add metadata
@@ -136,6 +157,10 @@ pub struct DecisionResponse {
 
     /// Request metadata (echoed back)
     pub metadata: HashMap<String, String>,
+
+    /// Execution trace (only present if enable_trace was set)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub trace: Option<ExecutionTrace>,
 }
 
 /// Main decision engine
@@ -522,6 +547,444 @@ impl DecisionEngine {
         }
     }
 
+    // =========================================================================
+    // TRACE-ENABLED EVALUATION FUNCTIONS
+    // These functions are prepared for detailed condition-level tracing.
+    // They will be used when we integrate more detailed trace collection.
+    // =========================================================================
+
+    /// Convert an Expression to a string representation for tracing
+    #[allow(dead_code)]
+    fn expression_to_string(expr: &Expression) -> String {
+        match expr {
+            Expression::Literal(val) => match val {
+                Value::String(s) => format!("\"{}\"", s),
+                Value::Number(n) => n.to_string(),
+                Value::Bool(b) => b.to_string(),
+                Value::Null => "null".to_string(),
+                Value::Array(arr) => format!(
+                    "[{}]",
+                    arr.iter()
+                        .map(|v| match v {
+                            Value::String(s) => format!("\"{}\"", s),
+                            Value::Number(n) => n.to_string(),
+                            _ => format!("{:?}", v),
+                        })
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                ),
+                Value::Object(_) => "{...}".to_string(),
+            },
+            Expression::FieldAccess(path) => path.join("."),
+            Expression::Binary { left, op, right } => {
+                let op_str = match op {
+                    Operator::Eq => "==",
+                    Operator::Ne => "!=",
+                    Operator::Lt => "<",
+                    Operator::Gt => ">",
+                    Operator::Le => "<=",
+                    Operator::Ge => ">=",
+                    Operator::And => "&&",
+                    Operator::Or => "||",
+                    Operator::Add => "+",
+                    Operator::Sub => "-",
+                    Operator::Mul => "*",
+                    Operator::Div => "/",
+                    Operator::Mod => "%",
+                    Operator::In => "in",
+                    Operator::NotIn => "not in",
+                    Operator::Contains => "contains",
+                    Operator::StartsWith => "starts_with",
+                    Operator::EndsWith => "ends_with",
+                    Operator::Regex => "=~",
+                };
+                format!(
+                    "{} {} {}",
+                    Self::expression_to_string(left),
+                    op_str,
+                    Self::expression_to_string(right)
+                )
+            }
+            Expression::Unary { op, operand } => {
+                format!("{:?} {}", op, Self::expression_to_string(operand))
+            }
+            Expression::FunctionCall { name, args } => {
+                let args_str = args
+                    .iter()
+                    .map(|a| Self::expression_to_string(a))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                format!("{}({})", name, args_str)
+            }
+            Expression::Ternary { .. } => "?:".to_string(),
+            Expression::LogicalGroup { op, .. } => {
+                use corint_core::ast::LogicalGroupOp;
+                match op {
+                    LogicalGroupOp::Any => "any:[...]".to_string(),
+                    LogicalGroupOp::All => "all:[...]".to_string(),
+                }
+            }
+        }
+    }
+
+    /// Convert Operator to string for tracing
+    #[allow(dead_code)]
+    fn operator_to_string(op: &Operator) -> &'static str {
+        match op {
+            Operator::Eq => "==",
+            Operator::Ne => "!=",
+            Operator::Lt => "<",
+            Operator::Gt => ">",
+            Operator::Le => "<=",
+            Operator::Ge => ">=",
+            Operator::And => "&&",
+            Operator::Or => "||",
+            Operator::Add => "+",
+            Operator::Sub => "-",
+            Operator::Mul => "*",
+            Operator::Div => "/",
+            Operator::Mod => "%",
+            Operator::In => "in",
+            Operator::NotIn => "not in",
+            Operator::Contains => "contains",
+            Operator::StartsWith => "starts_with",
+            Operator::EndsWith => "ends_with",
+            Operator::Regex => "=~",
+        }
+    }
+
+    /// Evaluate an expression with tracing enabled
+    #[allow(dead_code)]
+    fn evaluate_expression_with_trace(
+        expr: &Expression,
+        event_data: &HashMap<String, Value>,
+    ) -> (bool, ConditionTrace) {
+        match expr {
+            Expression::Literal(val) => {
+                let result = Self::is_truthy(val);
+                let trace = ConditionTrace::new(Self::expression_to_string(expr), result);
+                (result, trace)
+            }
+            Expression::FieldAccess(path) => {
+                let val = Self::get_field_value(event_data, path).unwrap_or(Value::Null);
+                let result = Self::is_truthy(&val);
+                let mut trace = ConditionTrace::new(path.join("."), result);
+                trace.left_value = Some(val);
+                (result, trace)
+            }
+            Expression::Binary { left, op, right } => {
+                let left_val = Self::expression_to_value(left, event_data);
+                let right_val = Self::expression_to_value(right, event_data);
+                let result = Self::evaluate_binary_expression(left, op, right, event_data);
+
+                let trace = ConditionTrace::binary(
+                    Self::expression_to_string(expr),
+                    left_val,
+                    Self::operator_to_string(op),
+                    right_val,
+                    result,
+                );
+                (result, trace)
+            }
+            Expression::LogicalGroup { op, conditions } => {
+                use corint_core::ast::LogicalGroupOp;
+
+                let mut nested_traces = Vec::new();
+                let result = match op {
+                    LogicalGroupOp::Any => {
+                        let mut any_true = false;
+                        for cond in conditions {
+                            let (r, t) = Self::evaluate_expression_with_trace(cond, event_data);
+                            nested_traces.push(t);
+                            if r {
+                                any_true = true;
+                            }
+                        }
+                        any_true
+                    }
+                    LogicalGroupOp::All => {
+                        let mut all_true = true;
+                        for cond in conditions {
+                            let (r, t) = Self::evaluate_expression_with_trace(cond, event_data);
+                            nested_traces.push(t);
+                            if !r {
+                                all_true = false;
+                            }
+                        }
+                        all_true
+                    }
+                };
+
+                let group_type = match op {
+                    LogicalGroupOp::Any => "any",
+                    LogicalGroupOp::All => "all",
+                };
+                let trace = ConditionTrace::group(group_type, nested_traces, result);
+                (result, trace)
+            }
+            _ => {
+                // Unary, FunctionCall, Ternary - not fully supported
+                let result = Self::evaluate_expression(expr, event_data);
+                let trace = ConditionTrace::new(Self::expression_to_string(expr), result);
+                (result, trace)
+            }
+        }
+    }
+
+    /// Evaluate a when block with tracing enabled
+    #[allow(dead_code)]
+    fn evaluate_when_block_with_trace(
+        when: &WhenBlock,
+        event_data: &HashMap<String, Value>,
+    ) -> (bool, Vec<ConditionTrace>) {
+        let mut traces = Vec::new();
+
+        // Check event_type if specified
+        if let Some(ref expected_type) = when.event_type {
+            let actual = event_data
+                .get("type")
+                .and_then(|v| {
+                    if let Value::String(s) = v {
+                        Some(s.clone())
+                    } else {
+                        None
+                    }
+                })
+                .unwrap_or_default();
+            let matched = &actual == expected_type;
+
+            traces.push(ConditionTrace::binary(
+                format!("event.type == \"{}\"", expected_type),
+                Value::String(actual),
+                "==",
+                Value::String(expected_type.clone()),
+                matched,
+            ));
+
+            if !matched {
+                return (false, traces);
+            }
+        }
+
+        // Evaluate all conditions (AND logic)
+        for condition in &when.conditions {
+            let (result, trace) = Self::evaluate_expression_with_trace(condition, event_data);
+            traces.push(trace);
+            if !result {
+                return (false, traces);
+            }
+        }
+
+        (true, traces)
+    }
+
+    /// Convert conditions JSON string to Vec<ConditionTrace>
+    /// The JSON format is an array of structured condition objects from expression_to_json
+    fn json_to_condition_traces(
+        conditions_json: &str,
+        triggered: bool,
+        event_data: &HashMap<String, Value>,
+    ) -> Vec<ConditionTrace> {
+        // Parse the JSON string
+        let conditions: Vec<serde_json::Value> = match serde_json::from_str(conditions_json) {
+            Ok(v) => v,
+            Err(_) => return vec![],
+        };
+
+        conditions
+            .into_iter()
+            .map(|cond| Self::json_value_to_condition_trace(&cond, triggered, event_data))
+            .collect()
+    }
+
+    /// Convert a single JSON value to ConditionTrace
+    fn json_value_to_condition_trace(
+        json: &serde_json::Value,
+        triggered: bool,
+        event_data: &HashMap<String, Value>,
+    ) -> ConditionTrace {
+        let expr_type = json.get("type").and_then(|v| v.as_str()).unwrap_or("");
+        let expression = json
+            .get("expression")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
+
+        match expr_type {
+            "group" => {
+                // Logical group (any/all)
+                let group_type = json
+                    .get("group_type")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("all");
+                let nested_conditions = json
+                    .get("conditions")
+                    .and_then(|v| v.as_array())
+                    .map(|arr| {
+                        arr.iter()
+                            .map(|c| Self::json_value_to_condition_trace(c, triggered, event_data))
+                            .collect()
+                    })
+                    .unwrap_or_default();
+
+                ConditionTrace::group(group_type, nested_conditions, triggered)
+            }
+            "binary" => {
+                // Check right side type
+                let right_json = json.get("right");
+                let right_type = right_json
+                    .and_then(|r| r.get("type"))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("");
+
+                // Check if right side is a boolean literal - if so, skip both left and right values
+                let is_boolean_literal = right_type == "literal"
+                    && right_json
+                        .and_then(|r| r.get("value"))
+                        .map(|v| v.is_boolean())
+                        .unwrap_or(false);
+
+                // Check if right side is a simple literal (not boolean)
+                let is_simple_literal = right_type == "literal" && !is_boolean_literal;
+
+                // Extract left value from event data, but skip for boolean comparisons
+                let left_value = if is_boolean_literal {
+                    None
+                } else {
+                    json.get("left")
+                        .and_then(|left| Self::extract_value_from_json_expr(left, event_data))
+                };
+
+                // Extract right value only if it's NOT a simple literal
+                // (for literals, the value is already visible in the expression string)
+                let right_value = if is_boolean_literal || is_simple_literal {
+                    None
+                } else {
+                    right_json.and_then(|right| {
+                        Self::extract_value_from_json_expr(right, event_data)
+                    })
+                };
+
+                ConditionTrace {
+                    expression,
+                    left_value,
+                    operator: None, // Operator is already visible in expression string
+                    right_value,
+                    result: triggered,
+                    nested: None,
+                    group_type: None,
+                }
+            }
+            _ => {
+                // Literal, field access, or other
+                ConditionTrace::new(expression, triggered)
+            }
+        }
+    }
+
+    /// Extract the actual value from a JSON expression (field access, literal, or binary)
+    fn extract_value_from_json_expr(
+        json: &serde_json::Value,
+        event_data: &HashMap<String, Value>,
+    ) -> Option<Value> {
+        let expr_type = json.get("type").and_then(|v| v.as_str()).unwrap_or("");
+
+        match expr_type {
+            "field" => {
+                // Field access - extract path and look up value
+                let path: Vec<String> = json
+                    .get("path")
+                    .and_then(|v| v.as_array())
+                    .map(|arr| {
+                        arr.iter()
+                            .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                            .collect()
+                    })
+                    .unwrap_or_default();
+
+                // Handle namespace prefixes (e.g., "event.transaction.amount")
+                // Strip the "event" prefix since event_data is already the event content
+                let effective_path: Vec<String> =
+                    if path.first().map(|s| s.as_str()) == Some("event") {
+                        path.into_iter().skip(1).collect()
+                    } else {
+                        path
+                    };
+
+                Self::get_field_value(event_data, &effective_path)
+            }
+            "literal" => {
+                // Literal value - convert from serde_json::Value to corint_core::Value
+                json.get("value").and_then(Self::json_to_core_value)
+            }
+            "binary" => {
+                // Binary expression (e.g., event.user.average_transaction * 3)
+                // Recursively evaluate left and right, then apply operator
+                let left = json.get("left")?;
+                let right = json.get("right")?;
+                let operator = json.get("operator").and_then(|v| v.as_str())?;
+
+                let left_val = Self::extract_value_from_json_expr(left, event_data)?;
+                let right_val = Self::extract_value_from_json_expr(right, event_data)?;
+
+                // Only handle numeric operations for now
+                if let (Value::Number(l), Value::Number(r)) = (&left_val, &right_val) {
+                    let result = match operator {
+                        "+" | "Add" => l + r,
+                        "-" | "Sub" => l - r,
+                        "*" | "Mul" => l * r,
+                        "/" | "Div" => {
+                            if *r != 0.0 {
+                                l / r
+                            } else {
+                                return None;
+                            }
+                        }
+                        "%" | "Mod" => {
+                            if *r != 0.0 {
+                                l % r
+                            } else {
+                                return None;
+                            }
+                        }
+                        _ => return None, // Comparison operators return bool, skip
+                    };
+                    Some(Value::Number(result))
+                } else {
+                    // For string concatenation
+                    if operator == "+" || operator == "Add" {
+                        if let (Value::String(l), Value::String(r)) = (&left_val, &right_val) {
+                            return Some(Value::String(format!("{}{}", l, r)));
+                        }
+                    }
+                    None
+                }
+            }
+            _ => None,
+        }
+    }
+
+    /// Convert serde_json::Value to corint_core::Value
+    fn json_to_core_value(json: &serde_json::Value) -> Option<Value> {
+        match json {
+            serde_json::Value::Null => Some(Value::Null),
+            serde_json::Value::Bool(b) => Some(Value::Bool(*b)),
+            serde_json::Value::Number(n) => n.as_f64().map(Value::Number),
+            serde_json::Value::String(s) => Some(Value::String(s.clone())),
+            serde_json::Value::Array(arr) => {
+                let values: Vec<Value> = arr.iter().filter_map(Self::json_to_core_value).collect();
+                Some(Value::Array(values))
+            }
+            serde_json::Value::Object(obj) => {
+                let map: HashMap<String, Value> = obj
+                    .iter()
+                    .filter_map(|(k, v)| Self::json_to_core_value(v).map(|val| (k.clone(), val)))
+                    .collect();
+                Some(Value::Object(map))
+            }
+        }
+    }
+
     /// Load and compile rules from a file
     async fn load_and_compile_rules(path: &Path, compiler: &mut Compiler) -> Result<Vec<Program>> {
         use corint_parser::YamlParser;
@@ -841,6 +1304,9 @@ impl DecisionEngine {
         let mut pipeline_matched = false;
         // Track which pipeline was matched for this request
         let mut matched_pipeline_id: Option<String> = None;
+        // Track branch execution info from pipeline (preserved before rules overwrite context)
+        let mut executed_branch_index: Option<usize> = None;
+        let mut executed_branch_condition: Option<String> = None;
 
         // PRIORITY 1: Use Registry-based routing if available
         if let Some(ref registry) = self.registry {
@@ -892,86 +1358,169 @@ impl DecisionEngine {
                         // Update execution_result with pipeline context
                         execution_result.variables = result.context.clone();
 
-                        // Check if pipeline set a __next_ruleset__ variable
-                        if let Some(Value::String(ruleset_id)) =
+                        // Preserve branch execution info from pipeline execution
+                        if let Some(Value::Number(branch_idx)) =
+                            result.context.get("__executed_branch_index__")
+                        {
+                            executed_branch_index = Some(*branch_idx as usize);
+                            if let Some(Value::String(branch_cond)) =
+                                result.context.get("__executed_branch_condition__")
+                            {
+                                executed_branch_condition = Some(branch_cond.clone());
+                            }
+                        }
+
+                        // Get list of rulesets to execute - prefer array, fall back to single
+                        let rulesets_to_execute: Vec<String> = if let Some(Value::Array(arr)) =
+                            result.context.get("__rulesets_to_execute__")
+                        {
+                            arr.iter()
+                                .filter_map(|v| {
+                                    if let Value::String(s) = v {
+                                        Some(s.clone())
+                                    } else {
+                                        None
+                                    }
+                                })
+                                .collect()
+                        } else if let Some(Value::String(ruleset_id)) =
                             result.context.get("__next_ruleset__")
                         {
-                            tracing::debug!("Pipeline routing to ruleset: {}", ruleset_id);
+                            vec![ruleset_id.clone()]
+                        } else {
+                            vec![]
+                        };
 
-                            // Execute the specified ruleset
-                            if let Some(ruleset_program) = self.ruleset_map.get(ruleset_id) {
-                                // Execute rules first
-                                if let Some(rules_str) =
-                                    ruleset_program.metadata.custom.get("rules")
-                                {
-                                    let mut seen = std::collections::HashSet::new();
-                                    let rule_ids: Vec<&str> = rules_str
-                                        .split(',')
-                                        .filter(|rid| seen.insert(*rid))
-                                        .collect();
+                        if !rulesets_to_execute.is_empty() {
+                            tracing::debug!(
+                                "Pipeline routing to {} rulesets: {:?}",
+                                rulesets_to_execute.len(),
+                                rulesets_to_execute
+                            );
 
-                                    for rule_id in rule_ids {
-                                        if let Some(rule_program) = self.rule_map.get(rule_id) {
-                                            tracing::info!(
-                                                "Executing rule (via ruleset {}): {}",
-                                                ruleset_id,
-                                                rule_id
-                                            );
+                            // Execute ALL rulesets in order
+                            for ruleset_id in &rulesets_to_execute {
+                                if let Some(ruleset_program) = self.ruleset_map.get(ruleset_id) {
+                                    // Execute rules first
+                                    if let Some(rules_str) =
+                                        ruleset_program.metadata.custom.get("rules")
+                                    {
+                                        let mut seen = std::collections::HashSet::new();
+                                        let rule_ids: Vec<&str> = rules_str
+                                            .split(',')
+                                            .filter(|rid| seen.insert(*rid))
+                                            .collect();
 
-                                            let rule_start = std::time::Instant::now();
-                                            let prev_score = execution_result.score;
+                                        for rule_id in rule_ids {
+                                            if let Some(rule_program) = self.rule_map.get(rule_id)
+                                            {
+                                                tracing::info!(
+                                                    "Executing rule (via ruleset {}): {}",
+                                                    ruleset_id,
+                                                    rule_id
+                                                );
 
-                                            let rule_result = self
-                                                .executor
-                                                .execute_with_result(
-                                                    rule_program,
-                                                    request.to_context_input(),
-                                                    execution_result.clone(),
-                                                )
-                                                .await?;
+                                                let rule_start = std::time::Instant::now();
+                                                let prev_score = execution_result.score;
 
-                                            let rule_time_ms =
-                                                rule_start.elapsed().as_millis() as u64;
-                                            let rule_score = rule_result.score - prev_score;
-                                            let triggered = rule_result
-                                                .triggered_rules
-                                                .contains(&rule_id.to_string());
+                                                let rule_result = self
+                                                    .executor
+                                                    .execute_with_result(
+                                                        rule_program,
+                                                        request.to_context_input(),
+                                                        execution_result.clone(),
+                                                    )
+                                                    .await?;
 
-                                            // Record rule execution
-                                            rule_executions.push(
-                                                Self::create_rule_execution_record(
-                                                    &request_id,
-                                                    rule_id,
-                                                    triggered,
-                                                    rule_score,
-                                                    rule_time_ms,
-                                                ),
-                                            );
+                                                let rule_time_ms =
+                                                    rule_start.elapsed().as_millis() as u64;
+                                                let rule_score = rule_result.score - prev_score;
+                                                let triggered = rule_result
+                                                    .triggered_rules
+                                                    .contains(&rule_id.to_string());
 
-                                            execution_result.score = rule_result.score;
-                                            execution_result.triggered_rules =
-                                                rule_result.triggered_rules;
+                                                // Extract rule metadata for trace
+                                                let rule_name = rule_program.metadata.name.as_deref();
+                                                let rule_conditions = rule_program
+                                                    .metadata
+                                                    .custom
+                                                    .get("conditions")
+                                                    .cloned();
+                                                let conditions_json = rule_program
+                                                    .metadata
+                                                    .custom
+                                                    .get("conditions_json")
+                                                    .cloned();
+
+                                                // Record rule execution
+                                                rule_executions.push(
+                                                    Self::create_rule_execution_record(
+                                                        &request_id,
+                                                        Some(ruleset_id.as_str()),
+                                                        rule_id,
+                                                        rule_name,
+                                                        triggered,
+                                                        rule_score,
+                                                        rule_time_ms,
+                                                        rule_conditions,
+                                                        conditions_json,
+                                                    ),
+                                                );
+
+                                                execution_result.score = rule_result.score;
+                                                execution_result.triggered_rules =
+                                                    rule_result.triggered_rules;
+                                            }
                                         }
                                     }
-                                }
 
-                                // Execute ruleset decision logic
-                                let ruleset_result = self
-                                    .executor
-                                    .execute_with_result(
-                                        ruleset_program,
-                                        request.to_context_input(),
-                                        execution_result.clone(),
-                                    )
-                                    .await?;
+                                    // Execute ruleset decision logic
+                                    let ruleset_result = self
+                                        .executor
+                                        .execute_with_result(
+                                            ruleset_program,
+                                            request.to_context_input(),
+                                            execution_result.clone(),
+                                        )
+                                        .await?;
 
-                                if ruleset_result.action.is_some() {
-                                    combined_result.action = ruleset_result.action;
+                                    // Store ruleset result in context for pipeline decision logic
+                                    let mut result_map = std::collections::HashMap::new();
+                                    if let Some(ref action) = ruleset_result.action {
+                                        let action_str = match action {
+                                            Action::Approve => "approve",
+                                            Action::Deny => "deny",
+                                            Action::Review => "review",
+                                            Action::Challenge => "challenge",
+                                            Action::Infer { .. } => "infer",
+                                        };
+                                        result_map.insert(
+                                            "action".to_string(),
+                                            Value::String(action_str.to_string()),
+                                        );
+                                    }
+                                    result_map.insert(
+                                        "score".to_string(),
+                                        Value::Number(execution_result.score as f64),
+                                    );
+                                    if !ruleset_result.explanation.is_empty() {
+                                        result_map.insert(
+                                            "explanation".to_string(),
+                                            Value::String(ruleset_result.explanation.clone()),
+                                        );
+                                    }
+                                    execution_result
+                                        .variables
+                                        .insert(ruleset_id.clone(), Value::Object(result_map));
+
+                                    if ruleset_result.action.is_some() {
+                                        combined_result.action = ruleset_result.action;
+                                    }
+                                    combined_result.explanation = ruleset_result.explanation;
+                                    combined_result.score = execution_result.score;
+                                    combined_result.triggered_rules =
+                                        execution_result.triggered_rules.clone();
                                 }
-                                combined_result.explanation = ruleset_result.explanation;
-                                combined_result.score = execution_result.score;
-                                combined_result.triggered_rules =
-                                    execution_result.triggered_rules.clone();
                             }
                         }
 
@@ -1080,100 +1629,183 @@ impl DecisionEngine {
                     // Update execution_result with pipeline context (important for subsequent rules)
                     execution_result.variables = result.context.clone();
 
-                    // Check if pipeline set a __next_ruleset__ variable
-                    tracing::debug!(
-                        "Pipeline result context: {:?}",
-                        result.context.keys().collect::<Vec<_>>()
-                    );
-                    if let Some(Value::String(ruleset_id)) = result.context.get("__next_ruleset__")
+                    // Preserve branch execution info before rules overwrite context
+                    if let Some(Value::Number(branch_idx)) =
+                        result.context.get("__executed_branch_index__")
                     {
-                        tracing::debug!("Pipeline routing to ruleset: {}", ruleset_id);
-                        // 有 __next_ruleset__ 视为命中
-                        pipeline_matched = true;
-                        // Execute the specified ruleset
-                        if let Some(ruleset_program) = self.ruleset_map.get(ruleset_id) {
-                            // IMPORTANT: Execute rules FIRST before decision logic
-                            // Get the list of rules from ruleset metadata
-                            if let Some(rules_str) = ruleset_program.metadata.custom.get("rules") {
-                                // Dedup rule IDs to avoid accidental double execution
-                                let mut seen = std::collections::HashSet::new();
-                                let rule_ids: Vec<&str> = rules_str
-                                    .split(',')
-                                    .filter(|rid| seen.insert(*rid))
-                                    .collect();
-                                tracing::debug!(
-                                    "Executing {} rules for ruleset {}: {:?}",
-                                    rule_ids.len(),
-                                    ruleset_id,
-                                    rule_ids
-                                );
+                        executed_branch_index = Some(*branch_idx as usize);
+                        if let Some(Value::String(branch_cond)) =
+                            result.context.get("__executed_branch_condition__")
+                        {
+                            executed_branch_condition = Some(branch_cond.clone());
+                        }
+                    }
 
-                                // Execute each rule and accumulate results
-                                for rule_id in rule_ids {
-                                    if let Some(rule_program) = self.rule_map.get(rule_id) {
-                                        tracing::info!(
-                                            "Executing rule (via ruleset {}): {}",
-                                            ruleset_id,
-                                            rule_id
-                                        );
-
-                                        let rule_start = std::time::Instant::now();
-                                        let prev_score = execution_result.score;
-
-                                        let rule_result = self
-                                            .executor
-                                            .execute_with_result(
-                                                rule_program,
-                                                request.to_context_input(),
-                                                execution_result.clone(),
-                                            )
-                                            .await?;
-
-                                        let rule_time_ms = rule_start.elapsed().as_millis() as u64;
-                                        let rule_score = rule_result.score - prev_score;
-                                        let triggered = rule_result
-                                            .triggered_rules
-                                            .contains(&rule_id.to_string());
-
-                                        // Record rule execution
-                                        rule_executions.push(Self::create_rule_execution_record(
-                                            &request_id,
-                                            rule_id,
-                                            triggered,
-                                            rule_score,
-                                            rule_time_ms,
-                                        ));
-
-                                        // Update execution_result with the returned state
-                                        // (execute_with_result already includes previous state + new additions)
-                                        execution_result.score = rule_result.score;
-                                        execution_result.triggered_rules =
-                                            rule_result.triggered_rules;
+                    // Get list of rulesets to execute - prefer array, fall back to single
+                    let rulesets_to_execute: Vec<String> =
+                        if let Some(Value::Array(arr)) = result.context.get("__rulesets_to_execute__")
+                        {
+                            arr.iter()
+                                .filter_map(|v| {
+                                    if let Value::String(s) = v {
+                                        Some(s.clone())
+                                    } else {
+                                        None
                                     }
+                                })
+                                .collect()
+                        } else if let Some(Value::String(ruleset_id)) =
+                            result.context.get("__next_ruleset__")
+                        {
+                            vec![ruleset_id.clone()]
+                        } else {
+                            vec![]
+                        };
+
+                    if !rulesets_to_execute.is_empty() {
+                        tracing::debug!(
+                            "Pipeline routing to {} rulesets: {:?}",
+                            rulesets_to_execute.len(),
+                            rulesets_to_execute
+                        );
+                        pipeline_matched = true;
+
+                        // Execute ALL rulesets in order
+                        for ruleset_id in &rulesets_to_execute {
+                            if let Some(ruleset_program) = self.ruleset_map.get(ruleset_id) {
+                                // IMPORTANT: Execute rules FIRST before decision logic
+                                // Get the list of rules from ruleset metadata
+                                if let Some(rules_str) =
+                                    ruleset_program.metadata.custom.get("rules")
+                                {
+                                    // Dedup rule IDs to avoid accidental double execution
+                                    let mut seen = std::collections::HashSet::new();
+                                    let rule_ids: Vec<&str> = rules_str
+                                        .split(',')
+                                        .filter(|rid| seen.insert(*rid))
+                                        .collect();
+                                    tracing::debug!(
+                                        "Executing {} rules for ruleset {}: {:?}",
+                                        rule_ids.len(),
+                                        ruleset_id,
+                                        rule_ids
+                                    );
+
+                                    // Execute each rule and accumulate results
+                                    for rule_id in rule_ids {
+                                        if let Some(rule_program) = self.rule_map.get(rule_id) {
+                                            tracing::info!(
+                                                "Executing rule (via ruleset {}): {}",
+                                                ruleset_id,
+                                                rule_id
+                                            );
+
+                                            let rule_start = std::time::Instant::now();
+                                            let prev_score = execution_result.score;
+
+                                            let rule_result = self
+                                                .executor
+                                                .execute_with_result(
+                                                    rule_program,
+                                                    request.to_context_input(),
+                                                    execution_result.clone(),
+                                                )
+                                                .await?;
+
+                                            let rule_time_ms =
+                                                rule_start.elapsed().as_millis() as u64;
+                                            let rule_score = rule_result.score - prev_score;
+                                            let triggered = rule_result
+                                                .triggered_rules
+                                                .contains(&rule_id.to_string());
+
+                                            // Extract rule metadata for trace
+                                            let rule_name = rule_program.metadata.name.as_deref();
+                                            let rule_conditions = rule_program
+                                                .metadata
+                                                .custom
+                                                .get("conditions")
+                                                .cloned();
+                                            let conditions_json = rule_program
+                                                .metadata
+                                                .custom
+                                                .get("conditions_json")
+                                                .cloned();
+
+                                            // Record rule execution
+                                            rule_executions.push(
+                                                Self::create_rule_execution_record(
+                                                    &request_id,
+                                                    Some(ruleset_id.as_str()),
+                                                    rule_id,
+                                                    rule_name,
+                                                    triggered,
+                                                    rule_score,
+                                                    rule_time_ms,
+                                                    rule_conditions,
+                                                    conditions_json,
+                                                ),
+                                            );
+
+                                            // Update execution_result with the returned state
+                                            execution_result.score = rule_result.score;
+                                            execution_result.triggered_rules =
+                                                rule_result.triggered_rules;
+                                        }
+                                    }
+
+                                    // Mark that pipeline routing handled rule execution
+                                    pipeline_handled_rules = true;
                                 }
 
-                                // Mark that pipeline routing handled rule execution
-                                pipeline_handled_rules = true;
-                            }
+                                // NOW execute the ruleset's decision logic with accumulated results
+                                let ruleset_result = self
+                                    .executor
+                                    .execute_with_result(
+                                        ruleset_program,
+                                        request.to_context_input(),
+                                        execution_result.clone(),
+                                    )
+                                    .await?;
 
-                            // NOW execute the ruleset's decision logic with accumulated results
-                            let ruleset_result = self
-                                .executor
-                                .execute_with_result(
-                                    ruleset_program,
-                                    request.to_context_input(),
-                                    execution_result.clone(),
-                                )
-                                .await?;
+                                // Store ruleset result in context for pipeline decision logic
+                                let mut result_map = std::collections::HashMap::new();
+                                if let Some(ref action) = ruleset_result.action {
+                                    let action_str = match action {
+                                        Action::Approve => "approve",
+                                        Action::Deny => "deny",
+                                        Action::Review => "review",
+                                        Action::Challenge => "challenge",
+                                        Action::Infer { .. } => "infer",
+                                    };
+                                    result_map.insert(
+                                        "action".to_string(),
+                                        Value::String(action_str.to_string()),
+                                    );
+                                }
+                                result_map.insert(
+                                    "score".to_string(),
+                                    Value::Number(execution_result.score as f64),
+                                );
+                                if !ruleset_result.explanation.is_empty() {
+                                    result_map.insert(
+                                        "explanation".to_string(),
+                                        Value::String(ruleset_result.explanation.clone()),
+                                    );
+                                }
+                                execution_result
+                                    .variables
+                                    .insert(ruleset_id.clone(), Value::Object(result_map));
 
-                            // Update combined result with ruleset decision
-                            if ruleset_result.action.is_some() {
-                                combined_result.action = ruleset_result.action;
+                                // Update combined result with ruleset decision
+                                if ruleset_result.action.is_some() {
+                                    combined_result.action = ruleset_result.action;
+                                }
+                                combined_result.explanation = ruleset_result.explanation;
+                                combined_result.score = execution_result.score;
+                                combined_result.triggered_rules =
+                                    execution_result.triggered_rules.clone();
                             }
-                            combined_result.explanation = ruleset_result.explanation;
-                            combined_result.score = execution_result.score;
-                            combined_result.triggered_rules =
-                                execution_result.triggered_rules.clone();
                         }
                     }
 
@@ -1212,13 +1844,23 @@ impl DecisionEngine {
                     let rule_id = &program.metadata.source_id;
                     let triggered = result.triggered_rules.contains(rule_id);
 
-                    // Record rule execution
+                    // Extract rule metadata for trace
+                    let rule_name = program.metadata.name.as_deref();
+                    let rule_conditions = program.metadata.custom.get("conditions").cloned();
+                    let conditions_json =
+                        program.metadata.custom.get("conditions_json").cloned();
+
+                    // Record rule execution (global rules have no ruleset)
                     rule_executions.push(Self::create_rule_execution_record(
                         &request_id,
+                        None,
                         rule_id,
+                        rule_name,
                         triggered,
                         rule_score,
                         rule_time_ms,
+                        rule_conditions,
+                        conditions_json,
                     ));
 
                     // Accumulate state
@@ -1306,7 +1948,7 @@ impl DecisionEngine {
                 pipeline_id,
                 &combined_result,
                 processing_time_ms,
-                rule_executions, // Rule execution tracking implemented
+                rule_executions.clone(), // Clone for trace usage later
             );
 
             tracing::info!(
@@ -1336,12 +1978,116 @@ impl DecisionEngine {
             tracing::debug!("Result writer not configured, skipping persistence");
         }
 
+        // Build trace if enabled
+        let trace = if request.options.enable_trace {
+            // Build execution trace from collected rule executions
+            let mut pipeline_trace = if let Some(ref pid) = matched_pipeline_id {
+                PipelineTrace::new(pid.clone())
+            } else {
+                PipelineTrace::new("unknown".to_string())
+            };
+
+            // Add pipeline when_conditions from metadata
+            if let Some(ref pid) = matched_pipeline_id {
+                if let Some(pipeline_program) = self.pipeline_map.get(pid) {
+                    if let Some(when_conditions_str) =
+                        pipeline_program.metadata.custom.get("when_conditions")
+                    {
+                        // Create a ConditionTrace for the when conditions
+                        let condition_trace =
+                            ConditionTrace::new(when_conditions_str.clone(), true);
+                        pipeline_trace.when_conditions.push(condition_trace);
+                    }
+                }
+            }
+
+            // Add branch execution info from preserved variables (captured before rules overwrite context)
+            if let Some(branch_idx) = executed_branch_index {
+                pipeline_trace.executed_branch = Some(branch_idx);
+
+                // Get the branch condition and add to trace
+                if let Some(ref branch_condition) = executed_branch_condition {
+                    let condition_trace = ConditionTrace::new(branch_condition.clone(), true);
+                    pipeline_trace.branch_conditions.push(condition_trace);
+                }
+            }
+
+            // Convert rule_executions to RulesetTraces
+            // Group rules by ruleset_id
+            let mut rulesets_map: std::collections::HashMap<String, Vec<&corint_runtime::RuleExecutionRecord>> =
+                std::collections::HashMap::new();
+            for rule_exec in &rule_executions {
+                let ruleset_id = rule_exec.ruleset_id.clone().unwrap_or_else(|| "global".to_string());
+                rulesets_map.entry(ruleset_id).or_default().push(rule_exec);
+            }
+
+            // Build ruleset traces
+            for (ruleset_id, rules) in rulesets_map {
+                let mut ruleset_trace = RulesetTrace::new(ruleset_id);
+                let mut ruleset_score = 0;
+
+                for rule_exec in rules {
+                    let mut rule_trace = RuleTrace::new(rule_exec.rule_id.clone());
+                    rule_trace.triggered = rule_exec.triggered;
+                    rule_trace.score = rule_exec.score;
+                    rule_trace.execution_time_ms = rule_exec.execution_time_ms;
+
+                    // Add rule conditions from metadata - prefer structured JSON for nested traces
+                    if let Some(ref conditions_json_str) = rule_exec.conditions_json {
+                        // Use structured JSON to create nested condition traces with actual values
+                        let condition_traces = Self::json_to_condition_traces(
+                            conditions_json_str,
+                            rule_exec.triggered,
+                            &request.event_data,
+                        );
+                        rule_trace.conditions.extend(condition_traces);
+                    } else if let Some(ref conditions_json) = rule_exec.rule_conditions {
+                        // Fallback to legacy string format
+                        if let serde_json::Value::String(conditions_str) = conditions_json {
+                            let condition_trace =
+                                ConditionTrace::new(conditions_str.clone(), rule_exec.triggered);
+                            rule_trace.conditions.push(condition_trace);
+                        }
+                    }
+
+                    if let Some(score) = rule_exec.score {
+                        ruleset_score += score;
+                    }
+                    ruleset_trace = ruleset_trace.add_rule(rule_trace);
+                }
+
+                // Set the ruleset score
+                ruleset_trace.total_score = ruleset_score;
+                if let Some(ref action) = combined_result.action {
+                    let action_str = match action {
+                        Action::Approve => "approve",
+                        Action::Deny => "deny",
+                        Action::Review => "review",
+                        Action::Challenge => "challenge",
+                        Action::Infer { .. } => "infer",
+                    };
+                    ruleset_trace = ruleset_trace.with_decision(action_str, None);
+                }
+
+                pipeline_trace = pipeline_trace.add_ruleset(ruleset_trace);
+            }
+
+            Some(
+                ExecutionTrace::new()
+                    .with_pipeline(pipeline_trace)
+                    .with_time(processing_time_ms),
+            )
+        } else {
+            None
+        };
+
         Ok(DecisionResponse {
             request_id,
             pipeline_id: matched_pipeline_id,
             result: combined_result,
             processing_time_ms,
             metadata: request.metadata,
+            trace,
         })
     }
 
@@ -1353,20 +2099,29 @@ impl DecisionEngine {
     /// Create a rule execution record
     fn create_rule_execution_record(
         request_id: &str,
+        ruleset_id: Option<&str>,
         rule_id: &str,
+        rule_name: Option<&str>,
         triggered: bool,
         score: i32,
         execution_time_ms: u64,
+        rule_conditions: Option<String>,
+        conditions_json: Option<String>,
     ) -> corint_runtime::RuleExecutionRecord {
+        // Convert conditions string to JSON value for storage
+        let rule_conditions_json = rule_conditions.map(|s| serde_json::Value::String(s));
+
         corint_runtime::RuleExecutionRecord {
             request_id: request_id.to_string(),
+            ruleset_id: ruleset_id.map(|s| s.to_string()),
             rule_id: rule_id.to_string(),
-            rule_name: None, // Could be enhanced to look up rule name from metadata
+            rule_name: rule_name.map(|s| s.to_string()),
             triggered,
             score: if triggered { Some(score) } else { None },
             execution_time_ms: Some(execution_time_ms),
-            feature_values: None,  // Could be enhanced to extract from context
-            rule_conditions: None, // Could be enhanced to include rule conditions
+            feature_values: None,
+            rule_conditions: rule_conditions_json,
+            conditions_json,
         }
     }
 

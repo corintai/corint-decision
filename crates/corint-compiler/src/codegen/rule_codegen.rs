@@ -62,13 +62,43 @@ impl RuleCompiler {
         instructions.push(Instruction::Return);
 
         // Create program metadata
-        let metadata = ProgramMetadata::for_rule(rule.id.clone()).with_name(rule.name.clone());
+        let mut metadata = ProgramMetadata::for_rule(rule.id.clone()).with_name(rule.name.clone());
 
-        let metadata = if let Some(desc) = &rule.description {
-            metadata.with_description(desc.clone())
-        } else {
+        if let Some(desc) = &rule.description {
+            metadata = metadata.with_description(desc.clone());
+        }
+
+        // Store condition expressions as structured JSON in metadata for detailed tracing
+        // Each condition is stored as a JSON object with type, expression, and nested conditions
+        if !rule.when.conditions.is_empty() {
+            let conditions_json: Vec<serde_json::Value> = rule
+                .when
+                .conditions
+                .iter()
+                .map(|c| ExpressionCompiler::expression_to_json(c))
+                .collect();
+            // Store as JSON array string
+            if let Ok(json_str) = serde_json::to_string(&conditions_json) {
+                metadata.custom.insert("conditions_json".to_string(), json_str);
+            }
+            // Also keep the simple string format for backward compatibility
+            let condition_strs: Vec<String> = rule
+                .when
+                .conditions
+                .iter()
+                .map(|c| ExpressionCompiler::expression_to_string(c))
+                .collect();
             metadata
-        };
+                .custom
+                .insert("conditions".to_string(), condition_strs.join(" && "));
+        }
+
+        // Store event type if specified
+        if let Some(event_type) = &rule.when.event_type {
+            metadata
+                .custom
+                .insert("event_type".to_string(), event_type.clone());
+        }
 
         Ok(Program::new(instructions, metadata))
     }

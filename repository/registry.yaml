@@ -41,6 +41,11 @@ registry:
       event.type: test1
     description: Comprehensive risk assessment for test1 event
 
+  - pipeline: no_separator_demo_pipeline
+    when:
+      event.type: no_sep_demo
+    description: Demo pipeline without --- separators
+
   # Loan application events
   # - pipeline: loan_application_pipeline
   #   when:

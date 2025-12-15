@@ -15,12 +15,20 @@ impl YamlParser {
         serde_yaml::from_str(yaml_str).map_err(|e| ParseError::ParseError(e.to_string()))
     }
 
-    /// Parse YAML string containing multiple documents (separated by ---)
+    /// Parse YAML string containing multiple documents (separated by --- or auto-detected)
     /// Returns a vector of YAML values, one for each document
+    ///
+    /// This function supports two formats:
+    /// 1. Traditional YAML multi-document format with explicit `---` separators
+    /// 2. Auto-detection of `rule:`, `ruleset:`, `pipeline:` keywords at line start
+    ///    (automatically inserts `---` before these keywords)
     pub fn parse_multi_document(yaml_str: &str) -> Result<Vec<YamlValue>> {
         use serde::Deserialize;
 
-        let deserializer = serde_yaml::Deserializer::from_str(yaml_str);
+        // Preprocess: auto-insert --- before rule:/ruleset:/pipeline: at line start
+        let preprocessed = Self::preprocess_multi_document(yaml_str);
+
+        let deserializer = serde_yaml::Deserializer::from_str(&preprocessed);
         let mut documents = Vec::new();
 
         for document in deserializer {
@@ -36,6 +44,60 @@ impl YamlParser {
         }
 
         Ok(documents)
+    }
+
+    /// Preprocess YAML content to auto-insert `---` separators
+    /// before `rule:`, `ruleset:`, `pipeline:` keywords at line start
+    fn preprocess_multi_document(yaml_str: &str) -> String {
+        let mut result = String::with_capacity(yaml_str.len() + 100);
+        let mut seen_definition = false;
+        let mut has_content_before_first_def = false;
+        let mut recent_separator = false;
+
+        for line in yaml_str.lines() {
+            let trimmed = line.trim();
+
+            // Check if this line starts a new definition (rule/ruleset/pipeline at column 0)
+            let is_definition_start = !line.starts_with(' ')
+                && !line.starts_with('\t')
+                && (trimmed.starts_with("rule:")
+                    || trimmed.starts_with("ruleset:")
+                    || trimmed.starts_with("pipeline:"));
+
+            // Track if there's meaningful content before first definition
+            // (not just comments, empty lines, or version header)
+            if !seen_definition && !is_definition_start && !trimmed.is_empty() && !trimmed.starts_with('#') {
+                // Check if it's a YAML key (like "version:")
+                if trimmed.contains(':') {
+                    has_content_before_first_def = true;
+                }
+            }
+
+            // Insert --- before definitions:
+            // - Before first definition if there's content before it (like version:)
+            // - Before subsequent definitions (unless we recently saw ---)
+            if is_definition_start && !recent_separator {
+                if seen_definition || has_content_before_first_def {
+                    result.push_str("\n---\n");
+                }
+            }
+
+            if is_definition_start {
+                seen_definition = true;
+            }
+
+            result.push_str(line);
+            result.push('\n');
+
+            // Track if we've seen a separator; only reset on meaningful content
+            if trimmed == "---" {
+                recent_separator = true;
+            } else if !trimmed.is_empty() && !trimmed.starts_with('#') {
+                recent_separator = false;
+            }
+        }
+
+        result
     }
 
     /// Get a required string field from YAML object
@@ -396,5 +458,97 @@ name: test
         let yaml_str = "invalid: yaml: content: [";
         let result = YamlParser::parse(yaml_str);
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_parse_multi_document_without_separators() {
+        let yaml_str = r#"
+version: "0.1"
+
+rule:
+  id: rule_1
+  name: Rule 1
+
+rule:
+  id: rule_2
+  name: Rule 2
+
+ruleset:
+  id: ruleset_1
+  name: Ruleset 1
+
+pipeline:
+  id: pipeline_1
+  name: Pipeline 1
+"#;
+
+        let docs = YamlParser::parse_multi_document(yaml_str).unwrap();
+        // Should produce 5 documents: version header, 2 rules, 1 ruleset, 1 pipeline
+        assert_eq!(docs.len(), 5);
+
+        // First document contains version
+        assert!(docs[0].get("version").is_some());
+
+        // Second document is rule_1
+        assert!(docs[1].get("rule").is_some());
+        let rule1 = docs[1].get("rule").unwrap();
+        assert_eq!(rule1.get("id").unwrap().as_str(), Some("rule_1"));
+
+        // Third document is rule_2
+        assert!(docs[2].get("rule").is_some());
+        let rule2 = docs[2].get("rule").unwrap();
+        assert_eq!(rule2.get("id").unwrap().as_str(), Some("rule_2"));
+
+        // Fourth document is ruleset_1
+        assert!(docs[3].get("ruleset").is_some());
+
+        // Fifth document is pipeline_1
+        assert!(docs[4].get("pipeline").is_some());
+    }
+
+    #[test]
+    fn test_parse_multi_document_with_explicit_separators() {
+        let yaml_str = r#"
+version: "0.1"
+---
+rule:
+  id: rule_1
+---
+ruleset:
+  id: ruleset_1
+"#;
+
+        let docs = YamlParser::parse_multi_document(yaml_str).unwrap();
+        // Should produce 3 documents (explicit --- separators)
+        assert_eq!(docs.len(), 3);
+    }
+
+    #[test]
+    fn test_parse_multi_document_preserves_existing_separators() {
+        // File that already has --- separators should not get duplicate separators
+        let yaml_str = r#"
+version: "0.1"
+
+imports:
+  rules:
+    - some/path.yaml
+
+---
+
+ruleset:
+  id: my_ruleset
+  name: My Ruleset
+"#;
+
+        let docs = YamlParser::parse_multi_document(yaml_str).unwrap();
+        // Should produce 2 documents: header (version + imports), ruleset
+        assert_eq!(docs.len(), 2);
+
+        // First document has version and imports
+        assert!(docs[0].get("version").is_some());
+        assert!(docs[0].get("imports").is_some());
+
+        // Second document has ruleset
+        assert!(docs[1].get("ruleset").is_some());
     }
 }

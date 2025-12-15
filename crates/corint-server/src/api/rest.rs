@@ -63,6 +63,10 @@ pub struct DecideRequestPayload {
     /// Variables (optional)
     #[serde(default)]
     pub vars: Option<HashMap<String, serde_json::Value>>,
+
+    /// Enable detailed execution trace (optional)
+    #[serde(default)]
+    pub enable_trace: bool,
 }
 
 /// Decision response payload
@@ -88,6 +92,10 @@ pub struct DecideResponsePayload {
 
     /// Processing time in milliseconds
     pub processing_time_ms: u64,
+
+    /// Detailed execution trace (only present if enable_trace was set)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub trace: Option<corint_runtime::ExecutionTrace>,
 }
 
 /// Create REST API router
@@ -136,8 +144,9 @@ async fn decide(
     Json(payload): Json<DecideRequestPayload>,
 ) -> Result<Json<DecideResponsePayload>, ServerError> {
     info!(
-        "Received decision request with {} event fields",
-        payload.event.len()
+        "Received decision request with {} event fields, enable_trace={}",
+        payload.event.len(),
+        payload.enable_trace
     );
 
     // Helper function to convert namespace
@@ -170,6 +179,11 @@ async fn decide(
         request = request.with_vars(convert_namespace(vars));
     }
 
+    // Enable tracing if requested
+    if payload.enable_trace {
+        request = request.with_trace();
+    }
+
     // Execute decision
     let response = state.engine.decide(request).await?;
 
@@ -184,6 +198,7 @@ async fn decide(
         triggered_rules: response.result.triggered_rules,
         explanation: response.result.explanation,
         processing_time_ms: response.processing_time_ms,
+        trace: response.trace,
     }))
 }
 
@@ -377,6 +392,7 @@ mod tests {
             triggered_rules: vec!["rule1".to_string(), "rule2".to_string()],
             explanation: "Low risk transaction".to_string(),
             processing_time_ms: 42,
+            trace: None,
         };
 
         assert_eq!(response.request_id, "req_123");
@@ -386,6 +402,7 @@ mod tests {
         assert_eq!(response.triggered_rules.len(), 2);
         assert_eq!(response.explanation, "Low risk transaction");
         assert_eq!(response.processing_time_ms, 42);
+        assert!(response.trace.is_none());
     }
 
     #[test]
@@ -397,9 +414,11 @@ mod tests {
             service: None,
             llm: None,
             vars: None,
+            enable_trace: false,
         };
 
         assert_eq!(payload.event.len(), 0);
+        assert!(!payload.enable_trace);
     }
 
     #[test]
@@ -455,8 +474,9 @@ async fn decide_with_metrics(
     Json(payload): Json<DecideRequestPayload>,
 ) -> Result<Json<DecideResponsePayload>, ServerError> {
     info!(
-        "Received decision request with {} event fields",
-        payload.event.len()
+        "Received decision request with {} event fields, enable_trace={}",
+        payload.event.len(),
+        payload.enable_trace
     );
 
     // Helper function to convert namespace
@@ -489,6 +509,11 @@ async fn decide_with_metrics(
         request = request.with_vars(convert_namespace(vars));
     }
 
+    // Enable tracing if requested
+    if payload.enable_trace {
+        request = request.with_trace();
+    }
+
     // Execute decision
     let response = state.engine.decide(request).await?;
 
@@ -503,5 +528,6 @@ async fn decide_with_metrics(
         triggered_rules: response.result.triggered_rules,
         explanation: response.result.explanation,
         processing_time_ms: response.processing_time_ms,
+        trace: response.trace,
     }))
 }

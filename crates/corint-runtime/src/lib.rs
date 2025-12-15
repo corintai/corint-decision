@@ -35,7 +35,8 @@ pub use llm::{
 };
 pub use observability::{Metrics, MetricsCollector};
 pub use result::{
-    DecisionRecord, DecisionResult, DecisionResultWriter, ExecutionResult, RuleExecutionRecord,
+    ConditionTrace, DecisionLogicTrace, DecisionRecord, DecisionResult, DecisionResultWriter,
+    ExecutionResult, ExecutionTrace, PipelineTrace, RuleExecutionRecord, RuleTrace, RulesetTrace,
 };
 pub use service::{ServiceClient, ServiceRequest, ServiceResponse};
 pub use storage::{Event, EventFilter, InMemoryStorage, Storage, TimeRange};

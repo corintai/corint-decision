@@ -344,10 +344,50 @@ impl PipelineExecutor {
                     pc += 1;
                 }
 
+                Instruction::MarkBranchExecuted {
+                    branch_index,
+                    condition,
+                } => {
+                    // Store the executed branch info for tracing
+                    ctx.store_variable(
+                        "__executed_branch_index__".to_string(),
+                        Value::Number(*branch_index as f64),
+                    );
+                    ctx.store_variable(
+                        "__executed_branch_condition__".to_string(),
+                        Value::String(condition.clone()),
+                    );
+                    tracing::debug!(
+                        "Branch {} executed: condition={}",
+                        branch_index,
+                        condition
+                    );
+                    pc += 1;
+                }
+
                 Instruction::CallRuleset { ruleset_id } => {
-                    // Store the ruleset ID to be executed
+                    // Store the ruleset ID in an array to support multiple rulesets
                     // The actual execution will be handled by the DecisionEngine
                     tracing::debug!("CallRuleset: {}", ruleset_id);
+
+                    // Get existing array or create new one
+                    let mut rulesets = match ctx.load_variable("__rulesets_to_execute__") {
+                        Ok(Value::Array(arr)) => arr,
+                        _ => Vec::new(),
+                    };
+
+                    // Add this ruleset if not already present
+                    let ruleset_value = Value::String(ruleset_id.clone());
+                    if !rulesets.contains(&ruleset_value) {
+                        rulesets.push(ruleset_value);
+                    }
+
+                    ctx.store_variable(
+                        "__rulesets_to_execute__".to_string(),
+                        Value::Array(rulesets),
+                    );
+
+                    // Also keep backward compatibility with single ruleset
                     ctx.store_variable(
                         "__next_ruleset__".to_string(),
                         Value::String(ruleset_id.clone()),

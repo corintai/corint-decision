@@ -12,7 +12,7 @@ pub use builder::DecisionEngineBuilder;
 pub use config::{
     EngineConfig, LLMConfig, LLMProvider, ServiceConfig, ServiceType, StorageConfig, StorageType,
 };
-pub use decision_engine::{DecisionEngine, DecisionRequest, DecisionResponse};
+pub use decision_engine::{DecisionEngine, DecisionOptions, DecisionRequest, DecisionResponse};
 pub use error::{Result, SdkError};
 
 // Re-export commonly used types from dependencies

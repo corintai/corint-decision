@@ -144,6 +144,14 @@ pub enum Instruction {
         rule_id: String,
     },
 
+    /// Mark a branch as executed (for tracing)
+    MarkBranchExecuted {
+        /// Branch index (0-based)
+        branch_index: usize,
+        /// Branch condition expression as string
+        condition: String,
+    },
+
     /// Call/execute a ruleset by ID
     CallRuleset {
         /// Ruleset ID to execute

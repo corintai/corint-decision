@@ -279,6 +279,182 @@ impl ExpressionCompiler {
             Operator::Eq | Operator::Ne | Operator::Lt | Operator::Gt | Operator::Le | Operator::Ge
         )
     }
+
+    /// Convert an Expression AST to a structured JSON representation
+    /// Used for storing condition expressions in program metadata for detailed tracing
+    pub fn expression_to_json(expr: &Expression) -> serde_json::Value {
+        use serde_json::json;
+
+        match expr {
+            Expression::Literal(val) => {
+                let val_json = match val {
+                    corint_core::Value::String(s) => json!(s),
+                    corint_core::Value::Number(n) => json!(n),
+                    corint_core::Value::Bool(b) => json!(b),
+                    corint_core::Value::Null => json!(null),
+                    corint_core::Value::Array(arr) => serde_json::to_value(arr).unwrap_or(json!([])),
+                    corint_core::Value::Object(obj) => {
+                        serde_json::to_value(obj).unwrap_or(json!({}))
+                    }
+                };
+                json!({
+                    "type": "literal",
+                    "value": val_json,
+                    "expression": Self::expression_to_string(expr)
+                })
+            }
+            Expression::FieldAccess(path) => {
+                json!({
+                    "type": "field",
+                    "path": path,
+                    "expression": path.join(".")
+                })
+            }
+            Expression::Binary { left, op, right } => {
+                json!({
+                    "type": "binary",
+                    "operator": Self::operator_to_string(op),
+                    "left": Self::expression_to_json(left),
+                    "right": Self::expression_to_json(right),
+                    "expression": Self::expression_to_string(expr)
+                })
+            }
+            Expression::Unary { op, operand } => {
+                json!({
+                    "type": "unary",
+                    "operator": format!("{:?}", op),
+                    "operand": Self::expression_to_json(operand),
+                    "expression": Self::expression_to_string(expr)
+                })
+            }
+            Expression::LogicalGroup { op, conditions } => {
+                let group_type = match op {
+                    LogicalGroupOp::Any => "any",
+                    LogicalGroupOp::All => "all",
+                };
+                let nested: Vec<serde_json::Value> =
+                    conditions.iter().map(|c| Self::expression_to_json(c)).collect();
+                json!({
+                    "type": "group",
+                    "group_type": group_type,
+                    "conditions": nested,
+                    "expression": Self::expression_to_string(expr)
+                })
+            }
+            Expression::FunctionCall { name, args } => {
+                let args_json: Vec<serde_json::Value> =
+                    args.iter().map(|a| Self::expression_to_json(a)).collect();
+                json!({
+                    "type": "function",
+                    "name": name,
+                    "args": args_json,
+                    "expression": Self::expression_to_string(expr)
+                })
+            }
+            Expression::Ternary {
+                condition,
+                true_expr,
+                false_expr,
+            } => {
+                json!({
+                    "type": "ternary",
+                    "condition": Self::expression_to_json(condition),
+                    "true_expr": Self::expression_to_json(true_expr),
+                    "false_expr": Self::expression_to_json(false_expr),
+                    "expression": "?:"
+                })
+            }
+        }
+    }
+
+    /// Convert an Expression AST to a human-readable string representation
+    /// Used for storing condition expressions in program metadata for tracing
+    pub fn expression_to_string(expr: &Expression) -> String {
+        match expr {
+            Expression::Literal(val) => match val {
+                corint_core::Value::String(s) => format!("\"{}\"", s),
+                corint_core::Value::Number(n) => {
+                    if n.fract() == 0.0 {
+                        format!("{}", *n as i64)
+                    } else {
+                        n.to_string()
+                    }
+                }
+                corint_core::Value::Bool(b) => b.to_string(),
+                corint_core::Value::Null => "null".to_string(),
+                corint_core::Value::Array(arr) => format!(
+                    "[{}]",
+                    arr.iter()
+                        .map(|v| match v {
+                            corint_core::Value::String(s) => format!("\"{}\"", s),
+                            corint_core::Value::Number(n) => n.to_string(),
+                            _ => format!("{:?}", v),
+                        })
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                ),
+                corint_core::Value::Object(_) => "{...}".to_string(),
+            },
+            Expression::FieldAccess(path) => path.join("."),
+            Expression::Binary { left, op, right } => {
+                let op_str = Self::operator_to_string(op);
+                format!(
+                    "{} {} {}",
+                    Self::expression_to_string(left),
+                    op_str,
+                    Self::expression_to_string(right)
+                )
+            }
+            Expression::Unary { op, operand } => {
+                format!("{:?} {}", op, Self::expression_to_string(operand))
+            }
+            Expression::FunctionCall { name, args } => {
+                let args_str = args
+                    .iter()
+                    .map(|a| Self::expression_to_string(a))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                format!("{}({})", name, args_str)
+            }
+            Expression::Ternary { .. } => "?:".to_string(),
+            Expression::LogicalGroup { op, conditions } => {
+                let group_name = match op {
+                    LogicalGroupOp::Any => "any",
+                    LogicalGroupOp::All => "all",
+                };
+                let cond_strs: Vec<String> = conditions
+                    .iter()
+                    .map(|c| Self::expression_to_string(c))
+                    .collect();
+                format!("{}:[{}]", group_name, cond_strs.join(", "))
+            }
+        }
+    }
+
+    /// Convert Operator to string
+    fn operator_to_string(op: &Operator) -> &'static str {
+        match op {
+            Operator::Eq => "==",
+            Operator::Ne => "!=",
+            Operator::Lt => "<",
+            Operator::Gt => ">",
+            Operator::Le => "<=",
+            Operator::Ge => ">=",
+            Operator::And => "&&",
+            Operator::Or => "||",
+            Operator::Add => "+",
+            Operator::Sub => "-",
+            Operator::Mul => "*",
+            Operator::Div => "/",
+            Operator::Mod => "%",
+            Operator::In => "in",
+            Operator::Contains => "contains",
+            Operator::StartsWith => "starts_with",
+            Operator::EndsWith => "ends_with",
+            Operator::Regex => "~",
+            Operator::NotIn => "not_in",
+        }
+    }
 }
 
 #[cfg(test)]

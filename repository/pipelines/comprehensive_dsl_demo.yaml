@@ -19,7 +19,6 @@ version: "0.1"
 # ----------------------------------------------------------------------------
 # Rule 1: High Value Transaction Detection
 # ----------------------------------------------------------------------------
----
 
 rule:
   id: high_value_transaction
@@ -42,7 +41,6 @@ rule:
 # ----------------------------------------------------------------------------
 # Rule 2: Suspicious User Behavior (OR logic)
 # ----------------------------------------------------------------------------
----
 
 rule:
   id: suspicious_user_behavior
@@ -90,7 +88,6 @@ rule:
 # ----------------------------------------------------------------------------
 # Rule 4: Complex Fraud Detection (Nested logic)
 # ----------------------------------------------------------------------------
----
 
 rule:
   id: complex_fraud_detection
@@ -141,7 +138,6 @@ rule:
 # ----------------------------------------------------------------------------
 # Rule 6: Payment Method Check (String operations)
 # ----------------------------------------------------------------------------
----
 
 rule:
   id: payment_method_check
@@ -162,8 +158,7 @@ rule:
 
 # ----------------------------------------------------------------------------
 # Rule 7: Velocity Check (Arithmetic in conditions)
-# ----------------------------------------------------------------------------
----
+# ---------------------------------------------------------------------------- 
 
 rule:
   id: velocity_check
@@ -186,7 +181,6 @@ rule:
 # ----------------------------------------------------------------------------
 # Rule 8: Trusted User Bonus (Negative scoring)
 # ----------------------------------------------------------------------------
----
 
 rule:
   id: trusted_user_bonus
@@ -209,7 +203,6 @@ rule:
 # ----------------------------------------------------------------------------
 # Ruleset 1: Transaction Monitoring
 # ----------------------------------------------------------------------------
----
 
 ruleset:
   id: transaction_monitoring_ruleset
@@ -239,7 +232,6 @@ ruleset:
 # ----------------------------------------------------------------------------
 # Ruleset 2: User Behavior Analysis
 # ----------------------------------------------------------------------------
----
 
 ruleset:
   id: user_behavior_ruleset
@@ -268,7 +260,6 @@ ruleset:
 # ----------------------------------------------------------------------------
 # Ruleset 3: Fraud Detection
 # ----------------------------------------------------------------------------
----
 
 ruleset:
   id: fraud_detection_ruleset
@@ -304,7 +295,6 @@ ruleset:
 # ----------------------------------------------------------------------------
 # PIPELINE: Comprehensive Risk Assessment
 # ----------------------------------------------------------------------------
----
 
 pipeline:
   id: comprehensive_risk_assessment
@@ -339,9 +329,11 @@ pipeline:
           # Branch 2: Medium-value transactions (1000-10000)
           - condition: event.transaction.amount > 1000
             pipeline:
-              # Evaluate transaction and fraud rulesets
+              # Evaluate transaction, user behavior, and fraud rulesets
               - include:
                   ruleset: transaction_monitoring_ruleset
+              - include:
+                  ruleset: user_behavior_ruleset
               - include:
                   ruleset: fraud_detection_ruleset
 

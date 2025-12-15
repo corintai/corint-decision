@@ -91,6 +91,19 @@ impl PipelineCompiler {
                     .custom
                     .insert("event_type".to_string(), event_type.clone());
             }
+
+            // Store when conditions as strings in metadata for tracing
+            if !when_block.conditions.is_empty() {
+                use crate::codegen::expression_codegen::ExpressionCompiler;
+                let condition_strs: Vec<String> = when_block
+                    .conditions
+                    .iter()
+                    .map(|c| ExpressionCompiler::expression_to_string(c))
+                    .collect();
+                metadata
+                    .custom
+                    .insert("when_conditions".to_string(), condition_strs.join(" && "));
+            }
         }
 
         Ok(Program::new(instructions, metadata))
@@ -212,17 +225,28 @@ impl PipelineCompiler {
                 // First pass: compile all branch conditions and bodies
                 struct CompiledBranch {
                     condition: Vec<Instruction>,
+                    condition_str: String, // For tracing
                     body: Vec<Instruction>,
                 }
 
                 let mut compiled_branches = Vec::new();
-                for branch in branches {
+                for (idx, branch) in branches.iter().enumerate() {
                     let condition = ExpressionCompiler::compile(&branch.condition)?;
-                    let mut body = Vec::new();
+                    let condition_str = ExpressionCompiler::expression_to_string(&branch.condition);
+
+                    // Body starts with MarkBranchExecuted for tracing
+                    let mut body = vec![Instruction::MarkBranchExecuted {
+                        branch_index: idx,
+                        condition: condition_str.clone(),
+                    }];
                     for step in &branch.pipeline {
                         body.extend(Self::compile_step(step)?);
                     }
-                    compiled_branches.push(CompiledBranch { condition, body });
+                    compiled_branches.push(CompiledBranch {
+                        condition,
+                        condition_str,
+                        body,
+                    });
                 }
 
                 // Second pass: assemble with correct jump offsets
