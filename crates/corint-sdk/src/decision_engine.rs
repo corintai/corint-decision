@@ -170,24 +170,21 @@ pub struct DecisionEngine {
 
 impl DecisionEngine {
     /// Generate a unique request ID
-    /// Format: req_YYYYMMDDHHmmss_xxx
-    /// Example: req_20231209143052_a3f
+    /// Format: req_YYYYMMDDHHmmss_xxxxxx
+    /// Example: req_20231209143052_a3f2e1
     ///
-    /// Uses chrono to correctly handle leap years and variable month lengths
+    /// Uses chrono for timestamp and rand for truly random suffix
     fn generate_request_id() -> String {
         use chrono::Utc;
-        use std::sync::atomic::{AtomicU32, Ordering};
-
-        static COUNTER: AtomicU32 = AtomicU32::new(0);
+        use rand::Rng;
 
         // Get current UTC time and format it directly - this correctly handles
         // leap years, variable month lengths, and all date edge cases
         let now = Utc::now();
         let datetime_str = now.format("%Y%m%d%H%M%S").to_string();
 
-        // Generate random suffix using atomic counter
-        let counter = COUNTER.fetch_add(1, Ordering::SeqCst);
-        let random = ((now.timestamp() as u32) ^ counter) & 0xFFFFFF; // 6 hex digits (24 bits)
+        // Generate truly random suffix using thread_rng
+        let random: u32 = rand::thread_rng().gen_range(0..0xFFFFFF);
 
         format!("req_{}_{:06x}", datetime_str, random)
     }
