@@ -1,14 +1,14 @@
 # =============================================================================
-# Pipeline DSL 设计规范 v2.0
+# Pipeline DSL Design Specification v2.0
 # =============================================================================
 #
-# 设计目标:
-#   1. DAG IR 编译友好 - 显式入口、唯一ID、明确边关系
-#   2. 可视化友好 - 节点类型可区分、路由条件清晰
-#   3. LLM 生成友好 - 结构化 Schema、约束明确、示例丰富
+# Design Goals:
+#   1. DAG IR compilation friendly - explicit entry, unique IDs, clear edge relationships
+#   2. Visualization friendly - distinguishable node types, clear routing conditions
+#   3. LLM generation friendly - structured schema, clear constraints, rich examples
 #
 # =============================================================================
-# Schema 定义 (供编译器校验和 LLM 理解)
+# Schema Definition (for compiler validation and LLM understanding)
 # =============================================================================
 #
 # Pipeline:
@@ -29,43 +29,43 @@
 #   default: string (optional, default next step if no route matches)
 #   next:    string | "end" (optional, unconditional next step)
 #
-# Route (与 registry 格式一致):
+# Route (consistent with registry format):
 #   next:    string (required, target step id or "end")
-#   when:    Condition (required, 条件满足时跳转到 next)
+#   when:    Condition (required, jump to next when condition is met)
 #
-# Output 约定 (Convention over Configuration):
-#   - router:       无返回值，纯路由分发，不影响 context
-#   - function:     结果自动存入 function.<function_name>
-#   - api:          结果自动存入 api.<api_name>
-#   - service:      结果自动存入 service.<service_name>
-#   - rule/ruleset: 直接影响 score/decision，无需 output
-#   - pipeline:     子流程的 context 变更自动合并回主流程
-#   - trigger:      无返回值，不影响 context
+# Output Convention (Convention over Configuration):
+#   - router:       no return value, pure routing dispatch, does not affect context
+#   - function:     result automatically stored in function.<function_name>
+#   - api:          result automatically stored in api.<api_name>
+#   - service:      result automatically stored in service.<service_name>
+#   - rule/ruleset: directly affects score/decision, no output needed
+#   - pipeline:     sub-pipeline context changes automatically merged back to main pipeline
+#   - trigger:      no return value, does not affect context
 #
-# StepType (执行什么):
-#   - router   : 纯路由判断 (无计算，只根据 routes 条件分发)
-#   - function : 内部纯函数计算 (结果存入 function.<name>，供后续步骤使用)
-#   - rule     : 执行单条规则
-#   - ruleset  : 执行规则集
-#   - pipeline : 调用子流程
-#   - service  : 内部服务调用 (DB, Redis, 内部API)
-#   - api      : 外部API调用 (第三方服务)
-#   - trigger  : 触发外部动作 (MQ, Webhook, 通知)
+# StepType (what to execute):
+#   - router   : pure routing judgment (no computation, only dispatch based on routes conditions)
+#   - function : internal pure function computation (result stored in function.<name>, for subsequent steps)
+#   - rule     : execute single rule
+#   - ruleset  : execute ruleset
+#   - pipeline : call sub-pipeline
+#   - service  : internal service call (DB, Redis, internal API)
+#   - api      : external API call (third-party service)
+#   - trigger  : trigger external action (MQ, Webhook, notification)
 #
-# Execution Mode (怎么执行 - 仅 api/service 类型支持):
-#   - (default)  : 执行单个目标
-#   - any:       : 依次尝试，第一个成功就用 (降级模式)
-#   - all:       : 并行执行所有，等待全部完成 (聚合模式)
+# Execution Mode (how to execute - only api/service types support):
+#   - (default)  : execute single target
+#   - any:       : try sequentially, use first successful one (fallback mode)
+#   - all:       : execute all in parallel, wait for all to complete (aggregation mode)
 #
-# Condition (统一条件格式，支持任意嵌套):
-#   基础格式:
-#     - string: 单个布尔表达式 (如 "event.amount > 100")
-#     - { all: [...] }: 所有条件都必须为真 (AND)
-#     - { any: [...] }: 至少一个条件为真 (OR)
-#     - { not: [...] }: 条件取反 (NOT)
-#     - 支持任意嵌套: all/any/not 可以互相嵌套
+# Condition (unified condition format, supports arbitrary nesting):
+#   Basic format:
+#     - string: single boolean expression (e.g., "event.amount > 100")
+#     - { all: [...] }: all conditions must be true (AND)
+#     - { any: [...] }: at least one condition is true (OR)
+#     - { not: [...] }: condition negation (NOT)
+#     - supports arbitrary nesting: all/any/not can nest each other
 #
-#   路由格式 (与 registry 保持一致: 目标在外，条件在里):
+#   Route format (consistent with registry: target outside, condition inside):
 #     routes:
 #       - next: vip_fast_track
 #         when:
@@ -79,28 +79,28 @@
 #     default: standard_scoring
 #
 # =============================================================================
-# 编译器校验规则 (Compiler Validation Rules)
+# Compiler Validation Rules
 # =============================================================================
 #
-# E001: entry 必须指向一个存在的 step.id
-# E002: 所有 step.id 必须唯一
-# E003: routes[].next 和 default/next 必须指向存在的 step.id 或 "end"
-# E004: 不能有不可达的 step (unreachable nodes)
-# E005: 不能有循环引用形成死循环 (除非显式标记为 loop)
-# E006: type-specific 必填字段校验:
-#       - router:   routes (required, 路由条件列表)
+# E001: entry must point to an existing step.id
+# E002: all step.id must be unique
+# E003: routes[].next and default/next must point to existing step.id or "end"
+# E004: cannot have unreachable steps (unreachable nodes)
+# E005: cannot have circular references forming infinite loops (unless explicitly marked as loop)
+# E006: type-specific required field validation:
+#       - router:   routes (required, routing condition list)
 #       - function: function (required)
 #       - rule:     rule (required)
 #       - ruleset:  ruleset (required)
-#       - pipeline: pipeline 或 inline (required)
+#       - pipeline: pipeline or inline (required)
 #       - service:  service (required)
-#       - api:      api 或 any/all (required)
+#       - api:      api or any/all (required)
 #       - trigger:  target (required)
-# E007: 终端节点必须有 next: end 或无后续路由
+# E007: terminal nodes must have next: end or no subsequent routes
 #
-# W001: step 没有被任何其他 step 引用 (除了 entry)
-# W002: routes[].when 条件可能永远不满足
-# W003: 建议添加 default 处理未匹配情况
+# W001: step is not referenced by any other step (except entry)
+# W002: routes[].when condition may never be satisfied
+# W003: recommend adding default to handle unmatched cases
 #
 # =============================================================================
 
@@ -119,20 +119,20 @@ pipeline:
   description: Comprehensive payment risk assessment with conditional routing
   version: "1.0.0"
 
-  # 显式入口点 (DAG IR 编译必需)
+  # Explicit entry point (required for DAG IR compilation)
   entry: get_ip_info
 
-  # Pipeline 入口条件 (粗粒度过滤，由 Registry 调度)
+  # Pipeline entry condition (coarse-grained filtering, scheduled by Registry)
   when:
     all:
       - event.channel == "stripe"
       - event.amount < 50000
 
-  # 执行步骤
+  # Execution steps
   steps:
     # =========================================================================
     # Step: get_ip_info
-    # Type: api (外部 API 调用)
+    # Type: api (external API call)
     # =========================================================================
     - step:
         id: get_ip_info
@@ -141,7 +141,7 @@ pipeline:
         api: ip_geolocation
         params:
           ip: event.ip_address
-        # output: api.ip_geolocation (约定: api.<api_name>)
+        # output: api.ip_geolocation (convention: api.<api_name>)
         routes:
           - next: check_amount
             when:
@@ -159,21 +159,21 @@ pipeline:
 
     # =========================================================================
     # Step: check_amount
-    # Type: router (纯路由判断，routes 格式与 registry 一致)
-    # 支持 all/any/not 任意嵌套
+    # Type: router (pure routing judgment, routes format consistent with registry)
+    # Supports arbitrary nesting of all/any/not
     # =========================================================================
     - step:
         id: check_amount
         name: Check Transaction Amount
         type: router
         routes:
-          # 复杂条件示例：高价值 + VIP用户 走快速通道
+          # Complex condition example: high value + VIP user goes to fast track
           - next: vip_fast_track
             when:
               all:
                 - event.amount > 10000
                 - event.user.vip_status == true
-          # 简单条件示例
+          # Simple condition example
           - next: high_value_flow
             when:
               all:
@@ -182,7 +182,7 @@ pipeline:
 
     # =========================================================================
     # Step: cn_verification
-    # Type: ruleset (规则集执行)
+    # Type: ruleset (ruleset execution)
     # =========================================================================
     - step:
         id: cn_verification
@@ -193,7 +193,7 @@ pipeline:
 
     # =========================================================================
     # Step: vip_fast_track
-    # Type: ruleset (VIP快速通道)
+    # Type: ruleset (VIP fast track)
     # =========================================================================
     - step:
         id: vip_fast_track
@@ -204,7 +204,7 @@ pipeline:
 
     # =========================================================================
     # Step: high_value_flow
-    # Type: pipeline (子流程调用)
+    # Type: pipeline (sub-pipeline call)
     # =========================================================================
     - step:
         id: high_value_flow
@@ -215,7 +215,7 @@ pipeline:
 
     # =========================================================================
     # Step: standard_scoring
-    # Type: ruleset (规则集执行)
+    # Type: ruleset (ruleset execution)
     # =========================================================================
     - step:
         id: standard_scoring
@@ -226,7 +226,7 @@ pipeline:
 
     # =========================================================================
     # Step: final_scoring
-    # Type: ruleset (规则集执行)
+    # Type: ruleset (ruleset execution)
     # =========================================================================
     - step:
         id: final_scoring
@@ -237,7 +237,7 @@ pipeline:
 
     # =========================================================================
     # Step: standard_check
-    # Type: ruleset (默认路径)
+    # Type: ruleset (default path)
     # =========================================================================
     - step:
         id: standard_check
@@ -248,13 +248,13 @@ pipeline:
 
     # =========================================================================
     # Step: decision_point
-    # Type: router (基于评分的决策路由)
+    # Type: router (decision routing based on score)
     # =========================================================================
     - step:
         id: decision_point
         name: Decision Point
         type: router
-        # sys.total_score 是规则执行后系统计算的总分
+        # sys.total_score is the total score calculated by the system after rule execution
         routes:
           - next: auto_approve
             when:
@@ -268,7 +268,7 @@ pipeline:
 
     # =========================================================================
     # Step: auto_approve
-    # Type: trigger (终端动作)
+    # Type: trigger (terminal action)
     # =========================================================================
     - step:
         id: auto_approve
@@ -282,7 +282,7 @@ pipeline:
 
     # =========================================================================
     # Step: auto_reject
-    # Type: trigger (终端动作)
+    # Type: trigger (terminal action)
     # =========================================================================
     - step:
         id: auto_reject
@@ -296,7 +296,7 @@ pipeline:
 
     # =========================================================================
     # Step: manual_review
-    # Type: trigger (终端动作)
+    # Type: trigger (terminal action)
     # =========================================================================
     - step:
         id: manual_review
@@ -310,7 +310,7 @@ pipeline:
 
     # =========================================================================
     # Step: notify_user
-    # Type: trigger (通知)
+    # Type: trigger (notification)
     # =========================================================================
     - step:
         id: notify_user
@@ -324,10 +324,10 @@ pipeline:
         next: end
 
 # =============================================================================
-# 子 Pipeline 引用方式
+# Sub-Pipeline Reference Methods
 # =============================================================================
 #
-# 方式 1: 独立文件 + imports (推荐)
+# Method 1: Separate file + imports (recommended)
 # --------------------------------
 # imports:
 #   pipelines:
@@ -337,7 +337,7 @@ pipeline:
 #     type: pipeline
 #     pipeline: high_value_verification
 #
-# 方式 2: 内联定义 (简单场景)
+# Method 2: Inline definition (simple scenarios)
 # --------------------------
 # - step:
 #     id: inline_flow
@@ -351,24 +351,24 @@ pipeline:
 #             ...
 #
 # =============================================================================
-# Execution Mode 示例 (api/service 专用)
+# Execution Mode Examples (api/service specific)
 # =============================================================================
 #
-# any 模式 - 降级/备选 (顺序尝试，首个成功即返回)
+# any mode - fallback/alternative (try sequentially, return first successful)
 # ------------------------------------------------
 # - step:
 #     id: get_ip_info
 #     type: api
 #     any:
-#       - maxmind_api         # 首选
-#       - ipinfo_api          # 备选 1
-#       - ip2location_api     # 备选 2
+#       - maxmind_api         # primary
+#       - ipinfo_api          # fallback 1
+#       - ip2location_api     # fallback 2
 #     params:
 #       ip: event.ip_address
 #     output: context.ip_info
 #     next: next_step
 #
-# all 模式 - 聚合 (并行执行，等待全部完成)
+# all mode - aggregation (execute in parallel, wait for all to complete)
 # ----------------------------------------
 # - step:
 #     id: fetch_external_data
@@ -377,14 +377,14 @@ pipeline:
 #       - credit_bureau_api
 #       - fraud_detection_api
 #       - identity_verification_api
-#     timeout: 5s              # 总超时时间
+#     timeout: 5s              # total timeout
 #     on_error: partial        # partial | fail_fast
-#     min_success: 2           # 最少成功数 (on_error: partial 时有效)
+#     min_success: 2           # minimum success count (valid when on_error: partial)
 #     output: context.external_data
 #     next: scoring
 #
 # =============================================================================
-# DAG 可视化参考 (自动生成)
+# DAG Visualization Reference (auto-generated)
 # =============================================================================
 #
 #                        ┌─────────────────┐
@@ -440,34 +440,34 @@ pipeline:
 #                      END
 #
 # =============================================================================
-# LLM 生成指南
+# LLM Generation Guidelines
 # =============================================================================
 #
-# 生成 Pipeline 时请遵循以下约束:
+# When generating Pipeline, please follow these constraints:
 #
-# 1. 结构约束:
-#    - 必须包含 id, name, entry, steps
-#    - entry 必须指向 steps 中存在的 step.id
-#    - 每个 step 必须有唯一的 id
+# 1. Structure constraints:
+#    - Must include id, name, entry, steps
+#    - entry must point to an existing step.id in steps
+#    - each step must have a unique id
 #
-# 2. 命名约束:
-#    - id: snake_case, 描述功能 (如 check_amount, get_ip_info)
-#    - name: 人类可读的描述 (如 "Check Transaction Amount")
+# 2. Naming constraints:
+#    - id: snake_case, describe functionality (e.g., check_amount, get_ip_info)
+#    - name: human-readable description (e.g., "Check Transaction Amount")
 #
-# 3. 路由约束:
-#    - 终端节点使用 next: end
-#    - 条件路由使用 routes + default (与 registry 格式一致)
-#    - 无条件跳转使用 next: <step_id>
+# 3. Routing constraints:
+#    - terminal nodes use next: end
+#    - conditional routing uses routes + default (consistent with registry format)
+#    - unconditional jump uses next: <step_id>
 #
-# 4. 条件格式 (routes 与 registry 格式一致: 目标在外，条件在里):
-#    简单条件 - AND (所有条件都必须满足):
+# 4. Condition format (routes consistent with registry format: target outside, condition inside):
+#    Simple condition - AND (all conditions must be satisfied):
 #      routes:
 #        - next: high_value_flow
 #          when:
 #            all:
 #              - event.amount > 1000
 #
-#    简单条件 - OR (任一条件满足即可):
+#    Simple condition - OR (any condition satisfied):
 #      routes:
 #        - next: domestic_flow
 #          when:
@@ -475,7 +475,7 @@ pipeline:
 #              - event.country == "US"
 #              - event.country == "CA"
 #
-#    否定条件 - NOT:
+#    Negation condition - NOT:
 #      routes:
 #        - next: clean_flow
 #          when:
@@ -484,7 +484,7 @@ pipeline:
 #              - not:
 #                  - risk.tags contains "proxy"
 #
-#    嵌套条件 (复杂布尔逻辑):
+#    Nested conditions (complex boolean logic):
 #      routes:
 #        - next: high_risk_review
 #          when:
@@ -496,24 +496,25 @@ pipeline:
 #                  - device.is_emulator == true
 #                  - risk.login_fail_count_1h >= 3
 #
-# 5. 类型选择:
-#    - 纯条件分发 → router (无计算，只根据条件选择下一步)
-#    - 内部纯计算 → function (计算复杂值供后续复用，存入 function.<name>)
-#    - 执行业务规则 → rule/ruleset
-#    - 调用子流程 → pipeline
-#    - 查询内部数据 → service (有 I/O，存入 service.<name>)
-#    - 调用外部API → api (有 I/O，存入 api.<name>)
-#    - 发送通知/写入队列 → trigger
+# 5. Type selection:
+#    - pure conditional dispatch → router (no computation, only select next step based on conditions)
+#    - internal pure computation → function (compute complex values for subsequent reuse, stored in function.<name>)
+#    - execute business rules → rule/ruleset
+#    - call sub-pipeline → pipeline
+#    - query internal data → service (has I/O, stored in service.<name>)
+#    - call external API → api (has I/O, stored in api.<name>)
+#    - send notification/write to queue → trigger
 #
-#    function vs service vs api 对比:
-#    | 类型     | I/O | 存储位置            | 用途               |
-#    |----------|-----|--------------------|--------------------|
-#    | function | 无  | function.<name>    | 纯计算/特征工程     |
-#    | service  | 有  | service.<name>     | 内部服务 (DB/Redis) |
-#    | api      | 有  | api.<name>         | 外部第三方服务      |
+#    function vs service vs api comparison:
+#    | Type     | I/O | Storage Location      | Purpose                    |
+#    |----------|-----|-----------------------|----------------------------|
+#    | function | No  | function.<name>       | pure computation/feature engineering |
+#    | service  | Yes | service.<name>       | internal service (DB/Redis) |
+#    | api      | Yes | api.<name>           | external third-party service |
 #
-# 6. 可视化友好:
-#    - 保持从上到下、从左到右的阅读顺序
-#    - 相关步骤放在一起
-#    - 终端节点放在最后
+# 6. Visualization friendly:
+#    - maintain top-to-bottom, left-to-right reading order
+#    - place related steps together
+#    - place terminal nodes at the end
 #
+
