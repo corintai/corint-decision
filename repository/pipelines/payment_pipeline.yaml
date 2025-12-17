@@ -15,39 +15,56 @@ pipeline:
   name: Payment Risk Control Pipeline
   description: Comprehensive payment risk assessment with conditional routing based on transaction amount
 
+  # Entry point for the pipeline
+  entry: ip_reputation_check
+
   # Pipeline only executes for payment events
   when:
-    event.type: payment
+    all:
+      - event.type == "payment"
 
   steps:
     # Step 1: Check IP reputation via external API
-    - type: api
-      id: ip_reputation_check
-      api: ipinfo
-      endpoint: ip_lookup
-      params:
-        ip: event.ip_address
-        token: "a63066c9a63590"
-      output: context.ip_info
-      timeout: 3000
-      on_error:
-        action: fallback
-        fallback:
-          country_code: "US"
-          country: "United States"
-          continent_code: "NA"
+    - step:
+        id: ip_reputation_check
+        name: IP Reputation Check
+        type: api
+        api: ipinfo 
+        params:
+          ip_address: event.ip_address
+          token: "a63066c9a63590" 
+        next: amount_router
 
-    # Step 2: Conditional branch based on payment amount
-    - branch:
-        when:
+    # Step 2: Router based on payment amount
+    - step:
+        id: amount_router
+        name: Payment Amount Router
+        type: router
+        routes:
           # High-value transactions (> $1000)
-          - condition: payment_amount > 1000
-            pipeline:
-              - include:
-                  ruleset: payment_high_value
-
+          - next: high_value_check
+            when:
+              all:
+                - payment_amount > 1000
           # Standard transactions (<= $1000)
-          - condition: payment_amount <= 1000
-            pipeline:
-              - include:
-                  ruleset: payment_standard
+          - next: standard_check
+            when:
+              all:
+                - payment_amount <= 1000
+        default: standard_check
+
+    # Step 3a: High-value payment check
+    - step:
+        id: high_value_check
+        name: High Value Payment Assessment
+        type: ruleset
+        ruleset: payment_high_value
+        next: end
+
+    # Step 3b: Standard payment check
+    - step:
+        id: standard_check
+        name: Standard Payment Assessment
+        type: ruleset
+        ruleset: payment_standard
+        next: end

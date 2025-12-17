@@ -1,0 +1,519 @@
+# =============================================================================
+# Pipeline DSL 设计规范 v2.0
+# =============================================================================
+#
+# 设计目标:
+#   1. DAG IR 编译友好 - 显式入口、唯一ID、明确边关系
+#   2. 可视化友好 - 节点类型可区分、路由条件清晰
+#   3. LLM 生成友好 - 结构化 Schema、约束明确、示例丰富
+#
+# =============================================================================
+# Schema 定义 (供编译器校验和 LLM 理解)
+# =============================================================================
+#
+# Pipeline:
+#   id:          string (required, unique, snake_case)
+#   name:        string (required, human readable)
+#   description: string (optional)
+#   version:     string (optional, semver format)
+#   entry:       string (required, must match a step.id)
+#   when:        Condition (optional, pipeline-level filter)
+#   steps:       Step[] (required, non-empty)
+#
+# Step:
+#   id:      string (required, unique within pipeline, snake_case)
+#   name:    string (required, human readable)
+#   type:    StepType (required)
+#   ...type-specific fields...
+#   routes:  Route[] (optional, conditional routing)
+#   default: string (optional, default next step if no route matches)
+#   next:    string | "end" (optional, unconditional next step)
+#
+# Route (与 registry 格式一致):
+#   next:    string (required, target step id or "end")
+#   when:    Condition (required, 条件满足时跳转到 next)
+#
+# Output 约定 (Convention over Configuration):
+#   - router:       无返回值，纯路由分发，不影响 context
+#   - function:     结果自动存入 function.<function_name>
+#   - api:          结果自动存入 api.<api_name>
+#   - service:      结果自动存入 service.<service_name>
+#   - rule/ruleset: 直接影响 score/decision，无需 output
+#   - pipeline:     子流程的 context 变更自动合并回主流程
+#   - trigger:      无返回值，不影响 context
+#
+# StepType (执行什么):
+#   - router   : 纯路由判断 (无计算，只根据 routes 条件分发)
+#   - function : 内部纯函数计算 (结果存入 function.<name>，供后续步骤使用)
+#   - rule     : 执行单条规则
+#   - ruleset  : 执行规则集
+#   - pipeline : 调用子流程
+#   - service  : 内部服务调用 (DB, Redis, 内部API)
+#   - api      : 外部API调用 (第三方服务)
+#   - trigger  : 触发外部动作 (MQ, Webhook, 通知)
+#
+# Execution Mode (怎么执行 - 仅 api/service 类型支持):
+#   - (default)  : 执行单个目标
+#   - any:       : 依次尝试，第一个成功就用 (降级模式)
+#   - all:       : 并行执行所有，等待全部完成 (聚合模式)
+#
+# Condition (统一条件格式，支持任意嵌套):
+#   基础格式:
+#     - string: 单个布尔表达式 (如 "event.amount > 100")
+#     - { all: [...] }: 所有条件都必须为真 (AND)
+#     - { any: [...] }: 至少一个条件为真 (OR)
+#     - { not: [...] }: 条件取反 (NOT)
+#     - 支持任意嵌套: all/any/not 可以互相嵌套
+#
+#   路由格式 (与 registry 保持一致: 目标在外，条件在里):
+#     routes:
+#       - next: vip_fast_track
+#         when:
+#           all:
+#             - event.amount > 10000
+#             - event.user.vip_status == true
+#       - next: high_value_flow
+#         when:
+#           all:
+#             - event.amount > 1000
+#     default: standard_scoring
+#
+# =============================================================================
+# 编译器校验规则 (Compiler Validation Rules)
+# =============================================================================
+#
+# E001: entry 必须指向一个存在的 step.id
+# E002: 所有 step.id 必须唯一
+# E003: routes[].next 和 default/next 必须指向存在的 step.id 或 "end"
+# E004: 不能有不可达的 step (unreachable nodes)
+# E005: 不能有循环引用形成死循环 (除非显式标记为 loop)
+# E006: type-specific 必填字段校验:
+#       - router:   routes (required, 路由条件列表)
+#       - function: function (required)
+#       - rule:     rule (required)
+#       - ruleset:  ruleset (required)
+#       - pipeline: pipeline 或 inline (required)
+#       - service:  service (required)
+#       - api:      api 或 any/all (required)
+#       - trigger:  target (required)
+# E007: 终端节点必须有 next: end 或无后续路由
+#
+# W001: step 没有被任何其他 step 引用 (除了 entry)
+# W002: routes[].when 条件可能永远不满足
+# W003: 建议添加 default 处理未匹配情况
+#
+# =============================================================================
+
+version: "1.0"
+
+imports:
+  rulesets:
+    - library/rulesets/payment_high_value.yaml
+    - library/rulesets/payment_standard.yaml
+  pipelines:
+    - library/pipelines/high_value_verification.yaml
+
+pipeline:
+  id: payment_risk_pipeline
+  name: Payment Risk Control Pipeline
+  description: Comprehensive payment risk assessment with conditional routing
+  version: "1.0.0"
+
+  # 显式入口点 (DAG IR 编译必需)
+  entry: get_ip_info
+
+  # Pipeline 入口条件 (粗粒度过滤，由 Registry 调度)
+  when:
+    all:
+      - event.channel == "stripe"
+      - event.amount < 50000
+
+  # 执行步骤
+  steps:
+    # =========================================================================
+    # Step: get_ip_info
+    # Type: api (外部 API 调用)
+    # =========================================================================
+    - step:
+        id: get_ip_info
+        name: Get IP Geolocation
+        type: api
+        api: ip_geolocation
+        params:
+          ip: event.ip_address
+        # output: api.ip_geolocation (约定: api.<api_name>)
+        routes:
+          - next: check_amount
+            when:
+              all:
+                - api.ip_geolocation.country_code == "US"
+          - next: cn_verification
+            when:
+              all:
+                - api.ip_geolocation.country_code == "CN"
+          - next: manual_review
+            when:
+              all:
+                - api.ip_geolocation.risk_level == "high"
+        default: standard_check
+
+    # =========================================================================
+    # Step: check_amount
+    # Type: router (纯路由判断，routes 格式与 registry 一致)
+    # 支持 all/any/not 任意嵌套
+    # =========================================================================
+    - step:
+        id: check_amount
+        name: Check Transaction Amount
+        type: router
+        routes:
+          # 复杂条件示例：高价值 + VIP用户 走快速通道
+          - next: vip_fast_track
+            when:
+              all:
+                - event.amount > 10000
+                - event.user.vip_status == true
+          # 简单条件示例
+          - next: high_value_flow
+            when:
+              all:
+                - event.amount > 1000
+        default: standard_scoring
+
+    # =========================================================================
+    # Step: cn_verification
+    # Type: ruleset (规则集执行)
+    # =========================================================================
+    - step:
+        id: cn_verification
+        name: China Region Verification
+        type: ruleset
+        ruleset: cn_region_rules
+        next: standard_scoring
+
+    # =========================================================================
+    # Step: vip_fast_track
+    # Type: ruleset (VIP快速通道)
+    # =========================================================================
+    - step:
+        id: vip_fast_track
+        name: VIP Fast Track
+        type: ruleset
+        ruleset: vip_fast_rules
+        next: decision_point
+
+    # =========================================================================
+    # Step: high_value_flow
+    # Type: pipeline (子流程调用)
+    # =========================================================================
+    - step:
+        id: high_value_flow
+        name: High Value Transaction Flow
+        type: pipeline
+        pipeline: high_value_verification
+        next: final_scoring
+
+    # =========================================================================
+    # Step: standard_scoring
+    # Type: ruleset (规则集执行)
+    # =========================================================================
+    - step:
+        id: standard_scoring
+        name: Standard Risk Scoring
+        type: ruleset
+        ruleset: payment_standard
+        next: decision_point
+
+    # =========================================================================
+    # Step: final_scoring
+    # Type: ruleset (规则集执行)
+    # =========================================================================
+    - step:
+        id: final_scoring
+        name: Final Risk Scoring
+        type: ruleset
+        ruleset: payment_high_value
+        next: decision_point
+
+    # =========================================================================
+    # Step: standard_check
+    # Type: ruleset (默认路径)
+    # =========================================================================
+    - step:
+        id: standard_check
+        name: Standard Check
+        type: ruleset
+        ruleset: payment_standard
+        next: decision_point
+
+    # =========================================================================
+    # Step: decision_point
+    # Type: router (基于评分的决策路由)
+    # =========================================================================
+    - step:
+        id: decision_point
+        name: Decision Point
+        type: router
+        # sys.total_score 是规则执行后系统计算的总分
+        routes:
+          - next: auto_approve
+            when:
+              all:
+                - sys.total_score >= 80
+          - next: auto_reject
+            when:
+              all:
+                - sys.total_score <= 20
+        default: manual_review
+
+    # =========================================================================
+    # Step: auto_approve
+    # Type: trigger (终端动作)
+    # =========================================================================
+    - step:
+        id: auto_approve
+        name: Auto Approve
+        type: trigger
+        target: approval_service
+        params:
+          decision: approve
+          reason: "Low risk score"
+        next: end
+
+    # =========================================================================
+    # Step: auto_reject
+    # Type: trigger (终端动作)
+    # =========================================================================
+    - step:
+        id: auto_reject
+        name: Auto Reject
+        type: trigger
+        target: rejection_service
+        params:
+          decision: reject
+          reason: "High risk score"
+        next: notify_user
+
+    # =========================================================================
+    # Step: manual_review
+    # Type: trigger (终端动作)
+    # =========================================================================
+    - step:
+        id: manual_review
+        name: Send to Manual Review
+        type: trigger
+        target: case_management
+        params:
+          queue: "risk_review"
+          priority: sys.total_score < 40 ? "high" : "normal"
+        next: end
+
+    # =========================================================================
+    # Step: notify_user
+    # Type: trigger (通知)
+    # =========================================================================
+    - step:
+        id: notify_user
+        name: Notify User
+        type: trigger
+        target: notification_service
+        params:
+          channel: email
+          template: "payment_rejected"
+          user_id: event.user_id
+        next: end
+
+# =============================================================================
+# 子 Pipeline 引用方式
+# =============================================================================
+#
+# 方式 1: 独立文件 + imports (推荐)
+# --------------------------------
+# imports:
+#   pipelines:
+#     - library/pipelines/high_value_verification.yaml
+#
+# - step:
+#     type: pipeline
+#     pipeline: high_value_verification
+#
+# 方式 2: 内联定义 (简单场景)
+# --------------------------
+# - step:
+#     id: inline_flow
+#     type: pipeline
+#     inline:
+#       entry: step1
+#       steps:
+#         - step:
+#             id: step1
+#             type: api
+#             ...
+#
+# =============================================================================
+# Execution Mode 示例 (api/service 专用)
+# =============================================================================
+#
+# any 模式 - 降级/备选 (顺序尝试，首个成功即返回)
+# ------------------------------------------------
+# - step:
+#     id: get_ip_info
+#     type: api
+#     any:
+#       - maxmind_api         # 首选
+#       - ipinfo_api          # 备选 1
+#       - ip2location_api     # 备选 2
+#     params:
+#       ip: event.ip_address
+#     output: context.ip_info
+#     next: next_step
+#
+# all 模式 - 聚合 (并行执行，等待全部完成)
+# ----------------------------------------
+# - step:
+#     id: fetch_external_data
+#     type: api
+#     all:
+#       - credit_bureau_api
+#       - fraud_detection_api
+#       - identity_verification_api
+#     timeout: 5s              # 总超时时间
+#     on_error: partial        # partial | fail_fast
+#     min_success: 2           # 最少成功数 (on_error: partial 时有效)
+#     output: context.external_data
+#     next: scoring
+#
+# =============================================================================
+# DAG 可视化参考 (自动生成)
+# =============================================================================
+#
+#                        ┌─────────────────┐
+#                        │  get_ip_info    │ ← entry
+#                        │   [api]         │
+#                        └────────┬────────┘
+#                                 │
+#          ┌──────────────────────┼──────────────────────┐
+#          │ US                   │ CN                   │ high_risk / default
+#          ▼                      ▼                      ▼
+#  ┌───────────────┐      ┌───────────────┐      ┌───────────────┐
+#  │ check_amount  │      │cn_verification│      │ manual_review │
+#  │ [expression]  │      │  [ruleset]    │      │standard_check │
+#  └───────┬───────┘      └───────┬───────┘      └───────┬───────┘
+#          │                      │                      │
+#    ┌─────┴─────┐                │                      │
+#    │>1000      │≤1000           │                      │
+#    ▼           ▼                │                      │
+# ┌─────────┐ ┌─────────────┐     │                      │
+# │high_val │ │standard_    │◄────┘                      │
+# │ _flow   │ │scoring      │◄───────────────────────────┘
+# │[pipeline]│ │[ruleset]   │
+# └────┬────┘ └──────┬──────┘
+#      │             │
+#      ▼             │
+# ┌─────────┐        │
+# │final_   │        │
+# │scoring  │        │
+# │[ruleset]│        │
+# └────┬────┘        │
+#      │             │
+#      └──────┬──────┘
+#             ▼
+#     ┌───────────────┐
+#     │decision_point │
+#     │ [expression]  │
+#     └───────┬───────┘
+#             │
+#    ┌────────┼────────┐
+#    │≥80     │20-80   │≤20
+#    ▼        ▼        ▼
+# ┌──────┐ ┌──────┐ ┌──────┐
+# │auto_ │ │manual│ │auto_ │
+# │approve│ │review│ │reject│
+# │[trigger]│[trigger]│[trigger]│
+# └──┬───┘ └──┬───┘ └──┬───┘
+#    │        │        │
+#    ▼        ▼        ▼
+#   END      END   notify_user
+#                  │[trigger]│
+#                  └────┬────┘
+#                       ▼
+#                      END
+#
+# =============================================================================
+# LLM 生成指南
+# =============================================================================
+#
+# 生成 Pipeline 时请遵循以下约束:
+#
+# 1. 结构约束:
+#    - 必须包含 id, name, entry, steps
+#    - entry 必须指向 steps 中存在的 step.id
+#    - 每个 step 必须有唯一的 id
+#
+# 2. 命名约束:
+#    - id: snake_case, 描述功能 (如 check_amount, get_ip_info)
+#    - name: 人类可读的描述 (如 "Check Transaction Amount")
+#
+# 3. 路由约束:
+#    - 终端节点使用 next: end
+#    - 条件路由使用 routes + default (与 registry 格式一致)
+#    - 无条件跳转使用 next: <step_id>
+#
+# 4. 条件格式 (routes 与 registry 格式一致: 目标在外，条件在里):
+#    简单条件 - AND (所有条件都必须满足):
+#      routes:
+#        - next: high_value_flow
+#          when:
+#            all:
+#              - event.amount > 1000
+#
+#    简单条件 - OR (任一条件满足即可):
+#      routes:
+#        - next: domestic_flow
+#          when:
+#            any:
+#              - event.country == "US"
+#              - event.country == "CA"
+#
+#    否定条件 - NOT:
+#      routes:
+#        - next: clean_flow
+#          when:
+#            all:
+#              - event.amount > 5000
+#              - not:
+#                  - risk.tags contains "proxy"
+#
+#    嵌套条件 (复杂布尔逻辑):
+#      routes:
+#        - next: high_risk_review
+#          when:
+#            any:
+#              - all:
+#                  - event.amount >= 3000
+#                  - geo.country in ["NG", "PK", "UA"]
+#              - all:
+#                  - device.is_emulator == true
+#                  - risk.login_fail_count_1h >= 3
+#
+# 5. 类型选择:
+#    - 纯条件分发 → router (无计算，只根据条件选择下一步)
+#    - 内部纯计算 → function (计算复杂值供后续复用，存入 function.<name>)
+#    - 执行业务规则 → rule/ruleset
+#    - 调用子流程 → pipeline
+#    - 查询内部数据 → service (有 I/O，存入 service.<name>)
+#    - 调用外部API → api (有 I/O，存入 api.<name>)
+#    - 发送通知/写入队列 → trigger
+#
+#    function vs service vs api 对比:
+#    | 类型     | I/O | 存储位置            | 用途               |
+#    |----------|-----|--------------------|--------------------|
+#    | function | 无  | function.<name>    | 纯计算/特征工程     |
+#    | service  | 有  | service.<name>     | 内部服务 (DB/Redis) |
+#    | api      | 有  | api.<name>         | 外部第三方服务      |
+#
+# 6. 可视化友好:
+#    - 保持从上到下、从左到右的阅读顺序
+#    - 相关步骤放在一起
+#    - 终端节点放在最后
+#

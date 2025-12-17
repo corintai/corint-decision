@@ -26,7 +26,7 @@ rule:
   description: Detect transactions with unusually high amounts
 
   when:
-    conditions:
+    all:
       - event.transaction.amount > 10000
       - event.transaction.currency == "USD"
 
@@ -48,11 +48,10 @@ rule:
   description: Detect various suspicious behaviors using OR logic
 
   when:
-    conditions:
-      - any:
-          - event.user.login_attempts > 5
-          - event.user.session_duration < 60
-          - event.user.ip_country != event.user.registered_country
+    any: 
+      - event.user.login_attempts > 5
+      - event.user.session_duration < 60
+      - event.user.ip_country != event.user.registered_country
 
   score: 60
 
@@ -72,7 +71,7 @@ rule:
   description: Multiple indicators must all be present
 
   when:
-    conditions:
+    all:
       - all:
           - event.transaction.amount > 5000
           - event.user.account_age_days < 7
@@ -95,7 +94,7 @@ rule:
   description: Nested AND/OR conditions
 
   when:
-    conditions:
+    all:
       - event.transaction.amount > 1000
       - any:
           - all:
@@ -123,7 +122,7 @@ rule:
   description: Various comparison operators
 
   when:
-    conditions:
+    all:
       - event.risk_score >= 70
       - event.risk_score <= 90
       - event.confidence_level != "low"
@@ -145,7 +144,7 @@ rule:
   description: Check for restricted payment methods
 
   when:
-    conditions:
+    any:
       - event.transaction.payment_method in ["crypto", "gift_card", "money_order"]
       - event.transaction.description contains "urgent"
 
@@ -158,7 +157,7 @@ rule:
 
 # ----------------------------------------------------------------------------
 # Rule 7: Velocity Check (Arithmetic in conditions)
-# ---------------------------------------------------------------------------- 
+# ----------------------------------------------------------------------------
 
 rule:
   id: velocity_check
@@ -166,7 +165,7 @@ rule:
   description: Arithmetic operations in conditions
 
   when:
-    conditions:
+    all:
       # Transaction amount is more than 3x user's average
       - event.transaction.amount > event.user.average_transaction * 3
       # Transaction count is more than 2x user's daily average
@@ -188,7 +187,7 @@ rule:
   description: Reduce risk score for trusted users
 
   when:
-    conditions:
+    all:
       - event.user.verified == true
       - event.user.account_age_days > 365
       - event.user.dispute_count == 0
@@ -307,42 +306,56 @@ pipeline:
 
   version: "1.0.0"
 
+  # Entry point for the pipeline
+  entry: amount_router
+
   # Execute for all test1 events
-  when:
-    event.type: test1
+  when: event.type == "test1"
 
   steps:
-    # Branch based on transaction amount
-    - branch:
-        when:
-          # Branch 1: High-value transactions (>10000)
-          - condition: event.transaction.amount > 10000
-            pipeline:
-              # Evaluate all three rulesets for high-value transactions
-              - include:
-                  ruleset: transaction_monitoring_ruleset
-              - include:
-                  ruleset: user_behavior_ruleset
-              - include:
-                  ruleset: fraud_detection_ruleset
+    # Router based on transaction amount
+    - step:
+        id: amount_router
+        name: Transaction Amount Router
+        type: router
+        routes:
+          # High/Medium-value transactions (>1000) - comprehensive check
+          - next: transaction_monitoring_step
+            when:
+              all:
+                - event.transaction.amount > 1000
+        # Low-value transactions (<=1000) - basic check only
+        default: basic_monitoring_step
 
-          # Branch 2: Medium-value transactions (1000-10000)
-          - condition: event.transaction.amount > 1000
-            pipeline:
-              # Evaluate transaction, user behavior, and fraud rulesets
-              - include:
-                  ruleset: transaction_monitoring_ruleset
-              - include:
-                  ruleset: user_behavior_ruleset
-              - include:
-                  ruleset: fraud_detection_ruleset
+    # Comprehensive check path (for amount > 1000)
+    - step:
+        id: transaction_monitoring_step
+        name: Transaction Monitoring
+        type: ruleset
+        ruleset: transaction_monitoring_ruleset
+        next: user_behavior_step
 
-          # Branch 3: Low-value transactions (<=1000)
-          - condition: event.transaction.amount <= 1000
-            pipeline:
-              # Only basic transaction monitoring
-              - include:
-                  ruleset: transaction_monitoring_ruleset
+    - step:
+        id: user_behavior_step
+        name: User Behavior Analysis
+        type: ruleset
+        ruleset: user_behavior_ruleset
+        next: fraud_detection_step
+
+    - step:
+        id: fraud_detection_step
+        name: Fraud Detection
+        type: ruleset
+        ruleset: fraud_detection_ruleset
+        next: end
+
+    # Basic check path (for amount <= 1000)
+    - step:
+        id: basic_monitoring_step
+        name: Basic Transaction Monitoring
+        type: ruleset
+        ruleset: transaction_monitoring_ruleset
+        next: end
 
   # Final decision logic (combines all ruleset results)
   decision_logic:

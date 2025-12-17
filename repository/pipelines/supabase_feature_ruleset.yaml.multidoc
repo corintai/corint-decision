@@ -12,15 +12,23 @@ pipeline:
   id: supabase_transaction_pipeline
   name: Supabase Transaction Risk Pipeline
   description: Transaction risk assessment using features calculated from Supabase PostgreSQL database
-  
+
+  # Entry point for the pipeline
+  entry: supabase_risk_step
+
   # Mandatory when condition - only process transaction events
   when:
-    event.type: transaction
-  
+    conditions:
+      - event.type == "transaction"
+
   steps:
     # Execute the transaction risk assessment ruleset
-    - include:
+    - step:
+        id: supabase_risk_step
+        name: Supabase Risk Assessment
+        type: ruleset
         ruleset: supabase_risk_assessment
+        next: end
 
 ---
 

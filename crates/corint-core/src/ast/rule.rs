@@ -42,10 +42,38 @@ pub struct RuleParams {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct WhenBlock {
     /// Event type filter (e.g., "login", "transaction")
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub event_type: Option<String>,
 
-    /// List of conditions that must be satisfied
-    pub conditions: Vec<Expression>,
+    /// Condition group (all/any/not) - new format
+    #[serde(flatten, skip_serializing_if = "Option::is_none")]
+    pub condition_group: Option<ConditionGroup>,
+
+    /// List of conditions (legacy format, for backward compatibility)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub conditions: Option<Vec<Expression>>,
+}
+
+/// Condition group with logical operators
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ConditionGroup {
+    /// All conditions must be true (AND)
+    All(Vec<Condition>),
+    /// At least one condition must be true (OR)
+    Any(Vec<Condition>),
+    /// Negation of a condition group
+    Not(Vec<Condition>),
+}
+
+/// A condition can be either an expression or a nested condition group
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum Condition {
+    /// A simple expression
+    Expression(Expression),
+    /// A nested condition group
+    Group(Box<ConditionGroup>),
 }
 
 impl Rule {
@@ -112,7 +140,8 @@ impl WhenBlock {
     pub fn new() -> Self {
         WhenBlock {
             event_type: None,
-            conditions: Vec::new(),
+            condition_group: None,
+            conditions: None,
         }
     }
 
@@ -122,16 +151,88 @@ impl WhenBlock {
         self
     }
 
-    /// Add a condition
+    /// Add a condition (legacy format)
     pub fn add_condition(mut self, condition: Expression) -> Self {
-        self.conditions.push(condition);
+        if let Some(ref mut conditions) = self.conditions {
+            conditions.push(condition);
+        } else {
+            self.conditions = Some(vec![condition]);
+        }
         self
     }
 
-    /// Add multiple conditions
+    /// Add multiple conditions (legacy format)
     pub fn with_conditions(mut self, conditions: Vec<Expression>) -> Self {
-        self.conditions = conditions;
+        self.conditions = Some(conditions);
         self
+    }
+
+    /// Set condition group (new format)
+    pub fn with_condition_group(mut self, group: ConditionGroup) -> Self {
+        self.condition_group = Some(group);
+        self
+    }
+
+    /// Get all conditions as a flat list (for backward compatibility)
+    pub fn get_conditions(&self) -> Vec<&Expression> {
+        let mut result = Vec::new();
+
+        // First try legacy format
+        if let Some(ref conditions) = self.conditions {
+            for expr in conditions {
+                result.push(expr);
+            }
+        }
+
+        // Then try new format
+        if let Some(ref group) = self.condition_group {
+            self.collect_expressions(group, &mut result);
+        }
+
+        result
+    }
+
+    /// Recursively collect all expressions from condition groups
+    fn collect_expressions<'a>(&self, group: &'a ConditionGroup, result: &mut Vec<&'a Expression>) {
+        let conditions = match group {
+            ConditionGroup::All(conds) | ConditionGroup::Any(conds) | ConditionGroup::Not(conds) => conds,
+        };
+
+        for condition in conditions {
+            match condition {
+                Condition::Expression(expr) => result.push(expr),
+                Condition::Group(nested_group) => self.collect_expressions(nested_group, result),
+            }
+        }
+    }
+}
+
+impl ConditionGroup {
+    /// Create a new "all" condition group
+    pub fn all(conditions: Vec<Condition>) -> Self {
+        ConditionGroup::All(conditions)
+    }
+
+    /// Create a new "any" condition group
+    pub fn any(conditions: Vec<Condition>) -> Self {
+        ConditionGroup::Any(conditions)
+    }
+
+    /// Create a new "not" condition group
+    pub fn not(conditions: Vec<Condition>) -> Self {
+        ConditionGroup::Not(conditions)
+    }
+}
+
+impl Condition {
+    /// Create a condition from an expression
+    pub fn from_expression(expr: Expression) -> Self {
+        Condition::Expression(expr)
+    }
+
+    /// Create a condition from a condition group
+    pub fn from_group(group: ConditionGroup) -> Self {
+        Condition::Group(Box::new(group))
     }
 }
 
@@ -193,7 +294,7 @@ mod tests {
             ));
 
         assert_eq!(when.event_type, Some("transaction".to_string()));
-        assert_eq!(when.conditions.len(), 2);
+        assert_eq!(when.conditions.as_ref().map_or(0, |c| c.len()), 2);
     }
 
     #[test]
@@ -238,7 +339,7 @@ mod tests {
 
         assert_eq!(rule.id, "high_risk_login");
         assert_eq!(rule.score, 80);
-        assert_eq!(rule.when.conditions.len(), 3);
+        assert_eq!(rule.when.conditions.as_ref().map_or(0, |c| c.len()), 3);
         assert_eq!(rule.when.event_type, Some("login".to_string()));
     }
 

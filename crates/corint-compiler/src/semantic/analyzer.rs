@@ -37,8 +37,10 @@ impl SemanticAnalyzer {
         }
 
         // Analyze all conditions
-        for condition in &rule.when.conditions {
-            self.analyze_expression(condition)?;
+        if let Some(ref conditions) = rule.when.conditions {
+            for condition in conditions {
+                self.analyze_expression(condition)?;
+            }
         }
 
         Ok(())
@@ -76,62 +78,24 @@ impl SemanticAnalyzer {
 
     /// Analyze a pipeline
     pub fn analyze_pipeline(&mut self, pipeline: &Pipeline) -> Result<()> {
-        // 1. Validate pipeline ID
-        if let Some(ref id) = pipeline.id {
-            if id.is_empty() {
-                return Err(CompileError::InvalidExpression(
-                    "Pipeline ID cannot be empty".to_string(),
-                ));
-            }
+        // Check if this is the new format (has entry field)
+        if !pipeline.entry.is_empty() {
+            // Use the new pipeline analyzer for new format
+            use crate::semantic::pipeline_analyzer::analyze_new_pipeline;
+            let _ = analyze_new_pipeline(pipeline)?;
+            // Warnings are collected but not returned as errors
+            return Ok(());
         }
 
-        // 2. Track all step IDs to check for duplicates
-        let mut step_ids = HashSet::new();
+        // Legacy format handling below
+        // NOTE: Legacy pipeline analysis is temporarily broken due to Pipeline AST changes
+        // The Pipeline struct now uses Vec<PipelineStep> instead of Vec<Step>
+        // This will be fixed in Task 5 when the pipeline compiler is updated
+        return Err(CompileError::UnsupportedFeature(
+            "Legacy pipeline format (without entry point) is temporarily unavailable due to AST changes. Please use new pipeline format with entry point, or wait for update in Task 5.".to_string()
+        ));
 
-        // 3. Track all output variables produced by steps
-        let mut produced_vars = HashSet::new();
-
-        // 4. Track all variables referenced in expressions
-        let mut referenced_vars = HashSet::new();
-
-        // 5. Analyze each step
-        for step in &pipeline.steps {
-            self.analyze_step(
-                step,
-                &mut step_ids,
-                &mut produced_vars,
-                &mut referenced_vars,
-            )?;
-        }
-
-        // 6. Check for undefined variable references
-        for var_ref in &referenced_vars {
-            // Allow references to:
-            // - Variables produced in the pipeline (features.*, etc.)
-            // - Event data fields (event.* or simple field names like "payment_amount")
-            // - Context variables (context.*)
-            let is_defined = produced_vars.contains(var_ref)
-                || var_ref.starts_with("event.")
-                || var_ref.starts_with("context.")
-                || var_ref.starts_with("features.")
-                || !var_ref.contains('.'); // Simple field names are event fields
-
-            if !is_defined {
-                return Err(CompileError::InvalidExpression(format!(
-                    "Variable '{}' is referenced but never defined in pipeline",
-                    var_ref
-                )));
-            }
-        }
-
-        // 7. Analyze when block conditions if present
-        if let Some(ref when_block) = pipeline.when {
-            for condition in &when_block.conditions {
-                self.analyze_expression(condition)?;
-            }
-        }
-
-        Ok(())
+        // Legacy analysis code removed - will be rewritten in Task 5 to support new PipelineStep format
     }
 
     /// Analyze a single pipeline step

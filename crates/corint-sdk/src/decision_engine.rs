@@ -375,9 +375,11 @@ impl DecisionEngine {
         }
 
         // Evaluate all conditions (AND logic)
-        for condition in &when.conditions {
-            if !Self::evaluate_expression(condition, event_data) {
-                return false; // Condition failed
+        if let Some(ref conditions) = when.conditions {
+            for condition in conditions {
+                if !Self::evaluate_expression(condition, event_data) {
+                    return false; // Condition failed
+                }
             }
         }
 
@@ -767,11 +769,13 @@ impl DecisionEngine {
         }
 
         // Evaluate all conditions (AND logic)
-        for condition in &when.conditions {
-            let (result, trace) = Self::evaluate_expression_with_trace(condition, event_data);
-            traces.push(trace);
-            if !result {
-                return (false, traces);
+        if let Some(ref conditions) = when.conditions {
+            for condition in conditions {
+                let (result, trace) = Self::evaluate_expression_with_trace(condition, event_data);
+                traces.push(trace);
+                if !result {
+                    return (false, traces);
+                }
             }
         }
 
@@ -1027,7 +1031,7 @@ impl DecisionEngine {
                     return Err(SdkError::InvalidRuleFile(format!(
                         "Pipeline '{}' in file '{}' is missing mandatory 'when' condition. \
                          All pipelines must specify when conditions to filter events.",
-                        pipeline.id.as_ref().unwrap_or(&"<unnamed>".to_string()),
+                        &pipeline.id,
                         path.display()
                     )));
                 }
@@ -1101,11 +1105,7 @@ impl DecisionEngine {
                 return Err(SdkError::InvalidRuleFile(format!(
                     "Pipeline '{}' from '{}' is missing mandatory 'when' condition. \
                      All pipelines must specify when conditions to filter events.",
-                    document
-                        .definition
-                        .id
-                        .as_ref()
-                        .unwrap_or(&"<unnamed>".to_string()),
+                    &document.definition.id,
                     id
                 )));
             }
@@ -1218,7 +1218,7 @@ impl DecisionEngine {
                         return Err(SdkError::InvalidRuleFile(format!(
                             "Pipeline '{}' from '{}' is missing mandatory 'when' condition. \
                          All pipelines must specify when conditions to filter events.",
-                            pipeline.id.as_ref().unwrap_or(&"<unnamed>".to_string()),
+                            &pipeline.id,
                             id
                         )));
                     }

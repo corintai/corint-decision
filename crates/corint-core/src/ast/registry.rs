@@ -82,14 +82,16 @@ mod tests {
                 "login_pipeline".to_string(),
                 WhenBlock {
                     event_type: Some("login".to_string()),
-                    conditions: vec![],
+                    condition_group: None,
+                    conditions: None,
                 },
             ))
             .add_entry(RegistryEntry::new(
                 "payment_pipeline".to_string(),
                 WhenBlock {
                     event_type: Some("payment".to_string()),
-                    conditions: vec![],
+                    condition_group: None,
+                    conditions: None,
                 },
             ));
 
@@ -103,17 +105,18 @@ mod tests {
             "payment_br_pipeline".to_string(),
             WhenBlock {
                 event_type: Some("payment".to_string()),
-                conditions: vec![Expression::binary(
+                condition_group: None,
+                conditions: Some(vec![Expression::binary(
                     Expression::field_access(vec!["geo".to_string(), "country".to_string()]),
                     Operator::Eq,
                     Expression::literal(Value::String("BR".to_string())),
-                )],
+                )]),
             },
         );
 
         assert_eq!(entry.pipeline, "payment_br_pipeline");
         assert_eq!(entry.when.event_type, Some("payment".to_string()));
-        assert_eq!(entry.when.conditions.len(), 1);
+        assert_eq!(entry.when.conditions.as_ref().map_or(0, |c| c.len()), 1);
     }
 
     #[test]
@@ -122,7 +125,8 @@ mod tests {
             "test_pipeline".to_string(),
             WhenBlock {
                 event_type: Some("test".to_string()),
-                conditions: vec![],
+                condition_group: None,
+                conditions: None,
             },
         ));
 

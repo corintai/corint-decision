@@ -3,7 +3,7 @@
 use anyhow::Result;
 use corint_repository::{FileSystemRepository, Repository};
 use corint_sdk::DecisionEngineBuilder;
-use tracing::{info, warn};
+use tracing::{error, info, warn};
 
 use crate::config::{DatabaseType, RepositoryType};
 
@@ -80,22 +80,37 @@ pub async fn load_rules_from_repository(
     info!("  Found {} pipelines", pipeline_ids.len());
 
     let pipeline_count = pipeline_ids.len();
+    let mut successful_count = 0;
+    let mut failed_count = 0;
+
     for pipeline_id in pipeline_ids {
         info!("  Loading pipeline: {}", pipeline_id);
 
-        let (_, content) = repo
-            .load_pipeline(&pipeline_id)
-            .await
-            .map_err(|e| anyhow::anyhow!("Failed to load pipeline {}: {}", pipeline_id, e))?;
-
-        // Add content directly to builder (no temporary files needed!)
-        builder = builder.add_rule_content(pipeline_id.clone(), content);
+        match repo.load_pipeline(&pipeline_id).await {
+            Ok((_, content)) => {
+                // Add content directly to builder (no temporary files needed!)
+                builder = builder.add_rule_content(pipeline_id.clone(), content);
+                successful_count += 1;
+            }
+            Err(e) => {
+                // Log error in standard format and continue loading other pipelines
+                error!("Failed to load pipeline {}: {}", pipeline_id, e);
+                failed_count += 1;
+            }
+        }
     }
 
-    info!(
-        "✓ Successfully loaded {} pipelines from repository",
-        pipeline_count
-    );
+    if failed_count > 0 {
+        warn!(
+            "✓ Loaded {}/{} pipelines successfully ({} failed)",
+            successful_count, pipeline_count, failed_count
+        );
+    } else {
+        info!(
+            "✓ Successfully loaded {} pipelines from repository",
+            pipeline_count
+        );
+    }
 
     // Load registry if available
     match repo.load_registry().await {

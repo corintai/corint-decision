@@ -3,8 +3,9 @@
 //! Compiles Rule AST nodes into IR programs.
 
 use super::expression_codegen::ExpressionCompiler;
-use crate::error::Result;
-use corint_core::ast::Rule;
+use crate::error::{CompileError, Result};
+use corint_core::ast::rule::{Condition, ConditionGroup};
+use corint_core::ast::{Rule, UnaryOperator};
 use corint_core::ir::{Instruction, Program, ProgramMetadata};
 
 /// Rule compiler
@@ -22,35 +23,32 @@ impl RuleCompiler {
             });
         }
 
-        // 2. Compile all conditions
-        // First, compile all condition expressions and calculate total instruction count
-        let mut condition_blocks = Vec::new();
-        for condition in &rule.when.conditions {
-            let condition_instructions = ExpressionCompiler::compile(condition)?;
-            condition_blocks.push(condition_instructions);
-        }
+        // 2. Compile conditions (support both old and new formats)
+        // Conditions produce a single boolean on the stack
+        let condition_instructions = if let Some(ref group) = rule.when.condition_group {
+            // New format: use condition groups (produces single boolean)
+            Self::compile_condition_group(group)?
+        } else if let Some(ref conditions) = rule.when.conditions {
+            // Legacy format: treat as implicit "all" (produces single boolean)
+            Self::compile_legacy_conditions_chained(conditions)?
+        } else {
+            // No conditions - always passes
+            Vec::new()
+        };
 
-        // Add conditions with correct jump offsets
-        for (idx, condition_instructions) in condition_blocks.iter().enumerate() {
-            instructions.extend(condition_instructions.clone());
+        // Add the condition instructions
+        if !condition_instructions.is_empty() {
+            instructions.extend(condition_instructions);
 
-            // Calculate how many instructions to skip if this condition is false:
-            // - All remaining condition blocks (each with its own JumpIfFalse)
-            // - SetScore instruction (1)
-            // - MarkRuleTriggered instruction (1)
-            // - Return instruction (1)
-            let mut remaining_instruction_count = 3; // SetScore + MarkRuleTriggered + Return
-
-            for remaining_block in &condition_blocks[idx + 1..] {
-                remaining_instruction_count += remaining_block.len() + 1; // +1 for JumpIfFalse
-            }
-
+            // 3. JumpIfFalse: skip AddScore and MarkRuleTriggered if condition is false
+            // Offset = 3 to skip over: JumpIfFalse itself counted, AddScore, MarkRuleTriggered
+            // Landing on Return
             instructions.push(Instruction::JumpIfFalse {
-                offset: remaining_instruction_count as isize,
+                offset: 3, // Skip AddScore + MarkRuleTriggered, land on Return
             });
         }
 
-        // 3. If all conditions passed, add the score (累加分数而不是设置分数)
+        // 4. If conditions passed (or no conditions), add the score
         instructions.push(Instruction::AddScore { value: rule.score });
 
         // 4. Mark this rule as triggered
@@ -68,30 +66,8 @@ impl RuleCompiler {
             metadata = metadata.with_description(desc.clone());
         }
 
-        // Store condition expressions as structured JSON in metadata for detailed tracing
-        // Each condition is stored as a JSON object with type, expression, and nested conditions
-        if !rule.when.conditions.is_empty() {
-            let conditions_json: Vec<serde_json::Value> = rule
-                .when
-                .conditions
-                .iter()
-                .map(|c| ExpressionCompiler::expression_to_json(c))
-                .collect();
-            // Store as JSON array string
-            if let Ok(json_str) = serde_json::to_string(&conditions_json) {
-                metadata.custom.insert("conditions_json".to_string(), json_str);
-            }
-            // Also keep the simple string format for backward compatibility
-            let condition_strs: Vec<String> = rule
-                .when
-                .conditions
-                .iter()
-                .map(|c| ExpressionCompiler::expression_to_string(c))
-                .collect();
-            metadata
-                .custom
-                .insert("conditions".to_string(), condition_strs.join(" && "));
-        }
+        // Store condition information in metadata
+        Self::store_condition_metadata(&rule.when, &mut metadata);
 
         // Store event type if specified
         if let Some(event_type) = &rule.when.event_type {
@@ -101,6 +77,169 @@ impl RuleCompiler {
         }
 
         Ok(Program::new(instructions, metadata))
+    }
+
+    /// Compile legacy format conditions (implicit AND) using BinaryOp::And chaining
+    /// Produces a single boolean on the stack
+    fn compile_legacy_conditions_chained(
+        conditions: &[corint_core::ast::Expression],
+    ) -> Result<Vec<Instruction>> {
+        let mut instructions = Vec::new();
+
+        // Handle empty conditions: no conditions means always true
+        if conditions.is_empty() {
+            return Ok(instructions);
+        }
+
+        // Compile each condition and chain with AND
+        for (i, condition) in conditions.iter().enumerate() {
+            let cond_instructions = ExpressionCompiler::compile(condition)?;
+            instructions.extend(cond_instructions);
+
+            // After first condition, AND with previous result
+            if i > 0 {
+                instructions.push(Instruction::BinaryOp {
+                    op: corint_core::ast::Operator::And,
+                });
+            }
+        }
+
+        Ok(instructions)
+    }
+
+    /// Compile a condition group (new format) - produces a single boolean on the stack
+    /// This version uses BinaryOp::And/Or chaining, which works correctly for nested groups
+    fn compile_condition_group(group: &ConditionGroup) -> Result<Vec<Instruction>> {
+        match group {
+            ConditionGroup::All(conditions) => Self::compile_all_conditions_chained(conditions),
+            ConditionGroup::Any(conditions) => Self::compile_any_conditions_chained(conditions),
+            ConditionGroup::Not(conditions) => Self::compile_not_conditions_chained(conditions),
+        }
+    }
+
+    /// Compile "all" conditions using BinaryOp::And chaining
+    /// Produces a single boolean on the stack
+    fn compile_all_conditions_chained(conditions: &[Condition]) -> Result<Vec<Instruction>> {
+        let mut instructions = Vec::new();
+
+        // Handle empty conditions: ALL of nothing is true
+        if conditions.is_empty() {
+            instructions.push(Instruction::LoadConst {
+                value: corint_core::Value::Bool(true),
+            });
+            return Ok(instructions);
+        }
+
+        // Compile each condition and chain with AND
+        for (i, condition) in conditions.iter().enumerate() {
+            let cond_instructions = Self::compile_condition(condition)?;
+            instructions.extend(cond_instructions);
+
+            // After first condition, AND with previous result
+            if i > 0 {
+                instructions.push(Instruction::BinaryOp {
+                    op: corint_core::ast::Operator::And,
+                });
+            }
+        }
+
+        Ok(instructions)
+    }
+
+    /// Compile "any" conditions using BinaryOp::Or chaining
+    /// Produces a single boolean on the stack
+    fn compile_any_conditions_chained(conditions: &[Condition]) -> Result<Vec<Instruction>> {
+        let mut instructions = Vec::new();
+
+        // Handle empty conditions: ANY of nothing is false
+        if conditions.is_empty() {
+            instructions.push(Instruction::LoadConst {
+                value: corint_core::Value::Bool(false),
+            });
+            return Ok(instructions);
+        }
+
+        // Compile each condition and chain with OR
+        for (i, condition) in conditions.iter().enumerate() {
+            let cond_instructions = Self::compile_condition(condition)?;
+            instructions.extend(cond_instructions);
+
+            // After first condition, OR with previous result
+            if i > 0 {
+                instructions.push(Instruction::BinaryOp {
+                    op: corint_core::ast::Operator::Or,
+                });
+            }
+        }
+
+        Ok(instructions)
+    }
+
+    /// Compile "not" conditions (negation)
+    /// Produces a single boolean on the stack
+    fn compile_not_conditions_chained(conditions: &[Condition]) -> Result<Vec<Instruction>> {
+        let mut instructions = Vec::new();
+
+        if conditions.len() == 1 {
+            // Single condition: compile and negate
+            let cond_instructions = Self::compile_condition(&conditions[0])?;
+            instructions.extend(cond_instructions);
+        } else {
+            // Multiple conditions: treat as implicit AND, then negate
+            let all_cond_instructions = Self::compile_all_conditions_chained(conditions)?;
+            instructions.extend(all_cond_instructions);
+        }
+
+        // Negate the result
+        instructions.push(Instruction::UnaryOp {
+            op: UnaryOperator::Not,
+        });
+
+        Ok(instructions)
+    }
+
+    /// Compile a single condition (expression or nested group)
+    /// Produces a single boolean on the stack
+    fn compile_condition(condition: &Condition) -> Result<Vec<Instruction>> {
+        match condition {
+            Condition::Expression(expr) => ExpressionCompiler::compile(expr),
+            Condition::Group(group) => Self::compile_condition_group(group),
+        }
+    }
+
+    /// Store condition metadata for tracing
+    fn store_condition_metadata(
+        when: &corint_core::ast::WhenBlock,
+        metadata: &mut ProgramMetadata,
+    ) {
+        // For legacy format
+        if let Some(ref conditions) = when.conditions {
+            if !conditions.is_empty() {
+                let conditions_json: Vec<serde_json::Value> = conditions
+                    .iter()
+                    .map(|c| ExpressionCompiler::expression_to_json(c))
+                    .collect();
+                if let Ok(json_str) = serde_json::to_string(&conditions_json) {
+                    metadata.custom.insert("conditions_json".to_string(), json_str);
+                }
+                let condition_strs: Vec<String> = conditions
+                    .iter()
+                    .map(|c| ExpressionCompiler::expression_to_string(c))
+                    .collect();
+                metadata
+                    .custom
+                    .insert("conditions".to_string(), condition_strs.join(" && "));
+            }
+        }
+
+        // For new format
+        if let Some(ref group) = when.condition_group {
+            if let Ok(json_str) = serde_json::to_string(group) {
+                metadata
+                    .custom
+                    .insert("condition_group_json".to_string(), json_str);
+            }
+        }
     }
 }
 

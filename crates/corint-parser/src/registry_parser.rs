@@ -146,7 +146,12 @@ impl RegistryParser {
 
         Ok(WhenBlock {
             event_type,
-            conditions,
+            condition_group: None,
+            conditions: if conditions.is_empty() {
+                None
+            } else {
+                Some(conditions)
+            },
         })
     }
 }

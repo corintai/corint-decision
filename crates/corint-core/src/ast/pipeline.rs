@@ -1,36 +1,271 @@
 //! Pipeline AST definitions
 //!
 //! A Pipeline orchestrates the decision flow through multiple steps,
-//! including feature extraction, LLM reasoning, service calls, and rulesets.
+//! following the mypipeline.yml design specification.
+//!
+//! Key features:
+//! - Explicit entry point for DAG compilation
+//! - Unified Step structure with type-specific fields
+//! - Router step for pure conditional routing
+//! - Routes with when conditions (consistent with registry format)
+//! - Convention over Configuration for outputs
 
 use crate::ast::Expression;
+use crate::ast::rule::WhenBlock;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 /// A pipeline defines a sequence of processing steps
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Pipeline {
-    /// Optional unique identifier for the pipeline
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub id: Option<String>,
+    /// Unique identifier for the pipeline (required)
+    pub id: String,
 
-    /// Optional human-readable name
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub name: Option<String>,
+    /// Human-readable name (required)
+    pub name: String,
 
     /// Optional description
     #[serde(skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
 
+    /// Optional version (semver format)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub version: Option<String>,
+
+    /// Explicit entry point - must match a step.id (required for DAG compilation)
+    pub entry: String,
+
     /// Optional when condition - pipeline only executes if this matches
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub when: Option<super::rule::WhenBlock>,
+    pub when: Option<WhenBlock>,
 
-    /// The processing steps in execution order
-    pub steps: Vec<Step>,
+    /// The processing steps (required, non-empty)
+    pub steps: Vec<PipelineStep>,
 }
 
-/// A single step in the pipeline
+/// A single step in the pipeline (unified structure)
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct PipelineStep {
+    /// Step identifier (required, unique within pipeline, snake_case)
+    pub id: String,
+
+    /// Human-readable name (required)
+    pub name: String,
+
+    /// Step type (required)
+    #[serde(rename = "type")]
+    pub step_type: String,
+
+    /// Conditional routes (optional)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub routes: Option<Vec<Route>>,
+
+    /// Default route if no condition matches (optional)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub default: Option<String>,
+
+    /// Unconditional next step (optional)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub next: Option<StepNext>,
+
+    /// Step-level when condition (optional, for cost control)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub when: Option<WhenBlock>,
+
+    /// Type-specific fields (flattened)
+    #[serde(flatten)]
+    pub details: StepDetails,
+}
+
+/// Next step reference
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum StepNext {
+    /// Reference to another step by ID
+    StepId(String),
+}
+
+/// Route with condition (consistent with registry format: target outside, condition inside)
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Route {
+    /// Target step id or "end"
+    pub next: String,
+
+    /// Condition for this route
+    pub when: WhenBlock,
+}
+
+/// Type-specific step details
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum StepDetails {
+    /// Router step - pure routing, no computation
+    Router {},
+
+    /// Function step - pure computation
+    Function {
+        /// Function name
+        function: String,
+        /// Parameters
+        #[serde(skip_serializing_if = "Option::is_none")]
+        params: Option<HashMap<String, Expression>>,
+    },
+
+    /// Rule step - execute single rule
+    Rule {
+        /// Rule ID
+        rule: String,
+    },
+
+    /// Ruleset step - execute rule set
+    Ruleset {
+        /// Ruleset ID
+        ruleset: String,
+    },
+
+    /// Pipeline step - call sub-pipeline
+    SubPipeline {
+        /// Pipeline ID
+        #[serde(rename = "pipeline")]
+        pipeline_id: String,
+    },
+
+    /// Service step - internal service call
+    Service {
+        /// Service name
+        service: String,
+        /// Optional query/operation
+        #[serde(skip_serializing_if = "Option::is_none")]
+        query: Option<String>,
+        /// Parameters
+        #[serde(skip_serializing_if = "Option::is_none")]
+        params: Option<HashMap<String, Expression>>,
+        /// Output variable (optional, Convention: service.<name>)
+        #[serde(skip_serializing_if = "Option::is_none")]
+        output: Option<String>,
+    },
+
+    /// API step - external API call
+    Api {
+        /// API target (single, any, or all)
+        #[serde(flatten)]
+        api_target: ApiTarget,
+        /// Optional endpoint
+        #[serde(skip_serializing_if = "Option::is_none")]
+        endpoint: Option<String>,
+        /// Parameters
+        #[serde(skip_serializing_if = "Option::is_none")]
+        params: Option<HashMap<String, Expression>>,
+        /// Output variable (optional, Convention: api.<name>)
+        #[serde(skip_serializing_if = "Option::is_none")]
+        output: Option<String>,
+        /// Timeout in seconds (optional, for 'all' mode aggregation)
+        #[serde(skip_serializing_if = "Option::is_none")]
+        timeout: Option<u64>,
+        /// Error handling for 'all' mode (optional)
+        #[serde(skip_serializing_if = "Option::is_none")]
+        on_error: Option<String>,
+        /// Minimum successful calls for 'all' mode (optional)
+        #[serde(skip_serializing_if = "Option::is_none")]
+        min_success: Option<usize>,
+    },
+
+    /// Trigger step - external action (MQ, Webhook, notification)
+    Trigger {
+        /// Target service/endpoint
+        target: String,
+        /// Parameters
+        #[serde(skip_serializing_if = "Option::is_none")]
+        params: Option<HashMap<String, Expression>>,
+    },
+
+    /// Legacy/compatibility steps
+    Extract {
+        /// Feature definitions
+        #[serde(skip_serializing_if = "Option::is_none")]
+        features: Option<Vec<FeatureDefinition>>,
+    },
+
+    Reason {
+        /// LLM provider
+        #[serde(skip_serializing_if = "Option::is_none")]
+        provider: Option<String>,
+        /// Model name
+        #[serde(skip_serializing_if = "Option::is_none")]
+        model: Option<String>,
+        /// Prompt template
+        #[serde(skip_serializing_if = "Option::is_none")]
+        prompt: Option<PromptTemplate>,
+        /// Output schema
+        #[serde(skip_serializing_if = "Option::is_none")]
+        output_schema: Option<Schema>,
+    },
+
+    /// Catch-all for unknown step types
+    Unknown {},
+}
+
+/// API target specification (single, any, or all)
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum ApiTarget {
+    /// Single API
+    Single {
+        /// API identifier
+        api: String,
+    },
+    /// Any mode - try in sequence, use first success (fallback/degradation)
+    Any {
+        /// List of APIs to try
+        any: Vec<String>,
+    },
+    /// All mode - parallel execution, wait for all (aggregation)
+    All {
+        /// List of APIs to call
+        all: Vec<String>,
+    },
+}
+
+/// Feature definition for extraction
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct FeatureDefinition {
+    /// Feature name
+    pub name: String,
+    /// Expression to calculate the feature value
+    pub value: Expression,
+}
+
+/// Prompt template for LLM reasoning
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct PromptTemplate {
+    /// Template string with placeholders
+    pub template: String,
+}
+
+/// Schema definition for structured data
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Schema {
+    /// Schema type (e.g., "object")
+    #[serde(rename = "type")]
+    pub schema_type: String,
+    /// Properties for object schemas
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub properties: Option<HashMap<String, SchemaProperty>>,
+}
+
+/// Property in a schema
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SchemaProperty {
+    /// Property type (e.g., "string", "number", "boolean")
+    #[serde(rename = "type")]
+    pub property_type: String,
+    /// Optional description
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+}
+
+// Legacy types for backward compatibility
+/// A single step in the pipeline (legacy enum - kept for backward compatibility)
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "lowercase")]
 pub enum Step {
@@ -113,44 +348,6 @@ pub enum Step {
     },
 }
 
-/// Feature definition for extraction
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct FeatureDefinition {
-    /// Feature name
-    pub name: String,
-    /// Expression to calculate the feature value
-    pub value: Expression,
-}
-
-/// Prompt template for LLM reasoning
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct PromptTemplate {
-    /// Template string with placeholders
-    pub template: String,
-}
-
-/// Schema definition for structured data
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct Schema {
-    /// Schema type (e.g., "object")
-    #[serde(rename = "type")]
-    pub schema_type: String,
-    /// Properties for object schemas
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub properties: Option<HashMap<String, SchemaProperty>>,
-}
-
-/// Property in a schema
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct SchemaProperty {
-    /// Property type (e.g., "string", "number", "boolean")
-    #[serde(rename = "type")]
-    pub property_type: String,
-    /// Optional description
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub description: Option<String>,
-}
-
 /// A conditional branch in the pipeline
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Branch {
@@ -199,27 +396,17 @@ pub enum ErrorAction {
 }
 
 impl Pipeline {
-    /// Create a new empty pipeline
-    pub fn new() -> Self {
+    /// Create a new pipeline with required fields
+    pub fn new(id: String, name: String, entry: String) -> Self {
         Self {
-            id: None,
-            name: None,
+            id,
+            name,
             description: None,
+            version: None,
+            entry,
             when: None,
             steps: Vec::new(),
         }
-    }
-
-    /// Set the pipeline ID
-    pub fn with_id(mut self, id: String) -> Self {
-        self.id = Some(id);
-        self
-    }
-
-    /// Set the pipeline name
-    pub fn with_name(mut self, name: String) -> Self {
-        self.name = Some(name);
-        self
     }
 
     /// Set the pipeline description
@@ -228,28 +415,105 @@ impl Pipeline {
         self
     }
 
+    /// Set the pipeline version
+    pub fn with_version(mut self, version: String) -> Self {
+        self.version = Some(version);
+        self
+    }
+
     /// Set the when condition
-    pub fn with_when(mut self, when: super::rule::WhenBlock) -> Self {
+    pub fn with_when(mut self, when: WhenBlock) -> Self {
         self.when = Some(when);
         self
     }
 
     /// Add a step to the pipeline
-    pub fn add_step(mut self, step: Step) -> Self {
+    pub fn add_step(mut self, step: PipelineStep) -> Self {
         self.steps.push(step);
         self
     }
 
     /// Add multiple steps
-    pub fn with_steps(mut self, steps: Vec<Step>) -> Self {
+    pub fn with_steps(mut self, steps: Vec<PipelineStep>) -> Self {
         self.steps = steps;
         self
     }
 }
 
-impl Default for Pipeline {
-    fn default() -> Self {
-        Self::new()
+impl PipelineStep {
+    /// Create a router step
+    pub fn router(id: String, name: String) -> Self {
+        Self {
+            id,
+            name,
+            step_type: "router".to_string(),
+            routes: None,
+            default: None,
+            next: None,
+            when: None,
+            details: StepDetails::Router {},
+        }
+    }
+
+    /// Create an API step
+    pub fn api(id: String, name: String, api: String) -> Self {
+        Self {
+            id,
+            name,
+            step_type: "api".to_string(),
+            routes: None,
+            default: None,
+            next: None,
+            when: None,
+            details: StepDetails::Api {
+                api_target: ApiTarget::Single { api },
+                endpoint: None,
+                params: None,
+                output: None,
+                timeout: None,
+                on_error: None,
+                min_success: None,
+            },
+        }
+    }
+
+    /// Create a ruleset step
+    pub fn ruleset(id: String, name: String, ruleset: String) -> Self {
+        Self {
+            id,
+            name,
+            step_type: "ruleset".to_string(),
+            routes: None,
+            default: None,
+            next: None,
+            when: None,
+            details: StepDetails::Ruleset { ruleset },
+        }
+    }
+
+    /// Add routes to the step
+    pub fn with_routes(mut self, routes: Vec<Route>) -> Self {
+        self.routes = Some(routes);
+        self
+    }
+
+    /// Set default route
+    pub fn with_default(mut self, default: String) -> Self {
+        self.default = Some(default);
+        self
+    }
+
+    /// Set next step
+    pub fn with_next(mut self, next: String) -> Self {
+        self.next = Some(StepNext::StepId(next));
+        self
+    }
+}
+
+impl Route {
+    /// Create a new route
+    pub fn new(next: String, when: WhenBlock) -> Self {
+        Self { next, when }
     }
 }
 
@@ -331,284 +595,179 @@ impl Branch {
 mod tests {
     use super::*;
     use crate::ast::{Expression, Operator};
+    use crate::ast::rule::{ConditionGroup, Condition};
     use crate::Value;
 
     #[test]
     fn test_pipeline_creation() {
-        let pipeline = Pipeline::new()
-            .add_step(Step::Extract {
-                id: "extract_1".to_string(),
-                features: vec![],
-            })
-            .add_step(Step::Include {
-                ruleset: "fraud_rules".to_string(),
-            });
+        let pipeline = Pipeline::new(
+            "test_pipeline".to_string(),
+            "Test Pipeline".to_string(),
+            "step1".to_string(),
+        )
+        .with_version("1.0.0".to_string())
+        .add_step(PipelineStep::router("step1".to_string(), "Router Step".to_string()));
 
-        assert_eq!(pipeline.steps.len(), 2);
+        assert_eq!(pipeline.id, "test_pipeline");
+        assert_eq!(pipeline.name, "Test Pipeline");
+        assert_eq!(pipeline.entry, "step1");
+        assert_eq!(pipeline.version, Some("1.0.0".to_string()));
+        assert_eq!(pipeline.steps.len(), 1);
     }
 
     #[test]
-    fn test_extract_step() {
-        let feature = FeatureDefinition::new(
-            "login_count".to_string(),
-            Expression::field_access(vec!["user".to_string(), "login_count".to_string()]),
-        );
-
-        let step = Step::Extract {
-            id: "extract_features".to_string(),
-            features: vec![feature],
+    fn test_router_step() {
+        let when_block = WhenBlock {
+            event_type: None,
+            condition_group: Some(ConditionGroup::All(vec![
+                Condition::Expression(Expression::binary(
+                    Expression::field_access(vec!["amount".to_string()]),
+                    Operator::Gt,
+                    Expression::literal(Value::Number(1000.0)),
+                )),
+            ])),
+            conditions: None,
         };
 
-        if let Step::Extract { id, features } = step {
-            assert_eq!(id, "extract_features");
-            assert_eq!(features.len(), 1);
-            assert_eq!(features[0].name, "login_count");
-        } else {
-            panic!("Expected Extract step");
-        }
+        let route = Route::new("high_value".to_string(), when_block);
+
+        let step = PipelineStep::router("router1".to_string(), "Amount Router".to_string())
+            .with_routes(vec![route])
+            .with_default("standard".to_string());
+
+        assert_eq!(step.id, "router1");
+        assert_eq!(step.step_type, "router");
+        assert!(step.routes.is_some());
+        assert_eq!(step.default, Some("standard".to_string()));
     }
 
     #[test]
-    fn test_reason_step() {
-        let schema = Schema::object()
-            .add_property("is_fraud".to_string(), SchemaProperty::boolean())
-            .add_property(
-                "confidence".to_string(),
-                SchemaProperty::number().with_description("Confidence score".to_string()),
-            );
+    fn test_api_step_single() {
+        let step = PipelineStep::api(
+            "get_ip_info".to_string(),
+            "Get IP Geolocation".to_string(),
+            "ip_geolocation".to_string(),
+        )
+        .with_next("next_step".to_string());
 
-        let step = Step::Reason {
-            id: "llm_analysis".to_string(),
-            provider: "openai".to_string(),
-            model: "gpt-4".to_string(),
-            prompt: PromptTemplate::new("Analyze this transaction: {{event.data}}".to_string()),
-            output_schema: Some(schema),
-        };
-
-        if let Step::Reason {
-            id,
-            provider,
-            model,
-            prompt,
-            output_schema,
-        } = step
-        {
-            assert_eq!(id, "llm_analysis");
-            assert_eq!(provider, "openai");
-            assert_eq!(model, "gpt-4");
-            assert!(prompt.template.contains("{{event.data}}"));
-            assert!(output_schema.is_some());
-
-            let schema = output_schema.unwrap();
-            assert_eq!(schema.schema_type, "object");
-            assert_eq!(schema.properties.unwrap().len(), 2);
-        } else {
-            panic!("Expected Reason step");
-        }
+        assert_eq!(step.id, "get_ip_info");
+        assert_eq!(step.step_type, "api");
+        assert!(matches!(step.next, Some(StepNext::StepId(_))));
     }
 
     #[test]
-    fn test_service_step() {
-        let mut params = HashMap::new();
-        params.insert(
-            "user_id".to_string(),
-            Expression::field_access(vec!["user".to_string(), "id".to_string()]),
-        );
-
-        let step = Step::Service {
-            id: "check_blacklist".to_string(),
-            service: "blacklist_service".to_string(),
-            operation: "check".to_string(),
-            params,
-            output: Some("context.result".to_string()),
+    fn test_api_step_any_mode() {
+        let details = StepDetails::Api {
+            api_target: ApiTarget::Any {
+                any: vec!["maxmind".to_string(), "ipinfo".to_string()],
+            },
+            endpoint: None,
+            params: None,
+            output: None,
+            timeout: None,
+            on_error: None,
+            min_success: None,
         };
 
-        if let Step::Service {
-            id,
-            service,
-            operation,
-            params,
-            output,
-        } = step
-        {
-            assert_eq!(id, "check_blacklist");
-            assert_eq!(service, "blacklist_service");
-            assert_eq!(operation, "check");
-            assert_eq!(params.len(), 1);
-            assert_eq!(output, Some("context.result".to_string()));
-        } else {
-            panic!("Expected Service step");
-        }
-    }
-
-    #[test]
-    fn test_api_step() {
-        let mut params = HashMap::new();
-        params.insert(
-            "ip".to_string(),
-            Expression::field_access(vec!["event".to_string(), "ip_address".to_string()]),
-        );
-
-        let step = Step::Api {
-            id: "ip_check".to_string(),
-            api: "ipinfo".to_string(),
-            endpoint: "ip_lookup".to_string(),
-            params,
-            output: "context.ip_info".to_string(),
-            timeout: Some(3000),
-            on_error: Some(ErrorHandling {
-                action: ErrorAction::Fallback,
-                fallback: Some(serde_json::json!({"country_code": "US"})),
-            }),
+        let step = PipelineStep {
+            id: "ip_lookup".to_string(),
+            name: "IP Lookup with Fallback".to_string(),
+            step_type: "api".to_string(),
+            routes: None,
+            default: None,
+            next: None,
+            when: None,
+            details,
         };
 
-        if let Step::Api {
-            id,
-            api,
-            endpoint,
-            params,
-            output,
-            timeout,
-            on_error,
-        } = step
-        {
-            assert_eq!(id, "ip_check");
-            assert_eq!(api, "ipinfo");
-            assert_eq!(endpoint, "ip_lookup");
-            assert_eq!(params.len(), 1);
-            assert_eq!(output, "context.ip_info");
-            assert_eq!(timeout, Some(3000));
-            assert!(on_error.is_some());
+        if let StepDetails::Api { api_target, .. } = &step.details {
+            assert!(matches!(api_target, ApiTarget::Any { .. }));
         } else {
             panic!("Expected Api step");
         }
     }
 
     #[test]
-    fn test_include_step() {
-        let step = Step::Include {
-            ruleset: "account_takeover".to_string(),
-        };
-
-        if let Step::Include { ruleset } = step {
-            assert_eq!(ruleset, "account_takeover");
-        } else {
-            panic!("Expected Include step");
-        }
-    }
-
-    #[test]
-    fn test_branch_step() {
-        let condition = Expression::binary(
-            Expression::field_access(vec!["user".to_string(), "age".to_string()]),
-            Operator::Gt,
-            Expression::literal(Value::Number(18.0)),
-        );
-
-        let branch = Branch::new(
-            condition.clone(),
-            vec![Step::Include {
-                ruleset: "adult_rules".to_string(),
-            }],
-        );
-
-        let step = Step::Branch {
-            branches: vec![branch],
-        };
-
-        if let Step::Branch { branches } = step {
-            assert_eq!(branches.len(), 1);
-            assert!(branches[0].condition == condition);
-            assert_eq!(branches[0].pipeline.len(), 1);
-        } else {
-            panic!("Expected Branch step");
-        }
-    }
-
-    #[test]
-    fn test_parallel_step() {
-        let step = Step::Parallel {
-            steps: vec![
-                Step::Include {
-                    ruleset: "rules_1".to_string(),
-                },
-                Step::Include {
-                    ruleset: "rules_2".to_string(),
-                },
-            ],
-            merge: MergeStrategy::All,
-        };
-
-        if let Step::Parallel { steps, merge } = step {
-            assert_eq!(steps.len(), 2);
-            assert_eq!(merge, MergeStrategy::All);
-        } else {
-            panic!("Expected Parallel step");
-        }
-    }
-
-    #[test]
-    fn test_merge_strategies() {
-        assert_eq!(MergeStrategy::All, MergeStrategy::All);
-        assert_ne!(MergeStrategy::All, MergeStrategy::Any);
-        assert_ne!(MergeStrategy::Fastest, MergeStrategy::Majority);
-    }
-
-    #[test]
-    fn test_complete_pipeline() {
-        // Create a realistic pipeline
-        let pipeline = Pipeline::new()
-            // Step 1: Extract features
-            .add_step(Step::Extract {
-                id: "extract".to_string(),
-                features: vec![
-                    FeatureDefinition::new(
-                        "login_count".to_string(),
-                        Expression::field_access(vec!["user".to_string(), "logins".to_string()]),
-                    ),
-                    FeatureDefinition::new(
-                        "device_count".to_string(),
-                        Expression::field_access(vec!["user".to_string(), "devices".to_string()]),
-                    ),
+    fn test_api_step_all_mode() {
+        let details = StepDetails::Api {
+            api_target: ApiTarget::All {
+                all: vec![
+                    "credit_bureau".to_string(),
+                    "fraud_detection".to_string(),
                 ],
-            })
-            // Step 2: Run fraud detection rules
-            .add_step(Step::Include {
-                ruleset: "fraud_detection".to_string(),
-            })
-            // Step 3: If score is high, use LLM for analysis
-            .add_step(Step::Branch {
-                branches: vec![Branch::new(
-                    Expression::binary(
-                        Expression::field_access(vec!["total_score".to_string()]),
-                        Operator::Gt,
-                        Expression::literal(Value::Number(100.0)),
-                    ),
-                    vec![Step::Reason {
-                        id: "llm_check".to_string(),
-                        provider: "openai".to_string(),
-                        model: "gpt-4".to_string(),
-                        prompt: PromptTemplate::new("Analyze fraud risk".to_string()),
-                        output_schema: None,
-                    }],
-                )],
-            });
+            },
+            endpoint: None,
+            params: None,
+            output: None,
+            timeout: Some(5),
+            on_error: Some("partial".to_string()),
+            min_success: Some(1),
+        };
 
-        assert_eq!(pipeline.steps.len(), 3);
+        let step = PipelineStep {
+            id: "external_checks".to_string(),
+            name: "Parallel External Checks".to_string(),
+            step_type: "api".to_string(),
+            routes: None,
+            default: None,
+            next: None,
+            when: None,
+            details,
+        };
+
+        if let StepDetails::Api {
+            api_target,
+            timeout,
+            on_error,
+            min_success,
+            ..
+        } = &step.details
+        {
+            assert!(matches!(api_target, ApiTarget::All { .. }));
+            assert_eq!(*timeout, Some(5));
+            assert_eq!(on_error.as_deref(), Some("partial"));
+            assert_eq!(*min_success, Some(1));
+        } else {
+            panic!("Expected Api step");
+        }
+    }
+
+    #[test]
+    fn test_ruleset_step() {
+        let step = PipelineStep::ruleset(
+            "fraud_rules".to_string(),
+            "Fraud Detection Rules".to_string(),
+            "payment_fraud".to_string(),
+        )
+        .with_next("decision".to_string());
+
+        assert_eq!(step.id, "fraud_rules");
+        assert_eq!(step.step_type, "ruleset");
+
+        if let StepDetails::Ruleset { ruleset } = &step.details {
+            assert_eq!(ruleset, "payment_fraud");
+        } else {
+            panic!("Expected Ruleset step");
+        }
     }
 
     #[test]
     fn test_pipeline_serde() {
-        let pipeline = Pipeline::new().add_step(Step::Include {
-            ruleset: "test_rules".to_string(),
-        });
+        let pipeline = Pipeline::new(
+            "test".to_string(),
+            "Test".to_string(),
+            "step1".to_string(),
+        )
+        .add_step(PipelineStep::router("step1".to_string(), "Router".to_string()));
 
         // Serialize to JSON
         let json = serde_json::to_string(&pipeline).unwrap();
-        assert!(json.contains("\"ruleset\":\"test_rules\""));
+        assert!(json.contains("\"id\":\"test\""));
+        assert!(json.contains("\"entry\":\"step1\""));
 
         // Deserialize back
         let deserialized: Pipeline = serde_json::from_str(&json).unwrap();
-        assert_eq!(deserialized, pipeline);
+        assert_eq!(deserialized.id, pipeline.id);
+        assert_eq!(deserialized.entry, pipeline.entry);
     }
 }

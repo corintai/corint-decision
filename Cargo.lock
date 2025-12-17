@@ -391,6 +391,7 @@ name = "corint-core"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "log",
  "serde",
  "serde_json",
  "thiserror 1.0.69",
@@ -402,6 +403,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "corint-core",
+ "log",
  "serde",
  "serde_json",
  "serde_yaml",

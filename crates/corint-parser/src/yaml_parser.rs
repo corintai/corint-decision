@@ -259,6 +259,135 @@ impl YamlParser {
         }
         Ok(())
     }
+
+    /// Validate fields in a YAML object against a list of known fields
+    /// Returns warnings for unknown fields with suggestions
+    pub fn validate_fields(
+        obj: &YamlValue,
+        known_fields: &[&str],
+        context: &str,
+    ) -> Vec<String> {
+        let mut warnings = Vec::new();
+
+        if let Some(mapping) = obj.as_mapping() {
+            for (key, _) in mapping {
+                if let Some(field_name) = key.as_str() {
+                    if !known_fields.contains(&field_name) {
+                        // Check if this is a common typo
+                        let typo_correction = FIELD_CORRECTIONS
+                            .iter()
+                            .find(|(typo, _)| *typo == field_name)
+                            .map(|(_, correct)| *correct);
+
+                        // Try fuzzy matching if no exact typo match
+                        let suggestion = if let Some(correct) = typo_correction {
+                            format!(" Did you mean '{}'?", correct)
+                        } else if let Some(similar) = Self::find_similar_field(field_name, known_fields) {
+                            format!(" Did you mean '{}'?", similar)
+                        } else {
+                            String::new()
+                        };
+
+                        warnings.push(format!(
+                            "Unknown field '{}' in {}.{}",
+                            field_name, context, suggestion
+                        ));
+                    }
+                }
+            }
+        }
+
+        warnings
+    }
+
+    /// Validate fields strictly - returns error if unknown fields found
+    pub fn validate_fields_strict(
+        obj: &YamlValue,
+        known_fields: &[&str],
+        context: &str,
+    ) -> Result<()> {
+        let errors = Self::validate_fields(obj, known_fields, context);
+
+        if !errors.is_empty() {
+            // Log each error using the log crate
+            for error in &errors {
+                log::error!("Field validation error: {}", error);
+            }
+
+            return Err(ParseError::InvalidValue {
+                field: context.to_string(),
+                message: errors.join("; "),
+            });
+        }
+
+        Ok(())
+    }
+
+    /// Find similar field names using Levenshtein distance
+    fn find_similar_field(field: &str, known_fields: &[&str]) -> Option<String> {
+        known_fields
+            .iter()
+            .filter(|known| levenshtein_distance(field, known) <= 2)
+            .min_by_key(|known| levenshtein_distance(field, known))
+            .map(|s| s.to_string())
+    }
+}
+
+/// Common field name typos and their corrections
+const FIELD_CORRECTIONS: &[(&str, &str)] = &[
+    ("output_var", "output"),
+    ("outputs", "output"),
+    ("param", "params"),
+    ("parameter", "params"),
+    ("end_point", "endpoint"),
+    ("api_name", "api"),
+    ("rule_set", "ruleset"),
+    ("pipe_line", "pipeline"),
+    ("step_type", "type"),
+    ("step_id", "id"),
+    ("step_name", "name"),
+];
+
+/// Calculate Levenshtein distance between two strings
+fn levenshtein_distance(s1: &str, s2: &str) -> usize {
+    let len1 = s1.len();
+    let len2 = s2.len();
+
+    if len1 == 0 {
+        return len2;
+    }
+    if len2 == 0 {
+        return len1;
+    }
+
+    let mut matrix = vec![vec![0; len2 + 1]; len1 + 1];
+
+    // Initialize first column and row
+    for i in 0..=len1 {
+        matrix[i][0] = i;
+    }
+    for j in 0..=len2 {
+        matrix[0][j] = j;
+    }
+
+    // Fill in the matrix
+    let s1_chars: Vec<char> = s1.chars().collect();
+    let s2_chars: Vec<char> = s2.chars().collect();
+
+    for (i, &c1) in s1_chars.iter().enumerate() {
+        for (j, &c2) in s2_chars.iter().enumerate() {
+            let cost = if c1 == c2 { 0 } else { 1 };
+            matrix[i + 1][j + 1] = std::cmp::min(
+                std::cmp::min(
+                    matrix[i][j + 1] + 1,      // deletion
+                    matrix[i + 1][j] + 1,      // insertion
+                ),
+                matrix[i][j] + cost,           // substitution
+            );
+        }
+    }
+
+    matrix[len1][len2]
 }
 
 #[cfg(test)]

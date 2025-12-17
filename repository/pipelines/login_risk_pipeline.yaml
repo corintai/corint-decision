@@ -27,16 +27,22 @@ pipeline:
     - Password Security
     - Failed Login Monitoring
 
+  # Entry point for the pipeline
+  entry: login_risk_check
+
   # Pipeline only executes for login-related events
-  when:
-    event.type: login
+  when: event.type == "login"
 
   steps:
     # ==========================================
     # Step 1: Execute Login Risk Ruleset
     # ==========================================
-    - include:
+    - step:
+        id: login_risk_check
+        name: Login Risk Assessment
+        type: ruleset
         ruleset: login_risk
+        next: end
 
   metadata:
     version: "1.0.0"

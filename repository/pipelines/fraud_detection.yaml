@@ -14,11 +14,19 @@ pipeline:
   name: Fraud Detection Pipeline
   description: Production-grade fraud detection for transaction events
 
+  # Entry point for the pipeline
+  entry: fraud_detection_step
+
   # Pipeline only executes for transaction events
   when:
-    event.type: transaction
+    all:
+      - event.type == "transaction"
 
   steps:
     # Execute the fraud detection ruleset
-    - include:
+    - step:
+        id: fraud_detection_step
+        name: Fraud Detection Core
+        type: ruleset
         ruleset: fraud_detection_core
+        next: end

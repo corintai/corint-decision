@@ -399,7 +399,8 @@ impl DslValidator {
         // Extract references from steps
         let mut ruleset_refs = Vec::new();
         for step in &pipeline.steps {
-            if let corint_core::ast::Step::Include { ruleset } = step {
+            // Handle both new PipelineStep and legacy Step enum
+            if let corint_core::ast::pipeline::StepDetails::Ruleset { ruleset } = &step.details {
                 ruleset_refs.push(ruleset.clone());
             }
         }
@@ -407,8 +408,8 @@ impl DslValidator {
         // Build metadata
         let metadata = DocumentMetadata {
             doc_type: DslType::Pipeline,
-            id: pipeline.id.clone(),
-            name: pipeline.name.clone(),
+            id: Some(pipeline.id.clone()),
+            name: Some(pipeline.name.clone()),
             rule_refs: Vec::new(),
             ruleset_refs,
             imports: Vec::new(),
