@@ -1,0 +1,205 @@
+# =============================================================================
+# Condition Syntax Guide - `when` Clause
+# =============================================================================
+#
+# The `when` clause is used to define conditional logic in Pipeline DSL.
+# It supports boolean expressions, logical operators (all/any/not), and
+# arbitrary nesting for complex condition evaluation.
+#
+# =============================================================================
+# Basic Syntax
+# =============================================================================
+#
+# 1. Simple Boolean Expression:
+#    A single boolean expression that evaluates to true or false.
+#
+# 2. Logical Operators:
+#    - all:  All conditions must be true (AND logic)
+#    - any:  At least one condition must be true (OR logic)
+#    - not:  Negate the condition (NOT logic)
+#
+# 3. Nesting:
+#    Logical operators can be nested arbitrarily to create complex conditions.
+#
+# =============================================================================
+# Usage Contexts
+# =============================================================================
+#
+# The `when` clause can be used in:
+#   1. Pipeline-level: Filter events at pipeline entry
+#   2. Step routes: Conditional routing between steps
+#   3. Rule conditions: Evaluate rule execution conditions
+#
+# =============================================================================
+# Examples
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# Example 1: Simple Boolean Expression
+# -----------------------------------------------------------------------------
+# Single condition check
+when: event.amount < 100
+
+# -----------------------------------------------------------------------------
+# Example 2: AND Logic (all conditions must be true)
+# -----------------------------------------------------------------------------
+when:
+  all:
+    - event.amount > 1000
+    - geo.country in ["US", "CA"]
+    - not:
+        - risk.tags contains "proxy"
+
+# -----------------------------------------------------------------------------
+# Example 3: OR Logic (any condition can be true)
+# -----------------------------------------------------------------------------
+when:
+  any:
+    - context.total_score >= 80
+    - user.is_blacklisted == true
+
+# -----------------------------------------------------------------------------
+# Example 4: Complex Nested Conditions
+# -----------------------------------------------------------------------------
+# This example demonstrates complex risk assessment logic with multiple
+# condition categories that can trigger high-risk review.
+when:
+  any:
+
+    # -------------------------------------------------------
+    # Category A: High Amount + High-Risk Country + Non-Whitelist
+    # -------------------------------------------------------
+    - all:
+        - event.amount >= 3000
+        - geo.country in ["NG", "PK", "UA", "RU"]
+        - not:
+            - user.tags contains "vip"
+
+    # -------------------------------------------------------
+    # Category B: Device/IP Anomaly + High Failure Frequency
+    # -------------------------------------------------------
+    - all:
+        - any:
+            - device.is_emulator == true
+            - network.is_proxy == true
+            - network.is_tor == true
+        - risk.login_fail_count_1h >= 3
+
+    # -------------------------------------------------------
+    # Category C: LLM Behavior Inference + User Profile Anomaly
+    # -------------------------------------------------------
+    - all:
+        - llm.behavior.risk_level in ["high", "critical"]
+        - any:
+            - user.tags contains "abnormal_pattern"
+            - user.tags contains "synthetic_identity"
+            - user.tags contains "previous_fraud"
+
+# =============================================================================
+# Expression Operators
+# =============================================================================
+#
+# Supported comparison operators:
+#   - ==    : equality
+#   - !=    : inequality
+#   - >     : greater than
+#   - >=    : greater than or equal
+#   - <     : less than
+#   - <=    : less than or equal
+#   - in    : membership check (value in array)
+#   - contains: string/array contains check
+#
+# Examples:
+#   - event.amount == 100
+#   - event.amount != 0
+#   - event.amount > 1000
+#   - event.amount >= 500
+#   - event.amount < 100
+#   - event.amount <= 50
+#   - geo.country in ["US", "CA", "UK"]
+#   - user.tags contains "vip"
+#   - risk.tags contains "proxy"
+#
+# =============================================================================
+# Context Variables
+# =============================================================================
+#
+# Common context variable prefixes:
+#   - event.*     : Event data (e.g., event.amount, event.user_id)
+#   - user.*      : User profile data (e.g., user.is_blacklisted, user.tags)
+#   - geo.*       : Geolocation data (e.g., geo.country, geo.city)
+#   - device.*    : Device information (e.g., device.is_emulator)
+#   - network.*   : Network information (e.g., network.is_proxy, network.is_tor)
+#   - risk.*      : Risk assessment data (e.g., risk.tags, risk.login_fail_count_1h)
+#   - context.*   : Pipeline context (e.g., context.total_score)
+#   - sys.*       : System variables (e.g., sys.total_score)
+#   - api.*       : API call results (e.g., api.ip_geolocation.country_code)
+#   - service.*   : Service call results (e.g., service.user_profile.vip_status)
+#   - function.*  : Function computation results (e.g., function.calculate_risk)
+#   - llm.*       : LLM inference results (e.g., llm.behavior.risk_level)
+#
+# =============================================================================
+# Best Practices
+# =============================================================================
+#
+# 1. Readability:
+#    - Use comments to explain complex condition groups
+#    - Group related conditions together
+#    - Use meaningful variable names
+#
+# 2. Performance:
+#    - Place cheaper conditions first in `all` clauses
+#    - Place more likely conditions first in `any` clauses
+#    - Avoid deeply nested conditions when possible
+#
+# 3. Maintainability:
+#    - Keep conditions focused and specific
+#    - Document the business logic behind complex conditions
+#    - Use consistent naming conventions
+#
+# 4. Testing:
+#    - Test each condition branch independently
+#    - Test edge cases (boundary values, null values)
+#    - Test nested conditions at each level
+#
+# =============================================================================
+# Common Patterns
+# =============================================================================
+#
+# Pattern 1: Whitelist Check
+#   when:
+#     all:
+#       - event.amount > threshold
+#       - not:
+#           - user.tags contains "whitelist"
+#
+# Pattern 2: Blacklist Check
+#   when:
+#     any:
+#       - user.is_blacklisted == true
+#       - user.tags contains "fraud"
+#
+# Pattern 3: Risk Score Range
+#   when:
+#     all:
+#       - context.total_score >= 50
+#       - context.total_score < 80
+#
+# Pattern 4: Geographic Restriction
+#   when:
+#     all:
+#       - geo.country not in ["US", "CA", "UK"]
+#       - event.amount > 1000
+#
+# Pattern 5: Multiple Risk Indicators
+#   when:
+#     any:
+#       - all:
+#           - device.is_emulator == true
+#           - risk.login_fail_count_1h >= 3
+#       - all:
+#           - network.is_proxy == true
+#           - event.amount > 5000
+#
+# =============================================================================
+
