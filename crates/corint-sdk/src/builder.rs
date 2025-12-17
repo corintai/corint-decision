@@ -11,6 +11,7 @@ use std::sync::Arc;
 pub struct DecisionEngineBuilder {
     config: EngineConfig,
     feature_executor: Option<Arc<FeatureExecutor>>,
+    list_service: Option<Arc<corint_runtime::lists::ListService>>,
     #[cfg(feature = "sqlx")]
     result_writer: Option<Arc<corint_runtime::DecisionResultWriter>>,
 }
@@ -21,6 +22,7 @@ impl DecisionEngineBuilder {
         Self {
             config: EngineConfig::new(),
             feature_executor: None,
+            list_service: None,
             #[cfg(feature = "sqlx")]
             result_writer: None,
         }
@@ -117,6 +119,12 @@ impl DecisionEngineBuilder {
         self
     }
 
+    /// Set list service for list lookup operations
+    pub fn with_list_service(mut self, service: Arc<corint_runtime::lists::ListService>) -> Self {
+        self.list_service = Some(service);
+        self
+    }
+
     /// Enable decision result persistence to database
     #[cfg(feature = "sqlx")]
     pub fn with_result_writer(mut self, pool: sqlx::PgPool) -> Self {
@@ -130,8 +138,12 @@ impl DecisionEngineBuilder {
     /// Build the decision engine
     pub async fn build(self) -> Result<DecisionEngine> {
         #[cfg_attr(not(feature = "sqlx"), allow(unused_mut))]
-        let mut engine =
-            DecisionEngine::new_with_feature_executor(self.config, self.feature_executor).await?;
+        let mut engine = DecisionEngine::new_with_feature_executor(
+            self.config,
+            self.feature_executor,
+            self.list_service,
+        )
+        .await?;
 
         // Set result writer if configured
         #[cfg(feature = "sqlx")]

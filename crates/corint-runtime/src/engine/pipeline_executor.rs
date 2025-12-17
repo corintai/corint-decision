@@ -25,6 +25,7 @@ pub struct PipelineExecutor {
     llm_client: Option<Arc<dyn LLMClient>>,
     service_client: Option<Arc<dyn ServiceClient>>,
     external_api_client: Arc<ExternalApiClient>,
+    list_service: Option<Arc<crate::lists::ListService>>,
     metrics: Arc<MetricsCollector>,
 }
 
@@ -37,6 +38,7 @@ impl PipelineExecutor {
             llm_client: None,
             service_client: None,
             external_api_client: Arc::new(ExternalApiClient::new()),
+            list_service: None,
             metrics: Arc::new(MetricsCollector::new()),
         }
     }
@@ -49,6 +51,7 @@ impl PipelineExecutor {
             llm_client: None,
             service_client: None,
             external_api_client: Arc::new(ExternalApiClient::new()),
+            list_service: None,
             metrics: Arc::new(MetricsCollector::new()),
         }
     }
@@ -74,6 +77,12 @@ impl PipelineExecutor {
     /// Set external API client
     pub fn with_external_api_client(mut self, client: Arc<ExternalApiClient>) -> Self {
         self.external_api_client = client;
+        self
+    }
+
+    /// Set list service for list lookup operations
+    pub fn with_list_service(mut self, service: Arc<crate::lists::ListService>) -> Self {
+        self.list_service = Some(service);
         self
     }
 
@@ -392,6 +401,26 @@ impl PipelineExecutor {
                         "__next_ruleset__".to_string(),
                         Value::String(ruleset_id.clone()),
                     );
+                    pc += 1;
+                }
+
+                Instruction::ListLookup { list_id, negate } => {
+                    // Pop the value to check from the stack
+                    let value = ctx.pop()?;
+
+                    // Use configured list service if available, otherwise fall back to empty in-memory
+                    let contains = if let Some(ref list_service) = self.list_service {
+                        list_service.contains(list_id, &value).await?
+                    } else {
+                        tracing::warn!("List service not configured, treating all lists as empty");
+                        false
+                    };
+
+                    // Apply negation if needed
+                    let result = if *negate { !contains } else { contains };
+
+                    // Push the boolean result onto the stack
+                    ctx.push(Value::Bool(result));
                     pc += 1;
                 }
 

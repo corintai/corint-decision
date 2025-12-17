@@ -180,6 +180,16 @@ pub enum Instruction {
         /// Variable name
         name: String,
     },
+
+    // ===== List Operations =====
+    /// Check if a value exists in a configured list
+    /// Pops value from stack, pushes boolean result
+    ListLookup {
+        /// List ID from configuration
+        list_id: String,
+        /// Negate the result (for "not in list")
+        negate: bool,
+    },
 }
 
 /// Type of feature to extract

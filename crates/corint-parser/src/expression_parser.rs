@@ -43,18 +43,34 @@ impl ExpressionParser {
             ));
         }
 
-        // Try to parse as binary expression with keyword operators (contains, in, not_in, etc.)
+        // Try to parse as binary expression with keyword operators (contains, in, not in, etc.)
+        // Note: "not in" must come before "in" to match correctly
         if let Some((left, op, right)) = Self::split_by_keyword_operator(
             input,
             &[
+                "not in",     // Must be before "in"
                 "contains",
-                "not_in",
                 "in",
                 "starts_with",
                 "ends_with",
                 "regex",
             ],
         ) {
+            // Special handling for "in list.xxx" and "not in list.xxx"
+            if (op == "in" || op == "not in") && right.trim().starts_with("list.") {
+                let list_id = right.trim().strip_prefix("list.").unwrap().to_string();
+                let operator = if op == "in" {
+                    Operator::InList
+                } else {
+                    Operator::NotInList
+                };
+                return Ok(Expression::binary(
+                    Self::parse_expression(left)?,
+                    operator,
+                    Expression::ListReference { list_id },
+                ));
+            }
+
             let op = Self::parse_operator(op)?;
             return Ok(Expression::binary(
                 Self::parse_expression(left)?,
@@ -246,6 +262,16 @@ impl ExpressionParser {
                             || bytes[i + op.len()].is_ascii_whitespace();
 
                         if has_space_before && has_space_after {
+                            // Special check: if we matched "in", make sure it's not part of "not in"
+                            // "not in" is 6 chars, so check if position i-4 starts with "not "
+                            if op == "in" && i >= 4 {
+                                let potential_not_in_start = i - 4;
+                                if &input[potential_not_in_start..i] == "not " {
+                                    // This "in" is part of "not in", skip it
+                                    continue;
+                                }
+                            }
+
                             return Some((
                                 input[..i].trim(),
                                 &input[i..i + op.len()],
@@ -322,7 +348,8 @@ impl ExpressionParser {
             "ends_with" => Ok(Operator::EndsWith),
             "regex" => Ok(Operator::Regex),
             "in" => Ok(Operator::In),
-            "not_in" => Ok(Operator::NotIn),
+            "not in" => Ok(Operator::NotIn),
+            "not_in" => Ok(Operator::NotIn), // Keep underscore version for compatibility
             _ => Err(ParseError::InvalidOperator(op.to_string())),
         }
     }

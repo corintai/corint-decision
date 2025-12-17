@@ -101,6 +101,11 @@ impl ConstantFolder {
                     conditions: folded_conditions,
                 }
             }
+
+            Expression::ListReference { .. } => {
+                // ListReference cannot be folded, return as-is
+                expr.clone()
+            }
         }
     }
 

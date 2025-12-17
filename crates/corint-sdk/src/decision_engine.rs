@@ -216,13 +216,14 @@ impl DecisionEngine {
 
     /// Create a new decision engine from configuration
     pub async fn new(config: EngineConfig) -> Result<Self> {
-        Self::new_with_feature_executor(config, None).await
+        Self::new_with_feature_executor(config, None, None).await
     }
 
-    /// Create a new decision engine with optional feature executor
+    /// Create a new decision engine with optional feature executor and list service
     pub async fn new_with_feature_executor(
         config: EngineConfig,
         feature_executor: Option<Arc<corint_runtime::feature::FeatureExecutor>>,
+        list_service: Option<Arc<corint_runtime::lists::ListService>>,
     ) -> Result<Self> {
         let mut programs = Vec::new();
 
@@ -336,6 +337,11 @@ impl DecisionEngine {
             pipeline_executor = pipeline_executor.with_feature_executor(feature_executor);
         }
 
+        // Set list service if provided (for list lookups)
+        if let Some(list_service) = list_service {
+            pipeline_executor = pipeline_executor.with_list_service(list_service);
+        }
+
         let executor = Arc::new(pipeline_executor);
         let metrics = executor.metrics();
 
@@ -434,6 +440,11 @@ impl DecisionEngine {
                     }
                 }
             }
+            Expression::ListReference { .. } => {
+                // List references cannot be directly evaluated to boolean in this simple evaluator
+                // They are only used in conjunction with InList/NotInList operators
+                false
+            }
         }
     }
 
@@ -474,6 +485,11 @@ impl DecisionEngine {
                     false
                 }
             }
+            Operator::InList | Operator::NotInList => {
+                // List membership operators are not supported in this simple evaluator
+                // They require runtime list lookup which is handled by the VM
+                false
+            }
             _ => false,
         }
     }
@@ -504,6 +520,11 @@ impl DecisionEngine {
                         .all(|cond| Self::evaluate_expression(cond, event_data)),
                 };
                 Value::Bool(result)
+            }
+            Expression::ListReference { .. } => {
+                // List references cannot be directly evaluated to a value in this context
+                // They are only used in conjunction with InList/NotInList operators
+                Value::Null
             }
         }
     }
@@ -599,6 +620,8 @@ impl DecisionEngine {
                     Operator::StartsWith => "starts_with",
                     Operator::EndsWith => "ends_with",
                     Operator::Regex => "=~",
+                    Operator::InList => "in list",
+                    Operator::NotInList => "not in list",
                 };
                 format!(
                     "{} {} {}",
@@ -626,6 +649,9 @@ impl DecisionEngine {
                     LogicalGroupOp::All => "all:[...]".to_string(),
                 }
             }
+            Expression::ListReference { list_id } => {
+                format!("list.{}", list_id)
+            }
         }
     }
 
@@ -652,6 +678,8 @@ impl DecisionEngine {
             Operator::StartsWith => "starts_with",
             Operator::EndsWith => "ends_with",
             Operator::Regex => "=~",
+            Operator::InList => "in list",
+            Operator::NotInList => "not in list",
         }
     }
 

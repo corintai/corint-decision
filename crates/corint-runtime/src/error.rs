@@ -50,6 +50,10 @@ pub enum RuntimeError {
         corint_core::error::CoreError,
     ),
 
+    /// Invalid value error
+    #[error("Invalid value: {0}")]
+    InvalidValue(String),
+
     /// Generic runtime error
     #[error("Runtime error: {0}")]
     RuntimeError(String),

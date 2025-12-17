@@ -1,0 +1,14 @@
+# High risk country codes
+AF
+BY
+CD
+CU
+IQ
+IR
+KP
+LY
+MM
+SD
+SY
+YE
+ZW

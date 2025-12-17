@@ -10,6 +10,7 @@ pub mod error;
 pub mod executor;
 pub mod external_api;
 pub mod feature;
+pub mod lists;
 pub mod llm;
 pub mod observability;
 pub mod result;
@@ -29,6 +30,7 @@ pub use error::{Result, RuntimeError};
 pub use executor::Executor;
 pub use external_api::{ApiConfig, EndpointConfig, ExternalApiClient, HttpMethod};
 pub use feature::FeatureExtractor;
+pub use lists::{ListBackend, ListService, MemoryBackend};
 pub use llm::{
     AnthropicProvider, DeepSeekProvider, GeminiProvider, LLMClient, LLMProvider, LLMRequest,
     LLMResponse, MockProvider, OpenAIProvider,

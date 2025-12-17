@@ -30,6 +30,27 @@ impl ExpressionCompiler {
             Expression::Binary { left, op, right } => {
                 let mut instructions = Vec::new();
 
+                // Special handling for list membership operators
+                if matches!(op, Operator::InList | Operator::NotInList) {
+                    // For list lookups, right should be a ListReference
+                    if let Expression::ListReference { list_id } = right.as_ref() {
+                        // Compile left operand (the value to check)
+                        instructions.extend(Self::compile(left)?);
+
+                        // Add ListLookup instruction
+                        instructions.push(Instruction::ListLookup {
+                            list_id: list_id.clone(),
+                            negate: matches!(op, Operator::NotInList),
+                        });
+
+                        return Ok(instructions);
+                    } else {
+                        return Err(CompileError::InvalidExpression(
+                            "InList/NotInList operator requires ListReference on right side".to_string(),
+                        ));
+                    }
+                }
+
                 // Compile left operand
                 instructions.extend(Self::compile(left)?);
 
@@ -106,6 +127,14 @@ impl ExpressionCompiler {
                     LogicalGroupOp::Any => Self::compile_any_conditions(conditions),
                     LogicalGroupOp::All => Self::compile_all_conditions(conditions),
                 }
+            }
+
+            Expression::ListReference { list_id } => {
+                // ListReference should only appear as the right operand of InList/NotInList
+                Err(CompileError::InvalidExpression(format!(
+                    "ListReference '{}' cannot be compiled directly. Use 'value in list.{}' syntax",
+                    list_id, list_id
+                )))
             }
         }
     }
@@ -364,6 +393,13 @@ impl ExpressionCompiler {
                     "expression": "?:"
                 })
             }
+            Expression::ListReference { list_id } => {
+                json!({
+                    "type": "list_reference",
+                    "list_id": list_id,
+                    "expression": format!("list.{}", list_id)
+                })
+            }
         }
     }
 
@@ -428,6 +464,7 @@ impl ExpressionCompiler {
                     .collect();
                 format!("{}:[{}]", group_name, cond_strs.join(", "))
             }
+            Expression::ListReference { list_id } => format!("list.{}", list_id),
         }
     }
 
@@ -453,6 +490,8 @@ impl ExpressionCompiler {
             Operator::EndsWith => "ends_with",
             Operator::Regex => "~",
             Operator::NotIn => "not_in",
+            Operator::InList => "in list",
+            Operator::NotInList => "not in list",
         }
     }
 }

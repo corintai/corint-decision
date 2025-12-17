@@ -15,7 +15,7 @@ pub struct Executor;
 
 impl Executor {
     /// Execute an IR program with the given event data
-    pub fn execute(
+    pub async fn execute(
         program: &Program,
         event_data: HashMap<String, Value>,
     ) -> Result<ExecutionResult> {
@@ -143,6 +143,25 @@ impl Executor {
                 Instruction::Load { name } => {
                     let value = ctx.load_variable(name)?;
                     ctx.push(value);
+                    pc += 1;
+                }
+
+                Instruction::ListLookup { list_id, negate } => {
+                    // Pop the value to check from the stack
+                    let value = ctx.pop()?;
+
+                    // For Phase 1 MVP, use a simple in-memory list service
+                    // TODO: In Phase 2/3, integrate ListService into ExecutionContext
+                    let list_service = crate::lists::ListService::new_with_memory();
+
+                    // Check if value exists in the list
+                    let contains = list_service.contains(list_id, &value).await?;
+
+                    // Apply negation if needed
+                    let result = if *negate { !contains } else { contains };
+
+                    // Push the boolean result onto the stack
+                    ctx.push(Value::Bool(result));
                     pc += 1;
                 }
 
@@ -294,8 +313,8 @@ mod tests {
     use super::*;
     use corint_core::ir::ProgramMetadata;
 
-    #[test]
-    fn test_execute_load_const() {
+    #[tokio::test]
+    async fn test_execute_load_const() {
         let program = Program::new(
             vec![
                 Instruction::LoadConst {
@@ -306,12 +325,12 @@ mod tests {
             ProgramMetadata::default(),
         );
 
-        let result = Executor::execute(&program, HashMap::new()).unwrap();
+        let result = Executor::execute(&program, HashMap::new()).await.unwrap();
         assert_eq!(result.score, 0);
     }
 
-    #[test]
-    fn test_execute_load_field() {
+    #[tokio::test]
+    async fn test_execute_load_field() {
         let mut event = HashMap::new();
         event.insert("amount".to_string(), Value::Number(1000.0));
 
@@ -325,12 +344,12 @@ mod tests {
             ProgramMetadata::default(),
         );
 
-        let result = Executor::execute(&program, event).unwrap();
+        let result = Executor::execute(&program, event).await.unwrap();
         assert_eq!(result.score, 0);
     }
 
-    #[test]
-    fn test_execute_binary_add() {
+    #[tokio::test]
+    async fn test_execute_binary_add() {
         let program = Program::new(
             vec![
                 Instruction::LoadConst {
@@ -345,13 +364,13 @@ mod tests {
             ProgramMetadata::default(),
         );
 
-        let result = Executor::execute(&program, HashMap::new()).unwrap();
+        let result = Executor::execute(&program, HashMap::new()).await.unwrap();
         // Result should be on the stack but we're just checking execution succeeded
         assert_eq!(result.score, 0);
     }
 
-    #[test]
-    fn test_execute_compare() {
+    #[tokio::test]
+    async fn test_execute_compare() {
         let mut event = HashMap::new();
         event.insert("age".to_string(), Value::Number(25.0));
 
@@ -369,23 +388,23 @@ mod tests {
             ProgramMetadata::default(),
         );
 
-        let result = Executor::execute(&program, event).unwrap();
+        let result = Executor::execute(&program, event).await.unwrap();
         assert_eq!(result.score, 0);
     }
 
-    #[test]
-    fn test_execute_set_score() {
+    #[tokio::test]
+    async fn test_execute_set_score() {
         let program = Program::new(
             vec![Instruction::SetScore { value: 50 }, Instruction::Return],
             ProgramMetadata::default(),
         );
 
-        let result = Executor::execute(&program, HashMap::new()).unwrap();
+        let result = Executor::execute(&program, HashMap::new()).await.unwrap();
         assert_eq!(result.score, 50);
     }
 
-    #[test]
-    fn test_execute_mark_rule_triggered() {
+    #[tokio::test]
+    async fn test_execute_mark_rule_triggered() {
         let program = Program::new(
             vec![
                 Instruction::MarkRuleTriggered {
@@ -396,13 +415,13 @@ mod tests {
             ProgramMetadata::default(),
         );
 
-        let result = Executor::execute(&program, HashMap::new()).unwrap();
+        let result = Executor::execute(&program, HashMap::new()).await.unwrap();
         assert_eq!(result.triggered_rules.len(), 1);
         assert_eq!(result.triggered_rules[0], "test_rule");
     }
 
-    #[test]
-    fn test_execute_jump_if_false() {
+    #[tokio::test]
+    async fn test_execute_jump_if_false() {
         let program = Program::new(
             vec![
                 Instruction::LoadConst {
@@ -415,12 +434,12 @@ mod tests {
             ProgramMetadata::default(),
         );
 
-        let result = Executor::execute(&program, HashMap::new()).unwrap();
+        let result = Executor::execute(&program, HashMap::new()).await.unwrap();
         assert_eq!(result.score, 0); // Score should not be set
     }
 
-    #[test]
-    fn test_execute_complete_rule() {
+    #[tokio::test]
+    async fn test_execute_complete_rule() {
         // Simulates: if age > 18 then score = 50
         let mut event = HashMap::new();
         event.insert("age".to_string(), Value::Number(25.0));
@@ -451,7 +470,7 @@ mod tests {
             ProgramMetadata::default(),
         );
 
-        let result = Executor::execute(&program, event).unwrap();
+        let result = Executor::execute(&program, event).await.unwrap();
         assert_eq!(result.score, 50);
         assert_eq!(result.triggered_rules.len(), 1);
     }

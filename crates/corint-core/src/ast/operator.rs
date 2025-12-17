@@ -52,6 +52,12 @@ pub enum Operator {
     In,
     /// Not in
     NotIn,
+
+    // List membership operators
+    /// In list (value in list.xxx)
+    InList,
+    /// Not in list (value not in list.xxx)
+    NotInList,
 }
 
 impl Operator {

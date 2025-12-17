@@ -93,6 +93,15 @@ async fn init_engine(config: &ServerConfig) -> Result<corint_sdk::DecisionEngine
         .enable_metrics(config.enable_metrics)
         .enable_tracing(config.enable_tracing);
 
+    // Initialize list service (for list lookups)
+    let list_service = init_list_service(config).await?;
+    if let Some(service) = list_service {
+        info!("✓ List service initialized");
+        builder = builder.with_list_service(Arc::new(service));
+    } else {
+        warn!("List service not initialized - lists will not be available");
+    }
+
     // Initialize feature executor (for lazy feature calculation)
     let feature_executor = init_feature_executor().await?;
     if let Some(executor) = feature_executor {
@@ -275,4 +284,74 @@ async fn init_feature_executor() -> Result<Option<FeatureExecutor>> {
     );
 
     Ok(Some(executor))
+}
+
+/// Initialize list service with configured backends
+async fn init_list_service(
+    config: &ServerConfig,
+) -> Result<Option<corint_runtime::lists::ListService>> {
+    use corint_runtime::lists::ListLoader;
+
+    // Check if list config directory exists
+    let lists_dir = std::path::Path::new("repository/configs/lists");
+    if !lists_dir.exists() {
+        info!("List configuration directory not found: {:?}", lists_dir);
+        return Ok(None);
+    }
+
+    // Get database pool if available for PostgreSQL backends
+    #[cfg(feature = "sqlx")]
+    let db_pool = match &config.database_url {
+        Some(url) => {
+            match sqlx::postgres::PgPoolOptions::new()
+                .max_connections(5)
+                .connect(url)
+                .await
+            {
+                Ok(pool) => {
+                    info!("✓ Database connection established for list backends");
+                    Some(std::sync::Arc::new(pool))
+                }
+                Err(e) => {
+                    warn!("Failed to connect to database for lists: {}", e);
+                    None
+                }
+            }
+        }
+        None => None,
+    };
+
+    #[cfg(not(feature = "sqlx"))]
+    let _db_pool: Option<std::sync::Arc<()>> = None;
+
+    // Create list loader
+    let mut loader = ListLoader::new("repository");
+
+    // Configure with database pool if available
+    #[cfg(feature = "sqlx")]
+    if let Some(pool) = db_pool {
+        loader = loader.with_db_pool(pool);
+    }
+
+    // Load all list configurations
+    info!("Loading lists from: {:?}", lists_dir);
+    match loader.load_all().await {
+        Ok(backends) => {
+            if backends.is_empty() {
+                info!("No lists configured");
+                Ok(None)
+            } else {
+                let list_count = backends.len();
+                let list_ids: Vec<&str> = backends.keys().map(|s| s.as_str()).collect();
+                info!("✓ Loaded {} list(s): {:?}", list_count, list_ids);
+                Ok(Some(corint_runtime::lists::ListService::new_with_backends(
+                    backends,
+                )))
+            }
+        }
+        Err(e) => {
+            error!("Failed to load lists: {}", e);
+            Ok(None)
+        }
+    }
 }

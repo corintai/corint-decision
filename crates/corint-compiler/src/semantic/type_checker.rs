@@ -171,6 +171,12 @@ impl TypeChecker {
                 // Result is always boolean
                 Ok(TypeInfo::Boolean)
             }
+
+            Expression::ListReference { .. } => {
+                // List reference type is unknown at compile time
+                // The actual list will be resolved at runtime
+                Ok(TypeInfo::Unknown)
+            }
         }
     }
 
@@ -304,6 +310,14 @@ impl TypeChecker {
                         "Right operand must be string".to_string(),
                     ));
                 }
+                Ok(TypeInfo::Boolean)
+            }
+
+            // List membership operators: left can be any, right should be ListReference (Unknown)
+            Operator::InList | Operator::NotInList => {
+                // Left operand can be any type - it's the value to check
+                // Right operand should be a ListReference, which has Unknown type
+                // We allow Unknown/Any for the right side since ListReference resolves to Unknown
                 Ok(TypeInfo::Boolean)
             }
         }

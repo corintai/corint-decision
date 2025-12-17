@@ -307,12 +307,24 @@ pipeline:
   version: "1.0.0"
 
   # Entry point for the pipeline
-  entry: amount_router
+  entry: blacklist_check
 
   # Execute for all test1 events
   when: event.type == "test1"
 
   steps:
+    # Blacklist check step (directly deny and terminate if matched)
+    - step:
+        id: blacklist_check
+        name: Blacklist Check
+        type: router
+        routes:
+          - next: amount_router
+            when:
+              all:
+                - user.ip_country not in list.high_risk_countries
+        default: end
+
     # Router based on transaction amount
     - step:
         id: amount_router
@@ -356,41 +368,7 @@ pipeline:
         type: ruleset
         ruleset: transaction_monitoring_ruleset
         next: end
-
-  # Final decision logic (combines all ruleset results)
-  decision_logic:
-    # Case 1: Transaction monitoring denied
-    - condition: context.transaction_monitoring_ruleset.action == "deny"
-      action: deny
-      reason: "Transaction denied by monitoring rules"
-
-    # Case 2: Fraud detection denied
-    - condition: context.fraud_detection_ruleset.action == "deny"
-      action: deny
-      reason: "Transaction denied by fraud detection"
-
-    # Case 3: Transaction monitoring requires review
-    - condition: context.transaction_monitoring_ruleset.action == "review"
-      action: review
-      reason: "Transaction monitoring flagged for review"
-      review_priority: "high"
-
-    # Case 4: User behavior requires review
-    - condition: context.user_behavior_ruleset.action == "review"
-      action: review
-      reason: "User behavior flagged for review"
-      review_priority: "medium"
-
-    # Case 5: Fraud detection requires review
-    - condition: context.fraud_detection_ruleset.action == "review"
-      action: review
-      reason: "Fraud detection flagged for review"
-      review_priority: "high"
-
-    # Case 6: All rulesets approved
-    - default: true
-      action: approve
-      reason: "All risk checks passed"
+ 
 
   # Pipeline metadata
   metadata:

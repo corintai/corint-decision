@@ -1,0 +1,32 @@
+# Example list configurations
+# This file demonstrates different list backend types
+
+lists:
+  # Memory backend - for small, frequently accessed lists
+  - id: test_blocklist
+    description: "Test blocklist (in-memory)"
+    backend: memory
+    initial_values:
+      - "test@fraud.com"
+      - "spam@example.com"
+
+  # PostgreSQL backend - default list_entries table
+  - id: email_blocklist
+    description: "Email addresses to block"
+    backend: postgresql
+    # Uses default table 'list_entries' with columns (list_id, value, created_at, expires_at)
+
+  # PostgreSQL backend - custom table
+  - id: ip_blocklist
+    description: "IP addresses to block"
+    backend: postgresql
+    table: custom_ip_blocklist
+    value_column: ip_address
+    expiration_column: expires_at
+
+  # File backend - static list from file
+  - id: high_risk_countries
+    description: "High risk country codes"
+    backend: file
+    path: "configs/lists/data/high_risk_countries.txt"
+    reload_interval: 3600  # Reload every hour

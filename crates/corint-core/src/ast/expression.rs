@@ -43,6 +43,12 @@ pub enum Expression {
         /// List of conditions to evaluate
         conditions: Vec<Expression>,
     },
+
+    /// List reference (e.g., list.email_blocklist)
+    ListReference {
+        /// List ID from configuration
+        list_id: String,
+    },
 }
 
 /// Logical group operation type

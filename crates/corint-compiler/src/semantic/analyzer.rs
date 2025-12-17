@@ -261,6 +261,9 @@ impl SemanticAnalyzer {
             Expression::Literal(_) => {
                 // Literals don't reference variables
             }
+            Expression::ListReference { .. } => {
+                // ListReference doesn't reference variables
+            }
         }
     }
 
@@ -328,6 +331,16 @@ impl SemanticAnalyzer {
                 // Analyze all conditions in the group
                 for condition in conditions {
                     self.analyze_expression(condition)?;
+                }
+                Ok(())
+            }
+
+            Expression::ListReference { list_id } => {
+                // Validate that list_id is not empty
+                if list_id.is_empty() {
+                    return Err(CompileError::InvalidExpression(
+                        "List ID cannot be empty".to_string(),
+                    ));
                 }
                 Ok(())
             }
