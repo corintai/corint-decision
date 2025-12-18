@@ -23,6 +23,15 @@ pub enum Instruction {
         value: Value,
     },
 
+    /// Load a result field from the last or specified ruleset execution
+    /// Used in pipeline router conditions to access previous ruleset results
+    LoadResult {
+        /// Optional ruleset ID. If None, refers to the last executed ruleset
+        ruleset_id: Option<String>,
+        /// Field to access (e.g., "action", "total_score", "reason")
+        field: String,
+    },
+
     // ===== Operations =====
     /// Perform a binary operation (+ - * / etc.)
     BinaryOp {

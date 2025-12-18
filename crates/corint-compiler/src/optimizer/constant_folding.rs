@@ -106,6 +106,11 @@ impl ConstantFolder {
                 // ListReference cannot be folded, return as-is
                 expr.clone()
             }
+
+            Expression::ResultAccess { .. } => {
+                // ResultAccess cannot be folded (runtime value), return as-is
+                expr.clone()
+            }
         }
     }
 

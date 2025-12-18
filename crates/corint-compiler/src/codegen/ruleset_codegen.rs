@@ -4,7 +4,7 @@
 
 use crate::codegen::expression_codegen::ExpressionCompiler;
 use crate::error::Result;
-use corint_core::ast::{Action, Ruleset};
+use corint_core::ast::{Action, Expression, Ruleset};
 use corint_core::ir::{Instruction, Program, ProgramMetadata};
 
 /// Ruleset compiler
@@ -30,6 +30,14 @@ impl RulesetCompiler {
             metadata
                 .custom
                 .insert("rules".to_string(), ruleset.rules.join(","));
+        }
+
+        // Store decision_logic as JSON for trace building
+        if !ruleset.decision_logic.is_empty() {
+            let decision_logic_json = Self::decision_logic_to_json(&ruleset.decision_logic);
+            metadata
+                .custom
+                .insert("decision_logic_json".to_string(), decision_logic_json);
         }
 
         Ok(Program::new(instructions, metadata))
@@ -148,6 +156,162 @@ impl RulesetCompiler {
         }
 
         Ok(instructions)
+    }
+
+    /// Convert decision_logic to JSON for trace building
+    fn decision_logic_to_json(decision_logic: &[corint_core::ast::DecisionRule]) -> String {
+        let json_array: Vec<serde_json::Value> = decision_logic
+            .iter()
+            .map(|rule| {
+                let mut obj = serde_json::Map::new();
+
+                // Add condition expression as string
+                if let Some(ref condition) = rule.condition {
+                    obj.insert(
+                        "condition".to_string(),
+                        serde_json::Value::String(Self::expression_to_readable_string(condition)),
+                    );
+                }
+
+                // Add default flag
+                obj.insert("default".to_string(), serde_json::Value::Bool(rule.default));
+
+                // Add action
+                let action_str = match &rule.action {
+                    Action::Approve => "approve",
+                    Action::Deny => "deny",
+                    Action::Review => "review",
+                    Action::Challenge => "challenge",
+                    Action::Infer { .. } => "infer",
+                };
+                obj.insert(
+                    "action".to_string(),
+                    serde_json::Value::String(action_str.to_string()),
+                );
+
+                // Add reason if present
+                if let Some(ref reason) = rule.reason {
+                    obj.insert(
+                        "reason".to_string(),
+                        serde_json::Value::String(reason.clone()),
+                    );
+                }
+
+                // Add terminate flag
+                obj.insert(
+                    "terminate".to_string(),
+                    serde_json::Value::Bool(rule.terminate),
+                );
+
+                serde_json::Value::Object(obj)
+            })
+            .collect();
+
+        serde_json::to_string(&json_array).unwrap_or_else(|_| "[]".to_string())
+    }
+
+    /// Convert an Expression to a readable string representation
+    fn expression_to_readable_string(expr: &Expression) -> String {
+        use corint_core::ast::{Operator, UnaryOperator};
+        use corint_core::Value;
+
+        match expr {
+            Expression::Literal(value) => match value {
+                Value::Number(n) => n.to_string(),
+                Value::String(s) => format!("\"{}\"", s),
+                Value::Bool(b) => b.to_string(),
+                Value::Null => "null".to_string(),
+                Value::Array(arr) => format!(
+                    "[{}]",
+                    arr.iter()
+                        .map(|v| match v {
+                            Value::String(s) => format!("\"{}\"", s),
+                            Value::Number(n) => n.to_string(),
+                            _ => format!("{:?}", v),
+                        })
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                ),
+                Value::Object(_) => "{...}".to_string(),
+            },
+            Expression::FieldAccess(path) => path.join("."),
+            Expression::Binary { left, op, right } => {
+                let op_str = match op {
+                    Operator::Eq => "==",
+                    Operator::Ne => "!=",
+                    Operator::Lt => "<",
+                    Operator::Le => "<=",
+                    Operator::Gt => ">",
+                    Operator::Ge => ">=",
+                    Operator::And => "&&",
+                    Operator::Or => "||",
+                    Operator::Add => "+",
+                    Operator::Sub => "-",
+                    Operator::Mul => "*",
+                    Operator::Div => "/",
+                    Operator::Mod => "%",
+                    Operator::In => "in",
+                    Operator::NotIn => "not in",
+                    Operator::Contains => "contains",
+                    Operator::StartsWith => "starts_with",
+                    Operator::EndsWith => "ends_with",
+                    Operator::Regex => "=~",
+                    Operator::InList => "in list",
+                    Operator::NotInList => "not in list",
+                };
+                format!(
+                    "{} {} {}",
+                    Self::expression_to_readable_string(left),
+                    op_str,
+                    Self::expression_to_readable_string(right)
+                )
+            }
+            Expression::Unary { op, operand } => {
+                let op_str = match op {
+                    UnaryOperator::Not => "!",
+                    UnaryOperator::Negate => "-",
+                };
+                format!("{}{}", op_str, Self::expression_to_readable_string(operand))
+            }
+            Expression::FunctionCall { name, args } => {
+                let args_str = args
+                    .iter()
+                    .map(|a| Self::expression_to_readable_string(a))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                format!("{}({})", name, args_str)
+            }
+            Expression::Ternary {
+                condition,
+                true_expr,
+                false_expr,
+            } => {
+                format!(
+                    "{} ? {} : {}",
+                    Self::expression_to_readable_string(condition),
+                    Self::expression_to_readable_string(true_expr),
+                    Self::expression_to_readable_string(false_expr)
+                )
+            }
+            Expression::LogicalGroup { op, conditions } => {
+                use corint_core::ast::LogicalGroupOp;
+                let op_str = match op {
+                    LogicalGroupOp::Any => "any",
+                    LogicalGroupOp::All => "all",
+                };
+                let conditions_str = conditions
+                    .iter()
+                    .map(|c| Self::expression_to_readable_string(c))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                format!("{}:[{}]", op_str, conditions_str)
+            }
+            Expression::ListReference { list_id } => format!("list.{}", list_id),
+            Expression::ResultAccess { ruleset_id, field } => match ruleset_id {
+                Some(id) => format!("result.{}.{}", id, field),
+                None => format!("result.{}", field),
+            },
+        }
     }
 }
 

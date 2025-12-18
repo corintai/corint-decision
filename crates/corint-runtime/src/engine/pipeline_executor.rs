@@ -194,6 +194,43 @@ impl PipelineExecutor {
                     pc += 1;
                 }
 
+                Instruction::LoadResult { ruleset_id, field } => {
+                    // Load result field from ruleset execution
+                    let result_key = match ruleset_id {
+                        Some(id) => format!("__ruleset_result__.{}", id),
+                        None => "__last_ruleset_result__".to_string(),
+                    };
+
+                    let value = match ctx.load_variable(&result_key) {
+                        Ok(Value::Object(map)) => {
+                            map.get(field).cloned().unwrap_or(Value::Null)
+                        }
+                        Ok(_) => {
+                            tracing::warn!(
+                                "Result '{}' is not an object, returning Null",
+                                result_key
+                            );
+                            Value::Null
+                        }
+                        Err(_) => {
+                            tracing::debug!(
+                                "Result '{}' not found, returning Null (no ruleset executed yet?)",
+                                result_key
+                            );
+                            Value::Null
+                        }
+                    };
+
+                    tracing::debug!(
+                        "LoadResult: {}.{} = {:?}",
+                        ruleset_id.as_deref().unwrap_or("(last)"),
+                        field,
+                        value
+                    );
+                    ctx.push(value);
+                    pc += 1;
+                }
+
                 Instruction::BinaryOp { op } => {
                     let right = ctx.pop()?;
                     let left = ctx.pop()?;

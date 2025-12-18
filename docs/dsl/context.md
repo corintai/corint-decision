@@ -20,6 +20,7 @@ CORINT uses a **flattened namespace architecture** where all data sources are or
 | `service` | Writable | Internal service call results | User profiles, risk history |
 | `llm` | Writable | LLM analysis results | Fraud analysis, content moderation |
 | `vars` | Writable | Simple variables and calculations | Config parameters, thresholds |
+| `result` | Read-only | Ruleset execution results | Pipeline routing based on ruleset decisions |
 | `sys` | Read-only | System injected metadata | request_id, timestamp, environment |
 | `env` | Read-only | Environment configuration | Feature flags, API keys |
 
@@ -376,9 +377,151 @@ score: event.transaction.amount * vars.risk_multiplier
 
 ---
 
-## 8. sys - System Injected Metadata
+## 8. result - Ruleset Execution Results
 
 ### 8.1 Description
+
+The `result` namespace provides access to **ruleset execution results** within a pipeline. This enables pipeline routing decisions based on previous ruleset outcomes.
+
+```yaml
+Mutability: Read-only
+Source: Ruleset execution within pipeline
+Lifecycle: Updated after each ruleset step completes
+```
+
+### 8.2 Access Patterns
+
+The `result` namespace supports two access patterns:
+
+#### 8.2.1 Last Executed Ruleset (Default)
+```yaml
+# Access the most recently executed ruleset's result
+result.action          # Decision action: "allow", "deny", "review"
+result.total_score     # Cumulative risk score
+result.reason          # Decision reason text
+```
+
+#### 8.2.2 Specific Ruleset by ID
+```yaml
+# Access a specific ruleset's result by ID
+result.fraud_detection.action
+result.fraud_detection.total_score
+result.account_takeover.triggered_rules
+```
+
+### 8.3 Available Fields
+
+```yaml
+result:
+  # Decision fields
+  action: string              # "allow", "deny", "review", "challenge"
+  total_score: number         # Cumulative risk score (0-100+)
+  reason: string              # Human-readable decision reason
+
+  # Rule execution details
+  triggered_rules: array      # List of triggered rule IDs
+  rule_count: number          # Number of rules evaluated
+
+  # Metadata
+  ruleset_id: string          # ID of the executed ruleset
+  execution_time_ms: number   # Ruleset execution duration
+```
+
+### 8.4 Pipeline Router Usage
+
+The primary use case for `result` is in pipeline routers to make branching decisions:
+
+```yaml
+pipeline:
+  id: fraud_detection_pipeline
+  entry: blacklist_check
+
+  steps:
+    - id: blacklist_check
+      type: ruleset
+      ruleset: blacklist_ruleset
+      next: fraud_router
+
+    - id: fraud_router
+      type: router
+      routes:
+        # Route based on last ruleset's action
+        - when: result.action == "deny"
+          next: block_transaction
+
+        # Route based on score threshold
+        - when: result.total_score > 80
+          next: manual_review
+
+        # Route based on specific ruleset result
+        - when: result.blacklist_ruleset.action == "review"
+          next: enhanced_verification
+
+      default: allow_transaction
+```
+
+### 8.5 Multiple Ruleset Example
+
+When multiple rulesets are executed in a pipeline:
+
+```yaml
+pipeline:
+  steps:
+    - id: fraud_detection_step
+      type: ruleset
+      ruleset: fraud_detection_ruleset
+      next: behavior_step
+
+    - id: behavior_step
+      type: ruleset
+      ruleset: user_behavior_ruleset
+      next: final_router
+
+    - id: final_router
+      type: router
+      routes:
+        # Access last executed ruleset (user_behavior_ruleset)
+        - when: result.action == "deny"
+          next: deny_step
+
+        # Access specific ruleset by ID
+        - when: result.fraud_detection_ruleset.total_score > 50
+          next: review_step
+
+        # Combine multiple ruleset results
+        - when: result.fraud_detection_ruleset.action == "review" && result.total_score > 30
+          next: enhanced_review
+
+      default: allow_step
+```
+
+### 8.6 Best Practices
+
+✅ **Good:**
+```yaml
+# Clear, specific field access
+- when: result.action == "deny"
+- when: result.fraud_detection.total_score > 80
+
+# Combine with other conditions
+- when: result.action != "deny" && event.amount > 10000
+```
+
+❌ **Bad:**
+```yaml
+# Don't use result outside of pipeline routers
+conditions:
+  - result.action == "deny"  # Not available in rule conditions
+
+# Don't assume result exists before any ruleset executes
+- when: result.action == "allow"  # May be undefined
+```
+
+---
+
+## 9. sys - System Injected Metadata
+
+### 9.1 Description
 
 The `sys` namespace contains **system auto-generated metadata** and context information.
 
@@ -467,9 +610,9 @@ conditions:
 
 ---
 
-## 9. env - Environment Configuration
+## 10. env - Environment Configuration
 
-### 9.1 Description
+### 10.1 Description
 
 The `env` namespace contains **configuration** loaded from environment variables and config files.
 
@@ -479,7 +622,7 @@ Source: Environment variables, config files
 Lifecycle: Loaded at startup
 ```
 
-### 9.2 Use Cases
+### 10.2 Use Cases
 
 - Database connection configuration
 - API keys and secrets
@@ -488,7 +631,7 @@ Lifecycle: Loaded at startup
 - Environment-specific configuration
 - External service endpoints
 
-### 9.3 Example Configuration
+### 10.3 Example Configuration
 
 ```yaml
 env:
@@ -511,7 +654,7 @@ env:
   openai_api_key: "***"
 ```
 
-### 9.4 Using Environment Variables
+### 10.4 Using Environment Variables
 
 ```yaml
 conditions:
@@ -530,7 +673,7 @@ pipeline:
 
 ---
 
-## 10. Data Classification Decision Tree
+## 11. Data Classification Decision Tree
 
 When receiving or computing data, use this tree to determine the correct namespace:
 
@@ -545,6 +688,9 @@ Received a piece of data, where should it go?
 │
 ├─ Is it loaded from environment variables/config files?
 │  └─ Yes → env
+│
+├─ Is it the output of a ruleset execution (action, score, etc.)?
+│  └─ Yes → result
 │
 ├─ Is it computed result based on existing data?
 │  │
@@ -566,9 +712,9 @@ Received a piece of data, where should it go?
 
 ---
 
-## 11. Complete Usage Example
+## 12. Complete Usage Example
 
-### 11.1 Comprehensive Rule
+### 12.1 Comprehensive Rule
 
 ```yaml
 rule:
@@ -612,7 +758,7 @@ rule:
   action: review
 ```
 
-### 11.2 Pipeline with All Namespaces
+### 12.2 Pipeline with All Namespaces
 
 ```yaml
 pipeline:
@@ -668,9 +814,9 @@ pipeline:
 
 ---
 
-## 12. Migration from Old Context Model
+## 13. Migration from Old Context Model
 
-### 12.1 Old vs New
+### 13.1 Old vs New
 
 | Old Model | New Model | Notes |
 |-----------|-----------|-------|
@@ -680,7 +826,7 @@ pipeline:
 | Not available | `sys.*` | New system namespace |
 | `env.field` | `env.field` | ✅ No change |
 
-### 12.2 Migration Examples
+### 13.2 Migration Examples
 
 **Before:**
 ```yaml
@@ -698,9 +844,9 @@ conditions:
 
 ---
 
-## 13. Best Practices
+## 14. Best Practices
 
-### 13.1 Naming Conventions
+### 14.1 Naming Conventions
 
 ✅ **Good:**
 ```yaml
@@ -722,7 +868,7 @@ vars:
   x: 30                        # Meaningless
 ```
 
-### 13.2 Namespace Selection
+### 14.2 Namespace Selection
 
 ✅ **Correct:**
 ```yaml
@@ -746,7 +892,7 @@ features.simple_addition: 1 + 1     # Should be vars
 vars.historical_count: COUNT(...)   # Should be features
 ```
 
-### 13.3 Avoid Namespace Pollution
+### 14.3 Avoid Namespace Pollution
 
 ✅ **Good:** Clean, minimal data
 ```yaml
@@ -766,24 +912,25 @@ api.ip_check:
 
 ---
 
-## 14. Summary
+## 15. Summary
 
 CORINT's flattened namespace architecture provides:
 
-- **Clear data separation** - 8 distinct namespaces by processing method
+- **Clear data separation** - 9 distinct namespaces by processing method
 - **Simple access** - No `ctx.` prefix needed, direct namespace access
 - **Type safety** - Read-only vs writable enforcement
 - **Extensibility** - Easy to add new data sources
 - **Observability** - Clear tracking of data origin and processing
 
-**The 8 Namespaces:**
+**The 9 Namespaces:**
 1. `event` - User request raw data (read-only)
 2. `features` - Complex computations (writable)
 3. `api` - External API results (writable)
 4. `service` - Internal service results (writable)
 5. `llm` - LLM analysis (writable)
 6. `vars` - Simple variables (writable)
-7. `sys` - System metadata (read-only)
-8. `env` - Environment config (read-only)
+7. `result` - Ruleset execution results (read-only)
+8. `sys` - System metadata (read-only)
+9. `env` - Environment config (read-only)
 
 For complete implementation details, see [CONTEXT_GUIDE.md](../CONTEXT_GUIDE.md).

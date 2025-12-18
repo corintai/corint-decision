@@ -72,10 +72,9 @@ rule:
 
   when:
     all:
-      - all:
-          - event.transaction.amount > 5000
-          - event.user.account_age_days < 7
-          - event.transaction.recipient_new == true
+      - event.transaction.amount > 5000
+      - event.user.account_age_days < 7
+      - event.transaction.recipient_new == true
 
   score: 95
 
@@ -313,19 +312,63 @@ pipeline:
   when: event.type == "test1"
 
   steps:
-    # Blacklist check step (directly deny and terminate if matched)
+    # Step 1: Blacklist check (directly end if in blacklist)
     - step:
         id: blacklist_check
         name: Blacklist Check
         type: router
         routes:
-          - next: amount_router
+          - next: fraud_detection_step
             when:
               all:
                 - user.ip_country not in list.high_risk_countries
         default: end
 
-    # Router based on transaction amount
+    # Step 2: Fraud detection rules
+    - step:
+        id: fraud_detection_step
+        name: Fraud Detection
+        type: ruleset
+        ruleset: fraud_detection_ruleset
+        next: fraud_router
+
+    # Step 3: Fraud result router - if fraud detected (deny), end immediately
+    - step:
+        id: fraud_router
+        name: Fraud Result Router
+        type: router
+        routes:
+          # If not denied, continue to user behavior check
+          - next: user_behavior_step
+            when:
+              all:
+                - result.action != "deny"
+        # If fraud detected (action == deny), end immediately
+        default: end
+
+    # Step 4: User behavior analysis
+    - step:
+        id: user_behavior_step
+        name: User Behavior Analysis
+        type: ruleset
+        ruleset: user_behavior_ruleset
+        next: user_behavior_router
+
+    # Step 5: User behavior result router
+    - step:
+        id: user_behavior_router
+        name: User Behavior Result Router
+        type: router
+        routes:
+          # If user behavior normal (score < 50), continue to amount check
+          - next: amount_router
+            when:
+              all:
+                - result.total_score < 50
+        # If user behavior abnormal (score >= 50), end immediately
+        default: end
+
+    # Step 6: Router based on transaction amount
     - step:
         id: amount_router
         name: Transaction Amount Router
@@ -339,29 +382,15 @@ pipeline:
         # Low-value transactions (<=1000) - basic check only
         default: basic_monitoring_step
 
-    # Comprehensive check path (for amount > 1000)
+    # Step 7: Comprehensive transaction check (for amount > 1000)
     - step:
         id: transaction_monitoring_step
         name: Transaction Monitoring
         type: ruleset
         ruleset: transaction_monitoring_ruleset
-        next: user_behavior_step
-
-    - step:
-        id: user_behavior_step
-        name: User Behavior Analysis
-        type: ruleset
-        ruleset: user_behavior_ruleset
-        next: fraud_detection_step
-
-    - step:
-        id: fraud_detection_step
-        name: Fraud Detection
-        type: ruleset
-        ruleset: fraud_detection_ruleset
         next: end
 
-    # Basic check path (for amount <= 1000)
+    # Step 8: Basic transaction check (for amount <= 1000)
     - step:
         id: basic_monitoring_step
         name: Basic Transaction Monitoring

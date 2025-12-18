@@ -789,6 +789,12 @@ impl PipelineCompiler {
                     format!("({})", parts.join(separator))
                 }
             }
+            Expression::ResultAccess { ruleset_id, field } => {
+                match ruleset_id {
+                    Some(id) => format!("result.{}.{}", id, field),
+                    None => format!("result.{}", field),
+                }
+            }
         }
     }
 

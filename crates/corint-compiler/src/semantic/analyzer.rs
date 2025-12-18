@@ -264,6 +264,14 @@ impl SemanticAnalyzer {
             Expression::ListReference { .. } => {
                 // ListReference doesn't reference variables
             }
+            Expression::ResultAccess { ruleset_id, field } => {
+                // ResultAccess references the result of a ruleset
+                let ref_str = match ruleset_id {
+                    Some(id) => format!("result.{}.{}", id, field),
+                    None => format!("result.{}", field),
+                };
+                references.insert(ref_str);
+            }
         }
     }
 
@@ -340,6 +348,16 @@ impl SemanticAnalyzer {
                 if list_id.is_empty() {
                     return Err(CompileError::InvalidExpression(
                         "List ID cannot be empty".to_string(),
+                    ));
+                }
+                Ok(())
+            }
+
+            Expression::ResultAccess { field, .. } => {
+                // Validate that field is not empty
+                if field.is_empty() {
+                    return Err(CompileError::InvalidExpression(
+                        "Result field cannot be empty".to_string(),
                     ));
                 }
                 Ok(())

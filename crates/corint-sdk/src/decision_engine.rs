@@ -8,8 +8,9 @@ use corint_core::ir::Program;
 use corint_core::Value;
 use corint_parser::{PipelineParser, RegistryParser, RuleParser, RulesetParser};
 use corint_runtime::{
-    ApiConfig, ConditionTrace, ContextInput, DecisionResult, ExecutionTrace, ExternalApiClient,
-    MetricsCollector, PipelineExecutor, PipelineTrace, RuleTrace, RulesetTrace, StepTrace,
+    ApiConfig, ConditionTrace, ContextInput, DecisionLogicTrace, DecisionResult, ExecutionTrace,
+    ExternalApiClient, MetricsCollector, PipelineExecutor, PipelineTrace, RuleTrace, RulesetTrace,
+    StepTrace,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -445,6 +446,10 @@ impl DecisionEngine {
                 // They are only used in conjunction with InList/NotInList operators
                 false
             }
+            Expression::ResultAccess { .. } => {
+                // Result access requires runtime context, not supported in this simple evaluator
+                false
+            }
         }
     }
 
@@ -524,6 +529,10 @@ impl DecisionEngine {
             Expression::ListReference { .. } => {
                 // List references cannot be directly evaluated to a value in this context
                 // They are only used in conjunction with InList/NotInList operators
+                Value::Null
+            }
+            Expression::ResultAccess { .. } => {
+                // Result access requires runtime context, not supported in this simple evaluator
                 Value::Null
             }
         }
@@ -651,6 +660,12 @@ impl DecisionEngine {
             }
             Expression::ListReference { list_id } => {
                 format!("list.{}", list_id)
+            }
+            Expression::ResultAccess { ruleset_id, field } => {
+                match ruleset_id {
+                    Some(id) => format!("result.{}.{}", id, field),
+                    None => format!("result.{}", field),
+                }
             }
         }
     }
@@ -947,14 +962,15 @@ impl DecisionEngine {
                 let right_val = right_expr.and_then(|e| Self::extract_value_from_expr_json(e, event_data));
 
                 // Set display values (only for non-constants)
+                // Always show the value for FieldAccess, even if null (to indicate field not found)
                 if let Some(left_e) = left_expr {
                     if Self::should_display_value(left_e) {
-                        left_value_for_display = left_val.clone();
+                        left_value_for_display = Some(left_val.clone().unwrap_or(Value::Null));
                     }
                 }
                 if let Some(right_e) = right_expr {
                     if Self::should_display_value(right_e) {
-                        right_value_for_display = right_val.clone();
+                        right_value_for_display = Some(right_val.clone().unwrap_or(Value::Null));
                     }
                 }
 
@@ -1986,15 +2002,38 @@ impl DecisionEngine {
                                         "score".to_string(),
                                         Value::Number(execution_result.score as f64),
                                     );
+                                    result_map.insert(
+                                        "total_score".to_string(),
+                                        Value::Number(execution_result.score as f64),
+                                    );
                                     if !ruleset_result.explanation.is_empty() {
                                         result_map.insert(
                                             "explanation".to_string(),
                                             Value::String(ruleset_result.explanation.clone()),
                                         );
+                                        result_map.insert(
+                                            "reason".to_string(),
+                                            Value::String(ruleset_result.explanation.clone()),
+                                        );
                                     }
+
+                                    // Store decision_logic_json from program metadata for trace building
+                                    if let Some(decision_logic_json) = ruleset_program.metadata.custom.get("decision_logic_json") {
+                                        result_map.insert(
+                                            "decision_logic_json".to_string(),
+                                            Value::String(decision_logic_json.clone()),
+                                        );
+                                    }
+
+                                    // Store result with ruleset ID for result.ruleset_id.field access
                                     execution_result
                                         .variables
-                                        .insert(ruleset_id.clone(), Value::Object(result_map));
+                                        .insert(format!("__ruleset_result__.{}", ruleset_id), Value::Object(result_map.clone()));
+
+                                    // Store as last result for result.field access (without ruleset_id)
+                                    execution_result
+                                        .variables
+                                        .insert("__last_ruleset_result__".to_string(), Value::Object(result_map));
 
                                     if ruleset_result.action.is_some() {
                                         combined_result.action = ruleset_result.action;
@@ -2276,15 +2315,38 @@ impl DecisionEngine {
                                     "score".to_string(),
                                     Value::Number(execution_result.score as f64),
                                 );
+                                result_map.insert(
+                                    "total_score".to_string(),
+                                    Value::Number(execution_result.score as f64),
+                                );
                                 if !ruleset_result.explanation.is_empty() {
                                     result_map.insert(
                                         "explanation".to_string(),
                                         Value::String(ruleset_result.explanation.clone()),
                                     );
+                                    result_map.insert(
+                                        "reason".to_string(),
+                                        Value::String(ruleset_result.explanation.clone()),
+                                    );
                                 }
+
+                                // Store decision_logic_json from program metadata for trace building
+                                if let Some(decision_logic_json) = ruleset_program.metadata.custom.get("decision_logic_json") {
+                                    result_map.insert(
+                                        "decision_logic_json".to_string(),
+                                        Value::String(decision_logic_json.clone()),
+                                    );
+                                }
+
+                                // Store result with ruleset ID for result.ruleset_id.field access
                                 execution_result
                                     .variables
-                                    .insert(ruleset_id.clone(), Value::Object(result_map));
+                                    .insert(format!("__ruleset_result__.{}", ruleset_id), Value::Object(result_map.clone()));
+
+                                // Store as last result for result.field access (without ruleset_id)
+                                execution_result
+                                    .variables
+                                    .insert("__last_ruleset_result__".to_string(), Value::Object(result_map));
 
                                 // Update combined result with ruleset decision
                                 if ruleset_result.action.is_some() {
@@ -2573,7 +2635,33 @@ impl DecisionEngine {
 
                 // Set the ruleset score
                 ruleset_trace.total_score = ruleset_score;
-                if let Some(ref action) = combined_result.action {
+
+                // Get ruleset-specific action, reason, and decision_logic from execution variables
+                let result_key = format!("__ruleset_result__.{}", ruleset_trace.ruleset_id);
+                if let Some(Value::Object(result_map)) = execution_result.variables.get(&result_key) {
+                    let action_str = result_map
+                        .get("action")
+                        .and_then(|v| if let Value::String(s) = v { Some(s.as_str()) } else { None });
+                    let reason_str = result_map
+                        .get("reason")
+                        .and_then(|v| if let Value::String(s) = v { Some(s.as_str()) } else { None });
+
+                    if let Some(action) = action_str {
+                        ruleset_trace = ruleset_trace.with_decision(action, reason_str);
+                    }
+
+                    // Build decision_logic trace from stored JSON
+                    if let Some(Value::String(decision_logic_json)) = result_map.get("decision_logic_json") {
+                        let decision_logic_traces = Self::build_decision_logic_traces(
+                            decision_logic_json,
+                            action_str,
+                            ruleset_score,
+                            &request.event_data,
+                        );
+                        ruleset_trace.decision_logic = decision_logic_traces;
+                    }
+                } else if let Some(ref action) = combined_result.action {
+                    // Fallback to combined result if ruleset-specific result not found
                     let action_str = match action {
                         Action::Approve => "approve",
                         Action::Deny => "deny",
@@ -2609,6 +2697,89 @@ impl DecisionEngine {
     /// Get metrics collector
     pub fn metrics(&self) -> Arc<MetricsCollector> {
         self.metrics.clone()
+    }
+
+    /// Build decision_logic traces from JSON
+    fn build_decision_logic_traces(
+        decision_logic_json: &str,
+        matched_action: Option<&str>,
+        _total_score: i32,
+        _event_data: &HashMap<String, Value>,
+    ) -> Vec<DecisionLogicTrace> {
+        let mut traces = Vec::new();
+
+        // Parse the decision_logic JSON
+        let decision_rules: Vec<serde_json::Value> = match serde_json::from_str(decision_logic_json) {
+            Ok(rules) => rules,
+            Err(e) => {
+                tracing::warn!("Failed to parse decision_logic_json: {}", e);
+                return traces;
+            }
+        };
+
+        let mut matched_found = false;
+
+        for rule in decision_rules {
+            let is_default = rule.get("default").and_then(|v| v.as_bool()).unwrap_or(false);
+            let condition = rule.get("condition").and_then(|v| v.as_str()).map(|s| s.to_string());
+            let action = rule.get("action").and_then(|v| v.as_str()).map(|s| s.to_string());
+            let reason = rule.get("reason").and_then(|v| v.as_str()).map(|s| s.to_string());
+
+            // Build condition string for display
+            let condition_str = if is_default {
+                "default".to_string()
+            } else {
+                condition.clone().unwrap_or_else(|| "unknown".to_string())
+            };
+
+            // Determine if this rule matched
+            // A rule is matched if:
+            // 1. matched_action matches this rule's action AND we haven't found a match yet
+            // 2. This is a default rule and no previous rule matched
+            let matched = if !matched_found {
+                if let Some(ref rule_action) = action {
+                    if matched_action == Some(rule_action.as_str()) {
+                        // This could be the matched rule - check condition if present
+                        if is_default {
+                            // Default rule matches if we reach it
+                            true
+                        } else if let Some(ref _cond) = condition {
+                            // Try to evaluate the condition (simplified - just check if action matches)
+                            // In practice, we trust the action match since the VM already evaluated it
+                            true
+                        } else {
+                            true
+                        }
+                    } else {
+                        false
+                    }
+                } else {
+                    false
+                }
+            } else {
+                false
+            };
+
+            if matched {
+                matched_found = true;
+            }
+
+            let mut trace = DecisionLogicTrace::new(condition_str, matched);
+            trace.action = action;
+            trace.reason = reason;
+
+            traces.push(trace);
+
+            // If this rule matched and has terminate, stop processing
+            if matched {
+                let terminate = rule.get("terminate").and_then(|v| v.as_bool()).unwrap_or(false);
+                if terminate {
+                    break;
+                }
+            }
+        }
+
+        traces
     }
 
     /// Build step traces from the steps_json metadata and executed steps list

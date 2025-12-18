@@ -49,6 +49,15 @@ pub enum Expression {
         /// List ID from configuration
         list_id: String,
     },
+
+    /// Result access (e.g., result.action, result.fraud_detection_ruleset.total_score)
+    /// Used in pipeline router conditions to access ruleset execution results
+    ResultAccess {
+        /// Optional ruleset ID. If None, refers to the last executed ruleset's result
+        ruleset_id: Option<String>,
+        /// Field to access (e.g., "action", "total_score", "reason")
+        field: String,
+    },
 }
 
 /// Logical group operation type
@@ -108,6 +117,22 @@ impl Expression {
             condition: Box::new(condition),
             true_expr: Box::new(true_expr),
             false_expr: Box::new(false_expr),
+        }
+    }
+
+    /// Create a result access expression (last ruleset result)
+    pub fn result_access(field: String) -> Self {
+        Expression::ResultAccess {
+            ruleset_id: None,
+            field,
+        }
+    }
+
+    /// Create a result access expression for a specific ruleset
+    pub fn result_access_for(ruleset_id: String, field: String) -> Self {
+        Expression::ResultAccess {
+            ruleset_id: Some(ruleset_id),
+            field,
         }
     }
 }

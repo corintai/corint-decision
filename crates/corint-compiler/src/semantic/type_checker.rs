@@ -177,6 +177,12 @@ impl TypeChecker {
                 // The actual list will be resolved at runtime
                 Ok(TypeInfo::Unknown)
             }
+
+            Expression::ResultAccess { .. } => {
+                // Result access type is unknown at compile time
+                // The actual result will be resolved at runtime
+                Ok(TypeInfo::Unknown)
+            }
         }
     }
 

@@ -177,6 +177,34 @@ impl ExpressionParser {
             }
         }
 
+        // Check for result access: result.field or result.ruleset_id.field
+        if input.starts_with("result.") {
+            let rest = &input[7..]; // Skip "result."
+            let parts: Vec<&str> = rest.split('.').collect();
+
+            if parts.is_empty() {
+                return Err(ParseError::InvalidExpression(
+                    "result. requires a field name".to_string(),
+                ));
+            }
+
+            if parts.len() == 1 {
+                // result.field - access last ruleset's result
+                return Ok(Expression::ResultAccess {
+                    ruleset_id: None,
+                    field: parts[0].trim().to_string(),
+                });
+            } else {
+                // result.ruleset_id.field - access specific ruleset's result
+                let ruleset_id = parts[0].trim().to_string();
+                let field = parts[1..].join(".");
+                return Ok(Expression::ResultAccess {
+                    ruleset_id: Some(ruleset_id),
+                    field: field.trim().to_string(),
+                });
+            }
+        }
+
         // Must be field access
         if input.contains('.') {
             let parts: Vec<String> = input.split('.').map(|s| s.trim().to_string()).collect();

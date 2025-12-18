@@ -136,6 +136,14 @@ impl ExpressionCompiler {
                     list_id, list_id
                 )))
             }
+
+            Expression::ResultAccess { ruleset_id, field } => {
+                // Load result field onto stack
+                Ok(vec![Instruction::LoadResult {
+                    ruleset_id: ruleset_id.clone(),
+                    field: field.clone(),
+                }])
+            }
         }
     }
 
@@ -400,6 +408,18 @@ impl ExpressionCompiler {
                     "expression": format!("list.{}", list_id)
                 })
             }
+            Expression::ResultAccess { ruleset_id, field } => {
+                let expr_str = match ruleset_id {
+                    Some(id) => format!("result.{}.{}", id, field),
+                    None => format!("result.{}", field),
+                };
+                json!({
+                    "type": "result_access",
+                    "ruleset_id": ruleset_id,
+                    "field": field,
+                    "expression": expr_str
+                })
+            }
         }
     }
 
@@ -465,6 +485,12 @@ impl ExpressionCompiler {
                 format!("{}:[{}]", group_name, cond_strs.join(", "))
             }
             Expression::ListReference { list_id } => format!("list.{}", list_id),
+            Expression::ResultAccess { ruleset_id, field } => {
+                match ruleset_id {
+                    Some(id) => format!("result.{}.{}", id, field),
+                    None => format!("result.{}", field),
+                }
+            }
         }
     }
 
