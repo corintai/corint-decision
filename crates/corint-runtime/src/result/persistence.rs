@@ -50,6 +50,9 @@ pub struct RuleExecutionRecord {
     /// Structured conditions as JSON array for detailed tracing
     /// Each element is a structured object with type, expression, nested conditions, etc.
     pub conditions_json: Option<String>,
+
+    /// Condition group JSON for new all/any format
+    pub condition_group_json: Option<String>,
 }
 
 /// Decision result record for persistence

@@ -829,6 +829,455 @@ impl DecisionEngine {
             .collect()
     }
 
+    /// Convert condition group JSON string to Vec<ConditionTrace>
+    /// The JSON format is a ConditionGroup enum: {"all": [...]} or {"any": [...]} or {"not": [...]}
+    fn condition_group_json_to_traces(
+        condition_group_json: &str,
+        _triggered: bool,
+        event_data: &HashMap<String, Value>,
+    ) -> Vec<ConditionTrace> {
+        // Parse the JSON string
+        let group: serde_json::Value = match serde_json::from_str(condition_group_json) {
+            Ok(v) => v,
+            Err(_) => return vec![],
+        };
+
+        // Determine the group type and get conditions
+        let (group_type, conditions) = if let Some(all_conditions) = group.get("all") {
+            ("all", all_conditions.as_array())
+        } else if let Some(any_conditions) = group.get("any") {
+            ("any", any_conditions.as_array())
+        } else if let Some(not_conditions) = group.get("not") {
+            ("not", not_conditions.as_array())
+        } else {
+            return vec![];
+        };
+
+        let conditions = match conditions {
+            Some(arr) => arr,
+            None => return vec![],
+        };
+
+        // Convert each condition to a trace
+        let nested: Vec<ConditionTrace> = conditions
+            .iter()
+            .map(|cond| Self::condition_to_trace(cond, false, event_data))
+            .collect();
+
+        // Calculate actual group result based on nested results
+        let group_result = match group_type {
+            "all" => nested.iter().all(|c| c.result),
+            "any" => nested.iter().any(|c| c.result),
+            "not" => !nested.iter().all(|c| c.result),
+            _ => false,
+        };
+
+        // Return a single group trace containing all nested conditions
+        vec![ConditionTrace::group(group_type, nested, group_result)]
+    }
+
+    /// Convert a single condition (Expression or nested Group) to ConditionTrace
+    fn condition_to_trace(
+        cond: &serde_json::Value,
+        _triggered: bool,
+        event_data: &HashMap<String, Value>,
+    ) -> ConditionTrace {
+        // Check if it's a nested group (has "all", "any", or "not" key)
+        if let Some(all_conditions) = cond.get("all") {
+            if let Some(arr) = all_conditions.as_array() {
+                let nested: Vec<ConditionTrace> = arr
+                    .iter()
+                    .map(|c| Self::condition_to_trace(c, false, event_data))
+                    .collect();
+                // "all" is true only if all nested conditions are true
+                let group_result = nested.iter().all(|c| c.result);
+                return ConditionTrace::group("all", nested, group_result);
+            }
+        }
+        if let Some(any_conditions) = cond.get("any") {
+            if let Some(arr) = any_conditions.as_array() {
+                let nested: Vec<ConditionTrace> = arr
+                    .iter()
+                    .map(|c| Self::condition_to_trace(c, false, event_data))
+                    .collect();
+                // "any" is true if any nested condition is true
+                let group_result = nested.iter().any(|c| c.result);
+                return ConditionTrace::group("any", nested, group_result);
+            }
+        }
+        if let Some(not_conditions) = cond.get("not") {
+            if let Some(arr) = not_conditions.as_array() {
+                let nested: Vec<ConditionTrace> = arr
+                    .iter()
+                    .map(|c| Self::condition_to_trace(c, false, event_data))
+                    .collect();
+                // "not" is true if all nested conditions are false (negation of "all")
+                let group_result = !nested.iter().all(|c| c.result);
+                return ConditionTrace::group("not", nested, group_result);
+            }
+        }
+
+        // It's an expression - convert to string representation
+        Self::expression_json_to_trace(cond, false, event_data)
+    }
+
+    /// Convert an expression JSON to ConditionTrace
+    fn expression_json_to_trace(
+        expr: &serde_json::Value,
+        _triggered: bool,
+        event_data: &HashMap<String, Value>,
+    ) -> ConditionTrace {
+        // Try to build a human-readable expression string
+        let expression = Self::expr_json_to_string(expr);
+
+        // Default result - will be calculated for Binary expressions
+        let mut result = false;
+        let mut left_value_for_display: Option<Value> = None;
+        let mut right_value_for_display: Option<Value> = None;
+
+        // For Binary expressions, extract left/right values and calculate actual result
+        if let Some(binary) = expr.get("Binary") {
+            if let Some(obj) = binary.as_object() {
+                let left_expr = obj.get("left");
+                let right_expr = obj.get("right");
+                let op = obj.get("op").and_then(|o| o.as_str()).unwrap_or("");
+
+                // Extract actual values for evaluation
+                let left_val = left_expr.and_then(|e| Self::extract_value_from_expr_json(e, event_data));
+                let right_val = right_expr.and_then(|e| Self::extract_value_from_expr_json(e, event_data));
+
+                // Set display values (only for non-constants)
+                if let Some(left_e) = left_expr {
+                    if Self::should_display_value(left_e) {
+                        left_value_for_display = left_val.clone();
+                    }
+                }
+                if let Some(right_e) = right_expr {
+                    if Self::should_display_value(right_e) {
+                        right_value_for_display = right_val.clone();
+                    }
+                }
+
+                // Calculate actual result
+                if let (Some(lv), Some(rv)) = (&left_val, &right_val) {
+                    result = Self::evaluate_comparison(lv, op, rv);
+                }
+            }
+        }
+
+        let mut trace = ConditionTrace::new(expression, result);
+        trace.left_value = left_value_for_display;
+        trace.right_value = right_value_for_display;
+        trace
+    }
+
+    /// Evaluate a comparison between two values
+    fn evaluate_comparison(left: &Value, op: &str, right: &Value) -> bool {
+        match (left, right) {
+            (Value::Number(l), Value::Number(r)) => {
+                match op {
+                    "Gt" => l > r,
+                    "Ge" => l >= r,
+                    "Lt" => l < r,
+                    "Le" => l <= r,
+                    "Eq" => (l - r).abs() < f64::EPSILON,
+                    "Ne" => (l - r).abs() >= f64::EPSILON,
+                    _ => false,
+                }
+            }
+            (Value::String(l), Value::String(r)) => {
+                match op {
+                    "Eq" => l == r,
+                    "Ne" => l != r,
+                    "Gt" => l > r,
+                    "Ge" => l >= r,
+                    "Lt" => l < r,
+                    "Le" => l <= r,
+                    "Contains" => l.contains(r.as_str()),
+                    "StartsWith" => l.starts_with(r.as_str()),
+                    "EndsWith" => l.ends_with(r.as_str()),
+                    _ => false,
+                }
+            }
+            (Value::Bool(l), Value::Bool(r)) => {
+                match op {
+                    "Eq" => l == r,
+                    "Ne" => l != r,
+                    "And" => *l && *r,
+                    "Or" => *l || *r,
+                    _ => false,
+                }
+            }
+            // Handle cross-type comparisons for equality
+            _ => {
+                match op {
+                    "Eq" => left == right,
+                    "Ne" => left != right,
+                    _ => false,
+                }
+            }
+        }
+    }
+
+    /// Check if an expression's value should be displayed in trace
+    /// Returns true for FieldAccess and complex expressions, false for Literal, ListReference, and boolean values
+    fn should_display_value(expr: &serde_json::Value) -> bool {
+        // Skip Literal values (constants)
+        if let Some(literal) = expr.get("Literal") {
+            // Also skip boolean literals
+            if literal.is_boolean() {
+                return false;
+            }
+            return false;
+        }
+
+        // Skip ListReference (lists)
+        if expr.get("ListReference").is_some() {
+            return false;
+        }
+
+        // Skip direct boolean values
+        if expr.is_boolean() {
+            return false;
+        }
+
+        // FieldAccess should be displayed
+        if expr.get("FieldAccess").is_some() {
+            return true;
+        }
+
+        // FunctionCall should be displayed
+        if expr.get("FunctionCall").is_some() {
+            return true;
+        }
+
+        // Binary expressions (complex calculations) should be displayed
+        if expr.get("Binary").is_some() {
+            return true;
+        }
+
+        // Unary expressions should be displayed
+        if expr.get("Unary").is_some() {
+            return true;
+        }
+
+        false
+    }
+
+    /// Extract actual value from expression JSON (new format with Binary/FieldAccess keys)
+    fn extract_value_from_expr_json(
+        expr: &serde_json::Value,
+        event_data: &HashMap<String, Value>,
+    ) -> Option<Value> {
+        // Handle FieldAccess: {"FieldAccess": ["event", "transaction", "amount"]}
+        if let Some(field_access) = expr.get("FieldAccess") {
+            if let Some(arr) = field_access.as_array() {
+                let path: Vec<String> = arr.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect();
+                // Strip "event" prefix since event_data is already the event content
+                let effective_path: Vec<String> = if path.first().map(|s| s.as_str()) == Some("event") {
+                    path.into_iter().skip(1).collect()
+                } else {
+                    path
+                };
+                let result = Self::get_field_value(event_data, &effective_path);
+                if result.is_none() {
+                    tracing::debug!("Failed to get field value for path {:?}, event_data keys: {:?}", effective_path, event_data.keys().collect::<Vec<_>>());
+                }
+                return result;
+            }
+        }
+
+        // Handle Literal: {"Literal": 10000.0} or nested like {"Literal": {"Number": 70}}
+        if let Some(literal) = expr.get("Literal") {
+            // Try direct conversion first
+            if let Some(val) = Self::json_to_core_value(literal) {
+                return Some(val);
+            }
+            // Handle nested Value format: {"Literal": {"Number": 70}}
+            if let Some(obj) = literal.as_object() {
+                if let Some(num) = obj.get("Number") {
+                    return num.as_f64().map(Value::Number);
+                }
+                if let Some(s) = obj.get("String") {
+                    return s.as_str().map(|s| Value::String(s.to_string()));
+                }
+                if let Some(b) = obj.get("Bool") {
+                    return b.as_bool().map(Value::Bool);
+                }
+                if obj.contains_key("Null") {
+                    return Some(Value::Null);
+                }
+            }
+            return None;
+        }
+
+        // Handle Binary expression (calculate the result)
+        if let Some(binary) = expr.get("Binary") {
+            if let Some(obj) = binary.as_object() {
+                let left = obj.get("left")?;
+                let right = obj.get("right")?;
+                let op = obj.get("op").and_then(|o| o.as_str())?;
+
+                let left_val = Self::extract_value_from_expr_json(left, event_data)?;
+                let right_val = Self::extract_value_from_expr_json(right, event_data)?;
+
+                // Handle numeric operations
+                if let (Value::Number(l), Value::Number(r)) = (&left_val, &right_val) {
+                    let result = match op {
+                        "Add" => l + r,
+                        "Sub" => l - r,
+                        "Mul" => l * r,
+                        "Div" => if *r != 0.0 { l / r } else { return None },
+                        "Mod" => l % r,
+                        _ => return None,
+                    };
+                    return Some(Value::Number(result));
+                }
+            }
+        }
+
+        // Handle FunctionCall - cannot extract value without runtime context
+        if expr.get("FunctionCall").is_some() {
+            return None;
+        }
+
+        None
+    }
+
+    /// Convert expression JSON to readable string
+    fn expr_json_to_string(expr: &serde_json::Value) -> String {
+        // Check for Binary expression: {"Binary": {"left": ..., "op": "Gt", "right": ...}}
+        if let Some(binary) = expr.get("Binary") {
+            if let Some(obj) = binary.as_object() {
+                let left = obj.get("left").map(|l| Self::expr_json_to_string(l)).unwrap_or_default();
+                let op = obj.get("op").map(|o| Self::operator_to_symbol(o)).unwrap_or("?".to_string());
+                let right = obj.get("right").map(|r| Self::expr_json_to_string(r)).unwrap_or_default();
+                return format!("{} {} {}", left, op, right);
+            }
+        }
+
+        // Check for FieldAccess: {"FieldAccess": ["event", "transaction", "amount"]}
+        if let Some(field_access) = expr.get("FieldAccess") {
+            if let Some(arr) = field_access.as_array() {
+                let parts: Vec<&str> = arr.iter().filter_map(|v| v.as_str()).collect();
+                return parts.join(".");
+            }
+        }
+
+        // Check for Literal: {"Literal": 10000.0} or {"Literal": "USD"} or {"Literal": true}
+        if let Some(literal) = expr.get("Literal") {
+            return Self::value_to_string(literal);
+        }
+
+        // Check for Unary: {"Unary": {"op": "Not", "operand": ...}}
+        if let Some(unary) = expr.get("Unary") {
+            if let Some(obj) = unary.as_object() {
+                let op = obj.get("op").and_then(|o| o.as_str()).unwrap_or("!");
+                let operand = obj.get("operand").map(|o| Self::expr_json_to_string(o)).unwrap_or_default();
+                let op_symbol = if op == "Not" { "!" } else if op == "Negate" { "-" } else { op };
+                return format!("{}{}", op_symbol, operand);
+            }
+        }
+
+        // Check for ListReference: {"ListReference": {"list_id": "..."}}
+        if let Some(list_ref) = expr.get("ListReference") {
+            if let Some(obj) = list_ref.as_object() {
+                if let Some(list_id) = obj.get("list_id").and_then(|v| v.as_str()) {
+                    return format!("list.{}", list_id);
+                }
+            }
+        }
+
+        // Check for FunctionCall: {"FunctionCall": {"name": "count", "args": [...]}}
+        if let Some(func) = expr.get("FunctionCall") {
+            if let Some(obj) = func.as_object() {
+                let name = obj.get("name").and_then(|n| n.as_str()).unwrap_or("func");
+                let args = obj.get("args")
+                    .and_then(|a| a.as_array())
+                    .map(|arr| arr.iter().map(|a| Self::expr_json_to_string(a)).collect::<Vec<_>>().join(", "))
+                    .unwrap_or_default();
+                return format!("{}({})", name, args);
+            }
+        }
+
+        // Fallback: try to format nicely
+        if let Some(s) = expr.as_str() {
+            return s.to_string();
+        }
+        if let Some(n) = expr.as_f64() {
+            return format!("{}", n);
+        }
+        if let Some(b) = expr.as_bool() {
+            return format!("{}", b);
+        }
+        if expr.is_null() {
+            return "null".to_string();
+        }
+
+        // Last resort: serialize as JSON
+        expr.to_string()
+    }
+
+    /// Convert operator JSON to readable symbol
+    fn operator_to_symbol(op: &serde_json::Value) -> String {
+        let op_str = op.as_str().unwrap_or("");
+        match op_str {
+            "Eq" => "==".to_string(),
+            "Ne" => "!=".to_string(),
+            "Gt" => ">".to_string(),
+            "Ge" => ">=".to_string(),
+            "Lt" => "<".to_string(),
+            "Le" => "<=".to_string(),
+            "Add" => "+".to_string(),
+            "Sub" => "-".to_string(),
+            "Mul" => "*".to_string(),
+            "Div" => "/".to_string(),
+            "Mod" => "%".to_string(),
+            "And" => "&&".to_string(),
+            "Or" => "||".to_string(),
+            "Contains" => "contains".to_string(),
+            "StartsWith" => "starts_with".to_string(),
+            "EndsWith" => "ends_with".to_string(),
+            "Regex" => "regex".to_string(),
+            "In" => "in".to_string(),
+            "NotIn" => "not in".to_string(),
+            "InList" => "in".to_string(),
+            "NotInList" => "not in".to_string(),
+            _ => op_str.to_string(),
+        }
+    }
+
+    /// Convert JSON value to readable string representation
+    fn value_to_string(value: &serde_json::Value) -> String {
+        match value {
+            serde_json::Value::Null => "null".to_string(),
+            serde_json::Value::Bool(b) => format!("{}", b),
+            serde_json::Value::Number(n) => format!("{}", n),
+            serde_json::Value::String(s) => format!("\"{}\"", s),
+            serde_json::Value::Array(arr) => {
+                let items: Vec<String> = arr.iter().map(Self::value_to_string).collect();
+                format!("[{}]", items.join(", "))
+            }
+            serde_json::Value::Object(obj) => {
+                // Check if it's a Value enum variant
+                if let Some(v) = obj.get("String") {
+                    return format!("\"{}\"", v.as_str().unwrap_or(""));
+                }
+                if let Some(v) = obj.get("Number") {
+                    return format!("{}", v);
+                }
+                if let Some(v) = obj.get("Bool") {
+                    return format!("{}", v);
+                }
+                if obj.contains_key("Null") {
+                    return "null".to_string();
+                }
+                // Default: just serialize
+                format!("{}", value)
+            }
+        }
+    }
+
     /// Convert a single JSON value to ConditionTrace
     fn json_value_to_condition_trace(
         json: &serde_json::Value,
@@ -1479,6 +1928,11 @@ impl DecisionEngine {
                                                     .custom
                                                     .get("conditions_json")
                                                     .cloned();
+                                                let condition_group_json = rule_program
+                                                    .metadata
+                                                    .custom
+                                                    .get("condition_group_json")
+                                                    .cloned();
 
                                                 // Record rule execution
                                                 rule_executions.push(
@@ -1492,6 +1946,7 @@ impl DecisionEngine {
                                                         rule_time_ms,
                                                         rule_conditions,
                                                         conditions_json,
+                                                        condition_group_json,
                                                     ),
                                                 );
 
@@ -1759,6 +2214,11 @@ impl DecisionEngine {
                                                 .custom
                                                 .get("conditions_json")
                                                 .cloned();
+                                            let condition_group_json = rule_program
+                                                .metadata
+                                                .custom
+                                                .get("condition_group_json")
+                                                .cloned();
 
                                             // Record rule execution
                                             rule_executions.push(
@@ -1772,6 +2232,7 @@ impl DecisionEngine {
                                                     rule_time_ms,
                                                     rule_conditions,
                                                     conditions_json,
+                                                    condition_group_json,
                                                 ),
                                             );
 
@@ -1877,6 +2338,8 @@ impl DecisionEngine {
                     let rule_conditions = program.metadata.custom.get("conditions").cloned();
                     let conditions_json =
                         program.metadata.custom.get("conditions_json").cloned();
+                    let condition_group_json =
+                        program.metadata.custom.get("condition_group_json").cloned();
 
                     // Record rule execution (global rules have no ruleset)
                     rule_executions.push(Self::create_rule_execution_record(
@@ -1889,6 +2352,7 @@ impl DecisionEngine {
                         rule_time_ms,
                         rule_conditions,
                         conditions_json,
+                        condition_group_json,
                     ));
 
                     // Accumulate state
@@ -2060,8 +2524,16 @@ impl DecisionEngine {
                     rule_trace.score = rule_exec.score;
                     rule_trace.execution_time_ms = rule_exec.execution_time_ms;
 
-                    // Add rule conditions from metadata - prefer structured JSON for nested traces
-                    if let Some(ref conditions_json_str) = rule_exec.conditions_json {
+                    // Add rule conditions from metadata - prefer condition_group_json (new format)
+                    if let Some(ref condition_group_json_str) = rule_exec.condition_group_json {
+                        // Use condition group JSON for all/any format
+                        let condition_traces = Self::condition_group_json_to_traces(
+                            condition_group_json_str,
+                            rule_exec.triggered,
+                            &request.event_data,
+                        );
+                        rule_trace.conditions.extend(condition_traces);
+                    } else if let Some(ref conditions_json_str) = rule_exec.conditions_json {
                         // Use structured JSON to create nested condition traces with actual values
                         let condition_traces = Self::json_to_condition_traces(
                             conditions_json_str,
@@ -2135,6 +2607,7 @@ impl DecisionEngine {
         execution_time_ms: u64,
         rule_conditions: Option<String>,
         conditions_json: Option<String>,
+        condition_group_json: Option<String>,
     ) -> corint_runtime::RuleExecutionRecord {
         // Convert conditions string to JSON value for storage
         let rule_conditions_json = rule_conditions.map(|s| serde_json::Value::String(s));
@@ -2150,6 +2623,7 @@ impl DecisionEngine {
             feature_values: None,
             rule_conditions: rule_conditions_json,
             conditions_json,
+            condition_group_json,
         }
     }
 
