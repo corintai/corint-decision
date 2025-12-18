@@ -1,14 +1,14 @@
 #!/bin/bash
 
-echo "=== CORINT Decision Engine API 测试 ==="
+echo "=== CORINT Decision Engine API Test ==="
 echo ""
 
-echo "1. 健康检查..."
+echo "1. Health Check..."
 curl -s -X GET http://localhost:8080/health | jq
 echo ""
 echo ""
 
-echo "2. 欺诈检测 - Transaction Event..."
+echo "2. Fraud Detection - Transaction Event..."
 curl -s -X POST http://localhost:8080/v1/decide \
   -H "Content-Type: application/json" \
   -d '{
@@ -27,7 +27,7 @@ curl -s -X POST http://localhost:8080/v1/decide \
 echo ""
 echo ""
 
-echo "3. 支付检测 - 标准金额 (<= $1000)..."
+echo "3. Payment Detection - Standard Amount (<= $1000)..."
 curl -s -X POST http://localhost:8080/v1/decide \
   -H "Content-Type: application/json" \
   -d '{
@@ -46,7 +46,7 @@ curl -s -X POST http://localhost:8080/v1/decide \
 echo ""
 echo ""
 
-echo "4. 支付检测 - 高额支付 (> $1000)..."
+echo "4. Payment Detection - High Amount (> $1000)..."
 curl -s -X POST http://localhost:8080/v1/decide \
   -H "Content-Type: application/json" \
   -d '{
@@ -66,7 +66,7 @@ curl -s -X POST http://localhost:8080/v1/decide \
 echo ""
 echo ""
 
-echo "5. 边界测试 - 不匹配的事件类型 (login)..."
+echo "5. Edge Case - Unmatched Event Type (login)..."
 curl -s -X POST http://localhost:8080/v1/decide \
   -H "Content-Type: application/json" \
   -d '{
@@ -79,4 +79,32 @@ curl -s -X POST http://localhost:8080/v1/decide \
 echo ""
 echo ""
 
-echo "测试完成！"
+echo "6. Payment Detection with Step Trace - Show Step Details..."
+curl -s -X POST http://localhost:8080/v1/decide \
+  -H "Content-Type: application/json" \
+  -d '{
+    "event_data": {
+      "type": "payment",
+      "payment_amount": 5000,
+      "user_id": "user_premium_001",
+      "email": "vip@example.com",
+      "ip_address": "8.8.8.8",
+      "currency": "USD",
+      "merchant_name": "Luxury Retailer",
+      "country": "US",
+      "timestamp": "2025-12-11T12:00:00Z"
+    },
+    "options": {
+      "enable_trace": true
+    }
+  }' | jq '{
+    pipeline_id: .trace.pipeline.pipeline_id,
+    steps: .trace.pipeline.steps,
+    rulesets: [.trace.pipeline.rulesets[].ruleset_id],
+    total_rules_evaluated: .trace.rules_evaluated,
+    total_rules_triggered: .trace.rules_triggered
+  }'
+echo ""
+echo ""
+
+echo "Test completed!"

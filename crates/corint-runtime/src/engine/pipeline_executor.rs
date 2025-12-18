@@ -374,6 +374,45 @@ impl PipelineExecutor {
                     pc += 1;
                 }
 
+                Instruction::MarkStepExecuted {
+                    step_id,
+                    next_step_id,
+                    route_index,
+                    is_default_route,
+                } => {
+                    // Store step execution info for tracing
+                    // Build step execution record as JSON
+                    let step_record = serde_json::json!({
+                        "step_id": step_id,
+                        "next_step_id": next_step_id,
+                        "route_index": route_index,
+                        "is_default_route": is_default_route,
+                    });
+
+                    // Get existing array or create new one
+                    let mut executed_steps = match ctx.load_variable("__executed_steps__") {
+                        Ok(Value::Array(arr)) => arr,
+                        _ => Vec::new(),
+                    };
+
+                    // Add this step execution record
+                    executed_steps.push(Value::String(step_record.to_string()));
+
+                    ctx.store_variable(
+                        "__executed_steps__".to_string(),
+                        Value::Array(executed_steps),
+                    );
+
+                    tracing::debug!(
+                        "Step executed: {} -> {:?} (route: {:?}, default: {})",
+                        step_id,
+                        next_step_id,
+                        route_index,
+                        is_default_route
+                    );
+                    pc += 1;
+                }
+
                 Instruction::CallRuleset { ruleset_id } => {
                     // Store the ruleset ID in an array to support multiple rulesets
                     // The actual execution will be handled by the DecisionEngine

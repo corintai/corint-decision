@@ -9,4 +9,5 @@ pub use persistence::{DecisionRecord, DecisionResultWriter, RuleExecutionRecord}
 pub use result::{DecisionResult, ExecutionResult};
 pub use trace::{
     ConditionTrace, DecisionLogicTrace, ExecutionTrace, PipelineTrace, RuleTrace, RulesetTrace,
+    StepTrace,
 };

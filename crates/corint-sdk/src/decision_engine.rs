@@ -9,7 +9,7 @@ use corint_core::Value;
 use corint_parser::{PipelineParser, RegistryParser, RuleParser, RulesetParser};
 use corint_runtime::{
     ApiConfig, ConditionTrace, ContextInput, DecisionResult, ExecutionTrace, ExternalApiClient,
-    MetricsCollector, PipelineExecutor, PipelineTrace, RuleTrace, RulesetTrace,
+    MetricsCollector, PipelineExecutor, PipelineTrace, RuleTrace, RulesetTrace, StepTrace,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -2493,6 +2493,21 @@ impl DecisionEngine {
                 }
             }
 
+            // Add step traces from pipeline metadata
+            if let Some(ref pid) = matched_pipeline_id {
+                if let Some(pipeline_program) = self.pipeline_map.get(pid) {
+                    if let Some(steps_json_str) = pipeline_program.metadata.custom.get("steps_json") {
+                        let step_traces = Self::build_step_traces_from_json(
+                            steps_json_str,
+                            &execution_result.variables,
+                        );
+                        for step_trace in step_traces {
+                            pipeline_trace.push_step(step_trace);
+                        }
+                    }
+                }
+            }
+
             // Add branch execution info from preserved variables (captured before rules overwrite context)
             if let Some(branch_idx) = executed_branch_index {
                 pipeline_trace.executed_branch = Some(branch_idx);
@@ -2594,6 +2609,129 @@ impl DecisionEngine {
     /// Get metrics collector
     pub fn metrics(&self) -> Arc<MetricsCollector> {
         self.metrics.clone()
+    }
+
+    /// Build step traces from the steps_json metadata and executed steps list
+    fn build_step_traces_from_json(
+        steps_json_str: &str,
+        execution_variables: &HashMap<String, Value>,
+    ) -> Vec<StepTrace> {
+        let mut step_traces = Vec::new();
+
+        // Parse the steps JSON (step definitions from compilation)
+        let steps: Vec<serde_json::Value> = match serde_json::from_str(steps_json_str) {
+            Ok(s) => s,
+            Err(e) => {
+                tracing::warn!("Failed to parse steps_json: {}", e);
+                return step_traces;
+            }
+        };
+
+        // Parse the executed steps from runtime (actual execution path)
+        let executed_steps: Vec<serde_json::Value> = execution_variables
+            .get("__executed_steps__")
+            .and_then(|v| {
+                if let Value::Array(arr) = v {
+                    Some(
+                        arr.iter()
+                            .filter_map(|item| {
+                                if let Value::String(s) = item {
+                                    serde_json::from_str(s).ok()
+                                } else {
+                                    None
+                                }
+                            })
+                            .collect(),
+                    )
+                } else {
+                    None
+                }
+            })
+            .unwrap_or_default();
+
+        // Build a map of step_id -> execution info for quick lookup
+        let executed_map: HashMap<String, &serde_json::Value> = executed_steps
+            .iter()
+            .filter_map(|exec| {
+                exec.get("step_id")
+                    .and_then(|v| v.as_str())
+                    .map(|id| (id.to_string(), exec))
+            })
+            .collect();
+
+        for step_json in steps {
+            let step_id = step_json
+                .get("id")
+                .and_then(|v| v.as_str())
+                .unwrap_or("unknown")
+                .to_string();
+            let step_type = step_json
+                .get("type")
+                .and_then(|v| v.as_str())
+                .unwrap_or("unknown")
+                .to_string();
+            let step_name = step_json
+                .get("name")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string());
+
+            let mut step_trace = StepTrace::new(step_id.clone(), step_type.clone());
+
+            if let Some(name) = step_name {
+                step_trace = step_trace.with_name(name);
+            }
+
+            // Add ruleset ID if present
+            if let Some(ruleset_id) = step_json.get("ruleset").and_then(|v| v.as_str()) {
+                step_trace = step_trace.with_ruleset(ruleset_id.to_string());
+            }
+
+            // Check if this step was actually executed and get execution details
+            if let Some(exec_info) = executed_map.get(&step_id) {
+                step_trace = step_trace.mark_executed();
+
+                // Get next_step_id from execution info
+                if let Some(next_step) = exec_info.get("next_step_id").and_then(|v| v.as_str()) {
+                    step_trace = step_trace.with_next_step(next_step.to_string());
+                }
+
+                // Get route info for router steps - add condition trace for the matched route
+                if let Some(route_idx) = exec_info.get("route_index").and_then(|v| v.as_u64()) {
+                    // Get the route condition from step definition
+                    let route_condition = step_json
+                        .get("routes")
+                        .and_then(|v| v.as_array())
+                        .and_then(|routes| routes.get(route_idx as usize))
+                        .and_then(|route| route.get("when"))
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string());
+
+                    // Add condition trace for the matched route
+                    if let Some(cond) = route_condition {
+                        let condition_trace = ConditionTrace::new(cond, true);
+                        step_trace = step_trace.add_condition(condition_trace);
+                    }
+                }
+
+                // Check if default route was taken
+                if exec_info
+                    .get("is_default_route")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false)
+                {
+                    step_trace = step_trace.with_default_route();
+                }
+            } else {
+                // Step was not executed - use step definition's next for reference
+                if let Some(next) = step_json.get("next").and_then(|v| v.as_str()) {
+                    step_trace = step_trace.with_next_step(next.to_string());
+                }
+            }
+
+            step_traces.push(step_trace);
+        }
+
+        step_traces
     }
 
     /// Create a rule execution record

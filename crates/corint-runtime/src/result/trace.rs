@@ -237,6 +237,102 @@ impl RulesetTrace {
     }
 }
 
+/// Trace of a pipeline step execution
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StepTrace {
+    /// The step ID
+    pub step_id: String,
+
+    /// The step name (if available)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub step_name: Option<String>,
+
+    /// The step type (router, ruleset, etc.)
+    pub step_type: String,
+
+    /// Whether this step was executed
+    pub executed: bool,
+
+    /// The next step ID (where execution continued)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub next_step: Option<String>,
+
+    /// For router steps: whether default route was taken
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub default_route: Option<bool>,
+
+    /// For ruleset steps: the ruleset ID being executed
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ruleset_id: Option<String>,
+
+    /// Condition evaluation traces for this step (for router steps, shows which condition matched)
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub conditions: Vec<ConditionTrace>,
+
+    /// Execution time for this step in milliseconds
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub execution_time_ms: Option<u64>,
+}
+
+impl StepTrace {
+    /// Create a new step trace
+    pub fn new(step_id: String, step_type: String) -> Self {
+        Self {
+            step_id,
+            step_name: None,
+            step_type,
+            executed: false,
+            next_step: None,
+            default_route: None,
+            ruleset_id: None,
+            conditions: Vec::new(),
+            execution_time_ms: None,
+        }
+    }
+
+    /// Mark the step as executed
+    pub fn mark_executed(mut self) -> Self {
+        self.executed = true;
+        self
+    }
+
+    /// Set the next step
+    pub fn with_next_step(mut self, next: String) -> Self {
+        self.next_step = Some(next);
+        self
+    }
+
+    /// Mark that default route was taken
+    pub fn with_default_route(mut self) -> Self {
+        self.default_route = Some(true);
+        self
+    }
+
+    /// Set the ruleset ID for ruleset steps
+    pub fn with_ruleset(mut self, ruleset_id: String) -> Self {
+        self.ruleset_id = Some(ruleset_id);
+        self
+    }
+
+    /// Add a condition trace
+    pub fn add_condition(mut self, condition: ConditionTrace) -> Self {
+        self.conditions.push(condition);
+        self
+    }
+
+    /// Set execution time
+    pub fn with_execution_time(mut self, ms: u64) -> Self {
+        self.execution_time_ms = Some(ms);
+        self
+    }
+
+    /// Set step name
+    pub fn with_name(mut self, name: String) -> Self {
+        self.step_name = Some(name);
+        self
+    }
+}
+
 /// Trace of a pipeline execution
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PipelineTrace {
@@ -246,6 +342,10 @@ pub struct PipelineTrace {
     /// When condition evaluation traces
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub when_conditions: Vec<ConditionTrace>,
+
+    /// Step execution traces (ordered by execution)
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub steps: Vec<StepTrace>,
 
     /// Index of the executed branch (for branch steps)
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -269,11 +369,23 @@ impl PipelineTrace {
         Self {
             pipeline_id,
             when_conditions: Vec::new(),
+            steps: Vec::new(),
             executed_branch: None,
             branch_conditions: Vec::new(),
             rulesets: Vec::new(),
             final_decision_logic: Vec::new(),
         }
+    }
+
+    /// Add a step trace
+    pub fn add_step(mut self, step: StepTrace) -> Self {
+        self.steps.push(step);
+        self
+    }
+
+    /// Add a step trace by mutable reference
+    pub fn push_step(&mut self, step: StepTrace) {
+        self.steps.push(step);
     }
 
     /// Add a when condition trace

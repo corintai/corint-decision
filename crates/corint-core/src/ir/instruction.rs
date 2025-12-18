@@ -152,6 +152,18 @@ pub enum Instruction {
         condition: String,
     },
 
+    /// Mark a pipeline step as executed (for tracing)
+    MarkStepExecuted {
+        /// Step ID
+        step_id: String,
+        /// Next step ID (where execution will continue)
+        next_step_id: Option<String>,
+        /// Route index if a specific route was taken (for router steps)
+        route_index: Option<usize>,
+        /// Whether default route was taken
+        is_default_route: bool,
+    },
+
     /// Call/execute a ruleset by ID
     CallRuleset {
         /// Ruleset ID to execute

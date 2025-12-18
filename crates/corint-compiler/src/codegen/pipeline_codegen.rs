@@ -88,8 +88,12 @@ impl PipelineCompiler {
         Self::resolve_jumps(&mut ctx)?;
 
         // Step 5: Build program metadata
-        let metadata = ProgramMetadata::for_pipeline(pipeline.id.clone())
+        let mut metadata = ProgramMetadata::for_pipeline(pipeline.id.clone())
             .with_name(pipeline.name.clone());
+
+        // Step 6: Add step information to metadata for tracing
+        let steps_json = Self::build_steps_metadata(&sorted_steps);
+        metadata = metadata.with_custom("steps_json".to_string(), steps_json);
 
         Ok(Program::new(ctx.instructions, metadata))
     }
@@ -211,7 +215,7 @@ impl PipelineCompiler {
     fn compile_router_step(step: &PipelineStep, ctx: &mut CompileContext) -> Result<()> {
         // Router step: evaluate conditions and jump to appropriate target
         if let Some(routes) = &step.routes {
-            for route in routes {
+            for (route_idx, route) in routes.iter().enumerate() {
                 // Compile the condition
                 let condition_instructions = Self::compile_when_block(&route.when)?;
                 ctx.instructions.extend(condition_instructions);
@@ -220,18 +224,34 @@ impl PipelineCompiler {
                 let jump_if_false_pos = ctx.instructions.len();
                 ctx.instructions.push(Instruction::JumpIfFalse { offset: 0 });
 
-                // If condition is true, jump to target step
+                // If condition is true:
+                // 1. Mark step as executed with the selected route
+                ctx.instructions.push(Instruction::MarkStepExecuted {
+                    step_id: step.id.clone(),
+                    next_step_id: Some(route.next.clone()),
+                    route_index: Some(route_idx),
+                    is_default_route: false,
+                });
+
+                // 2. Jump to target step
                 ctx.add_pending_jump(route.next.clone());
 
-                // Backfill JumpIfFalse to skip past the Jump instruction
+                // Backfill JumpIfFalse to skip past the MarkStepExecuted and Jump instructions
                 if let Instruction::JumpIfFalse { offset } = &mut ctx.instructions[jump_if_false_pos] {
-                    *offset = 2; // Skip the Jump instruction we just added
+                    *offset = 3; // Skip MarkStepExecuted + Jump
                 }
             }
         }
 
         // Default route
         if let Some(default) = &step.default {
+            // Mark step as executed with default route
+            ctx.instructions.push(Instruction::MarkStepExecuted {
+                step_id: step.id.clone(),
+                next_step_id: Some(default.clone()),
+                route_index: None,
+                is_default_route: true,
+            });
             ctx.add_pending_jump(default.clone());
         }
 
@@ -240,6 +260,23 @@ impl PipelineCompiler {
 
     /// Compile a ruleset step
     fn compile_ruleset_step(step: &PipelineStep, ctx: &mut CompileContext) -> Result<()> {
+        // Get next step ID for tracing
+        let next_step_id = step.next.as_ref().map(|n| {
+            if let StepNext::StepId(id) = n {
+                id.clone()
+            } else {
+                "end".to_string()
+            }
+        });
+
+        // Mark step as executed
+        ctx.instructions.push(Instruction::MarkStepExecuted {
+            step_id: step.id.clone(),
+            next_step_id: next_step_id.clone(),
+            route_index: None,
+            is_default_route: false,
+        });
+
         if let StepDetails::Ruleset { ruleset } = &step.details {
             ctx.instructions.push(Instruction::CallRuleset {
                 ruleset_id: ruleset.clone(),
@@ -249,9 +286,27 @@ impl PipelineCompiler {
         Self::compile_next_jump(step, ctx)
     }
 
+    /// Get the next step ID from a step
+    fn get_next_step_id(step: &PipelineStep) -> Option<String> {
+        step.next.as_ref().map(|n| {
+            let StepNext::StepId(id) = n;
+            id.clone()
+        })
+    }
+
     /// Compile a function step
     fn compile_function_step(step: &PipelineStep, ctx: &mut CompileContext) -> Result<()> {
-        if let StepDetails::Function { function, params } = &step.details {
+        let next_step_id = Self::get_next_step_id(step);
+
+        // Mark step as executed
+        ctx.instructions.push(Instruction::MarkStepExecuted {
+            step_id: step.id.clone(),
+            next_step_id: next_step_id.clone(),
+            route_index: None,
+            is_default_route: false,
+        });
+
+        if let StepDetails::Function { function, params: _ } = &step.details {
             // TODO: Implement function call compilation
             // For now, we'll just add a placeholder comment via Store
             ctx.instructions.push(Instruction::Store {
@@ -264,10 +319,20 @@ impl PipelineCompiler {
 
     /// Compile a service step
     fn compile_service_step(step: &PipelineStep, ctx: &mut CompileContext) -> Result<()> {
+        let next_step_id = Self::get_next_step_id(step);
+
+        // Mark step as executed
+        ctx.instructions.push(Instruction::MarkStepExecuted {
+            step_id: step.id.clone(),
+            next_step_id: next_step_id.clone(),
+            route_index: None,
+            is_default_route: false,
+        });
+
         if let StepDetails::Service {
             service,
             query,
-            params,
+            params: _,
             output,
         } = &step.details
         {
@@ -290,14 +355,24 @@ impl PipelineCompiler {
 
     /// Compile an API step
     fn compile_api_step(step: &PipelineStep, ctx: &mut CompileContext) -> Result<()> {
+        let next_step_id = Self::get_next_step_id(step);
+
+        // Mark step as executed
+        ctx.instructions.push(Instruction::MarkStepExecuted {
+            step_id: step.id.clone(),
+            next_step_id: next_step_id.clone(),
+            route_index: None,
+            is_default_route: false,
+        });
+
         if let StepDetails::Api {
             api_target,
             endpoint,
-            params,
+            params: _,
             output,
             timeout,
-            on_error,
-            min_success,
+            on_error: _,
+            min_success: _,
         } = &step.details
         {
             // For now, we'll handle simple single API calls
@@ -328,6 +403,16 @@ impl PipelineCompiler {
 
     /// Compile a trigger step
     fn compile_trigger_step(step: &PipelineStep, ctx: &mut CompileContext) -> Result<()> {
+        let next_step_id = Self::get_next_step_id(step);
+
+        // Mark step as executed
+        ctx.instructions.push(Instruction::MarkStepExecuted {
+            step_id: step.id.clone(),
+            next_step_id,
+            route_index: None,
+            is_default_route: false,
+        });
+
         // Trigger steps don't produce output
         // TODO: Add CallTrigger instruction to IR
 
@@ -336,6 +421,16 @@ impl PipelineCompiler {
 
     /// Compile a rule step (single rule execution)
     fn compile_rule_step(step: &PipelineStep, ctx: &mut CompileContext) -> Result<()> {
+        let next_step_id = Self::get_next_step_id(step);
+
+        // Mark step as executed
+        ctx.instructions.push(Instruction::MarkStepExecuted {
+            step_id: step.id.clone(),
+            next_step_id,
+            route_index: None,
+            is_default_route: false,
+        });
+
         // TODO: Implement single rule execution
         // For now, treat it similar to ruleset but with single rule
 
@@ -344,6 +439,16 @@ impl PipelineCompiler {
 
     /// Compile a sub-pipeline step
     fn compile_subpipeline_step(step: &PipelineStep, ctx: &mut CompileContext) -> Result<()> {
+        let next_step_id = Self::get_next_step_id(step);
+
+        // Mark step as executed
+        ctx.instructions.push(Instruction::MarkStepExecuted {
+            step_id: step.id.clone(),
+            next_step_id,
+            route_index: None,
+            is_default_route: false,
+        });
+
         // TODO: Implement sub-pipeline call
         // This would require CallPipeline instruction in IR
 
@@ -480,6 +585,270 @@ impl PipelineCompiler {
         Ok(instructions)
     }
 
+    /// Build steps metadata JSON for tracing
+    fn build_steps_metadata(steps: &[&PipelineStep]) -> String {
+        let steps_info: Vec<serde_json::Value> = steps
+            .iter()
+            .map(|step| {
+                let mut info = serde_json::json!({
+                    "id": step.id,
+                    "name": step.name,
+                    "type": step.step_type,
+                });
+
+                // Add routes if present
+                if let Some(routes) = &step.routes {
+                    let routes_info: Vec<serde_json::Value> = routes
+                        .iter()
+                        .map(|route| {
+                            let when_str = Self::when_block_to_string(&route.when);
+                            serde_json::json!({
+                                "next": route.next,
+                                "when": when_str
+                            })
+                        })
+                        .collect();
+                    info["routes"] = serde_json::Value::Array(routes_info);
+                }
+
+                // Add default route if present
+                if let Some(default) = &step.default {
+                    info["default"] = serde_json::Value::String(default.clone());
+                }
+
+                // Add next step if present
+                if let Some(next) = &step.next {
+                    if let StepNext::StepId(next_id) = next {
+                        info["next"] = serde_json::Value::String(next_id.clone());
+                    }
+                }
+
+                // Add step-specific details
+                match &step.details {
+                    StepDetails::Ruleset { ruleset } => {
+                        info["ruleset"] = serde_json::Value::String(ruleset.clone());
+                    }
+                    StepDetails::Api {
+                        api_target,
+                        endpoint,
+                        output,
+                        ..
+                    } => {
+                        use corint_core::ast::pipeline::ApiTarget;
+                        let api_name = match api_target {
+                            ApiTarget::Single { api } => api.clone(),
+                            ApiTarget::Any { any } => format!("any:{}", any.join(",")),
+                            ApiTarget::All { all } => format!("all:{}", all.join(",")),
+                        };
+                        info["api"] = serde_json::Value::String(api_name);
+                        if let Some(ep) = endpoint {
+                            info["endpoint"] = serde_json::Value::String(ep.clone());
+                        }
+                        if let Some(out) = output {
+                            info["output"] = serde_json::Value::String(out.clone());
+                        }
+                    }
+                    StepDetails::Service { service, query, output, .. } => {
+                        info["service"] = serde_json::Value::String(service.clone());
+                        if let Some(q) = query {
+                            info["query"] = serde_json::Value::String(q.clone());
+                        }
+                        if let Some(out) = output {
+                            info["output"] = serde_json::Value::String(out.clone());
+                        }
+                    }
+                    StepDetails::Function { function, .. } => {
+                        info["function"] = serde_json::Value::String(function.clone());
+                    }
+                    StepDetails::Rule { rule } => {
+                        info["rule"] = serde_json::Value::String(rule.clone());
+                    }
+                    StepDetails::SubPipeline { pipeline_id } => {
+                        info["sub_pipeline"] = serde_json::Value::String(pipeline_id.clone());
+                    }
+                    _ => {}
+                }
+
+                info
+            })
+            .collect();
+
+        serde_json::to_string(&steps_info).unwrap_or_else(|_| "[]".to_string())
+    }
+
+    /// Convert WhenBlock to a human-readable string for tracing
+    fn when_block_to_string(when: &WhenBlock) -> String {
+        if let Some(ref group) = when.condition_group {
+            Self::condition_group_to_string(group)
+        } else if let Some(ref conditions) = when.conditions {
+            conditions
+                .iter()
+                .map(|expr| format!("{:?}", expr))
+                .collect::<Vec<_>>()
+                .join(" AND ")
+        } else if let Some(ref event_type) = when.event_type {
+            format!("event_type == '{}'", event_type)
+        } else {
+            "true".to_string()
+        }
+    }
+
+    /// Convert ConditionGroup to string
+    fn condition_group_to_string(group: &ConditionGroup) -> String {
+        match group {
+            ConditionGroup::All(conditions) => {
+                let parts: Vec<String> = conditions
+                    .iter()
+                    .map(|c| Self::condition_to_string(c))
+                    .collect();
+                if parts.len() == 1 {
+                    parts[0].clone()
+                } else {
+                    format!("({})", parts.join(" AND "))
+                }
+            }
+            ConditionGroup::Any(conditions) => {
+                let parts: Vec<String> = conditions
+                    .iter()
+                    .map(|c| Self::condition_to_string(c))
+                    .collect();
+                if parts.len() == 1 {
+                    parts[0].clone()
+                } else {
+                    format!("({})", parts.join(" OR "))
+                }
+            }
+            ConditionGroup::Not(conditions) => {
+                let parts: Vec<String> = conditions
+                    .iter()
+                    .map(|c| Self::condition_to_string(c))
+                    .collect();
+                format!("NOT ({})", parts.join(" AND "))
+            }
+        }
+    }
+
+    /// Convert Condition to string
+    fn condition_to_string(condition: &Condition) -> String {
+        match condition {
+            Condition::Expression(expr) => Self::expression_to_string(expr),
+            Condition::Group(group) => Self::condition_group_to_string(group),
+        }
+    }
+
+    /// Convert Expression to a human-readable string
+    fn expression_to_string(expr: &corint_core::ast::Expression) -> String {
+        use corint_core::ast::{Expression, Operator, UnaryOperator};
+        match expr {
+            Expression::FieldAccess(path) => path.join("."),
+            Expression::Literal(value) => Self::value_to_readable_string(value),
+            Expression::Binary { left, op, right } => {
+                format!(
+                    "{} {} {}",
+                    Self::expression_to_string(left),
+                    Self::operator_to_symbol(op),
+                    Self::expression_to_string(right)
+                )
+            }
+            Expression::Unary { op, operand } => {
+                let op_symbol = match op {
+                    UnaryOperator::Not => "!",
+                    UnaryOperator::Negate => "-",
+                };
+                format!("{}{}", op_symbol, Self::expression_to_string(operand))
+            }
+            Expression::FunctionCall { name, args } => {
+                let args_str: Vec<String> =
+                    args.iter().map(|a| Self::expression_to_string(a)).collect();
+                format!("{}({})", name, args_str.join(", "))
+            }
+            Expression::ListReference { list_id } => {
+                format!("list.{}", list_id)
+            }
+            Expression::Ternary { condition, true_expr, false_expr } => {
+                format!(
+                    "{} ? {} : {}",
+                    Self::expression_to_string(condition),
+                    Self::expression_to_string(true_expr),
+                    Self::expression_to_string(false_expr)
+                )
+            }
+            Expression::LogicalGroup { op, conditions } => {
+                use corint_core::ast::LogicalGroupOp;
+                let parts: Vec<String> = conditions
+                    .iter()
+                    .map(Self::expression_to_string)
+                    .collect();
+                let separator = match op {
+                    LogicalGroupOp::Any => " || ",
+                    LogicalGroupOp::All => " && ",
+                };
+                if parts.len() == 1 {
+                    parts[0].clone()
+                } else {
+                    format!("({})", parts.join(separator))
+                }
+            }
+        }
+    }
+
+    /// Convert operator to readable symbol
+    fn operator_to_symbol(op: &corint_core::ast::Operator) -> &'static str {
+        use corint_core::ast::Operator;
+        match op {
+            Operator::Eq => "==",
+            Operator::Ne => "!=",
+            Operator::Gt => ">",
+            Operator::Ge => ">=",
+            Operator::Lt => "<",
+            Operator::Le => "<=",
+            Operator::Add => "+",
+            Operator::Sub => "-",
+            Operator::Mul => "*",
+            Operator::Div => "/",
+            Operator::Mod => "%",
+            Operator::And => "&&",
+            Operator::Or => "||",
+            Operator::Contains => "contains",
+            Operator::StartsWith => "starts_with",
+            Operator::EndsWith => "ends_with",
+            Operator::Regex => "regex",
+            Operator::In => "in",
+            Operator::NotIn => "not in",
+            Operator::InList => "in",
+            Operator::NotInList => "not in",
+        }
+    }
+
+    /// Convert Value to readable string
+    fn value_to_readable_string(value: &corint_core::Value) -> String {
+        use corint_core::Value;
+        match value {
+            Value::Null => "null".to_string(),
+            Value::Bool(b) => b.to_string(),
+            Value::Number(n) => {
+                // Format numbers nicely (remove trailing .0 for integers)
+                if n.fract() == 0.0 && *n >= i64::MIN as f64 && *n <= i64::MAX as f64 {
+                    format!("{}", *n as i64)
+                } else {
+                    format!("{}", n)
+                }
+            }
+            Value::String(s) => format!("\"{}\"", s),
+            Value::Array(arr) => {
+                let items: Vec<String> = arr.iter().map(Self::value_to_readable_string).collect();
+                format!("[{}]", items.join(", "))
+            }
+            Value::Object(obj) => {
+                let pairs: Vec<String> = obj
+                    .iter()
+                    .map(|(k, v)| format!("{}: {}", k, Self::value_to_readable_string(v)))
+                    .collect();
+                format!("{{{}}}", pairs.join(", "))
+            }
+        }
+    }
+
     /// Resolve all pending jumps by calculating offsets
     fn resolve_jumps(ctx: &mut CompileContext) -> Result<()> {
         let return_pos = ctx.instructions.len() - 1; // Position of Return instruction
@@ -547,10 +916,11 @@ mod tests {
         assert_eq!(program.metadata.source_type, "pipeline");
         assert!(!program.instructions.is_empty());
 
-        // Should have: CallRuleset, Jump, Return
-        assert!(matches!(program.instructions[0], Instruction::CallRuleset { .. }));
-        assert!(matches!(program.instructions[1], Instruction::Jump { .. }));
-        assert!(matches!(program.instructions[2], Instruction::Return));
+        // Should have: MarkStepExecuted, CallRuleset, Jump, Return
+        assert!(matches!(program.instructions[0], Instruction::MarkStepExecuted { .. }));
+        assert!(matches!(program.instructions[1], Instruction::CallRuleset { .. }));
+        assert!(matches!(program.instructions[2], Instruction::Jump { .. }));
+        assert!(matches!(program.instructions[3], Instruction::Return));
     }
 
     #[test]

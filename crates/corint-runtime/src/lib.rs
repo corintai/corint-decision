@@ -39,6 +39,7 @@ pub use observability::{Metrics, MetricsCollector};
 pub use result::{
     ConditionTrace, DecisionLogicTrace, DecisionRecord, DecisionResult, DecisionResultWriter,
     ExecutionResult, ExecutionTrace, PipelineTrace, RuleExecutionRecord, RuleTrace, RulesetTrace,
+    StepTrace,
 };
 pub use service::{ServiceClient, ServiceRequest, ServiceResponse};
 pub use storage::{Event, EventFilter, InMemoryStorage, Storage, TimeRange};
