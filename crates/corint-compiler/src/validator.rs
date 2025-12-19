@@ -526,7 +526,8 @@ rule:
         let result = validator.validate(content, DslType::Auto);
         assert!(!result.valid);
         assert!(!result.errors.is_empty());
-        assert_eq!(result.errors[0].code, "E001");
+        // E000 for documents that can't be parsed as any valid type
+        assert_eq!(result.errors[0].code, "E000");
     }
 
     #[test]

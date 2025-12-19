@@ -78,7 +78,7 @@ impl ConditionTrace {
             right_value: None,
             result,
             nested: Some(nested),
-            group_type: None,
+            group_type: Some(group_type.to_string()),
         }
     }
 }

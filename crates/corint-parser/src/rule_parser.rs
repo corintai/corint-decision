@@ -339,7 +339,7 @@ rule:
         );
         assert_eq!(rule.score, 50);
         assert_eq!(rule.when.event_type, Some("login".to_string()));
-        assert_eq!(rule.when.conditions.len(), 1);
+        assert_eq!(rule.when.conditions.as_ref().unwrap().len(), 1);
     }
 
     #[test]
@@ -360,7 +360,7 @@ rule:
         let rule = RuleParser::parse(yaml).unwrap();
 
         assert_eq!(rule.id, "fraud_check");
-        assert_eq!(rule.when.conditions.len(), 3);
+        assert_eq!(rule.when.conditions.as_ref().unwrap().len(), 3);
     }
 
     #[test]
@@ -379,7 +379,7 @@ rule:
 
         assert_eq!(rule.id, "generic_rule");
         assert_eq!(rule.when.event_type, None);
-        assert_eq!(rule.when.conditions.len(), 1);
+        assert_eq!(rule.when.conditions.as_ref().unwrap().len(), 1);
     }
 
     #[test]
@@ -399,7 +399,7 @@ rule:
         let rule = RuleParser::parse(yaml).unwrap();
 
         assert_eq!(rule.id, "complex_rule");
-        assert_eq!(rule.when.conditions.len(), 2);
+        assert_eq!(rule.when.conditions.as_ref().unwrap().len(), 2);
     }
 
     #[test]
@@ -445,7 +445,7 @@ rule:
         let rule = RuleParser::parse(yaml).unwrap();
 
         assert_eq!(rule.id, "velocity_check");
-        assert_eq!(rule.when.conditions.len(), 1);
+        assert_eq!(rule.when.conditions.as_ref().unwrap().len(), 1);
     }
 
     // Tests for new import functionality

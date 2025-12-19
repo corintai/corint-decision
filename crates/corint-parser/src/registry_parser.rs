@@ -212,8 +212,8 @@ registry:
         let registry = RegistryParser::parse(yaml).unwrap();
 
         assert_eq!(registry.registry.len(), 2);
-        assert_eq!(registry.registry[0].when.conditions.len(), 2);
-        assert_eq!(registry.registry[1].when.conditions.len(), 0);
+        assert_eq!(registry.registry[0].when.conditions.as_ref().unwrap().len(), 2);
+        assert!(registry.registry[1].when.conditions.is_none() || registry.registry[1].when.conditions.as_ref().unwrap().is_empty());
     }
 
     #[test]
@@ -247,11 +247,11 @@ registry:
             Some("payment".to_string())
         );
         // event.channel should be converted to a condition
-        assert_eq!(registry.registry[0].when.conditions.len(), 1);
+        assert_eq!(registry.registry[0].when.conditions.as_ref().unwrap().len(), 1);
 
         // Second entry: nested field event.country.city
         assert_eq!(registry.registry[1].pipeline, "city_pipeline");
-        assert_eq!(registry.registry[1].when.conditions.len(), 1);
+        assert_eq!(registry.registry[1].when.conditions.as_ref().unwrap().len(), 1);
 
         // Third entry: multiple fields
         assert_eq!(registry.registry[2].pipeline, "multi_field_pipeline");
@@ -260,7 +260,7 @@ registry:
             Some("transaction".to_string())
         );
         // event.channel and event.currency should be converted to conditions
-        assert_eq!(registry.registry[2].when.conditions.len(), 2);
+        assert_eq!(registry.registry[2].when.conditions.as_ref().unwrap().len(), 2);
     }
 
     #[test]
@@ -287,7 +287,7 @@ registry:
         // 1. event.channel == "stripe" (from direct field filter)
         // 2. amount > 1000 (from conditions array)
         // 3. user.verified == true (from conditions array)
-        assert_eq!(entry.when.conditions.len(), 3);
+        assert_eq!(entry.when.conditions.as_ref().unwrap().len(), 3);
     }
 
     #[test]

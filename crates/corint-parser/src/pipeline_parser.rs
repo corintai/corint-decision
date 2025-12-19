@@ -29,7 +29,7 @@ const FUNCTION_STEP_FIELDS: &[&str] = &["function", "params"];
 const RULE_STEP_FIELDS: &[&str] = &["rule"];
 const RULESET_STEP_FIELDS: &[&str] = &["ruleset"];
 const PIPELINE_STEP_FIELDS: &[&str] = &["pipeline", "inline"];
-const API_STEP_FIELDS: &[&str] = &["api", "any", "all", "params", "timeout", "on_error", "min_success"];
+const API_STEP_FIELDS: &[&str] = &["api", "any", "all", "params", "endpoint", "output", "timeout", "on_error", "min_success"];
 const SERVICE_STEP_FIELDS: &[&str] = &["service", "query", "params"];
 const ROUTER_STEP_FIELDS: &[&str] = &["routes", "default"];
 const TRIGGER_STEP_FIELDS: &[&str] = &["target", "params"];
@@ -944,7 +944,8 @@ pipeline:
             &step.details,
             StepDetails::Ruleset { ruleset } if ruleset == "fraud_detection"
         ));
-        assert_eq!(step.next, Some(StepNext::End));
+        // StepNext::End was removed - "end" is now represented as StepNext::StepId("end".to_string())
+        assert_eq!(step.next, Some(StepNext::StepId("end".to_string())));
     }
 
     #[test]

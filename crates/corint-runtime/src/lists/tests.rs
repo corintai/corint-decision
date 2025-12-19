@@ -1,5 +1,6 @@
 //! Tests for list functionality
 
+use super::backend::ListBackend;
 use super::*;
 use crate::executor::Executor;
 use corint_core::ir::{Instruction, Program, ProgramMetadata};
@@ -59,7 +60,10 @@ async fn test_memory_backend_basic() {
 
 #[tokio::test]
 async fn test_list_service_basic() {
-    let service = ListService::new_with_memory();
+    // Create a service with a pre-registered memory backend for test_list
+    let mut backends: HashMap<String, Box<dyn ListBackend>> = HashMap::new();
+    backends.insert("test_list".to_string(), Box::new(MemoryBackend::new()));
+    let service = ListService::new_with_backends(backends);
 
     // Initially empty
     assert!(!service
