@@ -465,7 +465,7 @@ rule:
 
         let doc = RuleParser::parse_with_imports(yaml).unwrap();
 
-        assert_eq!(doc.version, "0.1");
+        assert_eq!(doc.version(), "0.1");
         assert!(!doc.has_imports());
         assert_eq!(doc.definition.id, "test_rule");
         assert_eq!(doc.definition.score, 50);
@@ -494,7 +494,7 @@ rule:
 
         let doc = RuleParser::parse_with_imports(yaml).unwrap();
 
-        assert_eq!(doc.version, "0.1");
+        assert_eq!(doc.version(), "0.1");
         assert!(doc.has_imports());
 
         let imports = doc.imports();
@@ -558,5 +558,68 @@ rule:
         let doc = RuleParser::parse_with_imports(yaml).unwrap();
         assert_eq!(doc.definition.id, "legacy_rule");
         assert!(!doc.has_imports());
+    }
+}
+
+#[cfg(test)]
+mod optional_version_tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_rule_without_top_level_version() {
+        let yaml = r#"
+rule:
+  id: test_rule
+  name: Test Rule
+  description: Test without version
+
+  when:
+    all:
+      - amount > 1000
+
+  score: 50
+
+  metadata:
+    version: "1.0.0"
+    author: "test-team"
+    updated: "2024-12-20"
+"#;
+
+        let result = RuleParser::parse_with_imports(yaml);
+        assert!(result.is_ok(), "Should parse without top-level version");
+
+        let doc = result.unwrap();
+        assert_eq!(doc.version(), "0.1", "Should default to 0.1");
+        assert_eq!(doc.definition.id, "test_rule");
+    }
+
+    #[test]
+    fn test_parse_rule_with_top_level_version() {
+        let yaml = r#"
+version: "0.1"
+
+rule:
+  id: test_rule
+  name: Test Rule
+  description: Test with version
+
+  when:
+    all:
+      - amount > 1000
+
+  score: 50
+
+  metadata:
+    version: "1.0.0"
+    author: "test-team"
+    updated: "2024-12-20"
+"#;
+
+        let result = RuleParser::parse_with_imports(yaml);
+        assert!(result.is_ok());
+
+        let doc = result.unwrap();
+        assert_eq!(doc.version(), "0.1");
+        assert_eq!(doc.definition.id, "test_rule");
     }
 }

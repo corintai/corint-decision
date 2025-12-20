@@ -30,8 +30,10 @@ pub struct Imports {
 /// RDL Document wraps the actual definition with optional imports
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct RdlDocument<T> {
-    /// File format version
-    pub version: String,
+    /// File format version (defaults to "0.1" if not specified)
+    #[serde(default = "default_version")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub version: Option<String>,
 
     /// Optional imports section
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -40,6 +42,10 @@ pub struct RdlDocument<T> {
     /// The actual definition (Rule, Ruleset, or Pipeline)
     #[serde(flatten)]
     pub definition: T,
+}
+
+fn default_version() -> Option<String> {
+    Some("0.1".to_string())
 }
 
 /// Import resolution context
@@ -132,7 +138,7 @@ impl<T> RdlDocument<T> {
     /// Create a new RDL document without imports
     pub fn new(version: String, definition: T) -> Self {
         Self {
-            version,
+            version: Some(version),
             imports: None,
             definition,
         }
@@ -141,10 +147,15 @@ impl<T> RdlDocument<T> {
     /// Create a new RDL document with imports
     pub fn with_imports(version: String, imports: Imports, definition: T) -> Self {
         Self {
-            version,
+            version: Some(version),
             imports: Some(imports),
             definition,
         }
+    }
+
+    /// Get the version, defaulting to "0.1" if not specified
+    pub fn version(&self) -> String {
+        self.version.clone().unwrap_or_else(|| "0.1".to_string())
     }
 
     /// Get the imports, or an empty Imports if none
@@ -261,7 +272,7 @@ mod tests {
             },
         );
 
-        assert_eq!(doc.version, "0.1");
+        assert_eq!(doc.version(), "0.1");
         assert!(!doc.has_imports());
         assert_eq!(doc.definition.id, "test");
     }

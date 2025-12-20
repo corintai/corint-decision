@@ -46,7 +46,7 @@ impl TemplateParser {
         let template = Self::parse_template(&docs[1])?;
 
         Ok(RdlDocument {
-            version,
+            version: Some(version),
             imports,
             definition: template,
         })
@@ -196,7 +196,7 @@ template:
 "#;
 
         let doc = TemplateParser::parse_with_imports(yaml).unwrap();
-        assert_eq!(doc.version, "0.1");
+        assert_eq!(doc.version(), "0.1");
         assert!(doc.imports.is_some());
 
         let imports = doc.imports.unwrap();

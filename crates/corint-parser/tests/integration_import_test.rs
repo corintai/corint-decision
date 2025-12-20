@@ -61,7 +61,7 @@ rule:
     let doc = RuleParser::parse_with_imports(yaml).unwrap();
 
     // Check version
-    assert_eq!(doc.version, "0.1");
+    assert_eq!(doc.version(), "0.1");
 
     // Check imports
     assert!(doc.has_imports());
@@ -150,7 +150,7 @@ ruleset:
     let doc = RulesetParser::parse_with_imports(yaml).unwrap();
 
     // Check version
-    assert_eq!(doc.version, "0.1");
+    assert_eq!(doc.version(), "0.1");
 
     // Check imports
     assert!(doc.has_imports());
@@ -292,7 +292,7 @@ pipeline:
     let doc = PipelineParser::parse_with_imports(yaml).unwrap();
 
     // Check version
-    assert_eq!(doc.version, "0.1");
+    assert_eq!(doc.version(), "0.1");
 
     // Check imports
     assert!(doc.has_imports());
@@ -341,7 +341,7 @@ pipeline:
 
     let doc = PipelineParser::parse_with_imports(yaml).unwrap();
 
-    assert_eq!(doc.version, "0.1");
+    assert_eq!(doc.version(), "0.1");
     assert!(doc.has_imports());
 
     let imports = doc.imports();
