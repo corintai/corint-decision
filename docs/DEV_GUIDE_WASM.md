@@ -1,8 +1,98 @@
 # CORINT WASM Browser Deployment Design
 
+> **⚠️ IMPLEMENTATION STATUS: POSTPONED**
+>
+> **Date**: 2025-12-20
+> **Status**: Implementation postponed due to technical complexity
+>
+> See [Section 1.1 Current Status](#11-current-status) for details.
+
 ## 1. Executive Summary
 
 This document outlines the architecture and implementation plan for compiling the CORINT decision engine to WebAssembly (WASM) and deploying it to run in user browsers. This enables client-side risk assessment with zero latency, offline capability, and enhanced privacy.
+
+### 1.1 Current Status
+
+**Implementation has been postponed** due to the following technical blockers:
+
+1. **Tokio Incompatibility**: `corint-runtime` has a hard dependency on `tokio`, which cannot run in WASM environments due to missing OS-level I/O primitives (epoll, kqueue, IOCP).
+
+2. **Architecture Mismatch**: The async runtime architecture is deeply integrated throughout the codebase and cannot be easily adapted for WASM's synchronous execution model.
+
+3. **Complexity Assessment**: After investigation, the effort required to create a WASM-compatible version significantly exceeds initial estimates.
+
+### 1.2 Technical Blockers
+
+#### Primary Blocker: Tokio + WASM Incompatibility
+
+```
+corint-runtime
+    └── tokio (async runtime)
+        └── mio (I/O polling)
+            └── OS system calls (epoll, kqueue, IOCP)
+                └── ❌ NOT AVAILABLE IN WASM
+```
+
+**Why Tokio Doesn't Work**:
+- WASM runs in a sandboxed environment with no direct OS access
+- Tokio's `mio` library requires OS-level I/O primitives
+- These primitives (epoll, kqueue, IOCP) are not available in browsers
+- Even with `wasm-bindgen-futures`, core tokio features fail to compile
+
+**Attempted Solutions**:
+1. ✗ Conditional features in Cargo.toml - Tokio is a hard dependency
+2. ✗ Use `wasm-bindgen-futures` - Doesn't solve mio compilation errors
+3. ✗ Create simple synchronous VM - Would require rewriting significant runtime logic
+
+#### Secondary Issues:
+
+1. **Async Architecture**: The codebase is deeply async/await throughout
+2. **I/O Operations**: Many features assume database/network access
+3. **Code Duplication**: Creating a separate WASM runtime would duplicate significant logic
+4. **Maintenance Burden**: Two separate runtimes would increase complexity
+
+### 1.3 Investigated Approaches
+
+During implementation, the following approaches were explored:
+
+**Approach 1: Direct SDK Usage** (Original Plan)
+- Use `corint-sdk` as unified entry point
+- **Blocker**: SDK depends on runtime which depends on tokio
+
+**Approach 2: Use Lower-Level Components**
+- Depend directly on `corint-core`, `corint-parser`, `corint-compiler`
+- Implement simple synchronous VM for IR execution
+- **Blocker**: Would need to reimplement significant runtime functionality
+- **Status**: Partially implemented but abandoned due to complexity
+
+**Approach 3: Conditional Compilation**
+- Use `#[cfg(target_arch = "wasm32")]` for WASM-specific code
+- **Blocker**: Too invasive, would complicate existing codebase significantly
+
+### 1.4 Future Considerations
+
+WASM implementation could be revisited if:
+
+1. **Tokio WASM Support**: If tokio adds full WASM support in the future
+2. **Architecture Refactoring**: If runtime is refactored to separate sync/async concerns
+3. **Separate WASM Runtime**: Decision to invest in a dedicated WASM-optimized runtime (estimated 2-4 weeks of work)
+4. **Business Requirements**: Strong business case emerges for browser-side execution
+
+### 1.5 Alternative Solutions
+
+For now, consider these alternatives:
+
+1. **Server-Side API**: Continue using server-side decision engine (current approach)
+2. **Edge Computing**: Deploy to Cloudflare Workers or similar edge platforms
+3. **Lightweight Client**: Implement simplified rule evaluation in TypeScript (without full engine)
+4. **Hybrid Approach**: Simple rules in browser, complex rules on server
+
+---
+
+## 2. Original Design (For Future Reference)
+
+> **Note**: The following sections describe the original design that was not implemented.
+> This is preserved for future reference if WASM implementation is revisited.
 
 ### Key Design Decision: Reuse Existing Runtime
 
@@ -10,7 +100,7 @@ This document outlines the architecture and implementation plan for compiling th
 
 1. **Reuse `corint-runtime`**: The existing `PipelineExecutor` already uses optional dependencies (`Option<Arc<...>>`), making it perfect for WASM deployment
 2. **No Data Sources**: Simply don't configure `feature_extractor` - rules that require data sources (PostgreSQL/Redis) won't be used in browser
-3. **No Internal Services**: Simply don't configure `service_client` - rules that require internal services won't be used in browser  
+3. **No Internal Services**: Simply don't configure `service_client` - rules that require internal services won't be used in browser
 4. **External API via JS Bridge**: Create a WASM-compatible `ExternalApiClient` that uses JavaScript `fetch()` through a callback
 5. **Rule Configuration**: Browser-compatible rules simply don't include data source or service dependencies
 
