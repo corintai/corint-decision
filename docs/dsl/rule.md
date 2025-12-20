@@ -820,7 +820,7 @@ rule:
   metadata:
     version: "1.2.0"
     author: "fraud-team"
-    last_updated: "2024-02-01"
+    updated: "2024-02-01"
 ```
 
 ---
@@ -834,16 +834,17 @@ rule:
   id: high_risk_login
 
   metadata:
-    # Version tracking
+    # === Required Fields ===
     version: "1.2.0"
-
-    # Ownership
     author: "security-team"
+    updated: "2024-02-01"
+
+    # === Optional Fields ===
+    # Ownership
     owner: "risk-ops"
 
     # Timestamps
-    created_at: "2024-01-01T00:00:00Z"
-    updated_at: "2024-02-01T10:30:00Z"
+    created: "2024-01-01"
 
     # Documentation
     documentation_url: "https://wiki.company.com/rules/high_risk_login"
@@ -987,11 +988,12 @@ rule:
   score: 100
 
   metadata:
+    version: "1.0.0"
+    author: "fraud-team"
+    updated: "2024-12-11"
     category: fraud
     severity: critical
     tags: [organized_fraud, bot_networks]
-    rule_version: "1.0.0"
-    last_updated: "2024-12-11"
 ```
 
 ### 15.2 Rule Metadata for Library
@@ -1000,12 +1002,15 @@ When creating rules for a library, include comprehensive metadata:
 
 ```yaml
 metadata:
+  # === Required Fields ===
+  version: "1.0.0"              # Semantic versioning (MAJOR.MINOR.PATCH)
+  author: "Team Name"
+  updated: "2024-12-11"
+
+  # === Optional Fields (Recommended for Library Rules) ===
   category: fraud | payment | geography | account | device
   severity: critical | high | medium | low
   tags: [tag1, tag2, tag3]
-  rule_version: "major.minor.patch"
-  last_updated: "YYYY-MM-DD"
-  author: "Team Name"
   description_detail: "Detailed explanation"
   detection: "Condition summary"
   features:
