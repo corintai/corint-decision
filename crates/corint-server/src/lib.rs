@@ -5,4 +5,5 @@
 pub mod api;
 pub mod config;
 pub mod error;
-pub mod repository_loader;
+
+// Note: repository_loader.rs is deprecated - use corint_sdk::RepositoryConfig instead

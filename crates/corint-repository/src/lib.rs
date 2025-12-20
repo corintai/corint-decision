@@ -179,8 +179,11 @@
 //! - [examples/database_repository.rs](https://github.com/corint/corint-decision/blob/main/examples/database_repository.rs) - PostgreSQL example
 //! - [QUICK_START_PHASE3.md](https://github.com/corint/corint-decision/blob/main/QUICK_START_PHASE3.md) - Phase 3 features guide
 
+pub mod config;
+pub mod content;
 pub mod error;
 pub mod file_system;
+pub mod loader;
 pub mod models;
 pub mod traits;
 
@@ -190,8 +193,22 @@ pub mod postgres;
 #[cfg(feature = "api")]
 pub mod api;
 
-// Re-exports
+// Re-exports - Configuration
+pub use config::{ConfigError, RepositoryConfig, RepositorySource};
+
+// Re-exports - Content
+pub use content::{
+    ApiConfig, ApiEndpoint, DataSourceConfig, FeatureCache, FeatureDefinition, FeatureFilter,
+    ListConfig, PoolConfig, RepositoryContent, TimeWindow,
+};
+
+// Re-exports - Loader
+pub use loader::RepositoryLoader;
+
+// Re-exports - Error
 pub use error::{RepositoryError, RepositoryResult};
+
+// Re-exports - Repositories
 pub use file_system::FileSystemRepository;
 pub use models::*;
 pub use traits::*;

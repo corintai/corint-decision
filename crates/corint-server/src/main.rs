@@ -5,15 +5,13 @@
 pub mod api;
 pub mod config;
 pub mod error;
-pub mod repository_loader;
 
-use crate::config::ServerConfig;
-use crate::repository_loader::load_rules_from_repository;
+use crate::config::{RepositoryType, ServerConfig};
 use anyhow::Result;
 use corint_runtime::datasource::{DataSourceClient, DataSourceConfig};
 use corint_runtime::feature::{FeatureExecutor, FeatureRegistry};
 use corint_runtime::observability::otel::{init_opentelemetry, OtelConfig, OtelContext};
-use corint_sdk::DecisionEngineBuilder;
+use corint_sdk::{DecisionEngineBuilder, RepositoryConfig};
 use std::sync::Arc;
 use tokio::net::TcpListener;
 use tracing::{error, info, warn};
@@ -89,7 +87,24 @@ fn init_otel(config: &ServerConfig) -> Result<OtelContext> {
 
 /// Initialize decision engine
 async fn init_engine(config: &ServerConfig) -> Result<corint_sdk::DecisionEngine> {
+    // Convert server repository config to SDK repository config
+    let repo_config = match &config.repository {
+        RepositoryType::FileSystem { path } => {
+            RepositoryConfig::file_system(path.to_string_lossy().to_string())
+        }
+        RepositoryType::Database { url, .. } => RepositoryConfig::database(url.clone()),
+        RepositoryType::Api { base_url, api_key } => {
+            let config = RepositoryConfig::api(base_url.clone());
+            if let Some(key) = api_key {
+                config.with_api_key(key.clone())
+            } else {
+                config
+            }
+        }
+    };
+
     let mut builder = DecisionEngineBuilder::new()
+        .with_repository(repo_config)
         .enable_metrics(config.enable_metrics)
         .enable_tracing(config.enable_tracing);
 
@@ -155,10 +170,7 @@ async fn init_engine(config: &ServerConfig) -> Result<corint_sdk::DecisionEngine
         info!("sqlx feature not enabled, decision result persistence unavailable");
     }
 
-    // Load rules based on repository configuration
-    builder = load_rules_from_repository(builder, &config.repository).await?;
-
-    // Build engine
+    // Build engine (repository content is loaded automatically via with_repository)
     let engine = builder.build().await?;
 
     Ok(engine)

@@ -3,13 +3,40 @@
 use crate::config::{EngineConfig, LLMConfig, ServiceConfig, StorageConfig};
 use crate::decision_engine::DecisionEngine;
 use crate::error::Result;
+use corint_repository::{RepositoryConfig, RepositoryContent, RepositoryLoader};
 use corint_runtime::feature::FeatureExecutor;
 use std::path::PathBuf;
 use std::sync::Arc;
 
 /// Builder for DecisionEngine
+///
+/// # Example
+///
+/// ```rust,ignore
+/// use corint_sdk::{DecisionEngineBuilder, RepositoryConfig};
+///
+/// // From file system repository
+/// let engine = DecisionEngineBuilder::new()
+///     .with_repository(RepositoryConfig::file_system("repository"))
+///     .enable_metrics(true)
+///     .build()
+///     .await?;
+///
+/// // From database
+/// let engine = DecisionEngineBuilder::new()
+///     .with_repository(RepositoryConfig::database("postgresql://localhost/corint"))
+///     .build()
+///     .await?;
+///
+/// // Manual configuration (for testing or WASM)
+/// let engine = DecisionEngineBuilder::new()
+///     .add_rule_content("pipeline", yaml_content)
+///     .build()
+///     .await?;
+/// ```
 pub struct DecisionEngineBuilder {
     config: EngineConfig,
+    repository_config: Option<RepositoryConfig>,
     feature_executor: Option<Arc<FeatureExecutor>>,
     list_service: Option<Arc<corint_runtime::lists::ListService>>,
     #[cfg(feature = "sqlx")]
@@ -21,11 +48,48 @@ impl DecisionEngineBuilder {
     pub fn new() -> Self {
         Self {
             config: EngineConfig::new(),
+            repository_config: None,
             feature_executor: None,
             list_service: None,
             #[cfg(feature = "sqlx")]
             result_writer: None,
         }
+    }
+
+    // ========== Repository Configuration (Recommended) ==========
+
+    /// Set repository configuration for loading all business content
+    ///
+    /// This is the recommended way to configure the engine. The repository
+    /// will load all pipelines, rules, rulesets, templates, API configs,
+    /// datasources, features, and lists from the specified source.
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// use corint_sdk::{DecisionEngineBuilder, RepositoryConfig};
+    ///
+    /// // From file system
+    /// let engine = DecisionEngineBuilder::new()
+    ///     .with_repository(RepositoryConfig::file_system("repository"))
+    ///     .build()
+    ///     .await?;
+    ///
+    /// // From database
+    /// let engine = DecisionEngineBuilder::new()
+    ///     .with_repository(RepositoryConfig::database("postgresql://localhost/corint"))
+    ///     .build()
+    ///     .await?;
+    ///
+    /// // From API
+    /// let engine = DecisionEngineBuilder::new()
+    ///     .with_repository(RepositoryConfig::api("https://api.example.com/repo"))
+    ///     .build()
+    ///     .await?;
+    /// ```
+    pub fn with_repository(mut self, config: RepositoryConfig) -> Self {
+        self.repository_config = Some(config);
+        self
     }
 
     /// Add a rule file
@@ -136,7 +200,27 @@ impl DecisionEngineBuilder {
     }
 
     /// Build the decision engine
-    pub async fn build(self) -> Result<DecisionEngine> {
+    ///
+    /// If `with_repository()` was called, this will first load all content
+    /// from the repository and merge it with any manually added content.
+    pub async fn build(mut self) -> Result<DecisionEngine> {
+        // Load content from repository if configured
+        if let Some(repo_config) = &self.repository_config {
+            let loader = RepositoryLoader::new(repo_config.clone());
+            match loader.load_all().await {
+                Ok(content) => {
+                    // Merge repository content into config
+                    self.merge_repository_content(content);
+                }
+                Err(e) => {
+                    return Err(crate::error::SdkError::Config(format!(
+                        "Failed to load repository: {}",
+                        e
+                    )));
+                }
+            }
+        }
+
         #[cfg_attr(not(feature = "sqlx"), allow(unused_mut))]
         let mut engine = DecisionEngine::new_with_feature_executor(
             self.config,
@@ -148,30 +232,45 @@ impl DecisionEngineBuilder {
         // Set result writer if configured
         #[cfg(feature = "sqlx")]
         {
-            tracing::info!("Builder.build() - Checking result_writer in builder...");
-            tracing::info!(
-                "  Builder has result_writer: {}",
-                self.result_writer.is_some()
-            );
-
             if let Some(result_writer) = self.result_writer {
-                tracing::info!("Setting result_writer on DecisionEngine");
                 engine.result_writer = Some(result_writer);
-                tracing::info!("Result writer successfully set on DecisionEngine");
-                tracing::info!(
-                    "  Engine has result_writer: {}",
-                    engine.result_writer.is_some()
-                );
-            } else {
-                tracing::warn!("No result_writer configured in builder - this should not happen if database_url was set!");
             }
-        }
-        #[cfg(not(feature = "sqlx"))]
-        {
-            tracing::warn!("sqlx feature not enabled, result persistence will not be available");
         }
 
         Ok(engine)
+    }
+
+    /// Merge repository content into the engine config
+    fn merge_repository_content(&mut self, content: RepositoryContent) {
+        // Add registry content
+        if let Some(registry) = content.registry {
+            self.config.registry_content = Some(registry);
+        }
+
+        // Add all pipelines as rule content
+        // Pipelines are the entry points for rule execution
+        for (id, yaml) in content.pipelines {
+            self.config.rule_contents.push((id, yaml));
+        }
+
+        // Note: Rules, rulesets, and templates are typically:
+        // 1. Included in pipeline YAML files via --- separators
+        // 2. Referenced via `include` directives in pipelines
+        // 3. Located in library/ subdirectories and loaded by the compiler
+        //
+        // They should NOT be loaded as standalone entry points because:
+        // - Rules don't have 'when' conditions (can't be routed)
+        // - Rulesets don't have 'when' conditions (can't be routed)
+        // - Templates are reusable components, not executables
+        //
+        // The repository loader loads them for completeness, but they are
+        // not added to rule_contents here. The compiler will find them
+        // in the library/ directories when needed.
+
+        // TODO: In the future, API configs, datasources, features, and lists
+        // should be passed to the runtime components (FeatureExecutor, ListService, etc.)
+        // For now, the content is loaded but runtime component initialization
+        // would need to be updated to use these configs.
     }
 }
 

@@ -10,6 +10,7 @@ corint-core = { path = "../corint-core" }
 corint-parser = { path = "../corint-parser" }
 corint-compiler = { path = "../corint-compiler" }
 corint-runtime = { path = "../corint-runtime", optional = false }
+corint-repository = { path = "../corint-repository" }
 thiserror = { workspace = true }
 anyhow = { workspace = true }
 serde = { workspace = true }

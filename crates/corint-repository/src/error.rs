@@ -66,6 +66,10 @@ pub enum RepositoryError {
     #[error("Parse error: {0}")]
     ParseError(String),
 
+    /// Configuration error
+    #[error("Configuration error: {0}")]
+    Config(String),
+
     /// Generic error
     #[error("Repository error: {0}")]
     Other(String),

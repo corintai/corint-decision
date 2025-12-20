@@ -5,9 +5,13 @@ use thiserror::Error;
 /// SDK error type
 #[derive(Error, Debug)]
 pub enum SdkError {
-    /// Configuration error
+    /// Configuration error (legacy)
     #[error("Configuration error: {0}")]
     ConfigError(String),
+
+    /// Configuration error
+    #[error("Configuration error: {0}")]
+    Config(String),
 
     /// Parser error
     #[error("Parser error: {0}")]
