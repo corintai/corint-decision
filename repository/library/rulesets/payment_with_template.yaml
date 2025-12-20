@@ -28,3 +28,13 @@ ruleset:
       high_threshold: 80       # Override default (100 -> 80)
       # medium_threshold: 60   # Use template default
       # low_threshold: 30      # Use template default
+
+  metadata:
+    # Required fields
+    version: "1.0.0"
+    author: "Payment Security Team"
+    updated: "2025-12-20 10:00:00"
+
+    # Custom fields
+    domain: "payments"
+    owner: "payment_team"

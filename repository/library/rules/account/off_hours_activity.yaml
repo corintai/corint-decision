@@ -17,11 +17,15 @@ rule:
   score: 35
 
   metadata:
+    # Required fields
+    version: "1.0.0"
+    author: "Account Security Team"
+    updated: "2025-12-20 10:00:00"
+
+    # Custom fields
     category: account
     severity: medium
     tags: [off_hours, time_anomaly, suspicious_timing]
-    rule_version: "1.0.0"
-    last_updated: "2025-12-14"
     description_detail: "Detects high-value transactions during off-hours (22:00-06:00)"
     detection: "is_off_hours == true AND amount > 5000"
     features:

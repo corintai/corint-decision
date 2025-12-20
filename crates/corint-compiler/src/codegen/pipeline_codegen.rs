@@ -988,10 +988,10 @@ mod tests {
             id: "legacy".to_string(),
             name: "Legacy".to_string(),
             description: None,
-            version: None,
             entry: String::new(), // Empty entry indicates legacy format
             when: None,
             steps: vec![],
+            metadata: None,
         };
 
         let result = PipelineCompiler::compile(&pipeline);

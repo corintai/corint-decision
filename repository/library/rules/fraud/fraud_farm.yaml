@@ -7,7 +7,7 @@ rule:
   description: Detect organized fraud farms with high IP/device association
 
   when:
-    conditions:
+    all:
       # Multiple devices from same IP (5h window)
       - ip_device_count > 10
       # And multiple users from same IP
@@ -16,11 +16,15 @@ rule:
   score: 100
 
   metadata:
+    # Required fields
+    version: "1.0.0"
+    author: "Fraud Prevention Team"
+    updated: "2025-12-20 10:00:00"
+
+    # Custom fields
     category: fraud
     severity: critical
     tags: [organized_fraud, bot_networks, credential_stuffing]
-    rule_version: "1.0.0"
-    last_updated: "2024-12-11"
     description_detail: "Multiple devices/users from same IP"
     detection: "ip_device_count > 10 AND ip_user_count > 5"
     features:

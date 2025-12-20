@@ -722,7 +722,7 @@ rule:
   name: Comprehensive Fraud Detection
 
   when:
-    conditions:
+    all:
       # 1. event - Raw request data
       - event.transaction.amount > 10000
       - event.user.account_age_days < 30

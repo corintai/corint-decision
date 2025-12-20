@@ -20,11 +20,15 @@ rule:
   score: 75
 
   metadata:
+    # Required fields
+    version: "1.0.0"
+    author: "Account Security Team"
+    updated: "2025-12-20 10:00:00"
+
+    # Custom fields
     category: account
     severity: high
     tags: [impossible_travel, location_anomaly, account_takeover]
-    rule_version: "1.0.0"
-    last_updated: "2025-12-14"
     description_detail: "Detects when user logs in from a location that is physically impossible to reach in the time since last login"
     detection: "geo distance > 1000km AND time < 2h"
     features:

@@ -7,14 +7,19 @@ rule:
   description: High transaction frequency
 
   when:
-    conditions:
+    all:
       - transaction_count_24h > 20
 
   score: 50
 
   metadata:
+    # Required fields
+    version: "1.0.0"
+    author: "Payment Security Team"
+    updated: "2025-12-20 10:00:00"
+
+    # Custom fields
     category: payment
     severity: medium
     tags: [velocity, frequency, abuse]
-    rule_version: "1.0.0"
     last_updated: "2024-12-11"

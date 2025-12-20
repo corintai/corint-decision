@@ -18,8 +18,7 @@ pipeline:
   name: string                  # Optional human-readable name
   description: string           # Optional description
   when:                         # Optional execution condition
-    event.type: string          # Event type filter
-    conditions: [...]           # Additional conditions
+    all: [...]                  # Conditions (event type, expressions)
   steps:                        # Processing steps
     - <step>
     - <step>
@@ -38,6 +37,35 @@ pipeline:
 | `description` | string | No | Detailed description of pipeline purpose |
 | `when` | object | No | Execution condition (event type filter) |
 | `steps` | array | Yes | List of processing steps |
+| `metadata` | object | No | Arbitrary key-value pairs for documentation, versioning, authorship, etc. |
+
+The `metadata` field allows you to attach information to your pipeline for documentation, versioning, and management purposes.
+
+**Required Fields**:
+- `version` (string) - Version number in semver format (e.g., "1.0.0")
+- `author` (string) - Author or team name
+- `updated` (string) - Last update timestamp in format "YYYY-MM-DD HH:mm:ss"
+
+**Custom Fields**:
+- Any additional key/value pairs for business-specific metadata
+
+**Example**:
+```yaml
+pipeline:
+  id: fraud_detection
+  name: Fraud Detection Pipeline
+  description: Comprehensive fraud detection
+  metadata:
+    # Required fields
+    version: "2.1.0"
+    author: "Risk Engineering Team"
+    updated: "2025-12-20 14:30:00"
+
+    # Optional custom fields
+    owner: "fraud_team"
+    environment: "production"
+    tags: [fraud, risk_assessment]
+```
 
 ### 1.3 When Condition
 
@@ -46,9 +74,9 @@ The `when` block controls whether the pipeline executes:
 ```yaml
 pipeline:
   when:
-    event.type: payment        # Only execute for payment events
-    conditions:                # Optional additional conditions
-      - amount > 100
+    all:
+      - event.type == "payment"  # Only execute for payment events
+      - amount > 100             # Additional condition
 ```
 
 If `when` condition is not met:
@@ -606,48 +634,65 @@ pipeline:
 ## 8. BNF Grammar (Formal)
 
 ```
-PIPELINE ::= "pipeline:" STEP_LIST
+PIPELINE ::=
+      "pipeline:"
+         "id:" STRING
+         [ "name:" STRING ]
+         [ "description:" STRING ]
+         "entry:" STRING
+         [ "when:" WHEN_BLOCK ]
+         "steps:" STEP_LIST
+         [ "metadata:" METADATA_MAP ]
+
+WHEN_BLOCK ::=
+      "all:" CONDITION_LIST
+    | "any:" CONDITION_LIST
+
+CONDITION_LIST ::= "-" EXPRESSION { "-" EXPRESSION }
 
 STEP_LIST ::= "-" STEP { "-" STEP }
 
-STEP ::= SEQUENTIAL_STEP
-       | CONDITIONAL_STEP
-       | BRANCH_STEP
-       | PARALLEL_STEP
-       | AGGREGATE_STEP
-       | INCLUDE_STEP
+STEP ::= "step:" STEP_BODY
 
-SEQUENTIAL_STEP ::= IDENT | OBJECT_STEP
-
-OBJECT_STEP ::= 
+STEP_BODY ::=
       "id:" STRING
+      [ "name:" STRING ]
       "type:" STEP_TYPE
-      [ "if:" CONDITION ]
+      [ "when:" WHEN_BLOCK ]
+      [ STEP_TYPE_PARAMS ]
+      [ "next:" STRING ]
+
+STEP_TYPE ::= "ruleset" | "router" | "api" | "llm" | "action" | "custom"
+
+STEP_TYPE_PARAMS ::=
+      RULESET_PARAMS
+    | ROUTER_PARAMS
+    | API_PARAMS
+    | LLM_PARAMS
+
+RULESET_PARAMS ::= "ruleset:" STRING
+
+ROUTER_PARAMS ::=
+      "routes:" ROUTE_LIST
+      [ "default:" STRING ]
+
+ROUTE_LIST ::= "-" ROUTE { "-" ROUTE }
+
+ROUTE ::=
+      "next:" STRING
+      "when:" WHEN_BLOCK
+
+API_PARAMS ::=
+      "api:" STRING
       [ "params:" OBJECT ]
 
-STEP_TYPE ::= "extract" | "reason" | "rules" | "service" | "api"
-            | "score" | "action" | "custom"
+LLM_PARAMS ::=
+      "llm:" STRING
+      [ "params:" OBJECT ]
 
-BRANCH_STEP ::= 
-      "branch:" 
-         "when:" 
-            "-" "condition:" CONDITION 
-               "pipeline:" STEP_LIST
-            { "-" "condition:" CONDITION "pipeline:" STEP_LIST }
+METADATA_MAP ::= KEY ":" VALUE { KEY ":" VALUE }
 
-PARALLEL_STEP ::= 
-      "parallel:" STEP_LIST
-      "merge:" MERGE_STRATEGY
-
-MERGE_STRATEGY ::= "method:" ("all" | "any" | "fastest" | "majority")
-
-AGGREGATE_STEP ::= 
-      "aggregate:"
-         "method:" ("sum" | "max" | "weighted")
-         [ "weights:" OBJECT ]
-
-INCLUDE_STEP ::= 
-      "include:" ("ruleset:" STRING | "pipeline:" STRING)
+OBJECT ::= KEY ":" VALUE { KEY ":" VALUE }
 ```
 
 ---

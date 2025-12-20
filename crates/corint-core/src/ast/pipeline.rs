@@ -28,10 +28,6 @@ pub struct Pipeline {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
 
-    /// Optional version (semver format)
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub version: Option<String>,
-
     /// Explicit entry point - must match a step.id (required for DAG compilation)
     pub entry: String,
 
@@ -41,6 +37,10 @@ pub struct Pipeline {
 
     /// The processing steps (required, non-empty)
     pub steps: Vec<PipelineStep>,
+
+    /// Metadata for documentation and versioning (stored as arbitrary key-value pairs)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub metadata: Option<HashMap<String, serde_json::Value>>,
 }
 
 /// A single step in the pipeline (unified structure)
@@ -402,10 +402,10 @@ impl Pipeline {
             id,
             name,
             description: None,
-            version: None,
             entry,
             when: None,
             steps: Vec::new(),
+            metadata: None,
         }
     }
 
@@ -415,9 +415,9 @@ impl Pipeline {
         self
     }
 
-    /// Set the pipeline version
-    pub fn with_version(mut self, version: String) -> Self {
-        self.version = Some(version);
+    /// Set the pipeline metadata
+    pub fn with_metadata(mut self, metadata: HashMap<String, serde_json::Value>) -> Self {
+        self.metadata = Some(metadata);
         self
     }
 
@@ -600,18 +600,22 @@ mod tests {
 
     #[test]
     fn test_pipeline_creation() {
+        let mut metadata = HashMap::new();
+        metadata.insert("version".to_string(), serde_json::json!("1.0.0"));
+        metadata.insert("author".to_string(), serde_json::json!("Test Author"));
+
         let pipeline = Pipeline::new(
             "test_pipeline".to_string(),
             "Test Pipeline".to_string(),
             "step1".to_string(),
         )
-        .with_version("1.0.0".to_string())
+        .with_metadata(metadata.clone())
         .add_step(PipelineStep::router("step1".to_string(), "Router Step".to_string()));
 
         assert_eq!(pipeline.id, "test_pipeline");
         assert_eq!(pipeline.name, "Test Pipeline");
         assert_eq!(pipeline.entry, "step1");
-        assert_eq!(pipeline.version, Some("1.0.0".to_string()));
+        assert_eq!(pipeline.metadata, Some(metadata));
         assert_eq!(pipeline.steps.len(), 1);
     }
 

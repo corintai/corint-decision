@@ -124,10 +124,10 @@ The `when` field uses the **same structure as rule and pipeline `when` blocks**,
 
 ```yaml
 when:
-  event.type: login              # Optional: Any event field filter
-  conditions:                    # Optional: List of conditions
-    - geo.country == "BR"
-    - amount > 1000
+  all:
+    - event.type == "login"      # Event type filter
+    - geo.country == "BR"        # Additional condition
+    - amount > 1000              # Additional condition
 ```
 
 ### 3.2 Event Field Filtering
@@ -163,7 +163,8 @@ The `conditions` array contains expressions that are evaluated with **AND** logi
 ```yaml
 when:
   event.type: payment
-  conditions:
+  when:
+    all:
     - geo.country == "BR"
     - amount > 1000
     - user.verified == true
@@ -190,7 +191,8 @@ You can use logical operators within conditions:
 ```yaml
 when:
   event.type: payment
-  conditions:
+  when:
+    all:
     - geo.country == "BR" || geo.country == "MX"
     - amount > 1000 && amount < 10000
     - user.verified == true || user.whitelisted == true
@@ -203,7 +205,8 @@ Fields can be accessed using dot notation:
 ```yaml
 when:
   event.type: payment
-  conditions:
+  when:
+    all:
     - geo.country == "US"              # Nested object field
     - user.profile.tier == "premium"    # Deep nesting
     - event.shadow == true              # Event data field
@@ -254,7 +257,7 @@ pipeline:
   id: payment_pipeline
   when:
     event.channel: stripe              # Final validation
-    conditions:
+    all:
       - amount > 0                    # Additional validation
   steps:
     - include:
@@ -418,7 +421,7 @@ pipeline:
   
   when:
     event.type: payment
-    conditions:
+    all:
       - amount > 0
   
   steps:

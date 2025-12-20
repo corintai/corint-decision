@@ -7,18 +7,22 @@ rule:
   description: Detect impossible travel or high-risk locations
 
   when:
-    conditions:
+    all:
       # Impossible travel OR (off-hours AND country changed) OR high-risk country
       - (geo_distance_km / hours_since_last_login > 800) || (is_off_hours == true && country_changed == true) || country_risk_level == "high"
 
   score: 60
 
   metadata:
+    # Required fields
+    version: "1.0.0"
+    author: "Risk Analysis Team"
+    updated: "2025-12-20 10:00:00"
+
+    # Custom fields
     category: geography
     severity: medium
     tags: [account_takeover, vpn_abuse, proxy_fraud]
-    rule_version: "1.0.0"
-    last_updated: "2024-12-11"
     description_detail: "Impossible travel or high-risk location"
     detection: "Impossible travel OR (off_hours AND country_change) OR high_risk_country"
     features:

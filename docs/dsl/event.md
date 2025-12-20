@@ -1312,7 +1312,7 @@ rule:
     # Filter by event type
     event.type: login
 
-    conditions:
+    all:
       - event.login.status == "success"
       - event.device.trust.is_new == true
       - event.geo.ip_info.is_vpn == true
@@ -1330,7 +1330,7 @@ rule:
     # Match multiple event types
     event.type in ["registration", "login"]
 
-    conditions:
+    all:
       - any:
           - all:
               - event.type == "registration"

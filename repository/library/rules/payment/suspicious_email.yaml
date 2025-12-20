@@ -7,14 +7,19 @@ rule:
   description: Disposable or random email
 
   when:
-    conditions:
+    all:
       - is_disposable_email == true
 
   score: 35
 
   metadata:
+    # Required fields
+    version: "1.0.0"
+    author: "Payment Security Team"
+    updated: "2025-12-20 10:00:00"
+
+    # Custom fields
     category: payment
     severity: low
     tags: [disposable_email, suspicious, fraud_indicator]
-    rule_version: "1.0.0"
     last_updated: "2024-12-11"

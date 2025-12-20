@@ -7,7 +7,7 @@ rule:
   description: Detect unauthorized account access through multiple risk signals
 
   when:
-    conditions:
+    all:
       - any:
           - features.is_new_device == true
           - features.failed_login_count_1h >= 3
@@ -16,11 +16,15 @@ rule:
   score: 85
 
   metadata:
+    # Required fields
+    version: "2.0.0"
+    author: "Fraud Prevention Team"
+    updated: "2025-12-20 10:00:00"
+
+    # Custom fields
     category: fraud
     severity: high
     tags: [credential_stuffing, phishing, malware, brute_force, location_anomaly, account_takeover]
-    rule_version: "2.0.0"
-    last_updated: "2025-12-14"
     description_detail: "Detects account takeover attempts via new device, failed logins, or geographic changes"
     detection: "is_new_device OR failed_login_count_1h >= 3 OR country_changed"
     features:

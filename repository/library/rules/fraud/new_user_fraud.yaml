@@ -7,7 +7,7 @@ rule:
   description: Detect new accounts with immediate high-risk behavior
 
   when:
-    conditions:
+    all:
       # Account created within past 7 days
       - user_age_days < 7
       # AND (large amount OR unverified payment)
@@ -16,11 +16,15 @@ rule:
   score: 50
 
   metadata:
+    # Required fields
+    version: "1.0.0"
+    author: "Fraud Prevention Team"
+    updated: "2025-12-20 10:00:00"
+
+    # Custom fields
     category: fraud
     severity: medium
     tags: [first_party_fraud, synthetic_identity, fake_accounts]
-    rule_version: "1.0.0"
-    last_updated: "2024-12-11"
     description_detail: "New account with immediate high-risk behavior"
     detection: "user_age_days < 7 AND (high_amount OR unverified_new_payment)"
     features:

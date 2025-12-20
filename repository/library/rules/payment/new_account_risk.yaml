@@ -7,15 +7,20 @@ rule:
   description: New account with large purchase
 
   when:
-    conditions:
+    all:
       - account_age_days < 7
       - payment_amount > 500
 
   score: 60
 
   metadata:
+    # Required fields
+    version: "1.0.0"
+    author: "Payment Security Team"
+    updated: "2025-12-20 10:00:00"
+
+    # Custom fields
     category: payment
     severity: high
     tags: [new_account, high_value, risk]
-    rule_version: "1.0.0"
     last_updated: "2024-12-11"

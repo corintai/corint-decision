@@ -44,20 +44,19 @@ This document defines CORINT's comprehensive error handling strategies for rules
 rule:
   id: high_risk_check
   name: High Risk Detection
-  
+
   when:
-    event.type: login
-    conditions:
+    all:
+      - event.type == "login"
       - user.risk_score > 80
-      
+
   score: 100
-  action: deny
-  
+
   # Error handling configuration
   on_error:
     action: skip              # skip | fail | fallback
     log_level: warn           # debug | info | warn | error
-    
+
     # Optional: custom error message
     message: "Risk score check failed, skipping rule"
 ```
@@ -67,19 +66,19 @@ rule:
 ```yaml
 rule:
   id: complex_check
-  
+
   when:
-    event.type: payment
-    conditions:
+    all:
+      - event.type == "payment"
       # Individual condition error handling
       - expression: user.risk_score > threshold
         on_error:
           action: fallback
           fallback_value: false    # Treat as condition not met
-          
+
       # Safe navigation for potentially null fields
       - user.profile?.kyc_level >= 2
-      
+
       # Default values for missing fields
       - (user.transaction_count ?? 0) > 100
 ```
@@ -89,18 +88,18 @@ rule:
 ```yaml
 rule:
   id: api_based_check
-  
+
   when:
-    event.type: transaction
-    conditions:
+    all:
+      - event.type == "transaction"
       - external_api.Chainalysis.risk_score > 80
-        
+
   # Handle external API failures
   external_api_error:
     action: fallback
     fallback:
       Chainalysis.risk_score: 50    # Conservative default
-      
+
     timeout: 3000                    # ms
     retry:
       max_attempts: 2
@@ -463,16 +462,16 @@ pipeline:
 ```yaml
 rule:
   id: data_dependent_rule
-  
+
   when:
-    event.type: transaction
-    conditions:
+    all:
+      - event.type == "transaction"
       # Null-safe access
       - user.profile?.age >= 18
-      
+
       # Default value for missing data
       - (user.kyc_level ?? 0) >= 2
-      
+
       # Existence check
       - transaction.amount exists
       

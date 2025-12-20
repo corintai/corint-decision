@@ -7,18 +7,22 @@ rule:
   description: Detect abnormally high transaction frequency
 
   when:
-    conditions:
+    all:
       # Too many transactions in 24 hours OR velocity spike
       - transaction_count_24h > 20 || velocity_ratio > 5.0
 
   score: 70
 
   metadata:
+    # Required fields
+    version: "1.0.0"
+    author: "Fraud Prevention Team"
+    updated: "2025-12-20 10:00:00"
+
+    # Custom fields
     category: fraud
     severity: high
     tags: [carding, automated_fraud, bot_attacks]
-    rule_version: "1.0.0"
-    last_updated: "2024-12-11"
     description_detail: "Abnormally high transaction frequency"
     detection: "transaction_count_24h > 20 OR velocity_ratio > 5.0"
     features:

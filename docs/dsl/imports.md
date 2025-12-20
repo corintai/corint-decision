@@ -83,7 +83,7 @@ rule:
   id: fraud_farm_pattern
   name: Fraud Farm Detection
   when:
-    conditions:
+    all:
       - ip_device_count > 10
   score: 100
 ```
@@ -390,7 +390,7 @@ rule:
   description: Detect organized fraud farms with high IP/device association
 
   when:
-    conditions:
+    all:
       - ip_device_count > 10
       - ip_user_count > 5
 

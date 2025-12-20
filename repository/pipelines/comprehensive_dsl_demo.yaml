@@ -33,10 +33,15 @@ rule:
   score: 75
 
   metadata:
+    # Required fields
+    version: "1.0.0"
+    author: "Risk Engineering Team"
+    updated: "2025-12-20 10:00:00"
+
+    # Custom fields
     category: transaction_monitoring
     severity: high
     tags: [high_value, aml]
-    rule_version: "1.0.0"
 
 # ----------------------------------------------------------------------------
 # Rule 2: Suspicious User Behavior (OR logic)
@@ -56,6 +61,12 @@ rule:
   score: 60
 
   metadata:
+    # Required fields
+    version: "1.0.0"
+    author: "Risk Engineering Team"
+    updated: "2025-12-20 10:00:00"
+
+    # Custom fields
     category: user_behavior
     severity: medium
     tags: [behavior, suspicious]
@@ -79,6 +90,12 @@ rule:
   score: 95
 
   metadata:
+    # Required fields
+    version: "1.0.0"
+    author: "Fraud Prevention Team"
+    updated: "2025-12-20 10:00:00"
+
+    # Custom fields
     category: fraud
     severity: critical
     tags: [fraud, high_confidence]
@@ -106,6 +123,12 @@ rule:
   score: 80
 
   metadata:
+    # Required fields
+    version: "1.0.0"
+    author: "Fraud Prevention Team"
+    updated: "2025-12-20 10:00:00"
+
+    # Custom fields
     category: fraud
     severity: high
     tags: [fraud, complex_pattern]
@@ -130,6 +153,12 @@ rule:
   score: 65
 
   metadata:
+    # Required fields
+    version: "1.0.0"
+    author: "Risk Engineering Team"
+    updated: "2025-12-20 10:00:00"
+
+    # Custom fields
     category: risk_management
     severity: medium
 
@@ -150,6 +179,12 @@ rule:
   score: 70
 
   metadata:
+    # Required fields
+    version: "1.0.0"
+    author: "Risk Engineering Team"
+    updated: "2025-12-20 10:00:00"
+
+    # Custom fields
     category: payment_fraud
     severity: high
     tags: [payment, restricted_method]
@@ -173,6 +208,12 @@ rule:
   score: 55
 
   metadata:
+    # Required fields
+    version: "1.0.0"
+    author: "Risk Engineering Team"
+    updated: "2025-12-20 10:00:00"
+
+    # Custom fields
     category: velocity
     severity: medium
 
@@ -194,6 +235,12 @@ rule:
   score: -20
 
   metadata:
+    # Required fields
+    version: "1.0.0"
+    author: "Risk Engineering Team"
+    updated: "2025-12-20 10:00:00"
+
+    # Custom fields
     category: trust_signals
     severity: low
     tags: [bonus, trusted]
@@ -224,6 +271,12 @@ ruleset:
       reason: "Transaction monitoring passed"
 
   metadata:
+    # Required fields
+    version: "1.0.0"
+    author: "Risk Engineering Team"
+    updated: "2025-12-20 10:00:00"
+
+    # Custom fields
     domain: transactions
     owner: risk_team
 
@@ -252,6 +305,12 @@ ruleset:
       reason: "User behavior normal"
 
   metadata:
+    # Required fields
+    version: "1.0.0"
+    author: "Risk Engineering Team"
+    updated: "2025-12-20 10:00:00"
+
+    # Custom fields
     domain: user_behavior
     owner: fraud_team
 
@@ -287,6 +346,12 @@ ruleset:
       reason: "Fraud checks passed"
 
   metadata:
+    # Required fields
+    version: "1.0.0"
+    author: "Fraud Prevention Team"
+    updated: "2025-12-20 10:00:00"
+
+    # Custom fields
     domain: fraud
     owner: fraud_team
 
@@ -302,8 +367,6 @@ pipeline:
     - Conditional branching based on transaction amount
     - Multiple ruleset evaluation
     - Combined decision logic
-
-  version: "1.0.0"
 
   # Entry point for the pipeline
   entry: blacklist_check
@@ -401,9 +464,12 @@ pipeline:
 
   # Pipeline metadata
   metadata:
-    author: "Risk Engineering Team"
+    # Required fields
     version: "1.0.0"
-    last_updated: "2025-12-14"
+    author: "Risk Engineering Team"
+    updated: "2025-12-20 10:00:00"
+
+    # Custom fields
     features_demonstrated:
       - "Logical operators (any/all)"
       - "Comparison operators (>, <, ==, !=, >=, <=)"

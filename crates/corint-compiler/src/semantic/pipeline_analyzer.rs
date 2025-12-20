@@ -358,10 +358,10 @@ mod tests {
             id: "test_pipeline".to_string(),
             name: "Test Pipeline".to_string(),
             description: None,
-            version: None,
             entry: entry.to_string(),
             when: None,
             steps,
+            metadata: None,
         }
     }
 
@@ -384,10 +384,10 @@ mod tests {
             id: "test".to_string(),
             name: "Test".to_string(),
             description: None,
-            version: None,
             entry: String::new(), // Empty entry
             when: None,
             steps: vec![],
+            metadata: None,
         };
 
         let result = analyze_new_pipeline(&pipeline);

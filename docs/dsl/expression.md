@@ -194,6 +194,29 @@ conditions:
 - user.roles contains "admin"
 ```
 
+### 5.4 `in list.<list_id>` / `not in list.<list_id>` - Custom List Membership
+
+Check membership in configured custom lists (supports PostgreSQL, Redis, File, Memory, and API backends):
+
+```yaml
+# Check if value is in a list
+- user.email in list.email_blocklist
+- event.ip in list.ip_blocklist
+- user.id in list.vip_users
+
+# Check if value is NOT in a list
+- user.email not in list.email_allowlist
+- device.id not in list.trusted_devices
+```
+
+**Note:** Lists must be configured in the list configuration file with a unique ID and backend type.
+
+📖 **See [list.md](list.md)** for complete specification including:
+- List configuration and backend types
+- API endpoints for list management
+- Performance considerations
+- Best practices
+
 ---
 
 ## 6. Existence Operators
@@ -547,10 +570,10 @@ NOT_EXPR ::= "!" COMPARISON_EXPR
            | "not:" COMPARISON_EXPR
            | COMPARISON_EXPR
 
-COMPARISON_EXPR ::= 
+COMPARISON_EXPR ::=
     | ADDITIVE_EXPR COMPARE_OP ADDITIVE_EXPR
-    | ADDITIVE_EXPR "in" ARRAY_LITERAL
-    | ADDITIVE_EXPR "not_in" ARRAY_LITERAL
+    | ADDITIVE_EXPR "in" (ARRAY_LITERAL | LIST_REFERENCE)
+    | ADDITIVE_EXPR "not" "in" (ARRAY_LITERAL | LIST_REFERENCE)
     | ADDITIVE_EXPR "contains" ADDITIVE_EXPR
     | ADDITIVE_EXPR "regex" STRING_LITERAL
     | ADDITIVE_EXPR "exists"
@@ -568,12 +591,13 @@ MULTIPLICATIVE_EXPR ::= UNARY_EXPR { ("*" | "/" | "%") UNARY_EXPR }
 UNARY_EXPR ::= "-" PRIMARY_EXPR
              | PRIMARY_EXPR
 
-PRIMARY_EXPR ::= 
+PRIMARY_EXPR ::=
     | LITERAL
     | FIELD_ACCESS
     | FUNCTION_CALL
     | LLM_EXPR
     | EXTERNAL_API_EXPR
+    | LIST_REFERENCE
     | VAR_EXPR
     | "(" LOGICAL_EXPR ")"
     | TERNARY_EXPR
@@ -594,7 +618,9 @@ LLM_EXPR ::=
 
 EXTERNAL_API_EXPR ::= "external_api." IDENT "." FIELD_ACCESS
 
-VAR_EXPR ::= 
+LIST_REFERENCE ::= "list" "." IDENT
+
+VAR_EXPR ::=
     | "vars." IDENT
     | "context." FIELD_ACCESS
     | "sys." IDENT

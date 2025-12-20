@@ -65,7 +65,8 @@ Structure:
 ```yaml
 when:
   <event-filter>
-  conditions:
+  when:
+    all:
     - <expression>
     - <expression>
     - ...
@@ -86,10 +87,11 @@ A list of logical expressions evaluated **AND** by default.
 Example:
 
 ```yaml
-conditions:
-  - geo.country in ["RU", "NG"]
-  - device.is_new == true
-  - features.login_failed_count_24h > 3  # Feature access with features. prefix
+when:
+  all:
+    - geo.country in ["RU", "NG"]
+    - device.is_new == true
+    - features.login_failed_count_24h > 3  # Feature access with features. prefix
 ```
 
 **Note**: When accessing calculated features, always use the `features.` namespace prefix:
@@ -211,7 +213,7 @@ rule:
 
   when:
     event.type: transaction
-    conditions:
+    all:
       # Reference params in conditions (future support)
       - transaction_count_last_hour > 10
       - total_amount_last_hour > 5000
@@ -384,7 +386,7 @@ rule:
 
   when:
     event.type: transaction
-    conditions:
+    all:
       - event.velocity > dynamic_threshold.value
 
   # Dynamic threshold configuration
@@ -505,7 +507,7 @@ rule:
 
   when:
     event.type: transaction
-    conditions:
+    all:
       # Amount exceeds user's dynamic threshold
       - event.transaction.amount > dynamic_threshold.high_amount.value
 
@@ -573,7 +575,7 @@ rule:
   priority: 900
 
   when:
-    conditions:
+    all:
       - user.id in blocklist
 
   score: 1000
@@ -600,7 +602,7 @@ rule:
   # Access dependency results in conditions
   when:
     event.type: transaction
-    conditions:
+    all:
       # Use results from dependency rules
       - context.rules.device_fingerprint_check.triggered == true
       - context.rules.velocity_check.score > 30
@@ -640,7 +642,7 @@ rule:
 
   when:
     event.type: transaction
-    conditions:
+    all:
       - event.transaction.amount > 10000
       - user.status == "approved"
 
@@ -682,7 +684,7 @@ rule:
   group_priority: 3               # Highest in group
 
   when:
-    conditions:
+    all:
       - geo.country in ["NK", "IR", "SY"]
   score: 100
 
@@ -696,7 +698,7 @@ rule:
   group_priority: 2
 
   when:
-    conditions:
+    all:
       - geo.country in ["RU", "CN", "NG"]
   score: 50
 
@@ -710,7 +712,7 @@ rule:
   group_priority: 1               # Lowest in group
 
   when:
-    conditions:
+    all:
       - geo.country in ["BR", "IN", "MX"]
   score: 20
 
@@ -735,7 +737,7 @@ rule:
       on_timeout: skip
 
   when:
-    conditions:
+    all:
       - context.rules.basic_verification.triggered == true
       - context.rules.basic_verification.score > 30
 
@@ -794,7 +796,7 @@ rule:
 
   when:
     event.type: transaction
-    conditions:
+    all:
       # Use dependency results
       - all:
           - context.rules.device_risk_check.triggered == true
@@ -898,7 +900,7 @@ rule:
 
   when:
     event.type: login
-    conditions:
+    all:
       - device.is_new == true
       - geo.country in ["RU", "UA", "NG"]
       - user.login_failed_count > 3
@@ -922,7 +924,7 @@ rule:
 
   when:
     event.type: loan_application
-    conditions:
+    all:
       - applicant.income < 3000
       - applicant.request_amount > applicant.income * 3
       - LLM.output.employment_stability < 0.3
@@ -978,7 +980,7 @@ rule:
   description: Detect organized fraud farms with high IP/device association
 
   when:
-    conditions:
+    all:
       - ip_device_count > 10
       - ip_user_count > 5
 

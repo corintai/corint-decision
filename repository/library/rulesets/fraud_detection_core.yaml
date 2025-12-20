@@ -112,5 +112,10 @@ ruleset:
       reason: "Low risk - normal pattern"
 
   metadata:
+    # Required fields
     version: "1.0.0"
+    author: "Risk Engineering Team"
+    updated: "2025-12-20 10:00:00"
+
+    # Custom fields
     last_updated: "2024-12-11"

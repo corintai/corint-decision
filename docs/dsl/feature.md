@@ -28,7 +28,7 @@ In risk control scenarios, extensive statistical analysis computations are neede
 rule:
   id: high_transaction_volume
   when:
-    conditions:
+    all:
       - features.transaction_sum_7d > 5000      # ✅ Direct feature access
       - features.transaction_count_24h > 10     # ✅ Direct feature access
       - event.amount > 1000                      # ✅ Event field (no prefix)
@@ -53,7 +53,7 @@ rule:
 # In rule
 rule:
   when:
-    conditions:
+    all:
       - context.statistical_features.devices_per_ip_5h > 10  # ✅ Context feature group
       - context.statistical_features.users_per_ip_5h > 5
 ```
@@ -362,12 +362,13 @@ Define a complete association matrix:
   value: minutes_since(user.last_failed_login_time)
 
 # Usage in conditions
-conditions:
+when:
+  all:
   # Login again less than 5 minutes after last login (possibly a bot)
-  - hours_since_last_login < 0.08  # 5 minutes
+    - hours_since_last_login < 0.08  # 5 minutes
   
   # User with no transactions for a long time suddenly makes a large transaction
-  - days_since_last_transaction > 90 && event.transaction.amount > 10000
+    - days_since_last_transaction > 90 && event.transaction.amount > 10000
 ```
 
 ### 5.2 Time Pattern Features
@@ -409,12 +410,13 @@ conditions:
   value: sum(transaction.amounts, last_24h) / 24  # per hour
 
 # Usage
-conditions:
+when:
+  all:
   # Login frequency suddenly increased by 10 times (abnormal behavior)
-  - login_velocity_change > 10
+    - login_velocity_change > 10
   
   # Spending speed exceeds historical average by 5 times
-  - spending_velocity > avg(spending_velocity, last_90d) * 5
+    - spending_velocity > avg(spending_velocity, last_90d) * 5
 ```
 
 ---
@@ -456,9 +458,10 @@ Rolling window calculations:
   value: rolling_sum(transaction.amount, window=24h, step=1h)
 
 # Detect sudden changes
-conditions:
+when:
+  all:
   # Current 24-hour transaction amount is 3 times the 7-day rolling average
-  - sum(transaction.amounts, last_24h) > 
+    - sum(transaction.amounts, last_24h) > 
     rolling_avg(sum(transaction.amounts, 24h), window=7d) * 3
 ```
 
@@ -474,12 +477,13 @@ Session-based windows:
 - name: current_session_duration
   value: session_duration(current_session)
 
-conditions:
+when:
+  all:
   # Too many actions in a single session
-  - current_session_actions > 50
+    - current_session_actions > 50
   
   # Abnormally short session duration
-  - current_session_duration < 10 && current_session_actions > 20
+    - current_session_duration < 10 && current_session_actions > 20
 ```
 
 ---
@@ -708,10 +712,11 @@ Some features depend on other features, forming a DAG:
 
 ```yaml
 # Bad: Multiple queries for same time window
-conditions:
-  - count(transactions, last_24h) > 10
-  - sum(transaction.amounts, last_24h) > 1000
-  - max(transaction.amount, last_24h) > 500
+when:
+  all:
+    - count(transactions, last_24h) > 10
+    - sum(transaction.amounts, last_24h) > 1000
+    - max(transaction.amount, last_24h) > 500
 
 # Good: Batch query with single scan
 - type: extract
@@ -725,10 +730,11 @@ conditions:
       - max: amount
     output: context.tx_stats_24h
 
-conditions:
-  - context.tx_stats_24h.count > 10
-  - context.tx_stats_24h.sum_amount > 1000
-  - context.tx_stats_24h.max_amount > 500
+when:
+  all:
+    - context.tx_stats_24h.count > 10
+    - context.tx_stats_24h.sum_amount > 1000
+    - context.tx_stats_24h.max_amount > 500
 ```
 
 ### 10.2 Materialized Features
@@ -965,7 +971,7 @@ rule:
   
   when:
     event.type: login
-    conditions:
+    all:
       # Use pre-computed features
       - context.risk_features.devices_per_ip_5h > 10
       - context.risk_features.users_per_ip_5h > 5
@@ -981,7 +987,7 @@ rule:
   
   when:
     event.type: transaction
-    conditions:
+    all:
       - context.risk_features.login_velocity_change > 5
       - context.risk_features.transaction_count_24h > context.risk_features.avg_transaction_30d * 3
       

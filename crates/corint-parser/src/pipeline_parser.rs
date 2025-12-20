@@ -131,7 +131,23 @@ impl PipelineParser {
 
         // Parse optional fields
         let description = YamlParser::get_optional_string(pipeline_obj, "description");
-        let version = YamlParser::get_optional_string(pipeline_obj, "version");
+
+        // Parse optional metadata (arbitrary key-value pairs)
+        let metadata = pipeline_obj
+            .get("metadata")
+            .and_then(|v| v.as_mapping())
+            .map(|mapping| {
+                let mut result = std::collections::HashMap::new();
+                for (key, value) in mapping {
+                    if let Some(key_str) = key.as_str() {
+                        // Convert YAML value to serde_json::Value
+                        if let Ok(json_value) = serde_yaml::from_value::<serde_json::Value>(value.clone()) {
+                            result.insert(key_str.to_string(), json_value);
+                        }
+                    }
+                }
+                result
+            });
 
         // Parse optional when block
         let when = if let Some(when_obj) = pipeline_obj.get("when") {
@@ -157,10 +173,10 @@ impl PipelineParser {
             id,
             name,
             description,
-            version,
             entry,
             when,
             steps,
+            metadata,
         })
     }
 
@@ -343,10 +359,10 @@ impl PipelineParser {
             id,
             name,
             description,
-            version: None,
             entry,
             when,
             steps,
+            metadata: None,
         })
     }
 
@@ -1018,7 +1034,9 @@ pipeline:
   id: test_pipeline
   name: Test Pipeline
   entry: step1
-  version: "1.0"
+  metadata:
+    version: "1.0"
+    author: "Test Team"
   steps:
     - step:
         id: step1
@@ -1037,7 +1055,9 @@ pipeline:
         assert_eq!(pipeline.id, "test_pipeline");
         assert_eq!(pipeline.name, "Test Pipeline");
         assert_eq!(pipeline.entry, "step1");
-        assert_eq!(pipeline.version, Some("1.0".to_string()));
+        assert!(pipeline.metadata.is_some());
+        let metadata = pipeline.metadata.unwrap();
+        assert_eq!(metadata.get("version").unwrap(), &serde_json::json!("1.0"));
         assert_eq!(pipeline.steps.len(), 1);
 
         let step = &pipeline.steps[0];

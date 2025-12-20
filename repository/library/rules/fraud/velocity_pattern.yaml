@@ -18,7 +18,7 @@ rule:
     severity: "medium"
 
   when:
-    conditions:
+    all:
       # These conditions would use the params in actual implementation
       - transaction_count_last_hour > 10
       - total_amount_last_hour > 5000
@@ -26,6 +26,12 @@ rule:
   score: 60
 
   metadata:
+    # Required fields
+    version: "1.0.0"
+    author: "Fraud Prevention Team"
+    updated: "2025-12-20 10:00:00"
+
+    # Custom fields
     category: "fraud"
     severity: "medium"
     parameterized: true

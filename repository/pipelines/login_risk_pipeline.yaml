@@ -45,7 +45,11 @@ pipeline:
         next: end
 
   metadata:
+    # Required fields
     version: "1.0.0"
-    last_updated: "2025-12-14"
+    author: "Security Team"
+    updated: "2025-12-20 10:00:00"
+
+    # Custom fields
     owner: "security_team"
     tags: [login, authentication, security]

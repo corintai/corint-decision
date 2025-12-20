@@ -30,3 +30,13 @@ pipeline:
         type: ruleset
         ruleset: fraud_detection_core
         next: end
+
+  metadata:
+    # Required fields
+    version: "1.0.0"
+    author: "Fraud Prevention Team"
+    updated: "2025-12-20 10:00:00"
+
+    # Custom fields
+    environment: "production"
+    owner: "fraud_team"

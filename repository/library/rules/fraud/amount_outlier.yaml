@@ -7,7 +7,7 @@ rule:
   description: Detect transaction amounts that are statistical outliers
 
   when:
-    conditions:
+    all:
       # Z-score exceeds 3.0 (statistical outlier)
       - amount_zscore > 3.0
       # AND flagged as outlier
@@ -18,11 +18,15 @@ rule:
   score: 75
 
   metadata:
+    # Required fields
+    version: "1.0.0"
+    author: "Fraud Prevention Team"
+    updated: "2025-12-20 10:00:00"
+
+    # Custom fields
     category: fraud
     severity: high
     tags: [account_takeover, stolen_cards, money_laundering]
-    rule_version: "1.0.0"
-    last_updated: "2024-12-11"
     description_detail: "Transaction amount is statistical outlier"
     detection: "amount_zscore > 3.0 AND is_amount_outlier AND transaction_amount > 5000"
     features:

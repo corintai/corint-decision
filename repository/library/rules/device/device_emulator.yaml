@@ -7,7 +7,7 @@ rule:
   description: Detect emulators or virtual devices used for fraud
 
   when:
-    conditions:
+    all:
       # Any of these conditions indicate an emulator or compromised device
       - any:
           - device.is_emulator == true
@@ -17,11 +17,15 @@ rule:
   score: 80
 
   metadata:
+    # Required fields
+    version: "1.0.0"
+    author: "Device Security Team"
+    updated: "2025-12-20 10:00:00"
+
+    # Custom fields
     category: device
     severity: high
     tags: [emulator, virtual_device, fraud_tool, rooted_device]
-    rule_version: "1.0.0"
-    last_updated: "2025-12-14"
     description_detail: "Detects emulated devices, rooted/jailbroken devices, or devices with low fingerprint confidence"
     detection: "is_emulator OR is_rooted OR fingerprint_confidence < 0.5"
     features:

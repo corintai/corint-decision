@@ -56,7 +56,11 @@ ruleset:
       reason: "Normal transaction"
 
   metadata:
+    # Required fields
     version: "2.0.0"
-    last_updated: "2025-12-11"
+    author: "Risk Engineering Team"
+    updated: "2025-12-20 10:00:00"
+
+    # Custom fields
     parent: "payment_base"
     transaction_limit: 1000

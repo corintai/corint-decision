@@ -7,7 +7,7 @@ rule:
   description: Multiple small transactions pattern
 
   when:
-    conditions:
+    all:
       - payment_attempts_1h >= 5
       - payment_amount < 10
       - unique_cards_1h >= 3
@@ -15,8 +15,13 @@ rule:
   score: 80
 
   metadata:
+    # Required fields
+    version: "1.0.0"
+    author: "Payment Security Team"
+    updated: "2025-12-20 10:00:00"
+
+    # Custom fields
     category: payment
     severity: critical
     tags: [card_testing, carding, fraud]
-    rule_version: "1.0.0"
     last_updated: "2024-12-11"

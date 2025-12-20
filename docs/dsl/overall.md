@@ -121,17 +121,21 @@ rule:
 
 #### Event Filter
 
+**Note**: The old event filter syntax (`event.type: value`) is deprecated. Use condition syntax instead.
+
 ```yaml
 when:
-  event.type: login
+  all:
+    - event.type == "login"
 ```
 
 #### Conditions
 
 ```yaml
-conditions:
-  - user.age > 60
-  - geo.country in ["RU", "NG"]
+when:
+  all:
+    - user.age > 60
+    - geo.country in ["RU", "NG"]
 ```
 
 Operators:
@@ -275,7 +279,8 @@ RDL includes comprehensive feature engineering capabilities for risk control sce
 
 **Feature Access**: All calculated features must be accessed using the `features.` namespace prefix:
   ```yaml
-  conditions:
+  when:
+    all:
     - features.transaction_sum_7d > 5000
     - features.login_count_24h > 10
   ```
@@ -482,6 +487,7 @@ RDL documentation is organized as follows:
 
 ### Advanced Features
 - **feature.md** - Feature engineering and statistical analysis
+- **list.md** - Custom List feature (blocklists, allowlists, multi-backend support)
 - **llm.md** - LLM integration guide
 - **service.md** - Internal service integration (databases, caches, microservices)
 - **external.md** - External API integration (third-party services)
@@ -511,8 +517,8 @@ rule:
   description: Detect risky login behavior using rules + LLM reasoning
 
   when:
-    event.type: login
-    conditions:
+    all:
+      - event.type == "login"
       - device.is_new == true
       - geo.country in ["RU", "UA", "NG"]
       - user.login_failed_count > 3
@@ -535,8 +541,8 @@ rule:
   description: Detect mismatch between declared information and LLM inference
 
   when:
-    event.type: loan_application
-    conditions:
+    all:
+      - event.type == "loan_application"
       - applicant.income < 3000
       - applicant.request_amount > applicant.income * 3
       - LLM.output.employment_stability < 0.3
@@ -558,16 +564,19 @@ RULE_BODY ::=
       "id:" STRING
       "name:" STRING
       "description:" STRING
+      [ "params:" PARAMS_MAP ]
       "when:" CONDITION_BLOCK
       "score:" NUMBER
+      [ "metadata:" METADATA_MAP ]
 
 CONDITION_BLOCK ::=
-      EVENT_FILTER
-      "conditions:" CONDITION_LIST
+      "all:" CONDITION_LIST
+    | "any:" CONDITION_LIST
+    | EVENT_FILTER
 
 EVENT_FILTER ::= KEY ":" VALUE
 
-CONDITION_LIST ::= 
+CONDITION_LIST ::=
       "-" CONDITION { "-" CONDITION }
 
 CONDITION ::=
@@ -594,12 +603,13 @@ EXTERNAL_EXPR ::=
 
 ACTION ::= "approve" | "deny" | "review" | "infer" | OBJECT
 
-RULESET ::= "ruleset:" 
+RULESET ::= "ruleset:"
               "id:" STRING
               [ "name:" STRING ]
               [ "description:" STRING ]
               "rules:" RULE_ID_LIST
               [ "decision_logic:" DECISION_LIST ]
+              [ "metadata:" METADATA_MAP ]
 
 DECISION_LIST ::= "-" DECISION { "-" DECISION }
 
@@ -612,6 +622,10 @@ DECISION ::=
       "action:" ACTION
 
 PIPELINE ::= defined in pipeline.md
+
+METADATA_MAP ::= KEY ":" VALUE { KEY ":" VALUE }
+
+PARAMS_MAP ::= KEY ":" VALUE { KEY ":" VALUE }
 ```
 
 ---
