@@ -1991,8 +1991,9 @@ cargo run --example database_repository --features postgres
 
 ### Documentation
 
+- [System Architecture](./ARCHITECTURE.md) - Complete system architecture and technical implementation
+- [DSL Design](./DSL_DESIGN.md) - Three-layer decision model and design patterns for rule authors
 - [RDL Overall Specification](./dsl/overall.md)
-- [Architecture Design](./dsl/ARCHITECTURE.md)
 - [Rule Specification](./dsl/rule.md)
 - [Pipeline Specification](./dsl/pipeline.md)
 
