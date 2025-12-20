@@ -67,18 +67,43 @@ impl RegistryParser {
     /// Parse when block
     ///
     /// Supports:
-    /// 1. Direct field filters (e.g., event.type: login, event.channel: stripe)
-    /// 2. conditions array for complex expressions
+    /// 1. Direct expression string (e.g., when: event.type == "test1")
+    /// 2. Condition group (e.g., when: all: [event.type == "transaction", event.source == "supabase"])
+    /// 3. Direct field filters (e.g., event.type: login, event.channel: stripe)
+    /// 4. conditions array for complex expressions
     ///
     /// All direct field filters are combined with AND logic.
     fn parse_when_block(when_obj: &YamlValue) -> Result<WhenBlock> {
+        // Case 1: Direct expression string (when: "event.type == 'test1'")
+        if let Some(expr_str) = when_obj.as_str() {
+            let expr = ExpressionParser::parse(expr_str)?;
+            return Ok(WhenBlock {
+                event_type: None,
+                condition_group: Some(corint_core::ast::ConditionGroup::All(vec![
+                    corint_core::ast::Condition::Expression(expr),
+                ])),
+                conditions: None,
+            });
+        }
+
         let mut event_type = None;
         let mut conditions = Vec::new();
+        let mut condition_group = None;
 
         if let Some(mapping) = when_obj.as_mapping() {
+            // Check for condition group (all/any/not)
+            if let Some(all_conds) = mapping.get(&YamlValue::String("all".to_string())) {
+                condition_group = Some(Self::parse_condition_group_all(all_conds)?);
+            } else if let Some(any_conds) = mapping.get(&YamlValue::String("any".to_string())) {
+                condition_group = Some(Self::parse_condition_group_any(any_conds)?);
+            } else if let Some(not_conds) = mapping.get(&YamlValue::String("not".to_string())) {
+                condition_group = Some(Self::parse_condition_group_not(not_conds)?);
+            }
             for (key, value) in mapping {
                 if let Some(key_str) = key.as_str() {
                     match key_str {
+                        // Skip condition group keys (already handled above)
+                        "all" | "any" | "not" => continue,
                         // Special handling for conditions array
                         "conditions" => {
                             if let Some(cond_array) = value.as_sequence() {
@@ -146,13 +171,54 @@ impl RegistryParser {
 
         Ok(WhenBlock {
             event_type,
-            condition_group: None,
+            condition_group,
             conditions: if conditions.is_empty() {
                 None
             } else {
                 Some(conditions)
             },
         })
+    }
+
+    /// Parse an "all" condition group
+    fn parse_condition_group_all(yaml: &YamlValue) -> Result<corint_core::ast::ConditionGroup> {
+        let conditions = Self::parse_condition_array(yaml)?;
+        Ok(corint_core::ast::ConditionGroup::All(conditions))
+    }
+
+    /// Parse an "any" condition group
+    fn parse_condition_group_any(yaml: &YamlValue) -> Result<corint_core::ast::ConditionGroup> {
+        let conditions = Self::parse_condition_array(yaml)?;
+        Ok(corint_core::ast::ConditionGroup::Any(conditions))
+    }
+
+    /// Parse a "not" condition group
+    fn parse_condition_group_not(yaml: &YamlValue) -> Result<corint_core::ast::ConditionGroup> {
+        let conditions = Self::parse_condition_array(yaml)?;
+        Ok(corint_core::ast::ConditionGroup::Not(conditions))
+    }
+
+    /// Parse an array of conditions
+    fn parse_condition_array(yaml: &YamlValue) -> Result<Vec<corint_core::ast::Condition>> {
+        let array = yaml.as_sequence().ok_or_else(|| ParseError::InvalidValue {
+            field: "condition_group".to_string(),
+            message: "Expected an array of conditions".to_string(),
+        })?;
+
+        let mut conditions = Vec::new();
+        for item in array {
+            if let Some(expr_str) = item.as_str() {
+                let expr = ExpressionParser::parse(expr_str)?;
+                conditions.push(corint_core::ast::Condition::Expression(expr));
+            } else {
+                return Err(ParseError::InvalidValue {
+                    field: "condition".to_string(),
+                    message: "Condition must be a string expression".to_string(),
+                });
+            }
+        }
+
+        Ok(conditions)
     }
 }
 

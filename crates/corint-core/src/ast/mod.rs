@@ -25,6 +25,6 @@ pub use pipeline::{
     Step,
 };
 pub use registry::{PipelineRegistry, RegistryEntry};
-pub use rule::{Rule, RuleParams, WhenBlock};
+pub use rule::{Condition, ConditionGroup, Rule, RuleParams, WhenBlock};
 pub use ruleset::{Action, DecisionRule, DecisionTemplateRef, InferConfig, Ruleset};
 pub use template::{DecisionTemplate, TemplateReference};

@@ -3,7 +3,7 @@
 use crate::config::EngineConfig;
 use crate::error::{Result, SdkError};
 use corint_compiler::{Compiler, CompilerOptions as CompilerOpts};
-use corint_core::ast::{Action, Expression, Operator, PipelineRegistry, WhenBlock};
+use corint_core::ast::{Action, Condition, ConditionGroup, Expression, Operator, PipelineRegistry, WhenBlock};
 use corint_core::ir::Program;
 use corint_core::Value;
 use corint_parser::{PipelineParser, RegistryParser, RuleParser, RulesetParser};
@@ -368,20 +368,31 @@ impl DecisionEngine {
 
     /// Evaluate a when block against event data
     fn evaluate_when_block(when: &WhenBlock, event_data: &HashMap<String, Value>) -> bool {
+        tracing::debug!("evaluate_when_block: when={:?}, event_data={:?}", when, event_data);
+
         // Check event_type if specified
         // Note: event_type field in WhenBlock corresponds to event.type in YAML,
         // which is stored as "type" key in event_data HashMap
         if let Some(ref expected_type) = when.event_type {
             if let Some(Value::String(actual)) = event_data.get("type") {
                 if actual != expected_type {
+                    tracing::debug!("event_type mismatch: expected={}, actual={}", expected_type, actual);
                     return false; // Event type mismatch
                 }
             } else {
+                tracing::debug!("No type field in event data");
                 return false; // No type field in event data or type is not a string
             }
         }
 
-        // Evaluate all conditions (AND logic)
+        // Evaluate condition_group (new format: all/any/not)
+        if let Some(ref condition_group) = when.condition_group {
+            let result = Self::evaluate_condition_group(condition_group, event_data);
+            tracing::debug!("condition_group evaluation result: {}", result);
+            return result;
+        }
+
+        // Evaluate all conditions (legacy format - AND logic)
         if let Some(ref conditions) = when.conditions {
             for condition in conditions {
                 if !Self::evaluate_expression(condition, event_data) {
@@ -391,6 +402,127 @@ impl DecisionEngine {
         }
 
         true // All checks passed
+    }
+
+    /// Evaluate a condition group (all/any/not)
+    fn evaluate_condition_group(
+        group: &ConditionGroup,
+        event_data: &HashMap<String, Value>,
+    ) -> bool {
+        match group {
+            ConditionGroup::All(conditions) => {
+                // All conditions must be true (AND logic)
+                for condition in conditions {
+                    let result = Self::evaluate_condition(condition, event_data);
+                    tracing::debug!("Evaluating condition in All group: {:?}, result={}", condition, result);
+                    if !result {
+                        return false;
+                    }
+                }
+                true
+            }
+            ConditionGroup::Any(conditions) => {
+                // At least one condition must be true (OR logic)
+                for condition in conditions {
+                    if Self::evaluate_condition(condition, event_data) {
+                        return true;
+                    }
+                }
+                false
+            }
+            ConditionGroup::Not(conditions) => {
+                // None of the conditions should be true (NOT logic)
+                for condition in conditions {
+                    if Self::evaluate_condition(condition, event_data) {
+                        return false;
+                    }
+                }
+                true
+            }
+        }
+    }
+
+    /// Evaluate a single condition (expression or nested group)
+    fn evaluate_condition(
+        condition: &Condition,
+        event_data: &HashMap<String, Value>,
+    ) -> bool {
+        match condition {
+            Condition::Expression(expr) => Self::evaluate_expression(expr, event_data),
+            Condition::Group(group) => Self::evaluate_condition_group(group, event_data),
+        }
+    }
+
+    /// Evaluate a condition group with tracing support
+    fn evaluate_condition_group_with_trace(
+        group: &ConditionGroup,
+        event_data: &HashMap<String, Value>,
+    ) -> (bool, Vec<ConditionTrace>) {
+        match group {
+            ConditionGroup::All(conditions) => {
+                let mut traces = Vec::new();
+                let mut all_true = true;
+
+                for condition in conditions {
+                    let (result, mut cond_traces) = Self::evaluate_condition_with_trace(condition, event_data);
+                    traces.append(&mut cond_traces);
+                    if !result {
+                        all_true = false;
+                    }
+                }
+
+                (all_true, traces)
+            }
+            ConditionGroup::Any(conditions) => {
+                let mut traces = Vec::new();
+                let mut any_true = false;
+
+                for condition in conditions {
+                    let (result, mut cond_traces) = Self::evaluate_condition_with_trace(condition, event_data);
+                    traces.append(&mut cond_traces);
+                    if result {
+                        any_true = true;
+                    }
+                }
+
+                (any_true, traces)
+            }
+            ConditionGroup::Not(conditions) => {
+                let mut traces = Vec::new();
+                let mut all_true = true;
+
+                for condition in conditions {
+                    let (result, mut cond_traces) = Self::evaluate_condition_with_trace(condition, event_data);
+                    traces.append(&mut cond_traces);
+                    if !result {
+                        all_true = false;
+                    }
+                }
+
+                // NOT inverts the result
+                (!all_true, traces)
+            }
+        }
+    }
+
+    /// Evaluate a single condition with tracing support
+    fn evaluate_condition_with_trace(
+        condition: &Condition,
+        event_data: &HashMap<String, Value>,
+    ) -> (bool, Vec<ConditionTrace>) {
+        match condition {
+            Condition::Expression(expr) => {
+                // For expression, evaluate it and create a trace
+                let result = Self::evaluate_expression(expr, event_data);
+                let expr_string = Self::expression_to_string(expr);
+                let trace = ConditionTrace::new(expr_string, result);
+                (result, vec![trace])
+            }
+            Condition::Group(group) => {
+                // For nested group, recursively evaluate
+                Self::evaluate_condition_group_with_trace(group, event_data)
+            }
+        }
     }
 
     /// Evaluate an expression against event data
@@ -544,9 +676,20 @@ impl DecisionEngine {
             return None;
         }
 
-        let mut current = event_data.get(&path[0])?;
+        // Special case: if path starts with "event", skip it since event_data IS the event
+        let actual_path = if path.len() > 0 && path[0] == "event" {
+            &path[1..]
+        } else {
+            path
+        };
 
-        for key in &path[1..] {
+        if actual_path.is_empty() {
+            return None;
+        }
+
+        let mut current = event_data.get(&actual_path[0])?;
+
+        for key in &actual_path[1..] {
             match current {
                 Value::Object(map) => {
                     current = map.get(key)?;
@@ -811,7 +954,15 @@ impl DecisionEngine {
             }
         }
 
-        // Evaluate all conditions (AND logic)
+        // Evaluate condition_group (new format: all/any/not)
+        if let Some(ref condition_group) = when.condition_group {
+            let (result, group_traces) =
+                Self::evaluate_condition_group_with_trace(condition_group, event_data);
+            traces.extend(group_traces);
+            return (result, traces);
+        }
+
+        // Evaluate all conditions (legacy format - AND logic)
         if let Some(ref conditions) = when.conditions {
             for condition in conditions {
                 let (result, trace) = Self::evaluate_expression_with_trace(condition, event_data);
@@ -1811,9 +1962,10 @@ impl DecisionEngine {
             // Find the first matching registry entry (top-to-bottom order)
             for (idx, entry) in registry.registry.iter().enumerate() {
                 tracing::debug!(
-                    "Checking registry entry {}: pipeline={}",
+                    "Checking registry entry {}: pipeline={}, when={:?}",
                     idx,
-                    entry.pipeline
+                    entry.pipeline,
+                    entry.when
                 );
 
                 // Evaluate when block against event data

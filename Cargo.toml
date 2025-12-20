@@ -3,7 +3,7 @@ members = [
     "crates/corint-core",
     "crates/corint-parser",
     "crates/corint-compiler",
-    "crates/corint-runtime", "crates/corint-sdk", "crates/corint-server", "crates/corint-repository",
+    "crates/corint-runtime", "crates/corint-sdk", "crates/corint-server", "crates/corint-repository", "crates/corint-ffi",
 ]
 resolver = "2"
 
