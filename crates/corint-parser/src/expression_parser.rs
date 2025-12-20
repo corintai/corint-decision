@@ -161,6 +161,16 @@ impl ExpressionParser {
             return Ok(Expression::literal(Value::Number(num)));
         }
 
+        // Check for array literals like ["a", "b", "c"]
+        if input.starts_with('[') && input.ends_with(']') {
+            let inner = &input[1..input.len() - 1].trim();
+            if inner.is_empty() {
+                return Ok(Expression::literal(Value::Array(Vec::new())));
+            }
+            let elements = Self::parse_array_elements(inner)?;
+            return Ok(Expression::literal(Value::Array(elements)));
+        }
+
         // Check for function calls
         if let Some(paren_pos) = input.find('(') {
             if input.ends_with(')') {
@@ -222,12 +232,13 @@ impl ExpressionParser {
         )))
     }
 
-    /// Split input by binary operator (respecting parentheses)
+    /// Split input by binary operator (respecting parentheses and brackets)
     fn split_by_operator<'a>(
         input: &'a str,
         operators: &[&str],
     ) -> Option<(&'a str, &'a str, &'a str)> {
         let mut paren_depth = 0;
+        let mut bracket_depth = 0;
         let bytes = input.as_bytes();
 
         // Scan from right to left to handle left-to-right associativity
@@ -238,9 +249,13 @@ impl ExpressionParser {
                 paren_depth += 1;
             } else if c == '(' {
                 paren_depth -= 1;
+            } else if c == ']' {
+                bracket_depth += 1;
+            } else if c == '[' {
+                bracket_depth -= 1;
             }
 
-            if paren_depth == 0 {
+            if paren_depth == 0 && bracket_depth == 0 {
                 for &op in operators {
                     if i + op.len() <= input.len() && &input[i..i + op.len()] == op {
                         // Make sure it's not part of another operator
@@ -263,12 +278,13 @@ impl ExpressionParser {
         None
     }
 
-    /// Split input by keyword operator (respecting parentheses and word boundaries)
+    /// Split input by keyword operator (respecting parentheses, brackets, and word boundaries)
     fn split_by_keyword_operator<'a>(
         input: &'a str,
         operators: &[&str],
     ) -> Option<(&'a str, &'a str, &'a str)> {
         let mut paren_depth = 0;
+        let mut bracket_depth = 0;
         let bytes = input.as_bytes();
 
         // Scan from right to left to handle left-to-right associativity
@@ -279,15 +295,20 @@ impl ExpressionParser {
                 paren_depth += 1;
             } else if c == '(' {
                 paren_depth -= 1;
+            } else if c == ']' {
+                bracket_depth += 1;
+            } else if c == '[' {
+                bracket_depth -= 1;
             }
 
-            if paren_depth == 0 {
+            if paren_depth == 0 && bracket_depth == 0 {
                 for &op in operators {
                     if i + op.len() <= input.len() && &input[i..i + op.len()] == op {
                         // For keyword operators, check word boundaries
                         let has_space_before = i == 0 || bytes[i - 1].is_ascii_whitespace();
                         let has_space_after = i + op.len() >= input.len()
-                            || bytes[i + op.len()].is_ascii_whitespace();
+                            || bytes[i + op.len()].is_ascii_whitespace()
+                            || bytes[i + op.len()] == b'['; // Allow array literal after "in"
 
                         if has_space_before && has_space_after {
                             // Special check: if we matched "in", make sure it's not part of "not in"
@@ -353,6 +374,83 @@ impl ExpressionParser {
         }
 
         Ok(args)
+    }
+
+    /// Parse array elements (e.g., "a", "b", "c" or 1, 2, 3)
+    fn parse_array_elements(elements_str: &str) -> Result<Vec<Value>> {
+        if elements_str.trim().is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let mut elements = Vec::new();
+        let mut current = String::new();
+        let mut in_string = false;
+        let mut bracket_depth = 0;
+
+        for c in elements_str.chars() {
+            match c {
+                '"' => {
+                    in_string = !in_string;
+                    current.push(c);
+                }
+                '[' if !in_string => {
+                    bracket_depth += 1;
+                    current.push(c);
+                }
+                ']' if !in_string => {
+                    bracket_depth -= 1;
+                    current.push(c);
+                }
+                ',' if !in_string && bracket_depth == 0 => {
+                    let value = Self::parse_value_literal(current.trim())?;
+                    elements.push(value);
+                    current.clear();
+                }
+                _ => {
+                    current.push(c);
+                }
+            }
+        }
+
+        if !current.trim().is_empty() {
+            let value = Self::parse_value_literal(current.trim())?;
+            elements.push(value);
+        }
+
+        Ok(elements)
+    }
+
+    /// Parse a value literal (string, number, boolean, null)
+    fn parse_value_literal(input: &str) -> Result<Value> {
+        let input = input.trim();
+
+        // String literal
+        if input.starts_with('"') && input.ends_with('"') && input.len() >= 2 {
+            return Ok(Value::String(input[1..input.len() - 1].to_string()));
+        }
+
+        // Boolean literals
+        if input == "true" {
+            return Ok(Value::Bool(true));
+        }
+        if input == "false" {
+            return Ok(Value::Bool(false));
+        }
+
+        // Null literal
+        if input == "null" {
+            return Ok(Value::Null);
+        }
+
+        // Number literal
+        if let Ok(num) = input.parse::<f64>() {
+            return Ok(Value::Number(num));
+        }
+
+        Err(ParseError::InvalidExpression(format!(
+            "Invalid array element: {}",
+            input
+        )))
     }
 
     /// Parse an operator string
@@ -519,5 +617,52 @@ mod tests {
 
         let result = ExpressionParser::parse("@#$");
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_parse_array_literal() {
+        // Empty array
+        let expr = ExpressionParser::parse("[]").unwrap();
+        assert_eq!(expr, Expression::literal(Value::Array(Vec::new())));
+
+        // Array with strings
+        let expr = ExpressionParser::parse(r#"["a", "b", "c"]"#).unwrap();
+        assert_eq!(
+            expr,
+            Expression::literal(Value::Array(vec![
+                Value::String("a".to_string()),
+                Value::String("b".to_string()),
+                Value::String("c".to_string()),
+            ]))
+        );
+
+        // Array with numbers
+        let expr = ExpressionParser::parse("[1, 2, 3]").unwrap();
+        assert_eq!(
+            expr,
+            Expression::literal(Value::Array(vec![
+                Value::Number(1.0),
+                Value::Number(2.0),
+                Value::Number(3.0),
+            ]))
+        );
+    }
+
+    #[test]
+    fn test_parse_in_operator_with_array() {
+        let expr = ExpressionParser::parse(r#"event.country in ["RU", "CN", "NK"]"#).unwrap();
+        if let Expression::Binary { op, right, .. } = &expr {
+            assert_eq!(*op, Operator::In);
+            assert_eq!(
+                *right.clone(),
+                Expression::literal(Value::Array(vec![
+                    Value::String("RU".to_string()),
+                    Value::String("CN".to_string()),
+                    Value::String("NK".to_string()),
+                ]))
+            );
+        } else {
+            panic!("Expected binary expression");
+        }
     }
 }

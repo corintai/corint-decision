@@ -154,22 +154,21 @@ ruleset:
 
     #[test]
     fn test_validate_valid_pipeline() {
+        // Use new pipeline format with entry and step: wrapper
         let pipeline_yaml = r#"
 pipeline:
   id: test_pipeline
   name: Test Pipeline
-  stages:
-    - stage:
+  entry: stage1
+  when:
+    event.type: test
+  steps:
+    - step:
         id: stage1
         name: Stage 1
-        rules:
-          - rule:
-              id: rule1
-              name: Rule 1
-              when:
-                conditions:
-                  - event.amount > 100
-              score: 50
+        type: ruleset
+        ruleset: my_ruleset
+        next: end
 "#;
 
         let result = validate_pipeline(pipeline_yaml);

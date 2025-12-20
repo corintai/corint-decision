@@ -3422,4 +3422,70 @@ ruleset:
             response.request_id
         );
     }
+
+    #[tokio::test]
+    async fn test_rules_in_ruleset() {
+        use crate::builder::DecisionEngineBuilder;
+        use corint_core::ast::Action;
+
+        // Test that rules defined in the same file are correctly loaded and executed
+        let yaml_content = r#"
+pipeline:
+  id: test_pipeline
+  name: Test Pipeline
+  when:
+    event.type: test
+  steps:
+    - include:
+        ruleset: test_ruleset
+
+---
+
+rule:
+  id: high_risk
+  name: High Risk Rule
+  when:
+    conditions:
+      - event.risk_level > 80
+  score: 100
+
+---
+
+ruleset:
+  id: test_ruleset
+  rules:
+    - high_risk
+  decision_logic:
+    - condition: total_score >= 100
+      action: deny
+    - default: true
+      action: approve
+"#;
+        let temp_file = "/tmp/test_rules_in_ruleset.yaml";
+        std::fs::write(temp_file, yaml_content).unwrap();
+
+        let engine = DecisionEngineBuilder::new()
+            .add_rule_file(temp_file)
+            .build()
+            .await
+            .unwrap();
+
+        let mut event_data = HashMap::new();
+        event_data.insert("type".to_string(), Value::String("test".to_string()));
+        event_data.insert("risk_level".to_string(), Value::Number(90.0));
+
+        let request = DecisionRequest::new(event_data).with_trace();
+        let response = engine.decide(request).await.unwrap();
+
+        println!("Score: {}", response.result.score);
+        println!("Triggered rules: {:?}", response.result.triggered_rules);
+        println!("Action: {:?}", response.result.action);
+
+        assert_eq!(response.result.score, 100, "Rule should add 100 points");
+        assert!(
+            response.result.triggered_rules.contains(&"high_risk".to_string()),
+            "high_risk rule should be triggered"
+        );
+        assert!(matches!(response.result.action, Some(Action::Deny)));
+    }
 }

@@ -197,17 +197,147 @@ impl PipelineParser {
             Vec::new()
         };
 
-        // For legacy format, we need to create a default entry point
-        // Use the first step id if available
-        let entry = if !legacy_steps.is_empty() {
-            "legacy_entry".to_string()
+        // Convert legacy Step enum to new PipelineStep format
+        let mut steps: Vec<PipelineStep> = Vec::new();
+        for (idx, step) in legacy_steps.into_iter().enumerate() {
+            let step_id = format!("step_{}", idx);
+
+            let pipeline_step = match step {
+                Step::Include { ruleset } => PipelineStep {
+                    id: step_id.clone(),
+                    name: format!("Include {}", ruleset),
+                    step_type: "ruleset".to_string(),
+                    routes: None,
+                    default: None,
+                    next: Some(StepNext::StepId("end".to_string())),
+                    when: None,
+                    details: StepDetails::Ruleset { ruleset },
+                },
+                Step::Extract { id: _, features } => PipelineStep {
+                    id: step_id.clone(),
+                    name: "Extract Features".to_string(),
+                    step_type: "extract".to_string(),
+                    routes: None,
+                    default: None,
+                    next: Some(StepNext::StepId("end".to_string())),
+                    when: None,
+                    details: StepDetails::Extract {
+                        features: Some(features),
+                    },
+                },
+                Step::Reason {
+                    id: _,
+                    provider,
+                    model,
+                    prompt,
+                    output_schema,
+                } => PipelineStep {
+                    id: step_id.clone(),
+                    name: "LLM Reasoning".to_string(),
+                    step_type: "reason".to_string(),
+                    routes: None,
+                    default: None,
+                    next: Some(StepNext::StepId("end".to_string())),
+                    when: None,
+                    details: StepDetails::Reason {
+                        provider: Some(provider),
+                        model: Some(model),
+                        prompt: Some(prompt),
+                        output_schema,
+                    },
+                },
+                Step::Service {
+                    id: _,
+                    service,
+                    operation,
+                    params,
+                    output,
+                } => PipelineStep {
+                    id: step_id.clone(),
+                    name: format!("Service {}", service),
+                    step_type: "service".to_string(),
+                    routes: None,
+                    default: None,
+                    next: Some(StepNext::StepId("end".to_string())),
+                    when: None,
+                    details: StepDetails::Service {
+                        service,
+                        query: Some(operation),
+                        params: Some(params),
+                        output,
+                    },
+                },
+                Step::Api {
+                    id: _,
+                    api,
+                    endpoint,
+                    params,
+                    output,
+                    timeout,
+                    on_error: _,
+                } => PipelineStep {
+                    id: step_id.clone(),
+                    name: format!("API {}", api),
+                    step_type: "api".to_string(),
+                    routes: None,
+                    default: None,
+                    next: Some(StepNext::StepId("end".to_string())),
+                    when: None,
+                    details: StepDetails::Api {
+                        api_target: ApiTarget::Single { api },
+                        endpoint: Some(endpoint),
+                        params: Some(params),
+                        output: Some(output),
+                        timeout,
+                        on_error: None,
+                        min_success: None,
+                    },
+                },
+                Step::Branch { branches: _ } => {
+                    // Branch steps are complex - for now create a simple router
+                    // Note: The legacy Branch only has 'branches' field with condition and pipeline
+                    PipelineStep {
+                        id: step_id.clone(),
+                        name: "Branch".to_string(),
+                        step_type: "router".to_string(),
+                        routes: None,
+                        default: Some("end".to_string()),
+                        next: None,
+                        when: None,
+                        details: StepDetails::Router {},
+                    }
+                }
+                Step::Parallel { steps: _, merge: _ } => {
+                    // Parallel steps are complex - for now just create a placeholder
+                    PipelineStep {
+                        id: step_id.clone(),
+                        name: "Parallel Execution".to_string(),
+                        step_type: "router".to_string(),
+                        routes: None,
+                        default: None,
+                        next: Some(StepNext::StepId("end".to_string())),
+                        when: None,
+                        details: StepDetails::Router {},
+                    }
+                }
+            };
+            steps.push(pipeline_step);
+        }
+
+        // Update next pointers for sequential steps
+        let step_count = steps.len();
+        for i in 0..step_count {
+            if i + 1 < step_count {
+                steps[i].next = Some(StepNext::StepId(format!("step_{}", i + 1)));
+            }
+        }
+
+        // For legacy format, use the first step's ID as entry, or "start" if empty
+        let entry = if !steps.is_empty() {
+            steps[0].id.clone()
         } else {
             "start".to_string()
         };
-
-        // Convert legacy Step enum to new PipelineStep format for internal consistency
-        // For now, just use empty steps array to maintain backward compatibility
-        let steps = Vec::new();
 
         Ok(Pipeline {
             id,
@@ -1047,7 +1177,9 @@ pipeline:
 
         let pipeline = PipelineParser::parse(yaml).unwrap();
 
-        assert_eq!(pipeline.steps.len(), 0); // Legacy format returns empty new steps
+        // Legacy format now converts to new PipelineStep format
+        assert_eq!(pipeline.steps.len(), 1);
+        assert_eq!(pipeline.steps[0].step_type, "extract");
     }
 
     #[test]
@@ -1070,6 +1202,8 @@ pipeline:
 "#;
 
         let pipeline = PipelineParser::parse(yaml).unwrap();
-        assert_eq!(pipeline.steps.len(), 0); // Legacy format
+        // Legacy format now converts to new PipelineStep format
+        assert_eq!(pipeline.steps.len(), 1);
+        assert_eq!(pipeline.steps[0].step_type, "reason");
     }
 }
