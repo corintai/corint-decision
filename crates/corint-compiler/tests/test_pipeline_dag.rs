@@ -79,10 +79,10 @@ fn test_simple_linear_pipeline() {
         id: "test_pipeline".to_string(),
         name: "Test Linear Pipeline".to_string(),
         description: None,
-        version: None,
         entry: "step1".to_string(),
         when: None,
         steps: vec![step1, step2],
+        metadata: None,
     };
 
     let result = PipelineCompiler::compile(&pipeline);
@@ -155,10 +155,10 @@ fn test_router_with_multiple_routes() {
         id: "router_test".to_string(),
         name: "Router Test Pipeline".to_string(),
         description: None,
-        version: None,
         entry: "router1".to_string(),
         when: None,
         steps: vec![router, high_step, medium_step, low_step],
+        metadata: None,
     };
 
     let result = PipelineCompiler::compile(&pipeline);
@@ -244,10 +244,10 @@ fn test_sequential_routers() {
         id: "sequential_routers".to_string(),
         name: "Sequential Routers Test".to_string(),
         description: None,
-        version: None,
         entry: "router1".to_string(),
         when: None,
         steps: vec![router1, router2, approve, manual, reject],
+        metadata: None,
     };
 
     let result = PipelineCompiler::compile(&pipeline);
@@ -311,10 +311,10 @@ fn test_complex_routing_logic() {
         id: "complex_routing".to_string(),
         name: "Complex Routing Test".to_string(),
         description: None,
-        version: None,
         entry: "router".to_string(),
         when: None,
         steps: vec![router, high, low],
+        metadata: None,
     };
 
     let result = PipelineCompiler::compile(&pipeline);
@@ -344,10 +344,10 @@ fn test_unreachable_step_in_pipeline() {
         id: "unreachable_test".to_string(),
         name: "Unreachable Step Test".to_string(),
         description: None,
-        version: None,
         entry: "step1".to_string(),
         when: None,
         steps: vec![step1, step2],
+        metadata: None,
     };
 
     // Semantic analyzer should warn about this, but compilation should succeed
@@ -390,10 +390,10 @@ fn test_router_without_default() {
         id: "no_default_router".to_string(),
         name: "Router Without Default".to_string(),
         description: None,
-        version: None,
         entry: "router".to_string(),
         when: None,
         steps: vec![router, approve],
+        metadata: None,
     };
 
     // Should compile successfully - semantic analyzer would warn about dead end
@@ -420,10 +420,10 @@ fn test_all_routes_lead_to_end() {
         id: "all_to_end".to_string(),
         name: "All Routes to End".to_string(),
         description: None,
-        version: None,
         entry: "router".to_string(),
         when: None,
         steps: vec![router],
+        metadata: None,
     };
 
     let result = PipelineCompiler::compile(&pipeline);
@@ -453,10 +453,10 @@ fn test_invalid_step_reference() {
         id: "invalid_ref".to_string(),
         name: "Invalid Reference Test".to_string(),
         description: None,
-        version: None,
         entry: "step1".to_string(),
         when: None,
         steps: vec![step1],
+        metadata: None,
     };
 
     let result = PipelineCompiler::compile(&pipeline);
@@ -473,10 +473,10 @@ fn test_empty_pipeline() {
         id: "empty".to_string(),
         name: "Empty Pipeline".to_string(),
         description: None,
-        version: None,
         entry: "step1".to_string(),
         when: None,
         steps: vec![],
+        metadata: None,
     };
 
     let result = PipelineCompiler::compile(&pipeline);
