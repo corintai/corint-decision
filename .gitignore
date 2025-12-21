@@ -29,4 +29,7 @@ cobertura.xml
 # OS-specific
 Thumbs.db
 
+# nodejs build
+node_modules
+
 temp
