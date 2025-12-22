@@ -89,7 +89,8 @@ curl -X POST http://localhost:8080/v1/decide \
         "vip_status": false
       },
       "confidence_level": "high"
-    }
+    },
+    "enable_trace": true
   }'
 ```
 
