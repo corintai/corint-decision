@@ -7,7 +7,7 @@ This document outlines the feature types supported and planned for Corint's risk
 Feature engineering in risk management follows a structured approach based on **what you want to measure**:
 
 1. **Aggregation (数东西)** - Counting and aggregating events/values
-2. **State (看最近状态)** - Checking current or recent state
+2. **State (看最近状态)** - Checking current state and statistical comparisons
 3. **Sequence (看过程)** - Analyzing patterns and trends over time
 4. **Graph (看关系图)** - Analyzing connections and networks between entities
 5. **Expression (算分数)** - Computing scores and evaluations
@@ -26,30 +26,173 @@ Feature engineering in risk management follows a structured approach based on **
 **Implemented:**
 - `count` - Count events matching conditions within time window
   - *Example: 用户过去24小时登录了5次*
+  - **实际应用场景**:
+    - 暴力破解检测：统计1小时内失败登录次数，超过10次触发账户锁定
+    - 交易频率监控：统计用户24小时内交易次数，异常高频可能是盗号
+    - API限流：统计IP地址1分钟内请求次数，超过100次拒绝服务
+  - **YAML示例**:
+    ```yaml
+    - name: agg_cnt_userid_login_1h_failed
+      type: aggregation
+      operator: count
+      entity: events
+      dimension: user_id
+      dimension_value: "{event.user_id}"
+      window: 1h
+      when:
+        all:
+          - event.type == "login"
+          - event.status == "failed"
+    ```
+
 - `sum` - Sum numeric field values
   - *Example: 用户过去30天交易总额为 ¥15,000*
+  - **实际应用场景**:
+    - 洗钱检测：统计账户24小时内转账总金额，超过¥50万需人工审核
+    - 信用额度管理：统计用户30天消费总额，判断是否超过信用额度
+    - 积分欺诈：统计用户1小时内获取积分总数，异常高额可能是刷积分
+  - **YAML示例**:
+    ```yaml
+    - name: agg_sum_userid_txn_amt_24h
+      type: aggregation
+      operator: sum
+      entity: events
+      dimension: user_id
+      dimension_value: "{event.user_id}"
+      field: amount
+      window: 24h
+      when: event.type == "transaction"
+    ```
+
 - `avg` - Average of field values
   - *Example: 用户过去7天平均每笔交易金额 ¥500*
+  - **实际应用场景**:
+    - 异常交易金额检测：用户平均交易¥500，突然出现¥50,000交易需验证
+    - 用户画像：计算用户平均订单金额，用于用户分层（高/中/低消费）
+    - 会话时长分析：统计用户平均会话时长，异常短可能是机器人
+  - **YAML示例**:
+    ```yaml
+    - name: agg_avg_userid_order_amt_30d
+      type: aggregation
+      operator: avg
+      entity: events
+      dimension: user_id
+      dimension_value: "{event.user_id}"
+      field: amount
+      window: 30d
+      when: event.type == "order"
+    ```
+
 - `max` - Maximum value
   - *Example: 用户过去24小时单笔最大交易 ¥2,000*
+  - **实际应用场景**:
+    - 大额交易监控：检测用户历史最大交易金额，当前交易超过3倍需验证
+    - 单笔限额检查：新注册用户24小时内最大交易不超过¥5,000
+    - 异常行为识别：IP地址关联的最大用户数超过50，可能是代理或公共WiFi
+  - **YAML示例**:
+    ```yaml
+    - name: agg_max_userid_txn_amt_90d
+      type: aggregation
+      operator: max
+      entity: events
+      dimension: user_id
+      dimension_value: "{event.user_id}"
+      field: amount
+      window: 90d
+      when: event.type == "transaction"
+    ```
+
 - `min` - Minimum value
   - *Example: 用户过去7天单笔最小交易 ¥10*
+  - **实际应用场景**:
+    - 测试交易检测：大量¥0.01小额交易可能是盗卡测试
+    - 刷单识别：最小订单金额异常低（如¥0.1）配合高频次，疑似刷单
+    - 异常折扣监控：订单最小金额为¥1，可能存在优惠券漏洞
+  - **YAML示例**:
+    ```yaml
+    - name: agg_min_userid_order_amt_7d
+      type: aggregation
+      operator: min
+      entity: events
+      dimension: user_id
+      dimension_value: "{event.user_id}"
+      field: amount
+      window: 7d
+      when: event.type == "order"
+    ```
+
 - `distinct` - Count unique values
   - *Example: 用户过去7天使用了3个不同设备*
+  - **实际应用场景**:
+    - 账号共享检测：用户24小时内使用超过5个不同设备，可能是账号被盗或共享
+    - IP跳跃检测：用户1小时内使用超过10个不同IP，可能使用代理池
+    - 多账户关联：同一设备24小时内登录超过20个不同账户，可能是批量操作
+  - **YAML示例**:
+    ```yaml
+    - name: agg_distinct_userid_device_24h
+      type: aggregation
+      operator: distinct
+      entity: events
+      dimension: user_id
+      dimension_value: "{event.user_id}"
+      field: device_id
+      window: 24h
+    ```
 
 **Planned:**
 - `stddev` - Standard deviation
   - *Example: 用户交易金额标准差 ¥350，波动较大*
+  - **实际应用场景**:
+    - 行为稳定性分析：交易金额标准差过大，行为不稳定，可能被盗号
+    - 异常波动检测：用户历史标准差¥50，近期标准差¥500，行为剧变
+    - 用户分群：低标准差用户（固定消费）vs 高标准差用户（消费随机）
+  - **YAML示例**:
+    ```yaml
+    - name: agg_stddev_userid_txn_amt_30d
+      type: aggregation
+      operator: stddev
+      entity: events
+      dimension: user_id
+      dimension_value: "{event.user_id}"
+      field: amount
+      window: 30d
+      when: event.type == "transaction"
+    ```
+
 - `variance` - Variance
   - *Example: 用户交易金额方差 122,500*
+  - **实际应用场景**:
+    - 风险评分：高方差用户风险更高，行为不可预测
+    - 机器人检测：机器人交易方差通常很小（固定金额）
+    - 信用评估：低方差用户还款行为更稳定，信用更好
+
 - `percentile` - Nth percentile value
   - *Example: 用户交易金额P95为 ¥1,800*
+  - **实际应用场景**:
+    - 异常阈值设定：超过P95的交易需要额外验证
+    - 动态限额：根据用户P90交易金额设置每日限额
+    - 信用额度：用户P75消费金额作为信用额度参考
+
 - `median` - Median value (50th percentile)
   - *Example: 用户交易金额中位数 ¥450*
+  - **实际应用场景**:
+    - 抗异常值统计：中位数不受极端值影响，更准确反映用户典型行为
+    - 用户画像：中位数订单金额用于用户价值评估
+    - 异常检测：当前交易是中位数的10倍，需要验证
+
 - `mode` - Most frequent value
   - *Example: 用户最常见的交易金额 ¥100*
+  - **实际应用场景**:
+    - 充值模式识别：用户最常充值¥100，异常充值¥10,000需验证
+    - 刷单检测：大量相同金额订单（众数占比>80%）疑似刷单
+    - 习惯识别：用户最常在晚上8点登录，凌晨3点登录异常
+
 - `entropy` - Shannon entropy (diversity measure)
   - *Example: 用户交易类型熵值2.3，行为多样化*
+  - **实际应用场景**:
+    - 机器人检测：熵值过低（<0.5），行为模式单一，可能是机器人
+    - 账号活跃度：熵值高的用户行为丰富，更像真实用户
+    - 异常检测：用户历史熵值2.5，近期降至0.3，行为异常单一
 
 > **Note:** Ratio- and rate-type metrics (e.g. success rate, failure rate, conversion rate) are **not** Aggregation operators. They are derived from aggregation results and must be implemented via **Expression operators**.
 
@@ -74,48 +217,64 @@ impl AggregationExecutor {
 ### 2. State Operators
 > **Rust Implementation:** `StateExecutor::execute(op: StateQueryType, config: StateConfig)`
 >
-> **Design Pattern:** Unified executor with specialized query strategies
+> **Design Pattern:** Statistical comparison and baseline analysis
+>
 
-**Implemented:**
-- `first_seen` - First occurrence timestamp
-  - *Example: 用户首次登录时间为 2024-01-15 10:23:00*
-- `last_seen` - Last occurrence timestamp
-  - *Example: 用户最近一次交易时间为 2025-12-20 15:30:00*
-- `time_since` - Time elapsed since event
-  - *Example: 账户注册至今已365天（账户年龄1年）*
-- `velocity` - Check if count exceeds threshold in time window
-  - *Example: 用户1小时内登录12次，超过阈值10次*
-- `feature_store_lookup` - Lookup from Redis/cache
-  - *Example: 用户风险评分为75分（从特征库读取）*
-- `profile_lookup` - Lookup from database profile
-  - *Example: 用户KYC状态为"已认证"（从用户档案读取）*
 
 **Planned:**
 - `z_score` - Statistical z-score compared to baseline
   - *Example: 当前交易金额Z-score为2.8，异常偏高*
+  - **实际应用场景**:
+    - 异常交易检测：用户交易金额Z-score > 3，可能被盗刷
+    - 登录频率异常：登录频率Z-score > 2.5，可能是暴力破解
+    - 动态阈值：根据Z-score自动调整风控策略，而非固定阈值
+  - **YAML示例**:
+    ```yaml
+    - name: state_zscore_userid_txn_amt
+      type: state
+      operator: z_score
+      entity: events
+      dimension: user_id
+      dimension_value: "{event.user_id}"
+      field: amount
+      current_value: "{event.amount}"
+      baseline_window: 90d
+      when: event.type == "transaction"
+    ```
+
 - `deviation_from_baseline` - Compare to historical average
   - *Example: 当前登录频率比历史平均高150%*
+  - **实际应用场景**:
+    - 行为突变检测：用户日均登录2次，今天登录20次，偏离900%
+    - 消费习惯变化：历史日均消费¥200，今天消费¥5000，偏离2400%
+    - 账号接管：行为模式突然偏离基线，可能被他人控制
+
 - `percentile_rank` - Rank compared to history
   - *Example: 当前交易金额处于历史第92百分位*
+  - **实际应用场景**:
+    - 大额交易验证：当前交易金额超过历史P95，需要二次验证
+    - 异常活跃度：当前登录频率超过历史P99，可能异常
+    - 风险分级：P0-P50低风险，P50-P90中风险，P90+高风险
+
 - `is_outlier` - Statistical outlier detection
   - *Example: 当前行为判定为统计异常值（true）*
-- `off_hours_activity` - Activity outside normal hours
-  - *Example: 用户在凌晨3点登录（非正常时段）*
+  - **实际应用场景**:
+    - 自动异常标记：统计学判断为异常值，直接触发人工审核
+    - 欺诈检测：交易金额/频率/地点等多维度异常值检测
+    - 机器学习特征：异常值标记作为ML模型输入特征
 
 ```rust
 enum StateQueryType {
-    FirstSeen, LastSeen, TimeSince,
-    Velocity { threshold: usize },
-    FeatureStoreLookup { key: String },
-    ProfileLookup { field: String },
-    ZScore, DeviationFromBaseline, PercentileRank, IsOutlier,
-    OffHoursActivity,
+    ZScore,
+    DeviationFromBaseline,
+    PercentileRank,
+    IsOutlier,
 }
 
-// Unified executor - operators share query optimization:
-// - Caching strategies
-// - Lookup patterns
-// - Baseline computation
+// Unified executor for statistical comparison operators:
+// - Baseline computation from historical data
+// - Statistical analysis (z-score, percentile, outlier detection)
+// - Time-based pattern analysis
 impl StateExecutor {
     fn execute(&self, op: StateQueryType, config: &StateConfig) -> Result<Value>
 }
@@ -129,38 +288,87 @@ impl StateExecutor {
 **Planned:**
 - `consecutive_count` - Count consecutive occurrences
   - *Example: 用户连续失败登录3次*
+  - **实际应用场景**:
+    - 暴力破解：连续失败登录≥5次，锁定账户15分钟
+    - 支付失败：连续3次支付失败，可能卡被冻结或余额不足
+    - 异常操作：连续10次快速点击，可能是脚本攻击
+  - **YAML示例**:
+    ```yaml
+    - name: seq_consec_userid_login_1h_failed
+      type: sequence
+      operator: consecutive_count
+      entity: events
+      dimension: user_id
+      dimension_value: "{event.user_id}"
+      window: 1h
+      when:
+        all:
+          - event.type == "login"
+          - event.status == "failed"
+      reset_when: event.status == "success"
+    ```
+
 - `streak` - Longest streak of condition
   - *Example: 用户连续7天每天都有交易（活跃度高）*
+  - **实际应用场景**:
+    - 用户活跃度：连续活跃7天的用户，流失风险低
+    - 刷单检测：连续30天每天都有订单，且金额相似，疑似刷单
+    - 习惯养成：连续3天使用某功能，推荐相关服务
+
 - `sequence_match` - Match event sequences
   - *Example: 检测到"修改密码→登录→大额转账"可疑序列*
+  - **实际应用场景**:
+    - 账户接管：密码重置→修改邮箱→大额转账（15分钟内），高风险
+    - 欺诈模式：注册→实名认证→申请贷款→提现（1小时内），疑似欺诈
+    - 正常流程：浏览商品→加入购物车→结算→支付，转化漏斗分析
+
 - `pattern_frequency` - Frequency of specific patterns
   - *Example: "登录→浏览→加购→支付"完整路径出现5次*
+  - **实际应用场景**:
+    - 刷单检测：相同操作序列重复出现>10次，疑似刷单
+    - 用户行为分析：高价值用户的典型路径频率
+    - 异常模式：异常操作序列频繁出现，可能是攻击
+
 - `trend` - Calculate trend (increasing/decreasing/stable)
   - *Example: 用户交易金额呈上升趋势（+15%/周）*
+  - **实际应用场景**:
+    - 消费趋势：交易金额持续上升，用户价值增长
+    - 风险趋势：失败交易比例上升趋势，可能卡出问题
+    - 异常检测：登录频率突然上升趋势（斜率陡增），可能被盗号
+
 - `percent_change` - Percentage change between windows
   - *Example: 本周交易次数比上周增加120%*
+  - **实际应用场景**:
+    - 行为突变：本周交易比上周增加500%，异常活跃
+    - 促销效果：活动期间交易量增加200%，效果显著
+    - 休眠唤醒：本周交易比上周增长从0到10，账户被重新激活
+
 - `rate_of_change` - Rate of change over time
   - *Example: 用户登录频率增长率为+5次/天*
+  - **实际应用场景**:
+    - 加速度检测：交易频率增长率从1次/天加速到10次/天，异常
+    - 渐进式攻击：失败登录率每小时增加2次，逐步升级攻击
+    - 趋势预警：订单量下降率-3单/天，可能流失
+
 - `anomaly_score` - Statistical anomaly detection
   - *Example: 序列异常评分8.5/10，高度可疑*
-- `session_count` - Count sessions in window
-  - *Example: 用户过去24小时共8个会话*
-- `session_duration` - Average/total session duration
-  - *Example: 用户平均会话时长12分钟*
-- `events_per_session` - Average events per session
-  - *Example: 用户每个会话平均操作25次*
+  - **实际应用场景**:
+    - 综合异常检测：基于时序模型计算异常分数，>7分触发审核
+    - 账户行为画像：行为序列与历史模式差异度评分
+    - 欺诈概率：序列异常分数作为欺诈模型输入特征
+
 - `moving_average` - Moving average over window
   - *Example: 用户7天移动平均交易额 ¥800/天*
-- `exponential_moving_average` - EMA calculation
-  - *Example: 用户交易金额EMA为 ¥750（α=0.3）*
+  - **实际应用场景**:
+    - 平滑趋势分析：7日移动平均消除日常波动，观察真实趋势
+    - 异常检测：当前交易额超过7日移动平均3倍，异常
+    - 动态基线：使用移动平均作为动态基线，自适应用户行为变化
 
 ```rust
 enum SequenceAnalysisType {
     ConsecutiveCount, Streak, SequenceMatch { pattern: Vec<Pattern> },
     PatternFrequency, Trend, PercentChange, RateOfChange, AnomalyScore,
-    SessionCount, SessionDuration, EventsPerSession,
     MovingAverage { window_size: usize },
-    ExponentialMovingAverage { alpha: f64 },
 }
 
 // Pipeline-based analyzer - operators share:
@@ -170,6 +378,13 @@ enum SequenceAnalysisType {
 impl SequenceAnalyzer {
     fn analyze(&self, op: SequenceAnalysisType, config: &SequenceConfig) -> Result<Value>
 }
+
+// Note: Session-based analysis (session_count, session_duration, events_per_session)
+// should be implemented using Aggregation operators with session_id provided by
+// the business system. Examples:
+//   - session_count → distinct(session_id)
+//   - session_duration → avg(session_duration) where session_duration is provided
+//   - events_per_session → expression: total_events / distinct_sessions
 ```
 
 ### 4. Graph Operators
@@ -177,55 +392,49 @@ impl SequenceAnalyzer {
 >
 > **Design Pattern:** Graph-based analyzer with lazy graph construction
 >
-> **Note:** Graph operators are grouped by risk-domain semantics. Some operators (e.g. spatial/geographic features) do not require graph traversal and may be implemented using Sequence or State executors with spatial logic.
-
-**Implemented:**
-- `link_count` - Count linked entities across dimensions
-  - *Example: IP地址 1.2.3.4 过去24小时关联了15个不同设备*
 
 **Planned:**
-- `graph_degree` - Number of connections in network
-  - *Example: 用户在设备网络中的度为8（连接8个设备）*
 - `graph_centrality` - Network centrality score
   - *Example: 设备在用户网络中心度0.65，可能是共享设备*
+  - **实际应用场景**:
+    - 核心节点识别：中心度>0.8的设备，可能是欺诈团伙核心设备
+    - 风险源定位：高中心度账户被标记欺诈，关联账户需审查
+    - 黑产识别：中心度异常高的IP，可能是黑产操作节点
+
 - `community_size` - Size of connected component
   - *Example: 该用户所在欺诈团伙社区规模23人*
+  - **实际应用场景**:
+    - 团伙欺诈：社区规模>20人且交易模式相似，疑似欺诈团伙
+    - 洗钱网络：资金在大社区内循环流转，可能洗钱
+    - 正常社交：小社区(<5人)且行为正常，可能是家庭/朋友
+
 - `shared_entity_count` - Count shared connections
   - *Example: 两个用户共享5个相同设备*
+  - **实际应用场景**:
+    - 虚假账户：两个账户共享>3个设备，可能是同一人多账户
+    - 关联欺诈：多个高风险账户共享设备/IP，协同欺诈
+    - 家庭识别：共享2个设备(手机+电脑)，可能是家庭成员
+
 - `network_distance` - Distance between entities in graph
   - *Example: 两个账户的网络距离为3跳（间接关联）*
-- `distance` - Geographic distance between points (spatiotemporal, not graph traversal)
-  - *Example: 两次登录地理距离相距850公里*
-- `impossible_travel` - Detect impossible travel patterns (spatiotemporal, not graph traversal)
-  - *Example: 1小时内从北京到上海，物理上不可能*
-- `location_change_count` - Count location changes (spatiotemporal, not graph traversal)
-  - *Example: 用户过去7天更换了5个城市*
-- `location_entropy` - Geographic diversity (spatiotemporal, not graph traversal)
-  - *Example: 用户地理位置熵值1.8，活动范围较分散*
-- `similarity_score` - Similarity to another entity
-  - *Example: 两个用户行为相似度0.82（高度相似）*
-- `compare_to_peer_group` - Compare to similar users
-  - *Example: 用户交易额比同类群体高2.3倍*
-- `cohort_average` - Average within cohort
-  - *Example: 同类用户平均月交易额 ¥8,500*
+  - **实际应用场景**:
+    - 风险传播：距离已知欺诈账户≤2跳，需要审查
+    - 关联分析：虽无直接关联，但网络距离≤3跳，间接关联
+    - 社交推荐：网络距离2-3跳的用户，可能有共同兴趣
 
 ```rust
 enum GraphAnalysisType {
-    LinkCount,
-    Degree, Centrality, CommunitySize, SharedEntityCount, NetworkDistance,
-    GeoDistance, ImpossibleTravel { max_speed_kmh: f64 },
-    LocationChangeCount, LocationEntropy,
-    Similarity, PeerComparison, CohortAverage,
+    // Network analysis (require graph traversal)
+    Centrality, CommunitySize, SharedEntityCount, NetworkDistance,
 }
 
-// Graph analyzer - operators share:
-// - Graph construction (for network-based operators)
-// - Node/edge indexing
-// - Graph algorithms library
+// Graph analyzer focuses on true graph algorithms:
+// - Graph construction and indexing (for network-based operators)
+// - Graph traversal (BFS, DFS)
+// - Graph algorithms (PageRank, community detection, shortest path)
 //
-// Note: Spatial operators (GeoDistance, ImpossibleTravel, LocationEntropy)
-// may delegate to Sequence/State executors with spatial logic rather than
-// performing graph traversal.
+// Note:
+// - Entity linking (e.g., devices per IP) should use distinct() aggregation
 impl GraphAnalyzer {
     fn analyze(&self, op: GraphAnalysisType, config: &GraphConfig) -> Result<Value>
 }
@@ -240,12 +449,22 @@ impl GraphAnalyzer {
 
 **Implemented:**
 - `expression` - Evaluate custom expressions using other features
-
-**Planned:**
-- `ml_model_score` - Call ML model for prediction
-- `embedding_similarity` - Similarity using embeddings
-- `clustering_label` - Assign to cluster
-- `anomaly_detection_score` - ML-based anomaly score
+  - *Example: 计算登录失败率 = failed_count / total_count*
+  - **实际应用场景**:
+    - 失败率计算：login_failure_rate = failed_login_count_1h / login_count_1h
+    - 复合评分：risk_score = 0.4 * transaction_anomaly + 0.3 * device_risk + 0.3 * location_risk
+    - 比率分析：large_transaction_ratio = transactions_above_1000 / total_transactions
+    - 转化率：conversion_rate = purchase_count / view_count
+  - **YAML示例**:
+    ```yaml
+    - name: expr_rate_userid_login_failure
+      type: expression
+      operator: expression
+      expression: "failed_login_count_1h / login_count_1h"
+      depends_on:
+        - failed_login_count_1h
+        - login_count_1h
+    ```
 
 ```rust
 enum ExpressionType {
@@ -282,8 +501,125 @@ This design provides:
 
 ---
 
+## Data Source Configuration
+
+Feature definitions support flexible data source configuration through the `datasource` field. This allows accessing data from different storage systems without changing the operator logic.
+
+### Supported Data Sources
+
+**Event/Transaction Data:**
+- `clickhouse` - ClickHouse for high-volume event storage
+- `postgresql` - PostgreSQL for transactional data
+
+**Pre-computed Features:**
+- `redis` - Redis for cached feature values
+- `feature_store` - Dedicated feature store (e.g., Feast, Tecton)
+
+**Profile/Context Data:**
+- Should be passed directly in the request payload, not queried via datasource
+
+### Feature Definition with Data Source
+
+```yaml
+# Aggregation feature - queries event data from ClickHouse
+- name: agg_cnt_userid_login_1h
+  type: aggregation
+  operator: count
+  datasource: clickhouse_events
+  entity: events
+  dimension: user_id
+  dimension_value: "{event.user_id}"
+  window: 1h
+  when: event.type == "login"
+
+# Pre-computed feature lookup - simple key-value access
+- name: user_risk_score_90d
+  datasource: redis_features
+  key: "user_risk_score_90d:{event.user_id}"
+  fallback: 50
+  # Note: No type/operator needed for simple lookups
+
+# State feature - computes z-score from historical data
+- name: state_zscore_userid_txn_amt
+  type: state
+  operator: z_score
+  datasource: clickhouse_events
+  dimension: user_id
+  dimension_value: "{event.user_id}"
+  field: amount
+  current_value: "{event.amount}"
+  baseline_window: 90d
+  when: event.type == "transaction"
+```
+
+### Implementation Pattern
+
+```rust
+// Data source abstraction
+enum DataSource {
+    ClickHouse(ClickHouseClient),
+    PostgreSQL(PostgresClient),
+    Redis(RedisClient),
+    FeatureStore(FeatureStoreClient),
+}
+
+// Feature execution delegates to appropriate data source
+impl FeatureExecutor {
+    fn execute(&self, feature: &FeatureConfig) -> Result<Value> {
+        match &feature.definition {
+            // Simple lookup - no operator, just datasource + key
+            FeatureDefinition::Lookup { key, fallback } => {
+                self.datasource.get(key).or(fallback)
+            }
+            // Computed feature - uses operator + datasource
+            FeatureDefinition::Computed { operator, config } => {
+                match operator.category() {
+                    OperatorCategory::Aggregation => {
+                        AggregationExecutor::new(&self.datasource)
+                            .execute(operator, config)
+                    }
+                    OperatorCategory::State => {
+                        StateExecutor::new(&self.datasource)
+                            .execute(operator, config)
+                    }
+                    // ...
+                }
+            }
+        }
+    }
+}
+```
+
+### Lookup vs Computed Features
+
+**Simple Lookup** (no type/operator):
+```yaml
+# Just datasource + key - for pre-computed values
+- name: user_segment_label
+  datasource: redis_features
+  key: "user_segment:{event.user_id}"
+  fallback: "unknown"
+```
+
+**Computed Feature** (with type/operator):
+```yaml
+# Requires computation - needs operator + datasource
+- name: agg_sum_userid_txn_amt_24h
+  type: aggregation
+  operator: sum
+  datasource: clickhouse_events
+  # ... aggregation config
+```
+
+**Key Differences:**
+- **Lookup**: Pre-computed values stored in cache/storage, accessed by key
+- **Computed**: Real-time calculation using operators, queries raw data from datasource
+
+---
+
 ## Table of Contents
 
+- [Data Source Configuration](#data-source-configuration)
 - [1. Aggregation (数东西)](#1-aggregation-数东西)
 - [2. State (看最近状态)](#2-state-看最近状态)
 - [3. Sequence (看过程)](#3-sequence-看过程)
@@ -305,15 +641,15 @@ Count events and unique values within time windows.
 
 **Operators:**
 - `count` - Count events matching conditions
-- `distinct` - Count unique values of a field
-- `link_count` - Count linked entities across dimensions
+- `distinct` - Count unique values of a field (also used for entity linking)
 
 **Use Cases:**
 - Login attempts in time window
 - Transaction count
 - Failed payment attempts
 - Unique IP addresses per user
-- Devices associated with an IP
+- **Entity linking**: Devices associated with an IP (use `distinct`)
+- **Entity linking**: Users per device (use `distinct`)
 
 **Example:**
 ```yaml
@@ -398,132 +734,44 @@ Advanced statistical measures for distribution analysis.
 
 ## 2. State (看最近状态)
 
-**Purpose:** Check current state, recent activity, and lookup stored values.
+**Purpose:** Statistical comparison and baseline analysis for anomaly detection.
 
-### ✅ 2.1 Temporal State
-**Status:** Implemented
+> **Note:** State operators focus on **statistical comparisons** (z-score, baseline deviation, etc.). For simple lookups, use `datasource` configuration without operators. See "Data Source Configuration" section.
 
-Track first/last occurrence and time elapsed.
-
-**Operators:**
-- `first_seen` - First occurrence timestamp
-- `last_seen` - Last occurrence timestamp
-- `time_since` - Time elapsed since event
-
-**Use Cases:**
-- Account age
-- Time since last login
-- Time since first transaction
-- New vs returning user detection
-
-**Example:**
-```yaml
-- name: state_timesince_userid_reg_d
-  type: state
-  operator: time_since
-  entity: events
-  dimension: user_id
-  dimension_value: "{event.user_id}"
-  unit: d
-  when: event.type == "register"
-```
-
----
-
-### ✅ 2.2 Velocity State
-**Status:** Implemented
-
-Check if activity rate exceeds threshold.
-
-**Operators:**
-- `velocity` - Check if count exceeds threshold
-
-**Use Cases:**
-- Login velocity abuse
-- Transaction velocity monitoring
-- API rate limiting
-- Burst detection
-
-**Example:**
-```yaml
-- name: state_velocity_userid_login_1h
-  type: state
-  operator: velocity
-  entity: events
-  dimension: user_id
-  dimension_value: "{event.user_id}"
-  window: 1h
-  threshold: 10
-  when: event.type == "login"
-```
-
----
-
-### ✅ 2.3 Lookup State
-**Status:** Implemented
-
-Retrieve pre-computed or profile data.
-
-**Operators:**
-- `feature_store_lookup` - Lookup from Redis/cache
-- `profile_lookup` - Lookup from database profile table
-
-**Use Cases:**
-- User risk score
-- KYC status
-- Credit rating
-- Account tier
-- User profile attributes
-
-**Example:**
-```yaml
-- name: expr_score_userid_risk
-  type: state
-  operator: feature_store_lookup
-  datasource: redis_features
-  key: "user_features:{event.user_id}:risk_score"
-  fallback: 0.0
-```
-
----
-
-### 📋 2.4 Time-of-Day/Week State
+### 📋 2.1 Time-of-Day/Week State
 **Status:** Planned - Medium Priority
 
 Temporal pattern features based on time of day/week.
 
 **Proposed Operators:**
-- `off_hours_activity` - Activity outside normal hours (returns boolean or count)
 - `timezone_consistency` - Timezone pattern consistency check
 
+> **Note:** Simple time-based checks (e.g., off-hours activity) should use **Expression** or **Aggregation** operators, not State operators:
+> - Off-hours check: Use expression like `event.hour < 8 || event.hour > 22`
+> - Off-hours count: Use aggregation with when condition (see State operators section for examples)
+>
 > **Note:** Distribution-style features (e.g. hour-of-day or day-of-week histograms) are **not** State operators. They should be implemented as **Aggregation operators** over derived time dimensions (e.g. `hour_of_day`, `day_of_week` fields).
 
 **Use Cases:**
-- Off-hours fraud detection
-- Bot activity patterns
-- Account takeover detection
-- Behavioral consistency
-- Working hours validation
+- Timezone anomaly detection
+- Behavioral consistency across timezones
+- VPN/proxy detection
 
 **Proposed Syntax:**
 ```yaml
-- name: state_offhours_userid_login_7d
+- name: state_timezone_consistency_userid_7d
   type: state
-  operator: off_hours_activity
+  operator: timezone_consistency
   entity: events
   dimension: user_id
   dimension_value: "{event.user_id}"
   window: 7d
-  when: event.type == "login"
-  normal_hours:
-    start: "08:00"
-    end: "22:00"
-    timezone: "{user.timezone}"
+  expected_timezone: "{user.timezone}"
 ```
 
 ---
 
-### 📋 2.5 Historical Baseline State
+### 📋 2.2 Historical Baseline State
 **Status:** Planned - Low Priority
 
 Compare current behavior to historical baselines.
@@ -632,38 +880,59 @@ Detect changes and trends over time.
 
 ---
 
-### 📋 3.3 Session Sequences
-**Status:** Planned - Medium Priority
+### 💡 3.3 Session-Based Analysis
+**Status:** Use Aggregation Operators
 
-Analyze user sessions and session patterns.
+Session-based features should be implemented using **Aggregation operators** with `session_id` provided by the business system.
 
-**Proposed Operators:**
-- `session_count` - Count sessions in window
-- `session_duration` - Average/total session duration
-- `events_per_session` - Average events per session
-- `session_gap` - Time between sessions
-- `session_pattern` - Session timing patterns
+**Implementation Approach:**
 
-**Use Cases:**
-- Bot detection
-- Automated script detection
-- Human behavior validation
-- Session hijacking detection
-- Abnormal session patterns
+| Session Metric | Implementation |
+|----------------|----------------|
+| Session count | `distinct(session_id)` |
+| Average session duration | `avg(session_duration)` where business system provides duration |
+| Events per session | `expression: total_events / distinct(session_id)` |
+| Session gap | Compute via business system or use `time_since` on session_start_time |
 
-**Proposed Syntax:**
+**Example:**
 ```yaml
-- name: seq_duration_userid_sess_7d_avg
-  type: sequence
-  operator: session_duration
-  entity: events
+# Session count - using distinct
+- name: agg_distinct_userid_session_24h
+  type: aggregation
+  operator: distinct
+  datasource: clickhouse_events
   dimension: user_id
   dimension_value: "{event.user_id}"
+  field: session_id
+  window: 24h
+
+# Average session duration - using avg
+- name: agg_avg_userid_session_duration_7d
+  type: aggregation
+  operator: avg
+  datasource: clickhouse_events
+  dimension: user_id
+  dimension_value: "{event.user_id}"
+  field: session_duration  # Business system provides this
   window: 7d
-  session_config:
-    timeout: 30  # minutes of inactivity
-    aggregation: avg
+
+# Events per session - using expression
+- name: expr_events_per_session_7d
+  type: expression
+  operator: expression
+  expression: "total_events_7d / distinct_sessions_7d"
+  depends_on:
+    - total_events_7d
+    - distinct_sessions_7d
 ```
+
+**Use Cases:**
+- Bot detection (high session count, short duration)
+- Automated script detection (abnormal events per session)
+- Human behavior validation (session patterns)
+- Session hijacking detection (sudden session characteristic changes)
+
+> **Important**: Business system is responsible for computing `session_id` based on timeout rules (e.g., 30 minutes of inactivity = new session). This ensures consistent session definition across the platform.
 
 ---
 
@@ -674,7 +943,6 @@ Advanced time-series analysis and forecasting.
 
 **Proposed Operators:**
 - `moving_average` - Moving average over window
-- `exponential_moving_average` - EMA calculation
 - `lag` - Previous value at offset
 - `forecast` - Time-series forecast
 - `seasonality_score` - Seasonal pattern strength
@@ -696,8 +964,8 @@ Advanced time-series analysis and forecasting.
   dimension_value: "{event.user_id}"
   field: amount
   window: 7d
+  window_size: 7  # Number of periods for moving average
   aggregation: sum
-  smoothing: simple  # simple, exponential, weighted
 ```
 
 ---
@@ -749,40 +1017,29 @@ Stateful event pattern matching and correlation.
 
 **Purpose:** Analyze connections, networks, and relationship patterns between entities using graph theory.
 
-### ✅ 4.1 Entity Links
-**Status:** Implemented (Partial)
+> **Note on Entity Linking:**
+>
+> Simple entity linking (e.g., "devices per IP", "users per device") should use **`distinct` aggregation**, not Graph operators:
+>
+> ```yaml
+> # Count devices per IP - use distinct
+> - name: agg_distinct_ip_device_24h
+>   type: aggregation
+>   operator: distinct
+>   dimension: ip_address
+>   dimension_value: "{event.ip_address}"
+>   field: device_id
+>   window: 24h
+> ```
+>
+> Graph operators should focus on operations that **require graph algorithms** (network analysis, community detection, etc.).
 
-Count linked entities across dimensions.
-
-**Operators:**
-- `link_count` - Count linked entities across dimensions
-
-**Use Cases:**
-- Devices per IP
-- Users per device
-- Accounts per email domain
-
-**Example:**
-```yaml
-- name: graph_linkcnt_ip_device_24h
-  type: graph
-  operator: link_count
-  entity: events
-  primary_dimension: ip_address
-  primary_value: "{event.ip_address}"
-  secondary_dimension: device_id
-  window: 24h
-```
-
----
-
-### 📋 4.2 Network Analysis
+### 📋 4.1 Network Analysis
 **Status:** Planned - Low Priority (Complex)
 
 Analyze entity relationships and network patterns using graph algorithms.
 
 **Proposed Operators:**
-- `graph_degree` - Number of connections
 - `graph_centrality` - Network centrality score
 - `community_size` - Size of connected component
 - `shared_entity_count` - Count shared connections
@@ -798,90 +1055,14 @@ Analyze entity relationships and network patterns using graph algorithms.
 
 **Proposed Syntax:**
 ```yaml
-- name: graph_degree_userid_device_30d
+- name: graph_centrality_userid_device_30d
   type: graph
-  operator: graph_degree
+  operator: graph_centrality
   entity: events
   primary_dimension: user_id
   primary_value: "{event.user_id}"
   link_dimension: device_id
   window: 30d
-```
-
----
-
-### 📋 4.3 Spatial Graph
-**Status:** Planned - High Priority
-
-Geographic and location-based graph features.
-
-> **Note:** Operators such as geographic distance, impossible travel, and location entropy are **spatiotemporal calculations**. They do **not** construct or traverse a relationship graph and may be implemented internally using **Sequence or State executors with spatial logic**, even though they are grouped here for risk-domain clarity.
-
-**Proposed Operators:**
-- `distance` - Geographic distance between points
-- `impossible_travel` - Detect impossible travel
-- `location_change_count` - Count location changes
-- `location_entropy` - Geographic diversity
-- `country_count` - Distinct countries
-
-**Use Cases:**
-- Impossible travel detection
-- VPN/proxy detection
-- Location velocity
-- Geographic anomaly
-- Cross-border transactions
-
-**Proposed Syntax:**
-```yaml
-- name: graph_distance_userid_location_24h
-  type: graph
-  operator: impossible_travel
-  entity: events
-  dimension: user_id
-  dimension_value: "{event.user_id}"
-  window: 24h
-  location_fields:
-    latitude: lat
-    longitude: lon
-  max_speed_kmh: 800  # Max reasonable travel speed
-```
-
----
-
-### 📋 4.4 Similarity Graph
-**Status:** Planned - Low Priority
-
-Compare and measure similarity between entities and cohorts.
-
-**Proposed Operators:**
-- `compare_to_peer_group` - Compare to similar users
-- `global_percentile` - Global ranking
-- `cohort_average` - Average within cohort
-- `similarity_score` - Similarity to another entity
-
-**Use Cases:**
-- Peer group analysis
-- Cohort comparisons
-- Industry benchmarking
-- User segmentation
-- Anomaly detection
-
-**Proposed Syntax:**
-```yaml
-- name: graph_similarity_userid_cohort_30d
-  type: graph
-  operator: compare_to_peer_group
-  entity: events
-  dimension: user_id
-  dimension_value: "{event.user_id}"
-  field: amount
-  aggregation: sum
-  window: 30d
-  cohort:
-    - field: account_type
-      value: "{user.account_type}"
-    - field: country
-      value: "{user.country}"
 ```
 
 ---
@@ -960,7 +1141,6 @@ Integration with ML models and embeddings.
 
 - ✅ Complete Expression operator implementation
 - 📋 Implement Pattern sequences (3.1)
-- 📋 Implement Spatial graph features (4.3)
 - 📋 Add more time window units (weeks, months)
 
 ### Phase 2: Advanced Analytics (Q2 2025)
@@ -968,22 +1148,21 @@ Integration with ML models and embeddings.
 
 - 📋 Statistical aggregations (1.3)
 - 📋 Trend detection (3.2)
-- 📋 Session sequences (3.3)
-- 📋 Time-of-day/week state (2.4)
+- 📋 Time-of-day/week state (2.1)
+- 💡 Session-based analysis (3.3) - Use Aggregation operators
 
 ### Phase 3: Complex Features (Q3 2025)
 **Focus:** Advanced graph analysis and baselines
 
-- 📋 Historical baseline state (2.5)
-- 📋 Similarity graph features (4.4)
-- 📋 Network analysis (4.2) - basic
+- 📋 Historical baseline state (2.2)
+- 📋 Network analysis (4.1) - basic
 - 📋 Time-series analysis (3.4) - basic
 
 ### Phase 4: Advanced/ML Integration (Q4 2025+)
 **Focus:** AI and complex event processing
 
 - 📋 Machine learning integration (5.2)
-- 📋 Advanced network analysis algorithms (4.2)
+- 📋 Advanced network analysis algorithms (4.1)
 - 📋 Complex event processing (3.5)
 - 📋 Real-time streaming features
 
@@ -993,14 +1172,14 @@ Integration with ML models and embeddings.
 
 | Risk Domain | Primary Categories | Key Operators |
 |-------------|-------------------|---------------|
-| **Account Security** | State, Sequence | velocity, consecutive_count, impossible_travel, off_hours_activity |
-| **Transaction Fraud** | Aggregation, Sequence, Expression | sum, avg, stddev, trend, z_score, anomaly_score |
-| **Bot Detection** | Sequence, State | session_duration, session_pattern, time_of_day, velocity |
-| **Account Takeover** | State, Sequence, Graph | location_change, last_seen, consecutive_count, deviation_from_baseline |
-| **Payment Fraud** | Aggregation, Sequence, Graph | count, velocity, pattern_frequency, distance |
-| **Synthetic Identity** | Graph, Aggregation | graph_degree, shared_entity_count, distinct |
+| **Account Security** | Aggregation, Sequence, Expression | count, consecutive_count, distinct(city), expression |
+| **Transaction Fraud** | Aggregation, Sequence, Expression | sum, avg, stddev, trend, z_score, expression |
+| **Bot Detection** | Aggregation, Sequence, Expression | distinct(session_id), avg(session_duration), expression, count |
+| **Account Takeover** | State, Sequence, Aggregation | consecutive_count, deviation_from_baseline, z_score, distinct(city) |
+| **Payment Fraud** | Aggregation, Sequence, Expression | count, sum, pattern_frequency, expression |
+| **Synthetic Identity** | Graph, Aggregation | centrality, shared_entity_count, distinct |
 | **Credit Risk** | Aggregation, State, Sequence | sum, avg, stddev, trend, baseline_deviation |
-| **AML/Compliance** | Aggregation, Graph, Sequence | sum, distinct, graph_centrality, pattern_match |
+| **AML/Compliance** | Aggregation, Graph, Sequence | sum, distinct, centrality, pattern_match |
 
 ---
 
@@ -1013,20 +1192,14 @@ Integration with ML models and embeddings.
 | **Aggregation** | Basic Counting (1.1) | ✅ Implemented | - | Low |
 | | Basic Aggregations (1.2) | ✅ Implemented | - | Low |
 | | Statistical Aggregations (1.3) | 📋 Planned | Medium | Medium |
-| **State** | Temporal State (2.1) | ✅ Implemented | - | Low |
-| | Velocity State (2.2) | ✅ Implemented | - | Low |
-| | Lookup State (2.3) | ✅ Implemented | - | Low |
-| | Time-of-Day/Week (2.4) | 📋 Planned | Medium | Low |
-| | Historical Baseline (2.5) | 📋 Planned | Low | Medium |
+| **State** | Time-of-Day/Week (2.1) | 📋 Planned | Medium | Low |
+| | Historical Baseline (2.2) | 📋 Planned | Low | Medium |
 | **Sequence** | Pattern Sequences (3.1) | 📋 Planned | High | Medium |
 | | Trend Detection (3.2) | 📋 Planned | Medium | Medium |
-| | Session Sequences (3.3) | 📋 Planned | Medium | Medium |
+| | Session-Based Analysis (3.3) | 💡 Use Aggregation | - | - |
 | | Time-Series Analysis (3.4) | 📋 Planned | Future | High |
 | | Complex Event Processing (3.5) | 📋 Planned | Future | Very High |
-| **Graph** | Entity Links (4.1) | ✅ Partial | - | Low |
-| | Network Analysis (4.2) | 📋 Planned | Low | High |
-| | Spatial Graph (4.3) | 📋 Planned | High | Medium |
-| | Similarity Graph (4.4) | 📋 Planned | Low | Medium |
+| **Graph** | Network Analysis (4.1) | 📋 Planned | Low | High |
 | **Expression** | Custom Expressions (5.1) | ✅ Partial | - | Medium |
 | | Machine Learning (5.2) | 📋 Planned | Future | High |
 
@@ -1053,9 +1226,9 @@ Feature names should follow a structured pattern for clarity and machine parseab
 
 2. **Operator** (required) - Operation type
    - Aggregation: `cnt`, `sum`, `avg`, `max`, `min`, `distinct`, `stddev`, `variance`, `percentile`, `median`, `mode`, `entropy`
-   - State: `firstseen`, `lastseen`, `timesince`, `velocity`, `zscore`
+   - State: `zscore`, `deviation`, `percentile`, `outlier`, `timezone`
    - Sequence: `consec`, `trend`, `pctchg`, `streak`
-   - Graph: `linkcnt`, `degree`, `distance`, `similarity`
+   - Graph: `centrality`, `community`, `shared`
    - Expression: `expr`, `mlscore`
 
 3. **Dimension** (required) - Aggregation dimension
@@ -1082,7 +1255,7 @@ To keep feature names concise, use these standard abbreviations:
 | **Events** |
 | transaction | `txn` | `agg_cnt_userid_txn_24h` |
 | payment | `pay` | `agg_sum_userid_pay_amt_7d` |
-| register | `reg` | `state_timesince_userid_reg_d` |
+| register | `reg` | N/A (use event.account_age_days) |
 | session | `sess` | `seq_dur_userid_sess_7d_avg` |
 | password | `pwd` | `seq_pattern_userid_pwd_reset_1h` |
 | checkout | `checkout` | `agg_cnt_userid_checkout_24h` |
@@ -1153,17 +1326,24 @@ agg_cnt_userid_pay_24h_success     # 用户24小时成功支付次数
 **State Features:**
 
 ```yaml
-# Temporal state
-state_firstseen_userid_login           # 用户首次登录时间
-state_lastseen_userid_txn      # 用户最近交易时间
-state_timesince_userid_reg_d      # 用户注册天数 (账户年龄)
+# Statistical comparison (planned)
+state_zscore_userid_txn_amt            # 用户交易金额Z-score
+state_deviation_userid_login_freq      # 用户登录频率偏离度
+state_percentile_userid_txn_amt        # 用户交易金额百分位
+state_timezone_userid_login_7d         # 用户时区一致性检测
 
-# Velocity
-state_velocity_userid_login_1h         # 用户1小时登录速率检查
-state_velocity_userid_txn_24h  # 用户24小时交易速率检查
+# Note: Simple lookups don't need State operators, use datasource directly:
+- name: user_risk_score_90d
+  datasource: redis_features
+  key: "user_risk_score:{event.user_id}"
 
-# Baseline comparison
-state_zscore_userid_txn_amt # 用户交易金额Z-score
+# Time-based checks should use Expression or Aggregation:
+# - Off-hours check: expr_is_off_hours (expression: "event.hour < 8 || event.hour > 22")
+# - Off-hours count: agg_cnt_userid_login_7d_offhours (aggregation with when condition)
+
+# Context data should be provided by business system:
+# - event.account_age_days, user.last_login_at (temporal)
+# - user.kyc_status, user.account_type, user.country (profile)
 ```
 
 **Sequence Features:**
@@ -1184,16 +1364,14 @@ seq_duration_userid_sess_7d_avg     # 用户7天平均会话时长
 **Graph Features:**
 
 ```yaml
-# Entity links
-graph_linkcnt_ip_device_24h            # IP 24小时关联设备数
-graph_linkcnt_deviceid_userid_7d       # 设备7天关联用户数
+# Entity linking - use distinct (not Graph operators)
+agg_distinct_ip_device_24h             # IP 24小时关联设备数（用 distinct）
+agg_distinct_deviceid_userid_7d        # 设备7天关联用户数（用 distinct）
 
-# Network analysis
-graph_degree_userid_device_30d         # 用户30天设备网络度
-graph_distance_userid_location_24h     # 用户24小时地理距离
-
-# Similarity
-graph_similarity_userid_cohort_30d     # 用户30天同类群体相似度
+# Network analysis (planned)
+graph_centrality_userid_device_30d     # 用户30天设备网络中心度
+graph_community_userid_network_30d     # 用户30天所在社区大小
+graph_shared_userid_device_30d         # 用户间共享设备数
 ```
 
 **Expression Features:**
