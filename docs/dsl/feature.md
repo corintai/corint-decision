@@ -22,7 +22,7 @@ Quick reference for writing feature definitions in CORINT. For detailed implemen
 ```yaml
 - name: feature_name              # Feature identifier
   type: feature_type              # aggregation|state|sequence|graph|expression|lookup
-  method: operator_method         # Specific operator (count, sum, z_score, etc.)
+  method: method_name             # Specific method (count, sum, z_score, etc.)
   datasource: datasource_name     # References repository/configs/datasources/
   entity: entity_name             # Table/entity name (for SQL/NoSQL)
   dimension: dimension_field      # Grouping dimension (e.g., user_id)
@@ -369,7 +369,7 @@ rule:
 
 **Status:** ✅ Basic implemented, 📋 ML planned
 
-> **⚠️ Architecture Constraint:** Expression operators **only consume results from other features**. They do not access raw data sources or define time windows.
+> **⚠️ Architecture Constraint:** Expression methods **only consume results from other features**. They do not access raw data sources or define time windows.
 
 **✅ expression** - Custom expressions
 ```yaml
@@ -480,7 +480,7 @@ config:
 
 **Computed features:**
 ```
-<operator>_<dimension>_<event>[_field]_<window>[_modifier]
+<method>_<dimension>_<event>[_field]_<window>[_modifier]
 ```
 
 **Lookup features:**
@@ -488,7 +488,7 @@ config:
 <descriptive_name>
 ```
 
-### 9.2 Operator Abbreviations
+### 9.2 Method Abbreviations
 
 | Category | Abbreviations |
 |----------|---------------|

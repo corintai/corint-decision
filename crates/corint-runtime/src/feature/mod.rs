@@ -2,7 +2,7 @@
 //!
 //! This module provides a comprehensive feature engineering system for risk control,
 //! including:
-//! - Feature operators (count, sum, avg, count_distinct, etc.)
+//! - Feature methods (count, sum, avg, count_distinct, etc.)
 //! - Feature definitions and registry
 //! - Feature execution engine with caching
 //! - Pipeline integration

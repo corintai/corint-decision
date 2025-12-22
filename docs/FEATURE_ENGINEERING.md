@@ -17,12 +17,12 @@ Feature engineering in risk management follows a structured approach based on **
 
 ---
 
-## Operators by Category
+## Methods by Category
 
-### 1. Aggregation Operators
-> **Rust Implementation:** `AggregationExecutor::execute(op: AggregationType, config: AggregationConfig)`
+### 1. Aggregation Methods
+> **Rust Implementation:** `AggregationExecutor::execute(method: AggregationType, config: AggregationConfig)`
 >
-> **Design Pattern:** Unified executor with enum-based operator selection
+> **Design Pattern:** Unified executor with method-based dispatch
 
 **Implemented:**
 - `count` - Count events matching conditions within time window

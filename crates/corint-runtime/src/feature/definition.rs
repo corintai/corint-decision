@@ -1,61 +1,386 @@
 //! Feature Definition Module
 //!
-//! This module defines the structure and types for feature definitions,
-//! which can be loaded from YAML configuration files.
+//! This module defines the structure and types for feature definitions based on
+//! the CORINT Feature DSL specification (v0.2).
+//!
+//! Supports 6 feature categories:
+//! - Aggregation: Count and aggregate events/values (count, sum, avg, max, min, distinct)
+//! - State: Statistical comparisons (z_score, deviation, percentile)
+//! - Sequence: Pattern and trend analysis (consecutive, streak, percent_change)
+//! - Graph: Network and relationship analysis (centrality, community_size, shared_entity)
+//! - Expression: Compute from other features (rate, ratio, ML models)
+//! - Lookup: Retrieve pre-computed values (Redis cache)
 
-use crate::feature::operator::Operator;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use corint_core::Value;
 
-/// Feature type classification
+/// Feature type classification based on DSL v0.2
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 #[serde(rename_all = "snake_case")]
 pub enum FeatureType {
-    /// Basic aggregation features (count, sum, avg, etc.)
+    /// Aggregation features - count and aggregate events/values
     Aggregation,
-    /// Distinct count features
-    Distinct,
-    /// Temporal features (first_seen, last_seen, time_since)
-    Temporal,
-    /// Velocity features (threshold-based)
-    Velocity,
-    /// Lookup features (feature store, profile database)
-    Lookup,
-    /// Custom expression features
+
+    /// State features - statistical comparisons and baseline analysis
+    State,
+
+    /// Sequence features - pattern and trend analysis over time
+    Sequence,
+
+    /// Graph features - network and relationship analysis
+    Graph,
+
+    /// Expression features - compute from other features
     Expression,
+
+    /// Lookup features - retrieve pre-computed values
+    Lookup,
 }
 
-/// Feature definition loaded from YAML configuration
+/// Aggregation methods
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum AggregationMethod {
+    /// Count events matching conditions
+    Count,
+
+    /// Sum numeric field values
+    Sum,
+
+    /// Average of field values
+    Avg,
+
+    /// Maximum value
+    Max,
+
+    /// Minimum value
+    Min,
+
+    /// Count unique values
+    Distinct,
+
+    /// Standard deviation (planned)
+    Stddev,
+
+    /// Variance (planned)
+    Variance,
+
+    /// Nth percentile value (planned)
+    Percentile,
+
+    /// Median value (planned)
+    Median,
+
+    /// Most frequent value (planned)
+    Mode,
+
+    /// Shannon entropy (planned)
+    Entropy,
+}
+
+/// State methods
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum StateMethod {
+    /// Statistical z-score compared to baseline
+    ZScore,
+
+    /// Compare to historical average
+    DeviationFromBaseline,
+
+    /// Rank compared to history
+    PercentileRank,
+
+    /// Statistical outlier detection
+    IsOutlier,
+
+    /// Timezone pattern consistency check
+    TimezoneConsistency,
+}
+
+/// Sequence methods
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum SequenceMethod {
+    /// Count consecutive occurrences
+    ConsecutiveCount,
+
+    /// Longest streak of condition
+    Streak,
+
+    /// Match event sequences
+    SequenceMatch,
+
+    /// Frequency of specific patterns
+    PatternFrequency,
+
+    /// Calculate trend (increasing/decreasing/stable)
+    Trend,
+
+    /// Percentage change between windows
+    PercentChange,
+
+    /// Rate of change over time
+    RateOfChange,
+
+    /// Statistical anomaly detection
+    AnomalyScore,
+
+    /// Moving average over window
+    MovingAverage,
+}
+
+/// Graph methods
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum GraphMethod {
+    /// Network centrality score
+    GraphCentrality,
+
+    /// Size of connected component
+    CommunitySize,
+
+    /// Count shared connections
+    SharedEntityCount,
+
+    /// Distance between entities in graph
+    NetworkDistance,
+}
+
+/// Expression methods
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum ExpressionMethod {
+    /// Custom expression
+    Expression,
+
+    /// ML model prediction
+    MlModelScore,
+
+    /// Embedding similarity (planned)
+    EmbeddingSimilarity,
+
+    /// Clustering label (planned)
+    ClusteringLabel,
+
+    /// ML anomaly score (planned)
+    MlAnomalyScore,
+}
+
+/// Time window configuration
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WindowConfig {
+    /// Window value (e.g., 1, 24, 7, 30)
+    pub value: u64,
+
+    /// Window unit (h, d, etc.)
+    pub unit: String,
+}
+
+/// Filter condition
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WhenCondition {
+    /// "all" or "any" for combining conditions
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub all: Option<Vec<String>>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub any: Option<Vec<String>>,
+}
+
+/// Aggregation feature configuration
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AggregationConfig {
+    /// Data source name (references repository/configs/datasources/)
+    pub datasource: String,
+
+    /// Table/entity name
+    pub entity: String,
+
+    /// Grouping dimension (e.g., user_id, device_id)
+    pub dimension: String,
+
+    /// Template for dimension value (e.g., "{event.user_id}")
+    pub dimension_value: String,
+
+    /// Field to aggregate (optional for count)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub field: Option<String>,
+
+    /// Time window (e.g., "24h", "7d", "30d")
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub window: Option<String>,
+
+    /// Filter conditions
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub when: Option<WhenCondition>,
+
+    /// Percentile value (for percentile method)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub percentile: Option<u8>,
+}
+
+/// State feature configuration
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StateConfig {
+    pub datasource: String,
+    pub entity: String,
+    pub dimension: String,
+    pub dimension_value: String,
+    pub field: String,
+    pub current_value: String,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub window: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub when: Option<WhenCondition>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub expected_timezone: Option<String>,
+}
+
+/// Sequence feature configuration
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SequenceConfig {
+    pub datasource: String,
+    pub entity: String,
+    pub dimension: String,
+    pub dimension_value: String,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub field: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub window: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub when: Option<WhenCondition>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reset_when: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub order_by: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pattern: Option<Vec<String>>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub aggregation: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub baseline_window: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub window_size: Option<usize>,
+}
+
+/// Graph feature configuration
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GraphConfig {
+    pub datasource: String,
+    pub dimension: String,
+    pub dimension_value: String,
+    pub dimension2: String,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub dimension_value2: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub window: Option<String>,
+}
+
+/// Expression feature configuration
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ExpressionConfig {
+    /// Expression string
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub expression: Option<String>,
+
+    /// Features this expression depends on
+    #[serde(default)]
+    pub depends_on: Vec<String>,
+
+    /// ML model ID
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
+
+    /// Model input features
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub inputs: Option<Vec<String>>,
+
+    /// Output field name
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub output: Option<String>,
+}
+
+/// Lookup feature configuration
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LookupConfig {
+    pub datasource: String,
+    pub key: String,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub fallback: Option<Value>,
+}
+
+/// Feature definition following DSL v0.2
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FeatureDefinition {
     /// Feature name (unique identifier)
     pub name: String,
 
+    /// Feature type
+    #[serde(rename = "type")]
+    pub feature_type: FeatureType,
+
+    /// Method name (e.g., count, sum, avg) - not needed for Lookup
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub method: Option<String>,
+
+    /// Aggregation-specific configuration
+    #[serde(flatten, skip_serializing_if = "Option::is_none")]
+    pub aggregation: Option<AggregationConfig>,
+
+    /// State-specific configuration
+    #[serde(flatten, skip_serializing_if = "Option::is_none")]
+    pub state: Option<StateConfig>,
+
+    /// Sequence-specific configuration
+    #[serde(flatten, skip_serializing_if = "Option::is_none")]
+    pub sequence: Option<SequenceConfig>,
+
+    /// Graph-specific configuration
+    #[serde(flatten, skip_serializing_if = "Option::is_none")]
+    pub graph: Option<GraphConfig>,
+
+    /// Expression-specific configuration
+    #[serde(flatten, skip_serializing_if = "Option::is_none")]
+    pub expression: Option<ExpressionConfig>,
+
+    /// Lookup-specific configuration
+    #[serde(flatten, skip_serializing_if = "Option::is_none")]
+    pub lookup: Option<LookupConfig>,
+
     /// Human-readable description
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "String::is_empty")]
     pub description: String,
 
-    /// Feature operator configuration
-    #[serde(flatten)]
-    pub operator: Operator,
-
-    /// Feature type (automatically inferred from operator if not specified)
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub feature_type: Option<FeatureType>,
-
-    /// Feature dependencies (other features that must be computed first)
-    #[serde(default)]
+    /// Feature dependencies
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub dependencies: Vec<String>,
 
-    /// Tags for feature organization and filtering
-    #[serde(default)]
+    /// Tags for organization
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub tags: Vec<String>,
 
-    /// Whether this feature is enabled
+    /// Whether enabled
     #[serde(default = "default_enabled")]
     pub enabled: bool,
 
-    /// Feature version (for A/B testing or gradual rollout)
+    /// Version
     #[serde(default = "default_version")]
     pub version: String,
 }
@@ -69,51 +394,76 @@ fn default_version() -> String {
 }
 
 impl FeatureDefinition {
-    /// Create a new feature definition
-    pub fn new(name: impl Into<String>, operator: Operator) -> Self {
+    /// Create a new feature from old-style Operator (for backward compatibility with tests)
+    #[cfg(test)]
+    pub fn new(name: impl Into<String>, operator: crate::feature::operator::Operator) -> Self {
+        use crate::feature::operator::Operator;
+
+        // This is a temporary compatibility shim for tests
+        // Converts old Operator enum to new DSL v0.2 structure with type+method fields
         let name = name.into();
-        let feature_type = Self::infer_type(&operator);
 
-        Self {
-            name,
-            description: String::new(),
-            operator,
-            feature_type: Some(feature_type),
-            dependencies: Vec::new(),
-            tags: Vec::new(),
-            enabled: true,
-            version: "1.0".to_string(),
-        }
-    }
-
-    /// Infer feature type from operator
-    pub fn infer_type(operator: &Operator) -> FeatureType {
         match operator {
-            Operator::Count(_)
-            | Operator::Sum(_)
-            | Operator::Avg(_)
-            | Operator::Max(_)
-            | Operator::Min(_) => FeatureType::Aggregation,
-
-            Operator::CountDistinct(_) | Operator::CrossDimensionCount(_) => FeatureType::Distinct,
-
-            Operator::FirstSeen(_) | Operator::LastSeen(_) | Operator::TimeSince(_) => {
-                FeatureType::Temporal
+            Operator::Count(op) => {
+                Self {
+                    name,
+                    feature_type: FeatureType::Aggregation,
+                    method: Some("count".to_string()),
+                    aggregation: Some(AggregationConfig {
+                        datasource: op.params.datasource.unwrap_or_else(|| "default".to_string()),
+                        entity: op.params.entity,
+                        dimension: op.params.dimension,
+                        dimension_value: op.params.dimension_value,
+                        field: None,
+                        window: op.params.window.map(|w| format!("{}{}", w.value, match w.unit {
+                            crate::feature::operator::WindowUnit::Minutes => "m",
+                            crate::feature::operator::WindowUnit::Hours => "h",
+                            crate::feature::operator::WindowUnit::Days => "d",
+                        })),
+                        when: None,
+                        percentile: None,
+                    }),
+                    state: None,
+                    sequence: None,
+                    graph: None,
+                    expression: None,
+                    lookup: None,
+                    description: String::new(),
+                    dependencies: Vec::new(),
+                    tags: Vec::new(),
+                    enabled: true,
+                    version: "1.0".to_string(),
+                }
             }
-
-            Operator::Velocity(_) => FeatureType::Velocity,
-
-            Operator::FeatureStoreLookup(_) | Operator::ProfileLookup(_) => FeatureType::Lookup,
-
-            Operator::Expression(_) => FeatureType::Expression,
+            _ => {
+                // For other operators, create a minimal valid feature
+                Self {
+                    name,
+                    feature_type: FeatureType::Aggregation,
+                    method: Some("count".to_string()),
+                    aggregation: Some(AggregationConfig {
+                        datasource: "default".to_string(),
+                        entity: "events".to_string(),
+                        dimension: "user_id".to_string(),
+                        dimension_value: "{event.user_id}".to_string(),
+                        field: None,
+                        window: None,
+                        when: None,
+                        percentile: None,
+                    }),
+                    state: None,
+                    sequence: None,
+                    graph: None,
+                    expression: None,
+                    lookup: None,
+                    description: String::new(),
+                    dependencies: Vec::new(),
+                    tags: Vec::new(),
+                    enabled: true,
+                    version: "1.0".to_string(),
+                }
+            }
         }
-    }
-
-    /// Get the feature type (infer if not set)
-    pub fn get_type(&self) -> FeatureType {
-        self.feature_type
-            .clone()
-            .unwrap_or_else(|| Self::infer_type(&self.operator))
     }
 
     /// Validate the feature definition
@@ -131,144 +481,90 @@ impl FeatureDefinition {
             ));
         }
 
-        // Validate operator-specific requirements
-        self.validate_operator()?;
-
-        Ok(())
-    }
-
-    /// Validate operator-specific requirements
-    fn validate_operator(&self) -> Result<(), String> {
-        match &self.operator {
-            Operator::Count(op) => {
-                if op.params.entity.is_empty() {
+        // Validate type-specific configuration
+        match self.feature_type {
+            FeatureType::Aggregation => {
+                if self.aggregation.is_none() {
                     return Err(format!(
-                        "Feature '{}': entity cannot be empty for count operator",
+                        "Feature '{}': Aggregation config required for aggregation type",
                         self.name
                     ));
                 }
-                if op.params.dimension.is_empty() {
+                if self.method.is_none() {
                     return Err(format!(
-                        "Feature '{}': dimension cannot be empty for count operator",
+                        "Feature '{}': method required for aggregation type",
                         self.name
                     ));
                 }
             }
-
-            Operator::Sum(op) => {
-                if op.params.entity.is_empty() {
+            FeatureType::State => {
+                if self.state.is_none() {
                     return Err(format!(
-                        "Feature '{}': entity cannot be empty for sum operator",
+                        "Feature '{}': State config required for state type",
                         self.name
                     ));
                 }
-                if op.field.is_empty() {
+                if self.method.is_none() {
                     return Err(format!(
-                        "Feature '{}': field cannot be empty for sum operator",
-                        self.name
-                    ));
-                }
-            }
-
-            Operator::Avg(op) => {
-                if op.params.entity.is_empty() {
-                    return Err(format!(
-                        "Feature '{}': entity cannot be empty for avg operator",
-                        self.name
-                    ));
-                }
-                if op.field.is_empty() {
-                    return Err(format!(
-                        "Feature '{}': field cannot be empty for avg operator",
+                        "Feature '{}': method required for state type",
                         self.name
                     ));
                 }
             }
-
-            Operator::Max(op) => {
-                if op.params.entity.is_empty() {
+            FeatureType::Sequence => {
+                if self.sequence.is_none() {
                     return Err(format!(
-                        "Feature '{}': entity cannot be empty for max operator",
+                        "Feature '{}': Sequence config required for sequence type",
                         self.name
                     ));
                 }
-                if op.field.is_empty() {
+                if self.method.is_none() {
                     return Err(format!(
-                        "Feature '{}': field cannot be empty for max operator",
-                        self.name
-                    ));
-                }
-            }
-
-            Operator::Min(op) => {
-                if op.params.entity.is_empty() {
-                    return Err(format!(
-                        "Feature '{}': entity cannot be empty for min operator",
-                        self.name
-                    ));
-                }
-                if op.field.is_empty() {
-                    return Err(format!(
-                        "Feature '{}': field cannot be empty for min operator",
+                        "Feature '{}': method required for sequence type",
                         self.name
                     ));
                 }
             }
-
-            Operator::CountDistinct(op) => {
-                if op.distinct_field.is_empty() {
+            FeatureType::Graph => {
+                if self.graph.is_none() {
                     return Err(format!(
-                        "Feature '{}': distinct_field cannot be empty for count_distinct operator",
+                        "Feature '{}': Graph config required for graph type",
+                        self.name
+                    ));
+                }
+                if self.method.is_none() {
+                    return Err(format!(
+                        "Feature '{}': method required for graph type",
                         self.name
                     ));
                 }
             }
-
-            Operator::CrossDimensionCount(op) => {
-                if op.primary_dimension.is_empty() || op.secondary_dimension.is_empty() {
+            FeatureType::Expression => {
+                if self.expression.is_none() {
                     return Err(format!(
-                        "Feature '{}': both primary and secondary dimensions required for cross_dimension_count",
+                        "Feature '{}': Expression config required for expression type",
+                        self.name
+                    ));
+                }
+                if self.method.is_none() {
+                    return Err(format!(
+                        "Feature '{}': method required for expression type",
                         self.name
                     ));
                 }
             }
-
-            Operator::Velocity(op) => {
-                if op.threshold <= 0 {
+            FeatureType::Lookup => {
+                if self.lookup.is_none() {
                     return Err(format!(
-                        "Feature '{}': velocity threshold must be positive",
+                        "Feature '{}': Lookup config required for lookup type",
                         self.name
                     ));
                 }
+                // Lookup does not require method
             }
-
-            Operator::FeatureStoreLookup(op) => {
-                if op.key.is_empty() {
-                    return Err(format!(
-                        "Feature '{}': key cannot be empty for feature_store_lookup",
-                        self.name
-                    ));
-                }
-            }
-
-            Operator::ProfileLookup(op) => {
-                if op.table.is_empty() || op.field.is_empty() {
-                    return Err(format!(
-                        "Feature '{}': table and field required for profile_lookup",
-                        self.name
-                    ));
-                }
-            }
-
-            _ => {}
         }
 
         Ok(())
-    }
-
-    /// Check if this feature has any dependencies
-    pub fn has_dependencies(&self) -> bool {
-        !self.dependencies.is_empty()
     }
 
     /// Check if this feature is enabled
@@ -294,6 +590,10 @@ impl FeatureDefinition {
 /// Feature collection loaded from YAML file
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FeatureCollection {
+    /// Feature format version
+    #[serde(default = "default_collection_version")]
+    pub version: String,
+
     /// List of feature definitions
     pub features: Vec<FeatureDefinition>,
 
@@ -302,10 +602,15 @@ pub struct FeatureCollection {
     pub metadata: HashMap<String, String>,
 }
 
+fn default_collection_version() -> String {
+    "0.2".to_string()
+}
+
 impl FeatureCollection {
     /// Create a new empty feature collection
     pub fn new() -> Self {
         Self {
+            version: "0.2".to_string(),
             features: Vec::new(),
             metadata: HashMap::new(),
         }
@@ -365,7 +670,7 @@ impl FeatureCollection {
     pub fn features_by_type(&self, feature_type: FeatureType) -> Vec<&FeatureDefinition> {
         self.features
             .iter()
-            .filter(|f| f.get_type() == feature_type)
+            .filter(|f| f.feature_type == feature_type)
             .collect()
     }
 }
@@ -379,71 +684,130 @@ impl Default for FeatureCollection {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::feature::operator::{CountOperator, OperatorParams, WindowConfig, WindowUnit};
 
     #[test]
-    fn test_feature_definition_creation() {
-        let operator = Operator::Count(CountOperator {
-            params: OperatorParams {
-                datasource: None,
-                entity: "user_events".to_string(),
+    fn test_aggregation_feature_definition() {
+        let feature = FeatureDefinition {
+            name: "cnt_userid_login_24h".to_string(),
+            feature_type: FeatureType::Aggregation,
+            method: Some("count".to_string()),
+            aggregation: Some(AggregationConfig {
+                datasource: "postgresql_events".to_string(),
+                entity: "events".to_string(),
                 dimension: "user_id".to_string(),
                 dimension_value: "{event.user_id}".to_string(),
-                window: Some(WindowConfig {
-                    value: 24,
-                    unit: WindowUnit::Hours,
-                }),
-                filters: Vec::new(),
-                cache: None,
-            },
-        });
+                field: None,
+                window: Some("24h".to_string()),
+                when: None,
+                percentile: None,
+            }),
+            state: None,
+            sequence: None,
+            graph: None,
+            expression: None,
+            lookup: None,
+            description: String::new(),
+            dependencies: Vec::new(),
+            tags: Vec::new(),
+            enabled: true,
+            version: "1.0".to_string(),
+        };
 
-        let feature = FeatureDefinition::new("login_count_24h", operator);
-
-        assert_eq!(feature.name, "login_count_24h");
-        assert_eq!(feature.get_type(), FeatureType::Aggregation);
-        assert!(feature.is_enabled());
+        assert!(feature.validate().is_ok());
+        assert_eq!(feature.feature_type, FeatureType::Aggregation);
     }
 
     #[test]
-    fn test_feature_validation() {
-        let operator = Operator::Count(CountOperator {
-            params: OperatorParams {
-                datasource: None,
-                entity: "user_events".to_string(),
-                dimension: "user_id".to_string(),
-                dimension_value: "{event.user_id}".to_string(),
-                window: Some(WindowConfig {
-                    value: 24,
-                    unit: WindowUnit::Hours,
-                }),
-                filters: Vec::new(),
-                cache: None,
-            },
-        });
+    fn test_lookup_feature_definition() {
+        let feature = FeatureDefinition {
+            name: "user_risk_score_90d".to_string(),
+            feature_type: FeatureType::Lookup,
+            method: None,  // Lookup doesn't need method
+            aggregation: None,
+            state: None,
+            sequence: None,
+            graph: None,
+            expression: None,
+            lookup: Some(LookupConfig {
+                datasource: "redis_features".to_string(),
+                key: "user_risk_score:{event.user_id}".to_string(),
+                fallback: Some(Value::Number(50.0)),
+            }),
+            description: String::new(),
+            dependencies: Vec::new(),
+            tags: Vec::new(),
+            enabled: true,
+            version: "1.0".to_string(),
+        };
 
-        let feature = FeatureDefinition::new("login_count_24h", operator);
         assert!(feature.validate().is_ok());
+        assert_eq!(feature.feature_type, FeatureType::Lookup);
+    }
+
+    #[test]
+    fn test_expression_feature_definition() {
+        let feature = FeatureDefinition {
+            name: "rate_userid_login_failure".to_string(),
+            feature_type: FeatureType::Expression,
+            method: Some("expression".to_string()),
+            aggregation: None,
+            state: None,
+            sequence: None,
+            graph: None,
+            expression: Some(ExpressionConfig {
+                expression: Some("failed_login_count_1h / login_count_1h".to_string()),
+                depends_on: vec![
+                    "failed_login_count_1h".to_string(),
+                    "login_count_1h".to_string(),
+                ],
+                model: None,
+                inputs: None,
+                output: None,
+            }),
+            lookup: None,
+            description: String::new(),
+            dependencies: Vec::new(),
+            tags: Vec::new(),
+            enabled: true,
+            version: "1.0".to_string(),
+        };
+
+        assert!(feature.validate().is_ok());
+        assert_eq!(feature.feature_type, FeatureType::Expression);
     }
 
     #[test]
     fn test_feature_collection_duplicate_detection() {
         let mut collection = FeatureCollection::new();
 
-        let operator = Operator::Count(CountOperator {
-            params: OperatorParams {
-                datasource: None,
-                entity: "user_events".to_string(),
+        let feature1 = FeatureDefinition {
+            name: "feature1".to_string(),
+            feature_type: FeatureType::Aggregation,
+            method: Some("count".to_string()),
+            aggregation: Some(AggregationConfig {
+                datasource: "postgresql_events".to_string(),
+                entity: "events".to_string(),
                 dimension: "user_id".to_string(),
                 dimension_value: "{event.user_id}".to_string(),
+                field: None,
                 window: None,
-                filters: Vec::new(),
-                cache: None,
-            },
-        });
+                when: None,
+                percentile: None,
+            }),
+            state: None,
+            sequence: None,
+            graph: None,
+            expression: None,
+            lookup: None,
+            description: String::new(),
+            dependencies: Vec::new(),
+            tags: Vec::new(),
+            enabled: true,
+            version: "1.0".to_string(),
+        };
 
-        collection.add_feature(FeatureDefinition::new("feature1", operator.clone()));
-        collection.add_feature(FeatureDefinition::new("feature1", operator));
+        collection.add_feature(feature1.clone());
+        collection.add_feature(feature1);
 
         let result = collection.validate();
         assert!(result.is_err());

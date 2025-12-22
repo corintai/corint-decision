@@ -64,7 +64,7 @@ impl FeatureRegistry {
             feature_names.push(name.clone());
 
             // Index by type
-            let feature_type = feature.get_type();
+            let feature_type = feature.feature_type.clone();
             self.features_by_type
                 .entry(feature_type)
                 .or_default()
@@ -311,6 +311,7 @@ impl FeatureRegistry {
         let features: Vec<FeatureDefinition> = self.features.values().cloned().collect();
 
         let collection = FeatureCollection {
+            version: "0.2".to_string(),
             features,
             metadata: HashMap::new(),
         };

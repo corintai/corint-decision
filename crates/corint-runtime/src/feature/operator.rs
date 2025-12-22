@@ -1,6 +1,9 @@
-//! Feature Operators
+//! Feature Operators (Deprecated)
 //!
-//! Provides reusable operators for feature computation.
+//! This module contains the old operator-based architecture and is kept for backward compatibility with existing tests.
+//!
+//! **Note:** In DSL v0.2, the concept of "operators" has been renamed to "methods" and integrated into a type-based
+//! feature system (see `definition.rs`). This module will be removed once all code is migrated.
 
 use crate::datasource::{
     Aggregation, AggregationType, DataSourceClient, Filter, FilterOperator, Query, QueryType,
