@@ -80,10 +80,17 @@ ruleset:
 pipeline:
   id: test_pipeline
   name: Test Pipeline
+  entry: test_step
   when:
-    event_type: transaction
-  stages:
-    - ruleset: test_ruleset
+    all:
+      - event.type == "transaction"
+  steps:
+    - step:
+        id: test_step
+        name: Test Step
+        type: ruleset
+        ruleset: test_ruleset
+        next: end
 "#;
 
     fs::write(
@@ -145,18 +152,54 @@ fn create_test_router(engine: Arc<corint_sdk::DecisionEngine>) -> Router {
 
     #[derive(Debug, Deserialize)]
     struct DecideRequestPayload {
-        event_data: HashMap<String, serde_json::Value>,
+        event: HashMap<String, serde_json::Value>,
+        #[serde(default)]
+        user: Option<HashMap<String, serde_json::Value>>,
+        #[serde(default)]
+        options: Option<RequestOptions>,
+    }
+
+    #[derive(Debug, Default, Deserialize)]
+    struct RequestOptions {
+        #[serde(default)]
+        return_features: bool,
+        #[serde(default)]
+        enable_trace: bool,
     }
 
     #[derive(Debug, Serialize)]
     struct DecideResponsePayload {
         request_id: String,
-        pipeline_id: Option<String>,
-        action: Option<String>,
-        score: i32,
+        status: u16,
+        process_time_ms: u64,
+        pipeline_id: String,
+        decision: DecisionPayload,
+    }
+
+    #[derive(Debug, Serialize)]
+    struct DecisionPayload {
+        result: String,
+        actions: Vec<String>,
+        scores: ScoresPayload,
+        evidence: EvidencePayload,
+        cognition: CognitionPayload,
+    }
+
+    #[derive(Debug, Serialize)]
+    struct ScoresPayload {
+        canonical: i32,
+        raw: i32,
+    }
+
+    #[derive(Debug, Serialize)]
+    struct EvidencePayload {
         triggered_rules: Vec<String>,
-        explanation: String,
-        processing_time_ms: u64,
+    }
+
+    #[derive(Debug, Serialize)]
+    struct CognitionPayload {
+        summary: String,
+        reason_codes: Vec<String>,
     }
 
     async fn health() -> Json<HealthResponse> {
@@ -215,7 +258,7 @@ fn create_test_router(engine: Arc<corint_sdk::DecisionEngine>) -> Router {
         Json(payload): Json<DecideRequestPayload>,
     ) -> Result<Json<DecideResponsePayload>, StatusCode> {
         let event_fields: HashMap<String, Value> = payload
-            .event_data
+            .event
             .into_iter()
             .map(|(k, v)| (k, json_to_value(v)))
             .collect();
@@ -237,16 +280,32 @@ fn create_test_router(engine: Arc<corint_sdk::DecisionEngine>) -> Router {
             .await
             .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
-        let action_str = response.result.action.map(|a| format!("{:?}", a));
+        let result_str = response
+            .result
+            .action
+            .map(|a| format!("{:?}", a).to_uppercase())
+            .unwrap_or_else(|| "PASS".to_string());
 
         Ok(Json(DecideResponsePayload {
             request_id: response.request_id,
-            pipeline_id: response.pipeline_id,
-            action: action_str,
-            score: response.result.score,
-            triggered_rules: response.result.triggered_rules,
-            explanation: response.result.explanation,
-            processing_time_ms: response.processing_time_ms,
+            status: 200,
+            process_time_ms: response.processing_time_ms,
+            pipeline_id: response.pipeline_id.unwrap_or_else(|| "default".to_string()),
+            decision: DecisionPayload {
+                result: result_str,
+                actions: Vec::new(),
+                scores: ScoresPayload {
+                    canonical: response.result.score.clamp(0, 1000),
+                    raw: response.result.score,
+                },
+                evidence: EvidencePayload {
+                    triggered_rules: response.result.triggered_rules,
+                },
+                cognition: CognitionPayload {
+                    summary: response.result.explanation,
+                    reason_codes: Vec::new(),
+                },
+            },
         }))
     }
 
@@ -290,7 +349,7 @@ async fn test_decide_endpoint_high_amount() {
     let app = create_test_router(engine);
 
     let request_body = json!({
-        "event_data": {
+        "event": {
             "amount": 2000,
             "user_id": "user_123",
             "event_type": "transaction"
@@ -314,15 +373,13 @@ async fn test_decide_endpoint_high_amount() {
     let body = response.into_body().collect().await.unwrap().to_bytes();
     let json: Value = serde_json::from_slice(&body).unwrap();
 
-    // Verify response structure
-    assert!(json["score"].is_number());
-    assert!(json["action"].is_string() || json["action"].is_null());
-    assert!(json["triggered_rules"].is_array());
+    // Verify new response structure
     assert!(json["request_id"].is_string());
-
-    // If rule triggers correctly, score should be 100
-    // Note: The actual rule triggering depends on proper rule compilation and execution
-    // For now, we just verify the API works
+    assert!(json["status"].is_number());
+    assert!(json["decision"]["result"].is_string());
+    assert!(json["decision"]["scores"]["canonical"].is_number());
+    assert!(json["decision"]["scores"]["raw"].is_number());
+    assert!(json["decision"]["evidence"]["triggered_rules"].is_array());
 }
 
 #[tokio::test]
@@ -331,7 +388,7 @@ async fn test_decide_endpoint_low_amount() {
     let app = create_test_router(engine);
 
     let request_body = json!({
-        "event_data": {
+        "event": {
             "amount": 500,
             "user_id": "user_456",
             "event_type": "transaction"
@@ -355,9 +412,10 @@ async fn test_decide_endpoint_low_amount() {
     let body = response.into_body().collect().await.unwrap().to_bytes();
     let json: Value = serde_json::from_slice(&body).unwrap();
 
-    // Verify response structure
-    assert!(json["score"].is_number());
-    assert!(json["action"].is_string() || json["action"].is_null());
+    // Verify new response structure
+    assert!(json["request_id"].is_string());
+    assert!(json["decision"]["scores"]["raw"].is_number());
+    assert!(json["decision"]["result"].is_string());
 }
 
 #[tokio::test]
@@ -366,7 +424,7 @@ async fn test_decide_endpoint_missing_fields() {
     let app = create_test_router(engine);
 
     let request_body = json!({
-        "event_data": {
+        "event": {
             "user_id": "user_789"
             // Missing amount field
         }
@@ -394,17 +452,17 @@ async fn test_decide_endpoint_missing_fields() {
     if response.status() == StatusCode::OK {
         let body = response.into_body().collect().await.unwrap().to_bytes();
         let json: Value = serde_json::from_slice(&body).unwrap();
-        assert!(json["score"].is_number());
+        assert!(json["decision"]["scores"]["raw"].is_number());
     }
 }
 
 #[tokio::test]
-async fn test_decide_endpoint_empty_event_data() {
+async fn test_decide_endpoint_empty_event() {
     let (_temp, engine) = create_test_engine().await;
     let app = create_test_router(engine);
 
     let request_body = json!({
-        "event_data": {}
+        "event": {}
     });
 
     let response = app
@@ -430,7 +488,7 @@ async fn test_decide_endpoint_empty_event_data() {
     if response.status() == StatusCode::OK {
         let body = response.into_body().collect().await.unwrap().to_bytes();
         let json: Value = serde_json::from_slice(&body).unwrap();
-        assert!(json["score"].is_number());
+        assert!(json["decision"]["scores"]["raw"].is_number());
     }
 }
 
@@ -440,7 +498,7 @@ async fn test_decide_endpoint_complex_nested_data() {
     let app = create_test_router(engine);
 
     let request_body = json!({
-        "event_data": {
+        "event": {
             "amount": 1500,
             "user": {
                 "id": "user_999",
@@ -479,9 +537,9 @@ async fn test_decide_endpoint_complex_nested_data() {
         let body = response.into_body().collect().await.unwrap().to_bytes();
         let json: Value = serde_json::from_slice(&body).unwrap();
 
-        // Verify response structure for complex nested data
-        assert!(json["score"].is_number());
-        assert!(json["action"].is_string() || json["action"].is_null());
+        // Verify new response structure for complex nested data
+        assert!(json["decision"]["scores"]["raw"].is_number());
+        assert!(json["decision"]["result"].is_string());
     }
 }
 
@@ -512,7 +570,7 @@ async fn test_decide_endpoint_response_fields() {
     let app = create_test_router(engine);
 
     let request_body = json!({
-        "event_data": {
+        "event": {
             "amount": 1200,
             "event_type": "transaction"
         }
@@ -533,14 +591,20 @@ async fn test_decide_endpoint_response_fields() {
     let body = response.into_body().collect().await.unwrap().to_bytes();
     let json: Value = serde_json::from_slice(&body).unwrap();
 
-    // Verify all expected fields are present
+    // Verify all expected fields per API spec
     assert!(json["request_id"].is_string());
-    assert!(json["pipeline_id"].is_string() || json["pipeline_id"].is_null());
-    assert!(json["action"].is_string() || json["action"].is_null());
-    assert!(json["score"].is_number());
-    assert!(json["triggered_rules"].is_array());
-    assert!(json["explanation"].is_string());
-    assert!(json["processing_time_ms"].is_number());
+    assert!(json["status"].is_number());
+    assert!(json["process_time_ms"].is_number());
+    assert!(json["pipeline_id"].is_string());
+
+    // Verify decision structure
+    assert!(json["decision"]["result"].is_string());
+    assert!(json["decision"]["actions"].is_array());
+    assert!(json["decision"]["scores"]["canonical"].is_number());
+    assert!(json["decision"]["scores"]["raw"].is_number());
+    assert!(json["decision"]["evidence"]["triggered_rules"].is_array());
+    assert!(json["decision"]["cognition"]["summary"].is_string());
+    assert!(json["decision"]["cognition"]["reason_codes"].is_array());
 }
 
 #[tokio::test]

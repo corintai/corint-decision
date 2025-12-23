@@ -2,7 +2,7 @@
 
 use crate::error::ServerError;
 use axum::{
-    extract::State,
+    extract::{rejection::JsonRejection, FromRequest, Request, State},
     http::StatusCode,
     response::{IntoResponse, Response},
     routing::{get, post},
@@ -12,6 +12,7 @@ use corint_core::Value;
 use corint_runtime::observability::otel::OtelContext;
 use corint_sdk::{DecisionEngine, DecisionRequest};
 use serde::{Deserialize, Serialize};
+use serde_json::json;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tower_http::cors::CorsLayer;
@@ -31,6 +32,46 @@ pub struct AppStateWithMetrics {
     pub otel_ctx: Arc<OtelContext>,
 }
 
+/// Custom JSON extractor with better error messages
+pub struct JsonExtractor<T>(pub T);
+
+#[axum::async_trait]
+impl<S, T> FromRequest<S> for JsonExtractor<T>
+where
+    T: serde::de::DeserializeOwned,
+    S: Send + Sync,
+{
+    type Rejection = (StatusCode, Json<serde_json::Value>);
+
+    async fn from_request(req: Request, state: &S) -> Result<Self, Self::Rejection> {
+        match Json::<T>::from_request(req, state).await {
+            Ok(value) => Ok(Self(value.0)),
+            Err(rejection) => {
+                let error_message = match rejection {
+                    JsonRejection::JsonDataError(err) => {
+                        format!("Invalid JSON data: {}", err)
+                    }
+                    JsonRejection::JsonSyntaxError(err) => {
+                        format!("JSON syntax error: {}", err)
+                    }
+                    JsonRejection::MissingJsonContentType(_) => {
+                        "Missing 'Content-Type: application/json' header".to_string()
+                    }
+                    _ => format!("Failed to parse JSON: {}", rejection),
+                };
+
+                Err((
+                    StatusCode::BAD_REQUEST,
+                    Json(json!({
+                        "error": error_message,
+                        "status": 400,
+                    })),
+                ))
+            }
+        }
+    }
+}
+
 /// Health check response
 #[derive(Debug, Serialize)]
 pub struct HealthResponse {
@@ -38,12 +79,21 @@ pub struct HealthResponse {
     pub version: String,
 }
 
-/// Decision request payload (supports Phase 5 multi-namespace format)
+/// Decision request payload (matches API_REQUEST.md spec)
 #[derive(Debug, Deserialize)]
 pub struct DecideRequestPayload {
     /// Event data (required)
     pub event: HashMap<String, serde_json::Value>,
 
+    /// User profile/context (optional)
+    #[serde(default)]
+    pub user: Option<HashMap<String, serde_json::Value>>,
+
+    /// Optional configuration
+    #[serde(default)]
+    pub options: Option<RequestOptions>,
+
+    // Legacy/internal namespaces (for backward compatibility)
     /// Feature computation results (optional)
     #[serde(default)]
     pub features: Option<HashMap<String, serde_json::Value>>,
@@ -63,39 +113,99 @@ pub struct DecideRequestPayload {
     /// Variables (optional)
     #[serde(default)]
     pub vars: Option<HashMap<String, serde_json::Value>>,
-
-    /// Enable detailed execution trace (optional)
-    #[serde(default)]
-    pub enable_trace: bool,
 }
 
-/// Decision response payload
+/// Request options
+#[derive(Debug, Default, Deserialize)]
+pub struct RequestOptions {
+    /// Whether to return computed feature values
+    #[serde(default)]
+    pub return_features: bool,
+
+    /// Whether to return detailed execution trace
+    #[serde(default)]
+    pub enable_trace: bool,
+
+    /// Whether to process asynchronously
+    #[serde(default, rename = "async")]
+    pub async_mode: bool,
+}
+
+/// Decision response payload (matches API_REQUEST.md spec)
 #[derive(Debug, Serialize)]
 pub struct DecideResponsePayload {
     /// Request ID (for tracking and correlation)
     pub request_id: String,
 
-    /// Pipeline ID that processed this request
-    pub pipeline_id: Option<String>,
-
-    /// Action
-    pub action: Option<String>,
-
-    /// Score
-    pub score: i32,
-
-    /// Triggered rules
-    pub triggered_rules: Vec<String>,
-
-    /// Explanation
-    pub explanation: String,
+    /// HTTP status code
+    pub status: u16,
 
     /// Processing time in milliseconds
-    pub processing_time_ms: u64,
+    pub process_time_ms: u64,
 
-    /// Detailed execution trace (only present if enable_trace was set)
+    /// Pipeline ID that processed this request
+    pub pipeline_id: String,
+
+    /// Decision result
+    pub decision: DecisionPayload,
+
+    /// Computed features (only present if options.return_features = true)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub features: Option<HashMap<String, serde_json::Value>>,
+
+    /// Detailed execution trace (only present if options.enable_trace = true)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub trace: Option<corint_runtime::ExecutionTrace>,
+}
+
+/// Decision payload (nested in response)
+#[derive(Debug, Serialize)]
+pub struct DecisionPayload {
+    /// Decision result: "ALLOW", "DENY", "REVIEW", "HOLD", "PASS"
+    pub result: String,
+
+    /// Actions to take
+    pub actions: Vec<String>,
+
+    /// Risk scores
+    pub scores: ScoresPayload,
+
+    /// Evidence
+    pub evidence: EvidencePayload,
+
+    /// Cognition (explanation)
+    pub cognition: CognitionPayload,
+}
+
+/// Scores payload
+#[derive(Debug, Serialize)]
+pub struct ScoresPayload {
+    /// Normalized risk score (0-1000)
+    pub canonical: i32,
+
+    /// Raw aggregated score from rules
+    pub raw: i32,
+
+    /// Confidence level (0-1) - optional
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub confidence: Option<f64>,
+}
+
+/// Evidence payload
+#[derive(Debug, Serialize)]
+pub struct EvidencePayload {
+    /// Array of triggered rule IDs
+    pub triggered_rules: Vec<String>,
+}
+
+/// Cognition payload
+#[derive(Debug, Serialize)]
+pub struct CognitionPayload {
+    /// Human-readable explanation
+    pub summary: String,
+
+    /// Machine-readable reason codes
+    pub reason_codes: Vec<String>,
 }
 
 /// Create REST API router
@@ -141,12 +251,14 @@ async fn health() -> Json<HealthResponse> {
 #[axum::debug_handler]
 async fn decide(
     State(state): State<AppState>,
-    Json(payload): Json<DecideRequestPayload>,
+    JsonExtractor(payload): JsonExtractor<DecideRequestPayload>,
 ) -> Result<Json<DecideResponsePayload>, ServerError> {
+    let options = payload.options.unwrap_or_default();
+
     info!(
         "Received decision request with {} event fields, enable_trace={}",
         payload.event.len(),
-        payload.enable_trace
+        options.enable_trace
     );
 
     // Helper function to convert namespace
@@ -162,7 +274,12 @@ async fn decide(
     // Create decision request with multi-namespace support
     let mut request = DecisionRequest::new(event_data);
 
-    // Add optional namespaces if provided
+    // Add user namespace if provided
+    if let Some(user) = payload.user {
+        request = request.with_vars(convert_namespace(user));
+    }
+
+    // Add optional namespaces if provided (legacy/internal)
     if let Some(features) = payload.features {
         request = request.with_features(convert_namespace(features));
     }
@@ -180,26 +297,106 @@ async fn decide(
     }
 
     // Enable tracing if requested
-    if payload.enable_trace {
+    if options.enable_trace {
         request = request.with_trace();
     }
 
     // Execute decision
     let response = state.engine.decide(request).await?;
 
-    // Convert action to string
-    let action_str = response.result.action.map(|a| format!("{:?}", a));
+    // Convert action to decision result string
+    let result_str = response
+        .result
+        .action
+        .map(|a| format!("{:?}", a).to_uppercase())
+        .unwrap_or_else(|| "PASS".to_string());
 
+    // Build the response
     Ok(Json(DecideResponsePayload {
         request_id: response.request_id,
-        pipeline_id: response.pipeline_id,
-        action: action_str,
-        score: response.result.score,
-        triggered_rules: response.result.triggered_rules,
-        explanation: response.result.explanation,
-        processing_time_ms: response.processing_time_ms,
+        status: 200,
+        process_time_ms: response.processing_time_ms,
+        pipeline_id: response.pipeline_id.unwrap_or_else(|| "default".to_string()),
+        decision: DecisionPayload {
+            result: result_str,
+            actions: Vec::new(), // TODO: Extract actions from context if available
+            scores: ScoresPayload {
+                canonical: normalize_score(response.result.score),
+                raw: response.result.score,
+                confidence: None,
+            },
+            evidence: EvidencePayload {
+                triggered_rules: response.result.triggered_rules,
+            },
+            cognition: CognitionPayload {
+                summary: response.result.explanation.clone(),
+                reason_codes: extract_reason_codes(&response.result.explanation),
+            },
+        },
+        features: if options.return_features {
+            Some(
+                response
+                    .result
+                    .context
+                    .into_iter()
+                    .map(|(k, v)| (k, value_to_json(v)))
+                    .collect(),
+            )
+        } else {
+            None
+        },
         trace: response.trace,
     }))
+}
+
+/// Normalize raw score to canonical 0-1000 range
+fn normalize_score(raw: i32) -> i32 {
+    // Clamp to 0-1000 range
+    raw.clamp(0, 1000)
+}
+
+/// Extract reason codes from explanation string
+fn extract_reason_codes(explanation: &str) -> Vec<String> {
+    // Simple extraction: look for common patterns
+    let mut codes = Vec::new();
+
+    // Extract codes from explanation (this is a basic implementation)
+    // In a real system, these would come from the decision result
+    if explanation.to_lowercase().contains("email") && explanation.to_lowercase().contains("not verified") {
+        codes.push("EMAIL_NOT_VERIFIED".to_string());
+    }
+    if explanation.to_lowercase().contains("phone") && explanation.to_lowercase().contains("not verified") {
+        codes.push("PHONE_NOT_VERIFIED".to_string());
+    }
+    if explanation.to_lowercase().contains("new account") || explanation.to_lowercase().contains("account_age") {
+        codes.push("NEW_ACCOUNT".to_string());
+    }
+    if explanation.to_lowercase().contains("high") && explanation.to_lowercase().contains("amount") {
+        codes.push("HIGH_TRANSACTION_AMOUNT".to_string());
+    }
+    if explanation.to_lowercase().contains("low risk") {
+        codes.push("LOW_RISK".to_string());
+    }
+
+    codes
+}
+
+/// Convert corint_core::Value to serde_json::Value
+fn value_to_json(v: Value) -> serde_json::Value {
+    match v {
+        Value::Null => serde_json::Value::Null,
+        Value::Bool(b) => serde_json::Value::Bool(b),
+        Value::Number(n) => serde_json::json!(n),
+        Value::String(s) => serde_json::Value::String(s),
+        Value::Array(arr) => serde_json::Value::Array(arr.into_iter().map(value_to_json).collect()),
+        Value::Object(obj) => {
+            let map: serde_json::Map<String, serde_json::Value> = obj
+                .into_iter()
+                .map(|(k, v)| (k, value_to_json(v)))
+                .collect();
+            serde_json::Value::Object(map)
+        }
+    }
 }
 
 /// Convert serde_json::Value to corint_core::Value
@@ -386,22 +583,37 @@ mod tests {
     fn test_decide_response_payload_fields() {
         let response = DecideResponsePayload {
             request_id: "req_123".to_string(),
-            pipeline_id: Some("pipeline_001".to_string()),
-            action: Some("APPROVE".to_string()),
-            score: 85,
-            triggered_rules: vec!["rule1".to_string(), "rule2".to_string()],
-            explanation: "Low risk transaction".to_string(),
-            processing_time_ms: 42,
+            status: 200,
+            process_time_ms: 42,
+            pipeline_id: "pipeline_001".to_string(),
+            decision: DecisionPayload {
+                result: "ALLOW".to_string(),
+                actions: vec![],
+                scores: ScoresPayload {
+                    canonical: 85,
+                    raw: 85,
+                    confidence: None,
+                },
+                evidence: EvidencePayload {
+                    triggered_rules: vec!["rule1".to_string(), "rule2".to_string()],
+                },
+                cognition: CognitionPayload {
+                    summary: "Low risk transaction".to_string(),
+                    reason_codes: vec!["LOW_RISK".to_string()],
+                },
+            },
+            features: None,
             trace: None,
         };
 
         assert_eq!(response.request_id, "req_123");
-        assert_eq!(response.pipeline_id, Some("pipeline_001".to_string()));
-        assert_eq!(response.action, Some("APPROVE".to_string()));
-        assert_eq!(response.score, 85);
-        assert_eq!(response.triggered_rules.len(), 2);
-        assert_eq!(response.explanation, "Low risk transaction");
-        assert_eq!(response.processing_time_ms, 42);
+        assert_eq!(response.status, 200);
+        assert_eq!(response.pipeline_id, "pipeline_001");
+        assert_eq!(response.decision.result, "ALLOW");
+        assert_eq!(response.decision.scores.canonical, 85);
+        assert_eq!(response.decision.evidence.triggered_rules.len(), 2);
+        assert_eq!(response.decision.cognition.summary, "Low risk transaction");
+        assert_eq!(response.process_time_ms, 42);
         assert!(response.trace.is_none());
     }
 
@@ -409,16 +621,44 @@ mod tests {
     fn test_decide_request_payload_empty() {
         let payload = DecideRequestPayload {
             event: HashMap::new(),
+            user: None,
+            options: None,
             features: None,
             api: None,
             service: None,
             llm: None,
             vars: None,
-            enable_trace: false,
         };
 
         assert_eq!(payload.event.len(), 0);
-        assert!(!payload.enable_trace);
+        assert!(payload.options.is_none());
+    }
+
+    #[test]
+    fn test_request_options_defaults() {
+        let options = RequestOptions::default();
+        assert!(!options.return_features);
+        assert!(!options.enable_trace);
+        assert!(!options.async_mode);
+    }
+
+    #[test]
+    fn test_normalize_score() {
+        assert_eq!(normalize_score(500), 500);
+        assert_eq!(normalize_score(0), 0);
+        assert_eq!(normalize_score(1000), 1000);
+        assert_eq!(normalize_score(-100), 0);
+        assert_eq!(normalize_score(1500), 1000);
+    }
+
+    #[test]
+    fn test_extract_reason_codes() {
+        let codes = extract_reason_codes("Low risk transaction");
+        assert!(codes.contains(&"LOW_RISK".to_string()));
+
+        let codes2 = extract_reason_codes("Email not verified, high transaction amount");
+        assert!(codes2.contains(&"EMAIL_NOT_VERIFIED".to_string()));
+        assert!(codes2.contains(&"HIGH_TRANSACTION_AMOUNT".to_string()));
     }
 
     #[test]
@@ -471,12 +711,14 @@ async fn metrics(State(state): State<AppStateWithMetrics>) -> Response {
 #[axum::debug_handler]
 async fn decide_with_metrics(
     State(state): State<AppStateWithMetrics>,
-    Json(payload): Json<DecideRequestPayload>,
+    JsonExtractor(payload): JsonExtractor<DecideRequestPayload>,
 ) -> Result<Json<DecideResponsePayload>, ServerError> {
+    let options = payload.options.unwrap_or_default();
+
     info!(
         "Received decision request with {} event fields, enable_trace={}",
         payload.event.len(),
-        payload.enable_trace
+        options.enable_trace
     );
 
     // Helper function to convert namespace
@@ -492,7 +734,12 @@ async fn decide_with_metrics(
     // Create decision request with multi-namespace support
     let mut request = DecisionRequest::new(event_data);
 
-    // Add optional namespaces if provided
+    // Add user namespace if provided
+    if let Some(user) = payload.user {
+        request = request.with_vars(convert_namespace(user));
+    }
+
+    // Add optional namespaces if provided (legacy/internal)
     if let Some(features) = payload.features {
         request = request.with_features(convert_namespace(features));
     }
@@ -510,24 +757,54 @@ async fn decide_with_metrics(
     }
 
     // Enable tracing if requested
-    if payload.enable_trace {
+    if options.enable_trace {
         request = request.with_trace();
     }
 
     // Execute decision
     let response = state.engine.decide(request).await?;
 
-    // Convert action to string
-    let action_str = response.result.action.map(|a| format!("{:?}", a));
+    // Convert action to decision result string
+    let result_str = response
+        .result
+        .action
+        .map(|a| format!("{:?}", a).to_uppercase())
+        .unwrap_or_else(|| "PASS".to_string());
 
+    // Build the response
     Ok(Json(DecideResponsePayload {
         request_id: response.request_id,
-        pipeline_id: response.pipeline_id,
-        action: action_str,
-        score: response.result.score,
-        triggered_rules: response.result.triggered_rules,
-        explanation: response.result.explanation,
-        processing_time_ms: response.processing_time_ms,
+        status: 200,
+        process_time_ms: response.processing_time_ms,
+        pipeline_id: response.pipeline_id.unwrap_or_else(|| "default".to_string()),
+        decision: DecisionPayload {
+            result: result_str,
+            actions: Vec::new(),
+            scores: ScoresPayload {
+                canonical: normalize_score(response.result.score),
+                raw: response.result.score,
+                confidence: None,
+            },
+            evidence: EvidencePayload {
+                triggered_rules: response.result.triggered_rules,
+            },
+            cognition: CognitionPayload {
+                summary: response.result.explanation.clone(),
+                reason_codes: extract_reason_codes(&response.result.explanation),
+            },
+        },
+        features: if options.return_features {
+            Some(
+                response
+                    .result
+                    .context
+                    .into_iter()
+                    .map(|(k, v)| (k, value_to_json(v)))
+                    .collect(),
+            )
+        } else {
+            None
+        },
         trace: response.trace,
     }))
 }

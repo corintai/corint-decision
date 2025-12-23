@@ -43,6 +43,7 @@ sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio-n
 # Other
 uuid = { version = "1.6", features = ["v4", "serde"] }
 chrono = { version = "0.4", features = ["serde"] }
+rand = "0.8"
 
 [dev-dependencies]
 tokio-test = "0.4"

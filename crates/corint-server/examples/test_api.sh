@@ -27,15 +27,11 @@ echo -e "${BLUE}Test 2: Make a decision (user_001)${NC}"
 curl -s -X POST "$SERVER_URL/v1/decide" \
   -H "Content-Type: application/json" \
   -d '{
-    "event_data": {
+    "event": {
+      "type": "transaction",
       "user_id": "user_001",
       "device_id": "device_001",
-      "ip_address": "203.0.113.1",
-      "event.type": "transaction",
-      "event.user_id": "user_001",
-      "event.device_id": "device_001",
-      "event.ip_address": "203.0.113.1",
-      "event.event_type": "transaction"
+      "ip_address": "203.0.113.1"
     }
   }' | jq '.'
 echo
@@ -46,17 +42,42 @@ echo -e "${BLUE}Test 3: Make a decision (user_003 - higher risk)${NC}"
 curl -s -X POST "$SERVER_URL/v1/decide" \
   -H "Content-Type: application/json" \
   -d '{
-    "event_data": {
+    "event": {
+      "type": "transaction",
       "user_id": "user_003",
       "device_id": "device_003",
-      "ip_address": "203.0.113.3",
-      "event.type": "transaction",
-      "event.user_id": "user_003",
-      "event.device_id": "device_003",
-      "event.ip_address": "203.0.113.3",
-      "event.event_type": "transaction"
+      "ip_address": "203.0.113.3"
     }
   }' | jq '.'
+echo
+echo
+
+# Test 4: Make a decision with user context and options
+echo -e "${BLUE}Test 4: Make a decision with user context and trace${NC}"
+curl -s -X POST "$SERVER_URL/v1/decide" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "event": {
+      "type": "transaction",
+      "user_id": "user_001",
+      "amount": 5000,
+      "currency": "USD"
+    },
+    "user": {
+      "account_age_days": 365,
+      "email_verified": true,
+      "phone_verified": true
+    },
+    "options": {
+      "return_features": true,
+      "enable_trace": true
+    }
+  }' | jq '{
+    request_id: .request_id,
+    status: .status,
+    decision: .decision,
+    features: .features
+  }'
 echo
 echo
 

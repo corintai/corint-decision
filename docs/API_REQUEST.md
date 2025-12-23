@@ -451,7 +451,7 @@ curl -X POST https://yourdomain/v1/decide \
       }
     },
     "user": {
-      "account_age_days": 7,
+      "account_age_days": 3,
       "email_verified": false,
       "phone_verified": false,
       "timezone": "America/New_York"
@@ -481,9 +481,7 @@ curl -X POST https://yourdomain/v1/decide \
     },
     "evidence": {
       "triggered_rules": [
-        "confirmed_fraud_pattern",
-        "complex_fraud_detection",
-        "risk_threshold_check"
+        "confirmed_fraud_pattern"
       ]
     },
     "cognition": {
@@ -837,7 +835,6 @@ curl -X POST https://yourdomain/v1/decide \
 {
   "request_id": "req_20251223104500_p6q7r8",
   "status": 500,
-  "timestamp": "2025-12-23T10:45:00.789Z",
   "error": {
     "code": "INTERNAL_ERROR",
     "message": "An unexpected error occurred while processing your request",
@@ -876,7 +873,6 @@ curl -X POST https://yourdomain/v1/decide \
 {
   "request_id": "req_20251223110000_s9t0u1",
   "status": 202,
-  "timestamp": "2025-12-23T11:00:00.123Z",
   "message": "Request accepted for processing",
   "status_url": "https://yourdomain/v1/decide/status/req_20251223110000_s9t0u1"
 }
@@ -908,30 +904,27 @@ curl https://yourdomain/v1/decide/status/req_20251223110000_s9t0u1 \
 {
   "request_id": "req_20251223110000_s9t0u1",
   "status": 200,
-  "timestamp": "2025-12-23T11:00:05.456Z",
   "processing_status": "completed",
-  "result": {
-    "pipeline_id": "transaction_fraud_detection",
-    "process_time_ms": 145,
-    "decision": {
-      "result": "ALLOW",
-      "actions": [],
-      "scores": {
-        "canonical": 250,
-        "raw": 25
-      },
-      "evidence": {
-        "triggered_rules": []
-      },
-      "cognition": {
-        "summary": "Transaction approved with low risk score",
-        "reason_codes": ["LOW_RISK", "NORMAL_TRANSACTION"]
-      }
+  "process_time_ms": 145,
+  "pipeline_id": "transaction_fraud_detection",
+  "decision": {
+    "result": "ALLOW",
+    "actions": [],
+    "scores": {
+      "canonical": 250,
+      "raw": 25
     },
-    "features": {
-      "cnt_userid_txn_24h": 5,
-      "sum_userid_txn_amt_24h": 1250.0
+    "evidence": {
+      "triggered_rules": []
+    },
+    "cognition": {
+      "summary": "Transaction approved with low risk score",
+      "reason_codes": ["LOW_RISK", "NORMAL_TRANSACTION"]
     }
+  },
+  "features": {
+    "cnt_userid_txn_24h": 5,
+    "sum_userid_txn_amt_24h": 1250.0
   }
 }
 ```

@@ -12,7 +12,7 @@ echo "2. Fraud Detection - Transaction Event..."
 curl -s -X POST http://localhost:8080/v1/decide \
   -H "Content-Type: application/json" \
   -d '{
-    "event_data": {
+    "event": {
       "type": "transaction",
       "user_id": "user_12345",
       "amount": 5000,
@@ -27,11 +27,11 @@ curl -s -X POST http://localhost:8080/v1/decide \
 echo ""
 echo ""
 
-echo "3. Payment Detection - Standard Amount (<= $1000)..."
+echo "3. Payment Detection - Standard Amount (<= \$1000)..."
 curl -s -X POST http://localhost:8080/v1/decide \
   -H "Content-Type: application/json" \
   -d '{
-    "event_data": {
+    "event": {
       "type": "payment",
       "payment_amount": 500,
       "user_id": "user_98765",
@@ -46,11 +46,11 @@ curl -s -X POST http://localhost:8080/v1/decide \
 echo ""
 echo ""
 
-echo "4. Payment Detection - High Amount (> $1000)..."
+echo "4. Payment Detection - High Amount (> \$1000)..."
 curl -s -X POST http://localhost:8080/v1/decide \
   -H "Content-Type: application/json" \
   -d '{
-    "event_data": {
+    "event": {
       "type": "payment",
       "payment_amount": 5000,
       "user_id": "user_premium_001",
@@ -70,7 +70,7 @@ echo "5. Edge Case - Unmatched Event Type (login)..."
 curl -s -X POST http://localhost:8080/v1/decide \
   -H "Content-Type: application/json" \
   -d '{
-    "event_data": {
+    "event": {
       "type": "login",
       "user_id": "user_12345",
       "timestamp": "2025-12-11T13:00:00Z"
@@ -79,11 +79,11 @@ curl -s -X POST http://localhost:8080/v1/decide \
 echo ""
 echo ""
 
-echo "6. Payment Detection with Step Trace - Show Step Details..."
+echo "6. Payment Detection with Trace - Show Decision Details..."
 curl -s -X POST http://localhost:8080/v1/decide \
   -H "Content-Type: application/json" \
   -d '{
-    "event_data": {
+    "event": {
       "type": "payment",
       "payment_amount": 5000,
       "user_id": "user_premium_001",
@@ -95,14 +95,20 @@ curl -s -X POST http://localhost:8080/v1/decide \
       "timestamp": "2025-12-11T12:00:00Z"
     },
     "options": {
-      "enable_trace": true
+      "enable_trace": true,
+      "return_features": true
     }
   }' | jq '{
-    pipeline_id: .trace.pipeline.pipeline_id,
-    steps: .trace.pipeline.steps,
-    rulesets: [.trace.pipeline.rulesets[].ruleset_id],
-    total_rules_evaluated: .trace.rules_evaluated,
-    total_rules_triggered: .trace.rules_triggered
+    request_id: .request_id,
+    status: .status,
+    process_time_ms: .process_time_ms,
+    pipeline_id: .pipeline_id,
+    decision: .decision,
+    trace_summary: {
+      pipeline_id: .trace.pipeline.pipeline_id,
+      steps_count: (.trace.pipeline.steps | length),
+      rulesets: [.trace.pipeline.rulesets[].ruleset_id]
+    }
   }'
 echo ""
 echo ""
