@@ -10,7 +10,7 @@ use axum::{
 };
 use corint_core::Value;
 use corint_runtime::observability::otel::OtelContext;
-use corint_sdk::{DecisionEngine, DecisionRequest};
+use corint_sdk::{DecisionEngine, DecisionRequest, ScoreNormalizer};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::collections::HashMap;
@@ -349,10 +349,13 @@ async fn decide(
     }))
 }
 
-/// Normalize raw score to canonical 0-1000 range
+/// Normalize raw score to canonical 0-1000 range using sigmoid/logistic function
+///
+/// Uses the SDK's ScoreNormalizer with default parameters for industry-standard
+/// score normalization that provides smooth S-curve mapping.
 fn normalize_score(raw: i32) -> i32 {
-    // Clamp to 0-1000 range
-    raw.clamp(0, 1000)
+    // Use sigmoid normalization for smooth, production-grade score mapping
+    ScoreNormalizer::default().normalize(raw)
 }
 
 /// Extract reason codes from explanation string
@@ -644,11 +647,30 @@ mod tests {
 
     #[test]
     fn test_normalize_score() {
-        assert_eq!(normalize_score(500), 500);
-        assert_eq!(normalize_score(0), 0);
-        assert_eq!(normalize_score(1000), 1000);
+        // Negative scores become 0
         assert_eq!(normalize_score(-100), 0);
-        assert_eq!(normalize_score(1500), 1000);
+        assert_eq!(normalize_score(-1), 0);
+
+        // Sigmoid normalization provides smooth S-curve
+        // Center point (500) should map to ~500
+        let center = normalize_score(500);
+        assert!(center >= 495 && center <= 505, "Center: {}", center);
+
+        // Low scores should be compressed
+        let low = normalize_score(100);
+        assert!(low > 0 && low < 200, "Low: {}", low);
+
+        // High scores should be compressed
+        let high = normalize_score(1000);
+        assert!(high > 700 && high < 1000, "High: {}", high);
+
+        // Very high scores should saturate near 1000
+        let very_high = normalize_score(5000);
+        assert!(very_high >= 900 && very_high <= 1000, "Very high: {}", very_high);
+
+        // Scores should increase monotonically
+        assert!(normalize_score(300) < normalize_score(500));
+        assert!(normalize_score(500) < normalize_score(700));
     }
 
     #[test]

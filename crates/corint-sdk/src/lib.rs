@@ -22,6 +22,7 @@ pub mod builder;
 pub mod config;
 pub mod decision_engine;
 pub mod error;
+pub mod score;
 pub mod validator;
 
 // Re-export main types
@@ -31,6 +32,9 @@ pub use config::{
 };
 pub use decision_engine::{DecisionEngine, DecisionOptions, DecisionRequest, DecisionResponse};
 pub use error::{Result, SdkError};
+
+// Re-export score normalization types
+pub use score::ScoreNormalizer;
 
 // Re-export validator types
 pub use validator::{
