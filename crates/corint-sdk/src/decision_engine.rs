@@ -8,7 +8,7 @@ use corint_core::ir::Program;
 use corint_core::Value;
 use corint_parser::{PipelineParser, RegistryParser, RuleParser, RulesetParser};
 use corint_runtime::{
-    ApiConfig, ConditionTrace, ContextInput, DecisionLogicTrace, DecisionResult, ExecutionTrace,
+    ApiConfig, ConclusionTrace, ConditionTrace, ContextInput, DecisionResult, ExecutionTrace,
     ExternalApiClient, MetricsCollector, PipelineExecutor, PipelineTrace, RuleTrace, RulesetTrace,
     StepTrace,
 };
@@ -1143,43 +1143,44 @@ impl DecisionEngine {
         match (left, right) {
             (Value::Number(l), Value::Number(r)) => {
                 match op {
-                    "Gt" => l > r,
-                    "Ge" => l >= r,
-                    "Lt" => l < r,
-                    "Le" => l <= r,
-                    "Eq" => (l - r).abs() < f64::EPSILON,
-                    "Ne" => (l - r).abs() >= f64::EPSILON,
+                    // Enum-style names
+                    "Gt" | ">" => l > r,
+                    "Ge" | ">=" => l >= r,
+                    "Lt" | "<" => l < r,
+                    "Le" | "<=" => l <= r,
+                    "Eq" | "==" => (l - r).abs() < f64::EPSILON,
+                    "Ne" | "!=" => (l - r).abs() >= f64::EPSILON,
                     _ => false,
                 }
             }
             (Value::String(l), Value::String(r)) => {
                 match op {
-                    "Eq" => l == r,
-                    "Ne" => l != r,
-                    "Gt" => l > r,
-                    "Ge" => l >= r,
-                    "Lt" => l < r,
-                    "Le" => l <= r,
-                    "Contains" => l.contains(r.as_str()),
-                    "StartsWith" => l.starts_with(r.as_str()),
-                    "EndsWith" => l.ends_with(r.as_str()),
+                    "Eq" | "==" => l == r,
+                    "Ne" | "!=" => l != r,
+                    "Gt" | ">" => l > r,
+                    "Ge" | ">=" => l >= r,
+                    "Lt" | "<" => l < r,
+                    "Le" | "<=" => l <= r,
+                    "Contains" | "contains" => l.contains(r.as_str()),
+                    "StartsWith" | "starts_with" => l.starts_with(r.as_str()),
+                    "EndsWith" | "ends_with" => l.ends_with(r.as_str()),
                     _ => false,
                 }
             }
             (Value::Bool(l), Value::Bool(r)) => {
                 match op {
-                    "Eq" => l == r,
-                    "Ne" => l != r,
-                    "And" => *l && *r,
-                    "Or" => *l || *r,
+                    "Eq" | "==" => l == r,
+                    "Ne" | "!=" => l != r,
+                    "And" | "&&" => *l && *r,
+                    "Or" | "||" => *l || *r,
                     _ => false,
                 }
             }
             // Handle cross-type comparisons for equality
             _ => {
                 match op {
-                    "Eq" => left == right,
-                    "Ne" => left != right,
+                    "Eq" | "==" => left == right,
+                    "Ne" | "!=" => left != right,
                     _ => false,
                 }
             }
@@ -1236,16 +1237,27 @@ impl DecisionEngine {
         expr: &serde_json::Value,
         event_data: &HashMap<String, Value>,
     ) -> Option<Value> {
-        // Handle FieldAccess: {"FieldAccess": ["event", "transaction", "amount"]}
+        // Handle FieldAccess: {"FieldAccess": ["event", "transaction", "amount"]} or {"FieldAccess": ["features", "transaction_sum_7d"]}
         if let Some(field_access) = expr.get("FieldAccess") {
             if let Some(arr) = field_access.as_array() {
                 let path: Vec<String> = arr.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect();
-                // Strip "event" prefix since event_data is already the event content
-                let effective_path: Vec<String> = if path.first().map(|s| s.as_str()) == Some("event") {
-                    path.into_iter().skip(1).collect()
-                } else {
-                    path
-                };
+                // Strip namespace prefixes since event_data contains merged data
+                // Field paths may be:
+                // - ["event", "transaction", "amount"] - strip "event" prefix
+                // - ["features", "transaction_sum_7d"] - strip "features" prefix
+                // - ["api", "device_fingerprint", "score"] - strip "api" prefix
+                let effective_path: Vec<String> =
+                    if let Some(first) = path.first() {
+                        match first.as_str() {
+                            // Known namespaces - strip the prefix since trace_data is a flat merge
+                            "event" | "features" | "api" | "service" | "llm" | "vars" => {
+                                path.into_iter().skip(1).collect()
+                            }
+                            _ => path,
+                        }
+                    } else {
+                        path
+                    };
                 let result = Self::get_field_value(event_data, &effective_path);
                 if result.is_none() {
                     tracing::debug!("Failed to get field value for path {:?}, event_data keys: {:?}", effective_path, event_data.keys().collect::<Vec<_>>());
@@ -1448,7 +1460,7 @@ impl DecisionEngine {
     /// Convert a single JSON value to ConditionTrace
     fn json_value_to_condition_trace(
         json: &serde_json::Value,
-        triggered: bool,
+        _triggered: bool,
         event_data: &HashMap<String, Value>,
     ) -> ConditionTrace {
         let expr_type = json.get("type").and_then(|v| v.as_str()).unwrap_or("");
@@ -1465,17 +1477,25 @@ impl DecisionEngine {
                     .get("group_type")
                     .and_then(|v| v.as_str())
                     .unwrap_or("all");
-                let nested_conditions = json
+                let nested_conditions: Vec<ConditionTrace> = json
                     .get("conditions")
                     .and_then(|v| v.as_array())
                     .map(|arr| {
                         arr.iter()
-                            .map(|c| Self::json_value_to_condition_trace(c, triggered, event_data))
+                            .map(|c| Self::json_value_to_condition_trace(c, false, event_data))
                             .collect()
                     })
                     .unwrap_or_default();
 
-                ConditionTrace::group(group_type, nested_conditions, triggered)
+                // Calculate actual result based on nested results
+                let result = match group_type {
+                    "all" => nested_conditions.iter().all(|c| c.result),
+                    "any" => nested_conditions.iter().any(|c| c.result),
+                    "not" => !nested_conditions.iter().all(|c| c.result),
+                    _ => false,
+                };
+
+                ConditionTrace::group(group_type, nested_conditions, result)
             }
             "binary" => {
                 // Check right side type
@@ -1495,37 +1515,54 @@ impl DecisionEngine {
                 // Check if right side is a simple literal (not boolean)
                 let is_simple_literal = right_type == "literal" && !is_boolean_literal;
 
-                // Extract left value from event data, but skip for boolean comparisons
-                let left_value = if is_boolean_literal {
-                    None
+                // Extract left value from event data
+                let left_val = json.get("left")
+                    .and_then(|left| Self::extract_value_from_json_expr(left, event_data));
+
+                // Extract right value
+                let right_val = right_json.and_then(|right| {
+                    Self::extract_value_from_json_expr(right, event_data)
+                });
+
+                // Calculate the actual result
+                let operator = json.get("operator").and_then(|v| v.as_str()).unwrap_or("");
+                let result = if let (Some(ref lv), Some(ref rv)) = (&left_val, &right_val) {
+                    Self::evaluate_comparison(lv, operator, rv)
                 } else {
-                    json.get("left")
-                        .and_then(|left| Self::extract_value_from_json_expr(left, event_data))
+                    false
                 };
 
-                // Extract right value only if it's NOT a simple literal
-                // (for literals, the value is already visible in the expression string)
-                let right_value = if is_boolean_literal || is_simple_literal {
+                // For display: skip values for boolean literals and simple literals
+                let left_value_display = if is_boolean_literal {
                     None
                 } else {
-                    right_json.and_then(|right| {
-                        Self::extract_value_from_json_expr(right, event_data)
-                    })
+                    left_val
+                };
+
+                let right_value_display = if is_boolean_literal || is_simple_literal {
+                    None
+                } else {
+                    right_val
                 };
 
                 ConditionTrace {
                     expression,
-                    left_value,
+                    left_value: left_value_display,
                     operator: None, // Operator is already visible in expression string
-                    right_value,
-                    result: triggered,
+                    right_value: right_value_display,
+                    result,
                     nested: None,
                     group_type: None,
                 }
             }
             _ => {
-                // Literal, field access, or other
-                ConditionTrace::new(expression, triggered)
+                // Literal, field access, or other - evaluate to determine result
+                let result = if let Some(val) = Self::extract_value_from_json_expr(json, event_data) {
+                    Self::is_truthy(&val)
+                } else {
+                    false
+                };
+                ConditionTrace::new(expression, result)
             }
         }
     }
@@ -1550,11 +1587,22 @@ impl DecisionEngine {
                     })
                     .unwrap_or_default();
 
-                // Handle namespace prefixes (e.g., "event.transaction.amount")
-                // Strip the "event" prefix since event_data is already the event content
+                // Handle namespace prefixes
+                // event_data contains both event data and computed features/vars merged together
+                // Field paths may be:
+                // - ["event", "transaction", "amount"] - strip "event" prefix
+                // - ["features", "transaction_sum_7d"] - strip "features" prefix (features are flat in trace_data)
+                // - ["api", "device_fingerprint", "score"] - strip "api" prefix
+                // - ["user_id"] - no prefix, look up directly
                 let effective_path: Vec<String> =
-                    if path.first().map(|s| s.as_str()) == Some("event") {
-                        path.into_iter().skip(1).collect()
+                    if let Some(first) = path.first() {
+                        match first.as_str() {
+                            // Known namespaces - strip the prefix since trace_data is a flat merge
+                            "event" | "features" | "api" | "service" | "llm" | "vars" => {
+                                path.into_iter().skip(1).collect()
+                            }
+                            _ => path,
+                        }
                     } else {
                         path
                     };
@@ -2742,6 +2790,29 @@ impl DecisionEngine {
                 rulesets_map.entry(ruleset_id).or_default().push(rule_exec);
             }
 
+            // Merge event_data with features and execution variables for trace generation
+            // This ensures that both pre-provided features and computed values are available
+            let mut trace_data = request.event_data.clone();
+
+            // First, merge pre-provided features from the request
+            if let Some(ref features) = request.features {
+                tracing::debug!("Merging {} pre-provided features into trace_data", features.len());
+                for (key, value) in features {
+                    tracing::debug!("  Feature: {} = {:?}", key, value);
+                    trace_data.insert(key.clone(), value.clone());
+                }
+            }
+
+            // Then merge computed variables from execution (may override features)
+            for (key, value) in &execution_result.variables {
+                // Only merge top-level keys that don't start with "__" (system variables)
+                if !key.starts_with("__") {
+                    trace_data.insert(key.clone(), value.clone());
+                }
+            }
+
+            tracing::debug!("Final trace_data has {} keys", trace_data.len());
+
             // Build ruleset traces
             for (ruleset_id, rules) in rulesets_map {
                 let mut ruleset_trace = RulesetTrace::new(ruleset_id);
@@ -2759,7 +2830,7 @@ impl DecisionEngine {
                         let condition_traces = Self::condition_group_json_to_traces(
                             condition_group_json_str,
                             rule_exec.triggered,
-                            &request.event_data,
+                            &trace_data,
                         );
                         rule_trace.conditions.extend(condition_traces);
                     } else if let Some(ref conditions_json_str) = rule_exec.conditions_json {
@@ -2767,7 +2838,7 @@ impl DecisionEngine {
                         let condition_traces = Self::json_to_condition_traces(
                             conditions_json_str,
                             rule_exec.triggered,
-                            &request.event_data,
+                            &trace_data,
                         );
                         rule_trace.conditions.extend(condition_traces);
                     } else if let Some(ref conditions_json) = rule_exec.rule_conditions {
@@ -2810,7 +2881,7 @@ impl DecisionEngine {
                             ruleset_score,
                             &request.event_data,
                         );
-                        ruleset_trace.decision_logic = decision_logic_traces;
+                        ruleset_trace.conclusion = decision_logic_traces;
                     }
                 } else if let Some(ref action) = combined_result.action {
                     // Fallback to combined result if ruleset-specific result not found
@@ -2857,7 +2928,7 @@ impl DecisionEngine {
         matched_action: Option<&str>,
         _total_score: i32,
         _event_data: &HashMap<String, Value>,
-    ) -> Vec<DecisionLogicTrace> {
+    ) -> Vec<ConclusionTrace> {
         let mut traces = Vec::new();
 
         // Parse the decision_logic JSON
@@ -2916,8 +2987,8 @@ impl DecisionEngine {
                 matched_found = true;
             }
 
-            let mut trace = DecisionLogicTrace::new(condition_str, matched);
-            trace.action = action;
+            let mut trace = ConclusionTrace::new(condition_str, matched);
+            trace.signal = action;
             trace.reason = reason;
 
             traces.push(trace);

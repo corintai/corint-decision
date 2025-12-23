@@ -141,45 +141,49 @@ impl RuleTrace {
     }
 }
 
-/// Trace of decision logic evaluation
+/// Trace of conclusion logic evaluation
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct DecisionLogicTrace {
+pub struct ConclusionTrace {
     /// The condition being evaluated (e.g., "total_score >= 100")
     pub condition: String,
 
     /// Whether this condition matched
     pub matched: bool,
 
-    /// The resulting action if matched
+    /// The resulting signal if matched
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub action: Option<String>,
+    pub signal: Option<String>,
 
     /// The reason/explanation if matched
     #[serde(skip_serializing_if = "Option::is_none")]
     pub reason: Option<String>,
 }
 
-impl DecisionLogicTrace {
-    /// Create a new decision logic trace
+impl ConclusionTrace {
+    /// Create a new conclusion trace
     pub fn new(condition: String, matched: bool) -> Self {
         Self {
             condition,
             matched,
-            action: None,
+            signal: None,
             reason: None,
         }
     }
 
-    /// Create a matched decision logic trace with action
-    pub fn matched(condition: String, action: &str, reason: Option<&str>) -> Self {
+    /// Create a matched conclusion trace with signal
+    pub fn matched(condition: String, signal: &str, reason: Option<&str>) -> Self {
         Self {
             condition,
             matched: true,
-            action: Some(action.to_string()),
+            signal: Some(signal.to_string()),
             reason: reason.map(|s| s.to_string()),
         }
     }
 }
+
+// Backwards compatibility alias
+#[deprecated(since = "0.1.0", note = "Use ConclusionTrace instead")]
+pub type DecisionLogicTrace = ConclusionTrace;
 
 /// Trace of a ruleset evaluation
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -193,12 +197,12 @@ pub struct RulesetTrace {
     /// Total accumulated score from this ruleset
     pub total_score: i32,
 
-    /// Decision logic evaluation traces
-    pub decision_logic: Vec<DecisionLogicTrace>,
+    /// Conclusion logic evaluation traces
+    pub conclusion: Vec<ConclusionTrace>,
 
-    /// The final action from this ruleset
+    /// The final signal from this ruleset
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub action: Option<String>,
+    pub signal: Option<String>,
 
     /// The final reason/explanation
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -212,8 +216,8 @@ impl RulesetTrace {
             ruleset_id,
             rules: Vec::new(),
             total_score: 0,
-            decision_logic: Vec::new(),
-            action: None,
+            conclusion: Vec::new(),
+            signal: None,
             reason: None,
         }
     }
@@ -230,8 +234,8 @@ impl RulesetTrace {
     }
 
     /// Set the final decision
-    pub fn with_decision(mut self, action: &str, reason: Option<&str>) -> Self {
-        self.action = Some(action.to_string());
+    pub fn with_decision(mut self, signal: &str, reason: Option<&str>) -> Self {
+        self.signal = Some(signal.to_string());
         self.reason = reason.map(|s| s.to_string());
         self
     }
@@ -358,9 +362,9 @@ pub struct PipelineTrace {
     /// Ruleset execution traces
     pub rulesets: Vec<RulesetTrace>,
 
-    /// Final decision logic evaluation traces
+    /// Final conclusion evaluation traces
     #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub final_decision_logic: Vec<DecisionLogicTrace>,
+    pub final_conclusion: Vec<ConclusionTrace>,
 }
 
 impl PipelineTrace {
@@ -373,7 +377,7 @@ impl PipelineTrace {
             executed_branch: None,
             branch_conditions: Vec::new(),
             rulesets: Vec::new(),
-            final_decision_logic: Vec::new(),
+            final_conclusion: Vec::new(),
         }
     }
 
@@ -415,13 +419,16 @@ pub struct ExecutionTrace {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub pipeline: Option<PipelineTrace>,
 
-    /// Total execution time in milliseconds
+    /// Total execution time in milliseconds (internal use only, not serialized)
+    #[serde(skip)]
     pub total_time_ms: u64,
 
-    /// Number of rules evaluated
+    /// Number of rules evaluated (internal use only, not serialized)
+    #[serde(skip)]
     pub rules_evaluated: usize,
 
-    /// Number of rules triggered
+    /// Number of rules triggered (internal use only, not serialized)
+    #[serde(skip)]
     pub rules_triggered: usize,
 }
 
@@ -516,7 +523,7 @@ mod tests {
 
         assert_eq!(trace.total_score, 50);
         assert_eq!(trace.rules.len(), 2);
-        assert_eq!(trace.action, Some("review".to_string()));
+        assert_eq!(trace.signal, Some("review".to_string()));
     }
 
     #[test]
