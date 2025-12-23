@@ -94,11 +94,7 @@ rule:
     version: "1.0.0"
     author: "Fraud Prevention Team"
     updated: "2025-12-20 10:00:00"
-
-    # Custom fields
-    category: fraud
-    severity: critical
-    tags: [fraud, high_confidence]
+ 
 
 # ----------------------------------------------------------------------------
 # Rule 4: Complex Fraud Detection (Nested logic)
@@ -127,11 +123,7 @@ rule:
     version: "1.0.0"
     author: "Fraud Prevention Team"
     updated: "2025-12-20 10:00:00"
-
-    # Custom fields
-    category: fraud
-    severity: high
-    tags: [fraud, complex_pattern]
+ 
 
 # ----------------------------------------------------------------------------
 # Rule 5: Risk Threshold Check (Comparison operators)
@@ -157,10 +149,7 @@ rule:
     version: "1.0.0"
     author: "Risk Engineering Team"
     updated: "2025-12-20 10:00:00"
-
-    # Custom fields
-    category: risk_management
-    severity: medium
+ 
 
 # ----------------------------------------------------------------------------
 # Rule 6: Payment Method Check (String operations)
@@ -183,11 +172,7 @@ rule:
     version: "1.0.0"
     author: "Risk Engineering Team"
     updated: "2025-12-20 10:00:00"
-
-    # Custom fields
-    category: payment_fraud
-    severity: high
-    tags: [payment, restricted_method]
+ 
 
 # ----------------------------------------------------------------------------
 # Rule 7: Velocity Check (Arithmetic in conditions)
@@ -212,10 +197,7 @@ rule:
     version: "1.0.0"
     author: "Risk Engineering Team"
     updated: "2025-12-20 10:00:00"
-
-    # Custom fields
-    category: velocity
-    severity: medium
+ 
 
 # ----------------------------------------------------------------------------
 # Rule 8: Trusted User Bonus (Negative scoring)
@@ -239,12 +221,7 @@ rule:
     version: "1.0.0"
     author: "Risk Engineering Team"
     updated: "2025-12-20 10:00:00"
-
-    # Custom fields
-    category: trust_signals
-    severity: low
-    tags: [bonus, trusted]
-
+ 
 # ----------------------------------------------------------------------------
 # Ruleset 1: Transaction Monitoring
 # ----------------------------------------------------------------------------
