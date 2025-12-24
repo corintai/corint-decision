@@ -7,6 +7,7 @@
 //! - Error types
 
 pub mod ast;
+pub mod condition;
 pub mod error;
 pub mod ir;
 pub mod types;

@@ -11,6 +11,7 @@ use crate::datasource::DataSourceClient;
 use crate::feature::definition::FeatureDefinition;
 use crate::feature::operator::{CacheBackend, CacheConfig, Operator};
 use anyhow::{Context as AnyhowContext, Result};
+use corint_core::condition::ConditionParser;
 use corint_core::Value;
 use std::collections::HashMap;
 use std::future::Future;
@@ -328,7 +329,8 @@ impl FeatureExecutor {
         let time_window = config.window.as_ref().and_then(|w| {
             RelativeWindow::from_string(w).map(|relative| TimeWindow {
                 window_type: TimeWindowType::Relative(relative),
-                time_field: "timestamp".to_string(),
+                time_field: config.timestamp_field.clone()
+                    .unwrap_or_else(|| "event_timestamp".to_string()),
             })
         });
 
@@ -472,16 +474,93 @@ impl FeatureExecutor {
         }
     }
 
-    /// Build filters from when conditions
+    /// Build filters from when conditions using the shared ConditionParser
     fn build_filters(
         &self,
         when: &Option<crate::feature::definition::WhenCondition>,
-        _context: &HashMap<String, Value>,
+        context: &HashMap<String, Value>,
     ) -> Result<Vec<crate::datasource::query::Filter>> {
-        // TODO: Parse when conditions into filters
-        // For now, return empty filters
-        let _ = when;
-        Ok(vec![])
+        use crate::datasource::query::Filter;
+        use crate::feature::definition::WhenCondition;
+
+        let Some(when) = when else {
+            return Ok(vec![]);
+        };
+
+        // Collect all condition strings
+        let conditions: Vec<&str> = match when {
+            WhenCondition::Simple(expr) => vec![expr.as_str()],
+            WhenCondition::Complex { all, any } => {
+                // For now, we only support 'all' conditions (AND logic)
+                // 'any' conditions (OR logic) would require more complex SQL generation
+                if any.is_some() {
+                    warn!("'any' conditions in 'when' clause are not yet supported for database filters, ignoring");
+                }
+                all.as_ref()
+                    .map(|v| v.iter().map(|s| s.as_str()).collect())
+                    .unwrap_or_default()
+            }
+        };
+
+        // Use shared ConditionParser
+        let parser = ConditionParser::with_context(context.clone());
+        let mut filters = Vec::new();
+
+        for condition_str in conditions {
+            match parser.parse_condition(condition_str) {
+                Ok(parsed) => {
+                    // Convert core operator to filter operator
+                    let filter_op = Self::convert_operator(&parsed.operator);
+
+                    // Get the resolved value
+                    let value = match parsed.value.try_to_value() {
+                        Some(v) => v,
+                        None => {
+                            warn!(
+                                "Template variable in condition '{}' was not resolved, skipping",
+                                condition_str
+                            );
+                            continue;
+                        }
+                    };
+
+                    filters.push(Filter {
+                        field: parsed.field,
+                        operator: filter_op,
+                        value,
+                    });
+                }
+                Err(e) => {
+                    warn!("Failed to parse condition '{}': {}", condition_str, e);
+                }
+            }
+        }
+
+        Ok(filters)
+    }
+
+    /// Convert corint_core::ast::operator::Operator to FilterOperator
+    fn convert_operator(op: &corint_core::ast::operator::Operator) -> crate::datasource::query::FilterOperator {
+        use corint_core::ast::operator::Operator as CoreOp;
+        use crate::datasource::query::FilterOperator;
+
+        match op {
+            CoreOp::Eq => FilterOperator::Eq,
+            CoreOp::Ne => FilterOperator::Ne,
+            CoreOp::Gt => FilterOperator::Gt,
+            CoreOp::Ge => FilterOperator::Ge,
+            CoreOp::Lt => FilterOperator::Lt,
+            CoreOp::Le => FilterOperator::Le,
+            CoreOp::In => FilterOperator::In,
+            CoreOp::NotIn => FilterOperator::NotIn,
+            CoreOp::Regex => FilterOperator::Regex,
+            CoreOp::Contains | CoreOp::StartsWith | CoreOp::EndsWith => FilterOperator::Like,
+            // For operators that don't have a direct SQL equivalent, default to Eq
+            _ => {
+                warn!("Operator {:?} not directly supported in SQL filters, defaulting to Eq", op);
+                FilterOperator::Eq
+            }
+        }
     }
 
     /// Substitute template variables with context values
@@ -507,6 +586,11 @@ impl FeatureExecutor {
                             _ => return Err(anyhow::anyhow!("Unsupported template value type")),
                         };
                         result = result.replace(&result[start..=end], &value_str);
+                    } else {
+                        return Err(anyhow::anyhow!(
+                            "Template variable '{}' not found in context. Available keys: {:?}",
+                            key, context.keys().collect::<Vec<_>>()
+                        ));
                     }
                 }
             }

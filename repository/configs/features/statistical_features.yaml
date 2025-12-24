@@ -1,0 +1,300 @@
+# Statistical Features Configuration
+#
+# Advanced statistical analysis features for anomaly detection
+
+features:
+  # ============================================================================
+  # Z-Score and Outlier Detection
+  # NOTE: These operators are not yet implemented in the DSL
+  # Commented out until supported
+  # ============================================================================
+
+  # - name: transaction_amount_zscore
+  #   description: "Transaction amount Z-Score (standard deviation from mean)"
+  #   type: Expression  # Not yet implemented
+  #   method: zscore
+  #   datasource: supabase_events
+  #   entity: events
+  #   dimension: user_id
+  #   dimension_value: "{event.user_id}"
+  #   field: amount
+  #   window:
+  #     value: 30
+  #     unit: days
+  #   when:
+  #     - field: event_type
+  #       operator: eq
+  #       value: "transaction"
+  #   cache:
+  #     enabled: true
+  #     ttl: 300
+
+  # - name: is_amount_outlier_p95
+  #   description: "Is transaction amount above 95th percentile?"
+  #   type: Expression  # Not yet implemented
+  #   method: percentile_check
+  #   datasource: supabase_events
+  #   entity: events
+  #   dimension: user_id
+  #   dimension_value: "{event.user_id}"
+  #   field: amount
+  #   percentile: 95
+  #   window:
+  #     value: 90
+  #     unit: days
+  #   when:
+  #     - field: event_type
+  #       operator: eq
+  #       value: "transaction"
+  #   cache:
+  #     enabled: true
+  #     ttl: 600
+
+  # - name: is_amount_outlier_p99
+  #   description: "Is transaction amount above 99th percentile? (Very rare)"
+  #   type: Expression  # Not yet implemented
+  #   method: percentile_check
+  #   datasource: supabase_events
+  #   entity: events
+  #   dimension: user_id
+  #   dimension_value: "{event.user_id}"
+  #   field: amount
+  #   percentile: 99
+  #   window:
+  #     value: 90
+  #     unit: days
+  #   when:
+  #     - field: event_type
+  #       operator: eq
+  #       value: "transaction"
+
+  # ============================================================================
+  # Velocity Features
+  # NOTE: velocity_ratio operator is not yet implemented in the DSL
+  # Commented out until supported
+  # ============================================================================
+
+  # - name: spending_velocity_ratio
+  #   description: "Spending velocity change ratio (24h vs 7d baseline)"
+  #   type: Expression  # Not yet implemented
+  #   method: velocity_ratio
+  #   datasource: supabase_events
+  #   entity: events
+  #   dimension: user_id
+  #   dimension_value: "{event.user_id}"
+  #   numerator_window:
+  #     value: 24
+  #     unit: hours
+  #   denominator_window:
+  #     value: 7
+  #     unit: days
+  #   field: amount
+  #   when:
+  #     - field: event_type
+  #       operator: eq
+  #       value: "transaction"
+  #   cache:
+  #     enabled: true
+  #     ttl: 300
+
+  # - name: login_velocity_ratio
+  #   description: "Login frequency change ratio (24h vs 7d baseline)"
+  #   type: Expression  # Not yet implemented
+  #   method: velocity_ratio
+  #   datasource: supabase_events
+  #   entity: events
+  #   dimension: user_id
+  #   dimension_value: "{event.user_id}"
+  #   numerator_window:
+  #     value: 24
+  #     unit: hours
+  #   denominator_window:
+  #     value: 7
+  #     unit: days
+  #   operation: count
+  #   when:
+  #     - field: event_type
+  #       operator: eq
+  #       value: "login"
+
+  # ============================================================================
+  # Time-Based Features
+  # NOTE: time_check and day_check operators are not yet implemented in the DSL
+  # Commented out until supported
+  # ============================================================================
+
+  # - name: is_off_hours
+  #   description: "Is event during off-hours (22:00-06:00)?"
+  #   type: Expression  # Not yet implemented
+  #   method: time_check
+  #   datasource: computed
+  #   time_ranges:
+  #     - start: "22:00"
+  #       end: "06:00"
+
+  # - name: is_weekend
+  #   description: "Is event on weekend?"
+  #   type: Expression  # Not yet implemented
+  #   method: day_check
+  #   datasource: computed
+  #   days: ["saturday", "sunday"]
+
+  # ============================================================================
+  # Geographic Features (for login events)
+  # ============================================================================
+
+  - name: hours_since_last_login
+    description: "Hours since user's last login"
+    type: state
+    method: time_since
+    datasource: supabase_events
+    entity: events
+    dimension: user_id
+    dimension_value: "{event.user_id}"
+    field: event_timestamp
+    when: event.event_type == "login"
+    unit: hours
+
+  # - name: geo_distance_from_last_login
+  #   description: "Distance (km) from last login location"
+  #   type: Expression  # Not yet implemented
+  #   method: geo_distance
+  #   datasource: supabase_events
+  #   entity: events
+  #   dimension: user_id
+  #   dimension_value: "{event.user_id}"
+  #   location_field: location
+  #   when:
+  #     - field: event_type
+  #       operator: eq
+  #       value: "login"
+  #   cache:
+  #     enabled: true
+  #     ttl: 300
+
+  # - name: country_changed
+  #   description: "Has user's country changed since last login?"
+  #   type: Expression  # Not yet implemented
+  #   method: value_changed
+  #   datasource: supabase_events
+  #   entity: events
+  #   dimension: user_id
+  #   dimension_value: "{event.user_id}"
+  #   field: country
+  #   when:
+  #     - field: event_type
+  #       operator: eq
+  #       value: "login"
+
+  # ============================================================================
+  # Device Features
+  # ============================================================================
+
+  # - name: is_new_device
+  #   description: "Is this device new for the user?"
+  #   type: Expression  # Not yet implemented
+  #   method: is_new_value
+  #   datasource: supabase_events
+  #   entity: events
+  #   dimension: user_id
+  #   dimension_value: "{event.user_id}"
+  #   field: device_id
+  #   window:
+  #     value: 30
+  #     unit: days
+
+  # - name: device_fingerprint_changed_24h
+  #   description: "Has device fingerprint changed in last 24h?"
+  #   type: Expression  # Not yet implemented
+  #   method: value_changed
+  #   datasource: supabase_events
+  #   entity: events
+  #   dimension: device_id
+  #   dimension_value: "{event.device_id}"
+  #   field: device_fingerprint
+  #   window:
+  #     value: 24
+  #     unit: hours
+
+  - name: failed_login_count_1h
+    description: "Failed login attempts in last 1 hour"
+    type: aggregation
+    method: count
+    datasource: supabase_events
+    entity: events
+    dimension: user_id
+    dimension_value: "{event.user_id}"
+    window: 1h
+    timestamp_field: event_timestamp
+    when: event.event_type == "login_failed"
+
+  # ============================================================================
+  # Association Analysis Features
+  # NOTE: Using count_distinct as workaround for cross_dimension_count
+  # ============================================================================
+
+  - name: devices_per_ip_5h
+    description: "Number of distinct devices from same IP (5h window)"
+    type: aggregation
+    method: distinct
+    datasource: supabase_events
+    entity: events
+    dimension: ip_address
+    dimension_value: "{event.ip_address}"
+    field: device_id
+    window: 5h
+    timestamp_field: event_timestamp
+
+  - name: users_per_ip_5h
+    description: "Number of distinct users from same IP (5h window)"
+    type: aggregation
+    method: distinct
+    datasource: supabase_events
+    entity: events
+    dimension: ip_address
+    dimension_value: "{event.ip_address}"
+    field: user_id
+    window: 5h
+    timestamp_field: event_timestamp
+
+  - name: users_per_device_24h
+    description: "Number of distinct users on same device (24h window)"
+    type: aggregation
+    method: distinct
+    datasource: supabase_events
+    entity: events
+    dimension: device_id
+    dimension_value: "{event.device_id}"
+    field: user_id
+    window: 24h
+    timestamp_field: event_timestamp
+
+  # ============================================================================
+  # Fraud Pattern Features
+  # NOTE: Using count_distinct as workaround for cross_dimension_count
+  # ============================================================================
+
+  - name: ip_device_count
+    description: "Devices associated with IP (fraud farm detection)"
+    type: aggregation
+    method: distinct
+    datasource: supabase_events
+    entity: events
+    dimension: ip_address
+    dimension_value: "{event.ip_address}"
+    field: device_id
+    window: 5h
+    timestamp_field: event_timestamp
+
+  - name: ip_user_count
+    description: "Users associated with IP (fraud farm detection)"
+    type: aggregation
+    method: distinct
+    datasource: supabase_events
+    entity: events
+    dimension: ip_address
+    dimension_value: "{event.ip_address}"
+    field: user_id
+    window: 5h
+    timestamp_field: event_timestamp
+

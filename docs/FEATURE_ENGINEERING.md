@@ -44,8 +44,8 @@ Feature engineering in risk management follows a structured approach based on **
       # 注意：count操作不需要field字段，只计算符合条件的事件数量
       when:
         all:
-          - event.type == "login"
-          - event.status == "failed"
+          - type == "login"               # Database field (no prefix)
+          - status == "failed"             # Database field (no prefix)
     ```
 
 - `sum` - Sum numeric field values
@@ -65,7 +65,7 @@ Feature engineering in risk management follows a structured approach based on **
       dimension_value: "{event.user_id}"
       field: amount                   # 计算金额的总和 (SUM(amount))
       window: 24h
-      when: event.type == "transaction"
+      when: type == "transaction"         # Database field (no prefix)
     ```
 
 - `avg` - Average of field values
@@ -85,7 +85,7 @@ Feature engineering in risk management follows a structured approach based on **
       dimension_value: "{event.user_id}"
       field: amount                   # 计算金额的平均值 (AVG(amount))
       window: 30d
-      when: event.type == "order"
+      when: type == "order"               # Database field (no prefix)
     ```
 
 - `max` - Maximum value
@@ -105,7 +105,7 @@ Feature engineering in risk management follows a structured approach based on **
       dimension_value: "{event.user_id}"
       field: amount                   # 计算金额的最大值 (MAX(amount))
       window: 90d
-      when: event.type == "transaction"
+      when: type == "transaction"         # Database field (no prefix)
     ```
 
 - `min` - Minimum value
@@ -125,7 +125,7 @@ Feature engineering in risk management follows a structured approach based on **
       dimension_value: "{event.user_id}"
       field: amount                   # 计算金额的最小值 (MIN(amount))
       window: 7d
-      when: event.type == "order"
+      when: type == "order"               # Database field (no prefix)
     ```
 
 - `distinct` - Count unique values
@@ -165,7 +165,7 @@ Feature engineering in risk management follows a structured approach based on **
       dimension_value: "{event.user_id}"
       field: amount
       window: 30d
-      when: event.type == "transaction"
+      when: type == "transaction"         # Database field (no prefix)
     ```
 
 - `variance` - Variance
@@ -185,7 +185,7 @@ Feature engineering in risk management follows a structured approach based on **
       dimension_value: "{event.user_id}"
       field: amount
       window: 30d
-      when: event.type == "transaction"
+      when: type == "transaction"         # Database field (no prefix)
     ```
 
 - `percentile` - Nth percentile value
@@ -206,7 +206,7 @@ Feature engineering in risk management follows a structured approach based on **
       field: amount
       percentile: 95
       window: 30d
-      when: event.type == "transaction"
+      when: type == "transaction"         # Database field (no prefix)
     ```
 
 - `median` - Median value (50th percentile)
@@ -226,7 +226,7 @@ Feature engineering in risk management follows a structured approach based on **
       dimension_value: "{event.user_id}"
       field: amount
       window: 30d
-      when: event.type == "transaction"
+      when: type == "transaction"         # Database field (no prefix)
     ```
 
 - `mode` - Most frequent value
@@ -246,7 +246,7 @@ Feature engineering in risk management follows a structured approach based on **
       dimension_value: "{event.user_id}"
       field: amount
       window: 30d
-      when: event.type == "transaction"
+      when: type == "transaction"         # Database field (no prefix)
     ```
 
 - `entropy` - Shannon entropy (diversity measure)
@@ -266,7 +266,7 @@ Feature engineering in risk management follows a structured approach based on **
       dimension_value: "{event.user_id}"
       field: transaction_type
       window: 30d
-      when: event.type == "transaction"
+      when: type == "transaction"         # Database field (no prefix)
     ```
 
 > **Note:** Ratio- and rate-type metrics (e.g. success rate, failure rate, conversion rate) are **not** Aggregation operators. They are derived from aggregation results and must be implemented via **Expression operators**.
@@ -564,7 +564,7 @@ impl LookupExecutor {
       field: amount
       current_value: "{event.amount}"
       window: 90d
-      when: event.type == "transaction"
+      when: type == "transaction"         # Database field (no prefix)
     ```
 
 - `deviation_from_baseline` - Compare to historical average
@@ -585,7 +585,7 @@ impl LookupExecutor {
       field: login_count
       current_value: "{event.current_login_count}"
       window: 90d
-      when: event.type == "login"
+      when: type == "login"               # Database field (no prefix)
     ```
 
 - `percentile_rank` - Rank compared to history
@@ -606,7 +606,7 @@ impl LookupExecutor {
       field: amount
       current_value: "{event.amount}"
       window: 90d
-      when: event.type == "transaction"
+      when: type == "transaction"         # Database field (no prefix)
     ```
 
 - `is_outlier` - Statistical outlier detection
@@ -627,7 +627,7 @@ impl LookupExecutor {
       field: amount
       current_value: "{event.amount}"
       window: 90d
-      when: event.type == "transaction"
+      when: type == "transaction"         # Database field (no prefix)
     ```
 
 ```rust
@@ -671,9 +671,9 @@ impl StateExecutor {
       window: 1h
       when:
         all:
-          - event.type == "login"
-          - event.status == "failed"
-      reset_when: event.status == "success"
+          - type == "login"               # Database field (no prefix)
+          - status == "failed"             # Database field (no prefix)
+      reset_when: status == "success"     # Database field (no prefix)
     ```
 
 - `streak` - Longest streak of condition
@@ -692,7 +692,7 @@ impl StateExecutor {
       dimension: user_id
       dimension_value: "{event.user_id}"
       window: 30d
-      when: event.type == "transaction"
+      when: type == "transaction"         # Database field (no prefix)
       aggregation: count_per_day
       reset_when: count_per_day == 0
     ```
@@ -714,9 +714,9 @@ impl StateExecutor {
       dimension_value: "{event.user_id}"
       window: 1h
       pattern:
-        - event.type == "password_reset"
-        - event.type == "email_change"
-        - event.type == "transaction" AND event.amount > 10000
+        - type == "password_reset"                     # Database field
+        - type == "email_change"                       # Database field
+        - type == "transaction" AND amount > 10000     # Database fields
       order_by: timestamp
     ```
 
@@ -737,10 +737,10 @@ impl StateExecutor {
       dimension_value: "{event.user_id}"
       window: 7d
       pattern:
-        - event.type == "login"
-        - event.type == "browse"
-        - event.type == "add_to_cart"
-        - event.type == "payment"
+        - type == "login"                              # Database field
+        - type == "browse"                             # Database field
+        - type == "add_to_cart"                        # Database field
+        - type == "payment"                            # Database field
       order_by: timestamp
     ```
 
@@ -761,7 +761,7 @@ impl StateExecutor {
       dimension_value: "{event.user_id}"
       field: amount
       window: 30d
-      when: event.type == "transaction"
+      when: type == "transaction"         # Database field (no prefix)
       aggregation: sum_per_week
     ```
 
@@ -781,7 +781,7 @@ impl StateExecutor {
       dimension: user_id
       dimension_value: "{event.user_id}"
       window: 7d
-      when: event.type == "transaction"
+      when: type == "transaction"         # Database field (no prefix)
       aggregation: count
     ```
   - **计算逻辑**:
@@ -806,7 +806,7 @@ impl StateExecutor {
       dimension_value: "{event.user_id}"
       field: login_count
       window: 7d
-      when: event.type == "login"
+      when: type == "login"               # Database field (no prefix)
       aggregation: count_per_day
     ```
 
@@ -848,7 +848,7 @@ impl StateExecutor {
       dimension_value: "{event.user_id}"
       field: amount
       window: 7d
-      when: event.type == "transaction"
+      when: type == "transaction"         # Database field (no prefix)
       window_size: 7
     ```
 
@@ -1208,7 +1208,7 @@ Features reference data sources by name through the `datasource` field:
   dimension: user_id
   dimension_value: "{event.user_id}"
   window: 1h
-  when: event.type == "login"
+  when: type == "login"               # Database field (no prefix)
 
 # Lookup feature - retrieves pre-computed value from Redis
 - name: user_risk_score_90d
@@ -1227,7 +1227,7 @@ Features reference data sources by name through the `datasource` field:
   field: amount
   current_value: "{event.amount}"
   window: 90d
-  when: event.type == "transaction"
+  when: type == "transaction"         # Database field (no prefix)
 
 # Graph feature - analyzes network relationships from Neo4j
 - name: centrality_userid_device_30d
@@ -1394,6 +1394,62 @@ GROUP BY user_id
 - `sum`, `avg`, `max`, `min`, `stddev` - ✅ 需要（必须指定对哪个字段进行计算）
 - `distinct` - ✅ 需要（统计某字段的不同值数量）
 
+### `when` 条件中的字段引用语法
+
+在 `when` 条件中过滤数据库行时，可以引用两种类型的字段：
+
+**1. 数据库字段（来自 entity 指定的数据表）**
+- 不需要前缀，直接引用列名
+- 示例：`type`, `status`, `amount`, `country`
+- 支持 JSON 嵌套字段：`attributes.device.fingerprint`, `metadata.user.tier`
+
+**2. 请求字段（来自 API 请求的 context.event）**
+- 使用模板语法加花括号：`{event.field_name}`
+- 示例：`{event.user_id}`, `{event.min_amount}`, `{event.threshold}`
+- 用于动态过滤和模板替换
+
+**示例：**
+
+```yaml
+# 数据库字段过滤（无需前缀）
+when: type == "transaction"
+
+# 数据库 JSON 嵌套字段访问
+when: attributes.risk_level == "high"
+
+# 组合数据库字段和请求字段
+when:
+  all:
+    - type == "payment"                      # 数据库字段
+    - amount > {event.threshold}             # 请求字段（动态值）
+    - metadata.country == "{event.country}"  # 数据库 JSON 字段匹配请求值
+
+# 复杂的 JSON 嵌套字段
+when: user.profile.verification_status == "verified"
+```
+
+**SQL 生成示例：**
+
+配置：
+```yaml
+when:
+  all:
+    - type == "transaction"
+    - amount > {event.min_amount}
+    - attributes.device_type == "mobile"
+```
+
+生成的 SQL：
+```sql
+SELECT COUNT(*)
+FROM events
+WHERE user_id = $1
+  AND event_timestamp >= NOW() - INTERVAL '24 hours'
+  AND type = 'transaction'                           -- 数据库字段
+  AND amount > $2                                     -- 请求值替换
+  AND attributes->>'device_type' = 'mobile'          -- JSON 字段访问
+```
+
 ### `dimension` vs `when` - 不能互相替代
 
 **重要概念区分:**
@@ -1410,14 +1466,14 @@ GROUP BY user_id
 # 正确：使用dimension进行分组
 - name: cnt_userid_login_24h
   dimension: user_id              # 为每个用户分别计算
-  when: event.type == "login"     # 只统计登录事件
+  when: type == "login"           # 只统计登录事件（数据库字段，无需前缀）
 ```
 
 SQL等价:
 ```sql
 SELECT user_id, COUNT(*)
 FROM events
-WHERE event.type = 'login' AND timestamp > now() - 24h
+WHERE type = 'login' AND timestamp > now() - 24h
 GROUP BY user_id               -- dimension的作用
 -- 结果：每个用户都有自己的登录次数
 ```
@@ -1427,7 +1483,7 @@ GROUP BY user_id               -- dimension的作用
 ```yaml
 # 错误：缺少dimension，没有分组
 - name: cnt_all_login_24h
-  when: event.type == "login"
+  when: type == "login"           # 数据库字段，无需前缀
   # 没有dimension = 没有分组
 ```
 
@@ -1435,7 +1491,7 @@ SQL等价:
 ```sql
 SELECT COUNT(*)
 FROM events
-WHERE event.type = 'login' AND timestamp > now() - 24h
+WHERE type = 'login' AND timestamp > now() - 24h
 -- 没有 GROUP BY
 -- 结果：所有用户的登录次数加在一起，只有一个总数！
 ```
@@ -1447,16 +1503,16 @@ WHERE event.type = 'login' AND timestamp > now() - 24h
   dimension: user_id              # 按用户分组
   when:
     all:
-      - event.type == "transaction"   # 过滤：只要交易事件
-      - event.amount > 1000           # 过滤：金额大于1000
+      - type == "transaction"        # 过滤：只要交易事件（数据库字段，无需前缀）
+      - amount > 1000                # 过滤：金额大于1000（数据库字段，无需前缀）
 ```
 
 SQL等价:
 ```sql
 SELECT user_id, COUNT(*)
 FROM events
-WHERE event.type = 'transaction'    -- when条件1
-  AND event.amount > 1000           -- when条件2
+WHERE type = 'transaction'          -- when条件1（数据库字段）
+  AND amount > 1000                 -- when条件2（数据库字段）
   AND timestamp > now() - 24h
 GROUP BY user_id                    -- dimension
 -- 结果：每个用户的大额交易（>1000）次数
@@ -1469,7 +1525,7 @@ GROUP BY user_id                    -- dimension
 
 ### 为什么 `dimension_value` 不能用 `when` 替代？
 
-**常见误解:** "既然 `dimension_value: "{event.user_id}"` 也是从event中取值，为什么不能用 `when: event.user_id == ...` 替代？"
+**常见误解:** "既然 `dimension_value: "{event.user_id}"` 也是从请求事件中取值，为什么不能用 `when: user_id == ...` 替代？"
 
 **关键区别:**
 
@@ -1485,7 +1541,7 @@ GROUP BY user_id                    -- dimension
 - name: cnt_userid_login_24h
   dimension: user_id
   dimension_value: "{event.user_id}"    # 动态提取每个事件的user_id
-  when: event.type == "login"
+  when: type == "login"               # Database field (no prefix)
 ```
 
 **执行逻辑:**
@@ -1508,8 +1564,8 @@ GROUP BY user_id                    -- dimension
 - name: cnt_login_24h_for_userA
   when:
     all:
-      - event.type == "login"
-      - event.user_id == "user_A"    # 写死了只看user_A！
+      - type == "login"              # 数据库字段
+      - user_id == "user_A"          # 写死了只看user_A！
 ```
 
 **执行逻辑:**
@@ -1539,7 +1595,7 @@ dimension_value: "{event.user_id}"  # 运行时自动替换为 "user_B"
 
 ```yaml
 # 使用 when（错误）
-when: event.user_id == "user_A"     # 写死了！
+when: user_id == "user_A"           # 写死了！
 
 → 查询: SELECT COUNT(*) WHERE user_id = 'user_A' AND ...
 → 返回: user_A 的登录次数（错误！我们要的是 user_B 的数据）
@@ -1586,13 +1642,13 @@ WHERE user_id = 'user_B'      -- 来自 dimension_value
 # 方式1: 使用 dimension（推荐） - 语义明确
 dimension: user_id              # 明确：这是"为谁"计算的维度
 dimension_value: "{event.user_id}"
-when: event.type == "login"     # 明确：这是过滤条件
+when: type == "login"           # 明确：这是过滤条件（数据库字段，无需前缀）
 
 # 方式2: 全部放在 when（不推荐） - 语义混乱
 when:
   all:
-    - event.user_id == "{event.user_id}"   # 这不是过滤，是指定查询主体
-    - event.type == "login"                # 这才是过滤
+    - user_id == "{event.user_id}"     # 这不是过滤，是指定查询主体
+    - type == "login"                  # 这才是过滤（数据库字段）
 ```
 
 **原因二：支持多种计算模式**
@@ -1610,7 +1666,7 @@ when:
 # 同一份配置
 dimension: user_id
 dimension_value: "{event.user_id}"
-when: event.type == "login"
+when: type == "login"              # 数据库字段，无需前缀
 
 # 在线模式执行时:
 SELECT COUNT(*) WHERE user_id = 'user_B' AND type = 'login'
@@ -1639,8 +1695,8 @@ dimension: user_id       # 按用户
 # 使用 when - 要改多处
 when:
   all:
-    - event.user_id == "{event.user_id}"      # 要改这里
-    - event.type == "login"
+    - user_id == "{event.user_id}"        # 要改这里
+    - type == "login"                     # 数据库字段
 ```
 
 #### 总结：设计原则
@@ -1733,7 +1789,7 @@ Count events and unique values within time windows.
   dimension: user_id
   dimension_value: "{event.user_id}"
   window: 24h
-  when: event.type == "login"
+  when: type == "login"               # Database field (no prefix)
 ```
 
 ---
@@ -1766,7 +1822,7 @@ Statistical aggregations over numeric fields.
   dimension_value: "{event.user_id}"
   field: amount
   window: 24h
-  when: event.type == "transaction"
+  when: type == "transaction"         # Database field (no prefix)
 ```
 
 ---
@@ -1802,7 +1858,7 @@ Advanced statistical measures for distribution analysis.
   dimension_value: "{event.user_id}"
   field: amount
   window: 30d
-  when: event.type == "transaction"
+  when: type == "transaction"         # Database field (no prefix)
 ```
 
 ---
@@ -1876,7 +1932,7 @@ Compare current behavior to historical baselines.
   field: amount
   current_value: "{event.amount}"
   window: 90d
-  when: event.type == "transaction"
+  when: type == "transaction"         # Database field (no prefix)
 ```
 
 ---
@@ -1915,10 +1971,10 @@ Detect sequential patterns and consecutive events.
   window: 1h
   when:
     all:
-      - event.type == "login"
-      - event.status == "failed"
+      - type == "login"              # Database field (no prefix)
+      - status == "failed"           # Database field (no prefix)
   order_by: timestamp
-  reset_when: event.status == "success"
+  reset_when: status == "success"    # Database field (no prefix)
 ```
 
 ---
@@ -1953,7 +2009,7 @@ Detect changes and trends over time.
   field: amount
   window: 1h
   aggregation: sum
-  when: event.type == "transaction"
+  when: type == "transaction"         # Database field (no prefix)
 ```
 
 **Calculation:**
@@ -2087,10 +2143,10 @@ Stateful event pattern matching and correlation.
       min_count: 1
     - event_type: login
       min_count: 3
-      when: event.status == "failed"
+      when: status == "failed"            # Database field (no prefix)
     - event_type: login
       min_count: 1
-      when: event.status == "success"
+      when: status == "success"           # Database field (no prefix)
     - event_type: transaction
       min_count: 1
   sequence: ordered  # ordered, unordered, partial
@@ -2439,13 +2495,13 @@ To keep feature names concise, use these standard abbreviations:
 ```yaml
 # ✅ Correct - abbreviation only in name
 - name: sum_userid_txn_amt_24h     # name 使用缩写
-  field: amount                         # field 使用完整词
-  when: event.type == "transaction"     # when 使用完整词
+  field: amount                    # field 使用完整词
+  when: type == "transaction"      # when 使用完整词（数据库字段，无需前缀）
 
 # ❌ Wrong - don't use abbreviations in config
 - name: sum_userid_txn_amt_24h
-  field: amt                            # ❌ 错误
-  when: event.type == "txn"             # ❌ 错误
+  field: amt                       # ❌ 错误（不要使用缩写）
+  when: type == "txn"              # ❌ 错误（不要使用缩写）
 ```
 
 ### Examples

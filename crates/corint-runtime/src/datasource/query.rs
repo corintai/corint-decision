@@ -158,15 +158,23 @@ impl RelativeWindow {
             return None;
         }
 
-        let (value_str, unit_str) = s.split_at(len - 1);
-        let value = value_str.parse::<u64>().ok()?;
-
-        let unit = match unit_str {
-            "m" => TimeUnit::Minutes,
-            "h" => TimeUnit::Hours,
-            "d" => TimeUnit::Days,
-            "w" => TimeUnit::Weeks,
-            _ => return None,
+        // Check for multi-character units first (mo for months)
+        let (value, unit) = if s.ends_with("mo") {
+            let value_str = &s[..s.len() - 2];
+            let value = value_str.parse::<u64>().ok()?;
+            (value, TimeUnit::Months)
+        } else {
+            // Single character units
+            let (value_str, unit_str) = s.split_at(len - 1);
+            let value = value_str.parse::<u64>().ok()?;
+            let unit = match unit_str {
+                "m" => TimeUnit::Minutes,
+                "h" => TimeUnit::Hours,
+                "d" => TimeUnit::Days,
+                "w" => TimeUnit::Weeks,
+                _ => return None,
+            };
+            (value, unit)
         };
 
         Some(RelativeWindow { value, unit })
@@ -218,7 +226,7 @@ pub struct QueryResult {
 }
 
 fn default_timestamp_field() -> String {
-    "timestamp".to_string()
+    "event_timestamp".to_string()
 }
 
 #[cfg(test)]

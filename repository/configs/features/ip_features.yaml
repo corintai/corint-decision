@@ -9,109 +9,102 @@ features:
 
   - name: ip_event_count_1h
     description: "Total events from this IP in last 1 hour"
-    operator: count
+    type: aggregation
+    method: count
     datasource: supabase_events
     entity: events
     dimension: ip_address
     dimension_value: "{event.ip_address}"
-    window:
-      value: 1
-      unit: hours
-    cache:
-      enabled: true
-      ttl: 60
+    window: 1h
+    timestamp_field: event_timestamp
 
   - name: ip_login_count_24h
     description: "Login attempts from this IP in last 24 hours"
-    operator: count
+    type: aggregation
+    method: count
     datasource: supabase_events
     entity: events
     dimension: ip_address
     dimension_value: "{event.ip_address}"
-    window:
-      value: 24
-      unit: hours
-    filters:
-      - field: event_type
-        operator: eq
-        value: "login"
-    cache:
-      enabled: true
-      ttl: 300
+    window: 24h
+    timestamp_field: event_timestamp
+    when: event.event_type == "login"
 
   # ============================================================================
   # Cross-Dimensional Features (Association Analysis)
+  # NOTE: cross_dimension_count is not yet implemented in the DSL
+  # For now, using count_distinct as workaround
   # ============================================================================
 
   - name: devices_per_ip_5h
     description: "Number of distinct devices from this IP in last 5 hours"
-    operator: cross_dimension_count
+    type: aggregation
+    method: distinct
     datasource: supabase_events
     entity: events
-    primary_dimension: ip_address
-    primary_value: "{event.ip_address}"
-    secondary_dimension: device_id
-    window:
-      value: 5
-      unit: hours
+    dimension: ip_address
+    dimension_value: "{event.ip_address}"
+    field: device_id
+    window: 5h
+    timestamp_field: event_timestamp
 
   - name: devices_per_ip_24h
     description: "Number of distinct devices from this IP in last 24 hours"
-    operator: cross_dimension_count
+    type: aggregation
+    method: distinct
     datasource: supabase_events
     entity: events
-    primary_dimension: ip_address
-    primary_value: "{event.ip_address}"
-    secondary_dimension: device_id
-    window:
-      value: 24
-      unit: hours
+    dimension: ip_address
+    dimension_value: "{event.ip_address}"
+    field: device_id
+    window: 24h
+    timestamp_field: event_timestamp
 
   - name: users_per_ip_24h
     description: "Number of distinct users from this IP in last 24 hours"
-    operator: cross_dimension_count
+    type: aggregation
+    method: distinct
     datasource: supabase_events
     entity: events
-    primary_dimension: ip_address
-    primary_value: "{event.ip_address}"
-    secondary_dimension: user_id
-    window:
-      value: 24
-      unit: hours
+    dimension: ip_address
+    dimension_value: "{event.ip_address}"
+    field: user_id
+    window: 24h
+    timestamp_field: event_timestamp
 
   - name: cities_per_ip_30d
     description: "Number of distinct cities for this IP in last 30 days"
-    operator: count_distinct
+    type: aggregation
+    method: distinct
     datasource: supabase_events
     entity: events
     dimension: ip_address
     dimension_value: "{event.ip_address}"
-    distinct_field: city
-    window:
-      value: 30
-      unit: days
-    cache:
-      enabled: true
-      ttl: 3600
+    field: city
+    window: 30d
+    timestamp_field: event_timestamp
 
   # ============================================================================
   # Velocity Features
+  # NOTE: velocity operator is not yet implemented in the DSL
+  # Commented out until supported
   # ============================================================================
 
-  - name: exceeds_ip_velocity
-    description: "Does IP exceed event velocity (> 100 per hour)?"
-    operator: velocity
-    datasource: supabase_events
-    entity: events
-    dimension: ip_address
-    dimension_value: "{event.ip_address}"
-    window:
-      value: 1
-      unit: hours
-    threshold: 100
-    cache:
-      enabled: true
-      ttl: 60
+  # - name: exceeds_ip_velocity
+  #   description: "Does IP exceed event velocity (> 100 per hour)?"
+  #   type: Expression  # Not yet implemented
+  #   method: velocity
+  #   datasource: supabase_events
+  #   entity: events
+  #   dimension: ip_address
+  #   dimension_value: "{event.ip_address}"
+  #   window:
+  #     value: 1
+  #     unit: hours
+  #   threshold: 100
+  #   cache:
+  #     enabled: true
+  #     ttl: 60
 
   # ============================================================================
   # Temporal Features
@@ -119,8 +112,10 @@ features:
 
   - name: ip_first_seen
     description: "First time this IP was seen"
-    operator: first_seen
+    type: state
+    method: first_seen
     datasource: supabase_events
     entity: events
     dimension: ip_address
     dimension_value: "{event.ip_address}"
+

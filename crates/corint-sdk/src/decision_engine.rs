@@ -2169,6 +2169,8 @@ impl DecisionEngine {
                                                 execution_result.score = rule_result.score;
                                                 execution_result.triggered_rules =
                                                     rule_result.triggered_rules;
+                                                // Merge computed features and variables into execution context
+                                                execution_result.variables.extend(rule_result.context);
                                             }
                                         }
                                     }
@@ -2479,6 +2481,8 @@ impl DecisionEngine {
                                             execution_result.score = rule_result.score;
                                             execution_result.triggered_rules =
                                                 rule_result.triggered_rules;
+                                            // Merge computed features and variables into execution context
+                                            execution_result.variables.extend(rule_result.context);
                                         }
                                     }
 

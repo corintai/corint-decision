@@ -44,6 +44,10 @@ impl FeatureRegistry {
             .with_context(|| format!("Failed to read feature file: {}", path.display()))?;
 
         let collection: FeatureCollection = serde_yaml::from_str(&content)
+            .map_err(|e| {
+                warn!("Detailed parse error: {:?}", e);
+                e
+            })
             .with_context(|| format!("Failed to parse feature file: {}", path.display()))?;
 
         // Validate the collection

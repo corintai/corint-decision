@@ -21,6 +21,7 @@ Quick reference for writing feature definitions in CORINT. For detailed implemen
 
 ```yaml
 - name: feature_name              # Feature identifier
+  description: "Feature description"  # Human-readable description
   type: feature_type              # aggregation|state|sequence|graph|expression|lookup
   method: method_name             # Specific method (count, sum, z_score, etc.)
   datasource: datasource_name     # References repository/configs/datasources/
@@ -35,7 +36,60 @@ Quick reference for writing feature definitions in CORINT. For detailed implemen
       - condition2
 ```
 
-### 1.3 Feature Access
+### 1.3 Field Reference Syntax in `when` Conditions
+
+When filtering database rows using the `when` field, you can reference two types of fields:
+
+**1. Database Fields (from the entity table being queried)**
+- No prefix needed - directly reference the column name
+- Examples: `type`, `status`, `amount`, `country`
+- Supports JSON nested fields: `attributes.device.fingerprint`, `metadata.user.tier`
+
+**2. Request Fields (from the incoming API request via context.event)**
+- Use template syntax with curly braces: `{event.field_name}`
+- Examples: `{event.user_id}`, `{event.min_amount}`, `{event.threshold}`
+- Used for dynamic filtering and template substitution
+
+**Examples:**
+```yaml
+# Database field filtering (no prefix)
+when: type == "transaction"
+
+# Database field with JSON nested access
+when: attributes.risk_level == "high"
+
+# Combining database and request fields
+when:
+  all:
+    - type == "payment"                      # Database field
+    - amount > {event.threshold}             # Request field (dynamic)
+    - metadata.country == "{event.country}"  # Database JSON field matches request
+
+# Complex nested JSON field
+when: user.profile.verification_status == "verified"
+```
+
+**SQL Generation Example:**
+```yaml
+when:
+  all:
+    - type == "transaction"
+    - amount > {event.min_amount}
+    - attributes.device_type == "mobile"
+```
+
+**Generated SQL:**
+```sql
+SELECT COUNT(*)
+FROM events
+WHERE user_id = $1
+  AND event_timestamp >= NOW() - INTERVAL '24 hours'
+  AND type = 'transaction'                           -- Database field
+  AND amount > $2                                     -- Request value substituted
+  AND attributes->>'device_type' = 'mobile'          -- JSON field access
+```
+
+### 1.4 Feature Access
 
 **Direct feature access:**
 ```yaml
@@ -68,70 +122,75 @@ rule:
 **✅ count** - Count events
 ```yaml
 - name: cnt_userid_login_1h_failed
+  description: "Number of failed login attempts in last 1 hour"
   type: aggregation
   method: count
   datasource: postgresql_events
   entity: events
   dimension: user_id
-  dimension_value: "{event.user_id}"
+  dimension_value: "{event.user_id}"   # Request field (from context.event)
   window: 1h
   when:
     all:
-      - event.type == "login"
-      - event.status == "failed"
+      - type == "login"                # Database field (no prefix)
+      - status == "failed"             # Database field (no prefix)
 ```
 
 **✅ sum** - Sum values
 ```yaml
 - name: sum_userid_txn_amt_24h
+  description: "Total transaction amount in last 24 hours"
   type: aggregation
   method: sum
   datasource: postgresql_events
   entity: events
   dimension: user_id
-  dimension_value: "{event.user_id}"
+  dimension_value: "{event.user_id}"  # Request field (from context.event)
   field: amount
   window: 24h
-  when: event.type == "transaction"
+  when: type == "transaction"         # Database field (no prefix)
 ```
 
 **✅ avg** - Average values
 ```yaml
 - name: avg_userid_order_amt_30d
+  description: "Average order amount in last 30 days"
   type: aggregation
   method: avg
   datasource: postgresql_events
   entity: events
   dimension: user_id
-  dimension_value: "{event.user_id}"
+  dimension_value: "{event.user_id}"  # Request field (from context.event)
   field: amount
   window: 30d
-  when: event.type == "order"
+  when: type == "order"               # Database field (no prefix)
 ```
 
 **✅ max / min** - Maximum / Minimum
 ```yaml
 - name: max_userid_txn_amt_90d
+  description: "Maximum transaction amount in last 90 days"
   type: aggregation
   method: max
   datasource: postgresql_events
   entity: events
   dimension: user_id
-  dimension_value: "{event.user_id}"
+  dimension_value: "{event.user_id}"  # Request field (from context.event)
   field: amount
   window: 90d
-  when: event.type == "transaction"
+  when: type == "transaction"         # Database field (no prefix)
 ```
 
 **✅ distinct** - Count unique values
 ```yaml
 - name: distinct_userid_device_24h
+  description: "Number of unique devices used in last 24 hours"
   type: aggregation
   method: distinct
   datasource: postgresql_events
   entity: events
   dimension: user_id
-  dimension_value: "{event.user_id}"
+  dimension_value: "{event.user_id}"  # Request field (from context.event)
   field: device_id
   window: 24h
 ```
@@ -146,10 +205,10 @@ rule:
   datasource: postgresql_events
   entity: events
   dimension: user_id
-  dimension_value: "{event.user_id}"
+  dimension_value: "{req.user_id}"
   field: amount
   window: 30d
-  when: event.type == "transaction"
+  when: type == "transaction"         # Database field (no prefix)
 ```
 
 **📋 percentile** - Nth percentile
@@ -160,11 +219,11 @@ rule:
   datasource: postgresql_events
   entity: events
   dimension: user_id
-  dimension_value: "{event.user_id}"
+  dimension_value: "{req.user_id}"
   field: amount
   percentile: 95
   window: 30d
-  when: event.type == "transaction"
+  when: type == "transaction"         # Database field (no prefix)
 ```
 
 **📋 median / mode / entropy**
@@ -184,11 +243,11 @@ rule:
   datasource: clickhouse_events
   entity: events
   dimension: user_id
-  dimension_value: "{event.user_id}"
+  dimension_value: "{req.user_id}"
   field: amount
-  current_value: "{event.amount}"
+  current_value: "{req.amount}"       # Current value from request
   window: 90d
-  when: event.type == "transaction"
+  when: type == "transaction"         # Database field (no prefix)
 ```
 
 **📋 deviation_from_baseline** - Compare to historical average
@@ -205,9 +264,9 @@ rule:
   datasource: clickhouse_events
   entity: events
   dimension: user_id
-  dimension_value: "{event.user_id}"
+  dimension_value: "{req.user_id}"
   window: 7d
-  expected_timezone: "{user.timezone}"
+  expected_timezone: "{req.user_timezone}"  # Expected timezone from request
 ```
 
 > **Note:** Simple time checks (off-hours) should use Expression operators.
@@ -226,13 +285,13 @@ rule:
   datasource: clickhouse_events
   entity: events
   dimension: user_id
-  dimension_value: "{event.user_id}"
+  dimension_value: "{req.user_id}"
   window: 1h
   when:
     all:
-      - event.type == "login"
-      - event.status == "failed"
-  reset_when: event.status == "success"
+      - type == "login"                # Database field (no prefix)
+      - status == "failed"             # Database field (no prefix)
+  reset_when: status == "success"      # Database field (no prefix)
   order_by: timestamp
 ```
 
@@ -244,12 +303,12 @@ rule:
   datasource: clickhouse_events
   entity: events
   dimension: user_id
-  dimension_value: "{event.user_id}"
+  dimension_value: "{req.user_id}"
   window: 1h
   pattern:
-    - event.type == "password_reset"
-    - event.type == "email_change"
-    - event.type == "transaction" AND event.amount > 10000
+    - type == "password_reset"                     # Database field
+    - type == "email_change"                       # Database field
+    - type == "transaction" AND amount > 10000     # Database fields
   order_by: timestamp
 ```
 
@@ -261,9 +320,9 @@ rule:
   datasource: clickhouse_events
   entity: events
   dimension: user_id
-  dimension_value: "{event.user_id}"
+  dimension_value: "{req.user_id}"
   window: 7d
-  when: event.type == "transaction"
+  when: type == "transaction"         # Database field (no prefix)
   aggregation: count
 ```
 
@@ -286,7 +345,7 @@ rule:
   type: aggregation
   method: distinct
   dimension: user_id
-  dimension_value: "{event.user_id}"
+  dimension_value: "{req.user_id}"
   field: session_id
   window: 24h
 
@@ -374,6 +433,7 @@ rule:
 **✅ expression** - Custom expressions
 ```yaml
 - name: rate_userid_login_failure
+  description: "Login failure rate (failed/total logins)"
   type: expression
   method: expression
   expression: "failed_login_count_1h / login_count_1h"
@@ -392,12 +452,14 @@ rule:
 
 ```yaml
 - name: user_risk_score_90d
+  description: "Pre-computed user risk score (90-day window)"
   type: lookup
   datasource: redis_features
   key: "user_risk_score:{event.user_id}"
   fallback: 50
 
 - name: device_reputation_score
+  description: "Device reputation score from feature store"
   type: lookup
   datasource: redis_features
   key: "device_reputation:{event.device_id}"
@@ -551,6 +613,7 @@ version: "0.2"
 features:
   # Aggregation
   - name: cnt_userid_login_24h
+    description: "Total login count in last 24 hours"
     type: aggregation
     method: count
     datasource: postgresql_events
@@ -561,6 +624,7 @@ features:
     when: event.type == "login"
 
   - name: cnt_userid_login_1h_failed
+    description: "Failed login count in last 1 hour"
     type: aggregation
     method: count
     datasource: postgresql_events
@@ -574,6 +638,7 @@ features:
         - event.status == "failed"
 
   - name: distinct_userid_device_24h
+    description: "Number of distinct devices in last 24 hours"
     type: aggregation
     method: distinct
     datasource: postgresql_events
@@ -585,6 +650,7 @@ features:
 
   # Expression
   - name: rate_userid_login_failure
+    description: "Login failure rate calculation"
     type: expression
     method: expression
     expression: "cnt_userid_login_1h_failed / max(cnt_userid_login_24h, 1)"
@@ -594,6 +660,7 @@ features:
 
   # Lookup
   - name: user_risk_score_90d
+    description: "Pre-computed user risk score (90-day)"
     type: lookup
     datasource: redis_features
     key: "user_risk_score:{event.user_id}"
@@ -620,6 +687,8 @@ rule:
 
 | Field | Aggregation | State | Sequence | Graph | Expression | Lookup |
 |-------|-------------|-------|----------|-------|------------|--------|
+| `name` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| `description` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | `type` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | `method` | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ |
 | `datasource` | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ |

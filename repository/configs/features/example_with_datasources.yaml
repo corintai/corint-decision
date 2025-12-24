@@ -9,120 +9,93 @@ features:
 
   - name: user_login_count_1h
     description: "User login count in last 1 hour from Supabase"
-    operator: count
+    type: aggregation
+    method: count
     datasource: supabase_events    # ← Supabase data source
     entity: user_events              # ← Supabase table
     dimension: user_id
     dimension_value: "{event.user_id}"
-    window:
-      value: 1
-      unit: hours
-    filters:
-      - field: event_type
-        operator: eq
-        value: "login"
-    cache:
-      enabled: true
-      ttl: 60
-      backend: local
+    window: 1h
+    timestamp_field: event_timestamp
+    when: event.event_type == "login"
 
   - name: user_transaction_sum_24h
     description: "Total transaction amount in last 24 hours from Supabase"
-    operator: sum
+    type: aggregation
+    method: sum
     datasource: supabase_events
     entity: user_events
     dimension: user_id
     dimension_value: "{event.user_id}"
     field: amount
-    window:
-      value: 24
-      unit: hours
-    filters:
-      - field: event_type
-        operator: eq
-        value: "transaction"
-    cache:
-      enabled: true
-      ttl: 300
-      backend: redis
+    window: 24h
+    timestamp_field: event_timestamp
+    when: event.event_type == "transaction"
 
   - name: device_unique_users_7d
     description: "Number of distinct users on this device in last 7 days"
-    operator: count_distinct
+    type: aggregation
+    method: distinct
     datasource: supabase_events
     entity: user_events
     dimension: device_id
     dimension_value: "{event.device_id}"
-    distinct_field: user_id
-    window:
-      value: 7
-      unit: days
-    cache:
-      enabled: true
-      ttl: 600
+    field: user_id
+    window: 7d
+    timestamp_field: event_timestamp
 
   # ==========================================================================
-  # Supabase Features (User Profile Data)
+  # Lookup Features (Pre-computed values from feature store)
   # ==========================================================================
+  # Note: Lookup features retrieve pre-computed values only; no computation
+  # All lookups use redis_features datasource for fast key-value retrieval
 
   - name: user_kyc_status
-    description: "User KYC verification status from Supabase"
-    operator: profile_lookup
-    datasource: supabase_events  # ← Supabase data source
-    table: user_profiles             # ← Supabase table
-    dimension: user_id
-    dimension_value: "{event.user_id}"
-    field: kyc_status
+    description: "User KYC verification status"
+    type: lookup
+    datasource: redis_features
+    key: "user_profiles:{event.user_id}:kyc_status"
+    fallback: "unknown"
 
   - name: user_is_verified
     description: "Is user identity verified?"
-    operator: profile_lookup
-    datasource: supabase_events
-    table: user_profiles
-    dimension: user_id
-    dimension_value: "{event.user_id}"
-    field: is_verified
+    type: lookup
+    datasource: redis_features
+    key: "user_profiles:{event.user_id}:is_verified"
+    fallback: false
 
   - name: user_account_type
     description: "User account type (individual/business)"
-    operator: profile_lookup
-    datasource: supabase_events
-    table: user_profiles
-    dimension: user_id
-    dimension_value: "{event.user_id}"
-    field: account_type
+    type: lookup
+    datasource: redis_features
+    key: "user_profiles:{event.user_id}:account_type"
+    fallback: "individual"
 
   - name: device_is_suspicious
     description: "Is device marked as suspicious in registry?"
-    operator: profile_lookup
-    datasource: supabase_events
-    table: device_registry
-    dimension: device_id
-    dimension_value: "{event.device_id}"
-    field: is_suspicious
-
-  # ==========================================================================
-  # Supabase Features (Pre-computed Feature Store)
-  # ==========================================================================
+    type: lookup
+    datasource: redis_features
+    key: "device_registry:{event.device_id}:is_suspicious"
+    fallback: false
 
   - name: user_risk_score
-    description: "Pre-computed user risk score from Supabase feature store"
-    operator: feature_store_lookup
-    datasource: supabase_events       # ← Supabase feature store
+    description: "Pre-computed user risk score from feature store"
+    type: lookup
+    datasource: redis_features
     key: "user_features:{event.user_id}:risk_score"
     fallback: 0.0
 
   - name: user_lifetime_transaction_avg
     description: "User's historical average transaction amount"
-    operator: feature_store_lookup
-    datasource: supabase_events
+    type: lookup
+    datasource: redis_features
     key: "user_stats:{event.user_id}:avg_transaction"
     fallback: 0.0
 
   - name: device_trust_score
     description: "Device trust score from feature store"
-    operator: feature_store_lookup
-    datasource: supabase_events
+    type: lookup
+    datasource: redis_features
     key: "device_features:{event.device_id}:trust_score"
     fallback: 50.0
 
@@ -132,40 +105,38 @@ features:
 
   - name: ip_event_count_1h
     description: "Events from this IP in last 1 hour (uses default datasource)"
-    operator: count
+    type: aggregation
+    method: count
     # datasource not specified, will use "default"
     entity: user_events
     dimension: ip_address
     dimension_value: "{event.ip_address}"
-    window:
-      value: 1
-      unit: hours
-    cache:
-      enabled: true
-      ttl: 60
+    window: 1h
+    timestamp_field: event_timestamp
 
   # ==========================================================================
   # Velocity Features
   # ==========================================================================
 
-  - name: exceeds_login_velocity
-    description: "Does user exceed login velocity threshold?"
-    operator: velocity
-    datasource: supabase_events
-    entity: user_events
-    dimension: user_id
-    dimension_value: "{event.user_id}"
-    window:
-      value: 1
-      unit: hours
-    threshold: 10
-    filters:
-      - field: event_type
-        operator: eq
-        value: "login"
-    cache:
-      enabled: true
-      ttl: 60
+  # - name: exceeds_login_velocity
+  #   description: "Does user exceed login velocity threshold?"
+  #   type: Expression  # Not yet implemented
+  #   method: velocity
+  #   datasource: supabase_events
+  #   entity: user_events
+  #   dimension: user_id
+  #   dimension_value: "{event.user_id}"
+  #   window:
+  #     value: 1
+  #     unit: hours
+  #   threshold: 10
+  #   when:
+  #     - field: event_type
+  #       operator: eq
+  #       value: "login"
+  #   cache:
+  #     enabled: true
+  #     ttl: 60
 
   # ==========================================================================
   # Composite Example: Multiple Data Sources
@@ -178,3 +149,4 @@ features:
   # THEN
   #    action: block
   #    reason: "High risk unverified user with large transactions"
+
