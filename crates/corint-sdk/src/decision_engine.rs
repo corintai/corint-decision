@@ -2188,22 +2188,17 @@ impl DecisionEngine {
 
                                     // Store ruleset result in context for pipeline decision logic
                                     let mut result_map = std::collections::HashMap::new();
-                                    if let Some(ref action) = ruleset_result.signal {
-                                        let action_str = match action {
+                                    if let Some(ref signal) = ruleset_result.signal {
+                                        let signal_str = match signal {
                                             Signal::Approve => "approve",
                                             Signal::Decline => "decline",
                                             Signal::Review => "review",
                                             Signal::Hold => "hold",
                                             Signal::Pass => "pass",
                                         };
-                                        // Store as both "action" and "signal" for compatibility
-                                        result_map.insert(
-                                            "action".to_string(),
-                                            Value::String(action_str.to_string()),
-                                        );
                                         result_map.insert(
                                             "signal".to_string(),
-                                            Value::String(action_str.to_string()),
+                                            Value::String(signal_str.to_string()),
                                         );
                                     }
                                     result_map.insert(
@@ -2225,11 +2220,11 @@ impl DecisionEngine {
                                         );
                                     }
 
-                                    // Store decision_logic_json from program metadata for trace building
-                                    if let Some(decision_logic_json) = ruleset_program.metadata.custom.get("decision_logic_json") {
+                                    // Store conclusion_json from program metadata for trace building
+                                    if let Some(conclusion_json) = ruleset_program.metadata.custom.get("conclusion_json") {
                                         result_map.insert(
-                                            "decision_logic_json".to_string(),
-                                            Value::String(decision_logic_json.clone()),
+                                            "conclusion_json".to_string(),
+                                            Value::String(conclusion_json.clone()),
                                         );
                                     }
 
@@ -2545,11 +2540,12 @@ impl DecisionEngine {
                                     );
                                 }
 
-                                // Store decision_logic_json from program metadata for trace building
-                                if let Some(decision_logic_json) = ruleset_program.metadata.custom.get("decision_logic_json") {
+                                // Store conclusion_json from program metadata for trace building
+                                // Try "conclusion_json" first (new format), then "decision_logic_json" (legacy)
+                                if let Some(conclusion_json) = ruleset_program.metadata.custom.get("conclusion_json") {
                                     result_map.insert(
-                                        "decision_logic_json".to_string(),
-                                        Value::String(decision_logic_json.clone()),
+                                        "conclusion_json".to_string(),
+                                        Value::String(conclusion_json.clone()),
                                     );
                                 }
 
@@ -2871,32 +2867,22 @@ impl DecisionEngine {
                     ruleset_trace = ruleset_trace.add_rule(rule_trace);
                 }
 
-                // Set the ruleset score
-                ruleset_trace.total_score = ruleset_score;
-
-                // Get ruleset-specific action, reason, and decision_logic from execution variables
+                // Get ruleset-specific signal and conclusion from execution variables
                 let result_key = format!("__ruleset_result__.{}", ruleset_trace.ruleset_id);
                 if let Some(Value::Object(result_map)) = execution_result.variables.get(&result_key) {
-                    let action_str = result_map
-                        .get("action")
-                        .and_then(|v| if let Value::String(s) = v { Some(s.as_str()) } else { None });
-                    let reason_str = result_map
-                        .get("reason")
+                    let signal_str = result_map
+                        .get("signal")
                         .and_then(|v| if let Value::String(s) = v { Some(s.as_str()) } else { None });
 
-                    if let Some(action) = action_str {
-                        ruleset_trace = ruleset_trace.with_decision(action, reason_str);
-                    }
-
-                    // Build decision_logic trace from stored JSON
-                    if let Some(Value::String(decision_logic_json)) = result_map.get("decision_logic_json") {
-                        let decision_logic_traces = Self::build_decision_logic_traces(
-                            decision_logic_json,
-                            action_str,
+                    // Build conclusion trace from stored JSON
+                    if let Some(Value::String(conclusion_json)) = result_map.get("conclusion_json") {
+                        let conclusion_traces = Self::build_decision_logic_traces(
+                            conclusion_json,
+                            signal_str,
                             ruleset_score,
                             &request.event_data,
                         );
-                        ruleset_trace.conclusion = decision_logic_traces;
+                        ruleset_trace.conclusion = conclusion_traces;
                     }
                 } else if let Some(ref action) = combined_result.signal {
                     // Fallback to combined result if ruleset-specific result not found
@@ -2907,7 +2893,8 @@ impl DecisionEngine {
                         Signal::Hold => "hold",
                         Signal::Pass => "pass",
                     };
-                    ruleset_trace = ruleset_trace.with_decision(action_str, None);
+                    // Build conclusion trace from combined result (if conclusion_json is available)
+                    // Note: This is a fallback case, conclusion_json might not be available
                 }
 
                 pipeline_trace = pipeline_trace.add_ruleset(ruleset_trace);
@@ -2941,7 +2928,7 @@ impl DecisionEngine {
     fn build_decision_logic_traces(
         decision_logic_json: &str,
         matched_action: Option<&str>,
-        _total_score: i32,
+        total_score: i32,
         _event_data: &HashMap<String, Value>,
     ) -> Vec<ConclusionTrace> {
         let mut traces = Vec::new();
@@ -2960,8 +2947,12 @@ impl DecisionEngine {
         for rule in decision_rules {
             let is_default = rule.get("default").and_then(|v| v.as_bool()).unwrap_or(false);
             let condition = rule.get("condition").and_then(|v| v.as_str()).map(|s| s.to_string());
-            let action = rule.get("action").and_then(|v| v.as_str()).map(|s| s.to_string());
+            // Read signal from JSON (compiled format uses "signal" field with uppercase values)
+            let signal_upper = rule.get("signal").and_then(|v| v.as_str()).map(|s| s.to_string());
             let reason = rule.get("reason").and_then(|v| v.as_str()).map(|s| s.to_string());
+
+            // Normalize signal to lowercase for comparison
+            let signal_lower = signal_upper.as_ref().map(|s| s.to_lowercase());
 
             // Build condition string for display
             let condition_str = if is_default {
@@ -2972,18 +2963,18 @@ impl DecisionEngine {
 
             // Determine if this rule matched
             // A rule is matched if:
-            // 1. matched_action matches this rule's action AND we haven't found a match yet
+            // 1. matched_action matches this rule's signal AND we haven't found a match yet
             // 2. This is a default rule and no previous rule matched
             let matched = if !matched_found {
-                if let Some(ref rule_action) = action {
-                    if matched_action == Some(rule_action.as_str()) {
+                if let Some(ref rule_signal) = signal_lower {
+                    if matched_action == Some(rule_signal.as_str()) {
                         // This could be the matched rule - check condition if present
                         if is_default {
                             // Default rule matches if we reach it
                             true
                         } else if let Some(ref _cond) = condition {
-                            // Try to evaluate the condition (simplified - just check if action matches)
-                            // In practice, we trust the action match since the VM already evaluated it
+                            // Try to evaluate the condition (simplified - just check if signal matches)
+                            // In practice, we trust the signal match since the VM already evaluated it
                             true
                         } else {
                             true
@@ -3003,8 +2994,13 @@ impl DecisionEngine {
             }
 
             let mut trace = ConclusionTrace::new(condition_str, matched);
-            trace.signal = action;
+            // Use signal_lower (normalized) for trace
+            trace.signal = signal_lower;
             trace.reason = reason;
+            // Add total_score for matched conclusion rules
+            if matched {
+                trace.total_score = Some(total_score);
+            }
 
             traces.push(trace);
 

@@ -157,6 +157,10 @@ pub struct ConclusionTrace {
     /// The reason/explanation if matched
     #[serde(skip_serializing_if = "Option::is_none")]
     pub reason: Option<String>,
+
+    /// The total_score at the time this conclusion rule was evaluated (only for matched rules)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub total_score: Option<i32>,
 }
 
 impl ConclusionTrace {
@@ -167,6 +171,7 @@ impl ConclusionTrace {
             matched,
             signal: None,
             reason: None,
+            total_score: None,
         }
     }
 
@@ -177,6 +182,18 @@ impl ConclusionTrace {
             matched: true,
             signal: Some(signal.to_string()),
             reason: reason.map(|s| s.to_string()),
+            total_score: None,
+        }
+    }
+
+    /// Create a matched conclusion trace with signal and total_score
+    pub fn matched_with_score(condition: String, signal: &str, reason: Option<&str>, total_score: i32) -> Self {
+        Self {
+            condition,
+            matched: true,
+            signal: Some(signal.to_string()),
+            reason: reason.map(|s| s.to_string()),
+            total_score: Some(total_score),
         }
     }
 }
@@ -194,19 +211,9 @@ pub struct RulesetTrace {
     /// Traces of all rules in this ruleset
     pub rules: Vec<RuleTrace>,
 
-    /// Total accumulated score from this ruleset
-    pub total_score: i32,
-
     /// Conclusion logic evaluation traces
+    /// The matched conclusion rule contains signal, total_score, and reason
     pub conclusion: Vec<ConclusionTrace>,
-
-    /// The final signal from this ruleset
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub signal: Option<String>,
-
-    /// The final reason/explanation
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub reason: Option<String>,
 }
 
 impl RulesetTrace {
@@ -215,28 +222,13 @@ impl RulesetTrace {
         Self {
             ruleset_id,
             rules: Vec::new(),
-            total_score: 0,
             conclusion: Vec::new(),
-            signal: None,
-            reason: None,
         }
     }
 
     /// Add a rule trace
     pub fn add_rule(mut self, rule: RuleTrace) -> Self {
-        if rule.triggered {
-            if let Some(score) = rule.score {
-                self.total_score += score;
-            }
-        }
         self.rules.push(rule);
-        self
-    }
-
-    /// Set the final decision
-    pub fn with_decision(mut self, signal: &str, reason: Option<&str>) -> Self {
-        self.signal = Some(signal.to_string());
-        self.reason = reason.map(|s| s.to_string());
         self
     }
 }
@@ -518,12 +510,9 @@ mod tests {
 
         let trace = RulesetTrace::new("test_ruleset".to_string())
             .add_rule(rule1)
-            .add_rule(rule2)
-            .with_decision("review", Some("High score"));
+            .add_rule(rule2);
 
-        assert_eq!(trace.total_score, 50);
         assert_eq!(trace.rules.len(), 2);
-        assert_eq!(trace.signal, Some("review".to_string()));
     }
 
     #[test]
