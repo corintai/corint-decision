@@ -42,7 +42,6 @@ impl RepositoryLoader {
     /// - Pipelines
     /// - Rules
     /// - Rulesets
-    /// - Templates
     /// - API configs
     /// - Data source configs
     /// - Feature definitions
@@ -99,15 +98,7 @@ impl RepositoryLoader {
             }
         }
 
-        // 5. Load templates
-        let template_ids = repo.list_templates().await?;
-        for id in template_ids {
-            if let Ok((_, yaml)) = repo.load_template(&id).await {
-                content.templates.push((id, yaml));
-            }
-        }
-
-        // 6. Load configs directory
+        // 5. Load configs directory
         let configs_path = Path::new(base_path).join("configs");
         if configs_path.exists() {
             // Load API configs
@@ -565,14 +556,6 @@ impl RepositoryLoader {
             }
         }
 
-        // Load templates
-        let template_ids = repo.list_templates().await?;
-        for id in template_ids {
-            if let Ok((_, yaml)) = repo.load_template(&id).await {
-                content.templates.push((id, yaml));
-            }
-        }
-
         Ok(content)
     }
 
@@ -614,14 +597,6 @@ impl RepositoryLoader {
         for id in ruleset_ids {
             if let Ok((_, yaml)) = repo.load_ruleset(&id).await {
                 content.rulesets.push((id, yaml));
-            }
-        }
-
-        // Load templates
-        let template_ids = repo.list_templates().await?;
-        for id in template_ids {
-            if let Ok((_, yaml)) = repo.load_template(&id).await {
-                content.templates.push((id, yaml));
             }
         }
 

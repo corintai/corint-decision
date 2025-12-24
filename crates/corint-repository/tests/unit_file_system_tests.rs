@@ -21,9 +21,6 @@ async fn create_test_repo() -> (TempDir, FileSystemRepository) {
     fs::create_dir_all(repo_path.join("library/rulesets"))
         .await
         .unwrap();
-    fs::create_dir_all(repo_path.join("library/templates"))
-        .await
-        .unwrap();
     fs::create_dir_all(repo_path.join("pipelines"))
         .await
         .unwrap();
@@ -81,27 +78,6 @@ ruleset:
     fs::write(
         repo_path.join("library/rulesets/test_ruleset.yaml"),
         ruleset,
-    )
-    .await
-    .unwrap();
-
-    // Create test template
-    let template = r#"version: "0.1"
-
-template:
-  id: score_template
-  name: Score-Based Template
-  params:
-    threshold: 100
-  decision_logic:
-    - condition: total_score >= params.threshold
-      action: deny
-    - default: true
-      action: approve
-"#;
-    fs::write(
-        repo_path.join("library/templates/score_template.yaml"),
-        template,
     )
     .await
     .unwrap();
@@ -205,30 +181,6 @@ async fn test_load_ruleset_by_id() {
 }
 
 #[tokio::test]
-async fn test_load_template_by_path() {
-    let (_temp, repo) = create_test_repo().await;
-
-    let (template, _) = repo
-        .load_template("library/templates/score_template.yaml")
-        .await
-        .expect("Failed to load template");
-
-    assert_eq!(template.id, "score_template");
-}
-
-#[tokio::test]
-async fn test_load_template_by_id() {
-    let (_temp, repo) = create_test_repo().await;
-
-    let (template, _) = repo
-        .load_template("score_template")
-        .await
-        .expect("Failed to load template by ID");
-
-    assert_eq!(template.id, "score_template");
-}
-
-#[tokio::test]
 async fn test_load_pipeline_by_path() {
     let (_temp, repo) = create_test_repo().await;
 
@@ -237,7 +189,7 @@ async fn test_load_pipeline_by_path() {
         .await
         .expect("Failed to load pipeline");
 
-    assert_eq!(pipeline.id, Some("test_pipeline".to_string()));
+    assert_eq!(pipeline.id, "test_pipeline".to_string());
 }
 
 #[tokio::test]
@@ -249,7 +201,7 @@ async fn test_load_pipeline_by_id() {
         .await
         .expect("Failed to load pipeline by ID");
 
-    assert_eq!(pipeline.id, Some("test_pipeline".to_string()));
+    assert_eq!(pipeline.id, "test_pipeline".to_string());
 }
 
 #[tokio::test]
@@ -413,19 +365,6 @@ async fn test_list_rulesets() {
 
     assert_eq!(rulesets.len(), 1);
     assert!(rulesets.iter().any(|r| r.contains("test_ruleset")));
-}
-
-#[tokio::test]
-async fn test_list_templates() {
-    let (_temp, repo) = create_test_repo().await;
-
-    let templates = repo
-        .list_templates()
-        .await
-        .expect("Failed to list templates");
-
-    assert_eq!(templates.len(), 1);
-    assert!(templates.iter().any(|t| t.contains("score_template")));
 }
 
 #[tokio::test]

@@ -49,5 +49,5 @@ pub use corint_repository::{
 };
 
 // Re-export commonly used types from dependencies
-pub use corint_core::{ast::Action, Value};
+pub use corint_core::{ast::Signal, Value};
 pub use corint_runtime::{DecisionResult, MetricsCollector};

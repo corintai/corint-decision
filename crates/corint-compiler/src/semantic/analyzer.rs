@@ -66,8 +66,8 @@ impl SemanticAnalyzer {
             }
         }
 
-        // Analyze decision logic
-        for decision_rule in &ruleset.decision_logic {
+        // Analyze conclusion
+        for decision_rule in &ruleset.conclusion {
             if let Some(condition) = &decision_rule.condition {
                 self.analyze_expression(condition)?;
             }

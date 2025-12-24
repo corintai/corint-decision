@@ -1,10 +1,17 @@
 # CORINT Risk Definition Language (RDL)
-## Pipeline Specification (v0.1)
+## Pipeline Specification (v0.2)
 
-A **Pipeline** defines the full risk‑processing flow in CORINT’s Cognitive Risk Intelligence framework.  
+A **Pipeline** defines the full risk‑processing flow in CORINT's Cognitive Risk Intelligence framework.
 It represents a declarative Directed Acyclic Graph (DAG) composed of *steps*, *branches*, *parallel flows*, and *aggregation nodes*.
 
-Pipelines orchestrate how events move through feature extraction, cognitive reasoning (LLM), rule execution, scoring, and final actions.
+Pipelines orchestrate how events move through feature extraction, cognitive reasoning (LLM), rule execution, scoring, and **final decision making**.
+
+**Important: Three-Layer Decision Model**
+- **Rules** detect and score individual risk patterns
+- **Rulesets** produce **signals** (`approve`, `decline`, `review`, `hold`, `pass`) based on rule results
+- **Pipelines** make **final decisions** based on ruleset signals, outputting both a **signal** and optional **actions**
+
+Note: Both rulesets and pipelines use the same 5 signal types. The difference is naming convention to clarify that ruleset output is intermediate (called "signal"), while pipeline output is the final decision result.
 
 ---
 
@@ -26,9 +33,30 @@ pipeline:
     - <parallel>
     - <aggregate>
     - <include>
+  decision:                     # Final decision logic based on signals
+    - <decision-rules>
 ```
 
-### 1.2 Pipeline Metadata
+### 1.2 Execution Flow
+
+Pipeline execution follows this flow:
+
+```
+when条件检查 → entry step → next routing → ... → decision最终决策
+```
+
+**Step Routing Rules:**
+- `entry: <step_id>` - Defines which step to start with
+- `next: <step_id>` - Explicitly routes to the specified step
+- `next: end` or **no `next`** - Ends step execution, flows to `decision`
+
+**Key Points:**
+- Pipeline is a **DAG (Directed Acyclic Graph)** - routing must be explicit
+- Sequential execution requires explicit `next` declarations between steps
+- Omitting `next` means "end here" - enables early termination from any step
+- `decision` section is the terminal phase for making final actions
+
+### 1.3 Pipeline Metadata
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
@@ -37,6 +65,7 @@ pipeline:
 | `description` | string | No | Detailed description of pipeline purpose |
 | `when` | object | No | Execution condition (event type filter) |
 | `steps` | array | Yes | List of processing steps |
+| `decision` | array | No | Final decision logic based on signals from rulesets |
 | `metadata` | object | No | Arbitrary key-value pairs for documentation, versioning, authorship, etc. |
 
 The `metadata` field allows you to attach information to your pipeline for documentation, versioning, and management purposes.
@@ -67,7 +96,7 @@ pipeline:
     tags: [fraud, risk_assessment]
 ```
 
-### 1.3 When Condition
+### 1.4 When Condition
 
 The `when` block controls whether the pipeline executes:
 
@@ -309,8 +338,10 @@ steps:
 The `include` step:
 - Executes all rules in the ruleset
 - Evaluates the ruleset's decision logic
-- Returns the action (approve/deny/review/infer)
-- Makes results available in context
+- Returns a **signal** (`approve`, `decline`, `review`, `hold`, `pass`)
+- Makes results available in `results.<ruleset_id>.signal`
+
+**Note:** Both rulesets and pipelines use the same 5 signal types. The ruleset signal indicates the intermediate decision recommendation, while the pipeline makes the final decision based on signals from all rulesets.
 
 ### 6.4 Pipeline Include (Execution)
 
@@ -453,9 +484,9 @@ pipeline:
     - aggregate:
         method: weighted
         weights:
-          context.device_risk.total_score: 0.4
-          context.geo_risk.total_score: 0.3
-          context.behavioral_risk.total_score: 0.3
+          results.device_risk.total_score: 0.4
+          results.geo_risk.total_score: 0.3
+          results.behavioral_risk.total_score: 0.3
 ```
 
 ### 6.8 Conditional Ruleset Execution
@@ -486,12 +517,160 @@ steps:
 
 ---
 
-## 7. Full Pipeline Example
+## 7. Decision Logic
 
-### 7.1 Login Risk Processing Pipeline
+The `decision` section is where **final decisions** are made based on **signals** from rulesets. This is the core of the three-layer decision model.
+
+### 7.1 Basic Structure
 
 ```yaml
-version: "0.1"
+pipeline:
+  id: my_pipeline
+  steps:
+    - include:
+        ruleset: fraud_detection
+
+  # Decision logic based on signals from rulesets
+  decision:
+    - when: results.fraud_detection.signal == "decline"
+      result: decline
+      actions: ["BLOCK_DEVICE", "NOTIFY_SECURITY"]
+      reason: "Critical risk detected"
+      terminate: true
+
+    - when: results.fraud_detection.signal == "review"
+      result: review
+      actions: ["KYC", "OTP"]
+      reason: "Requires manual review"
+
+    - when: results.fraud_detection.signal == "hold"
+      result: hold
+      actions: ["2FA"]
+      reason: "Additional verification required"
+
+    - default: true
+      result: approve
+      reason: "Transaction approved"
+```
+
+### 7.2 Decision Structure
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `when` | string | Yes* | Condition expression for this decision rule |
+| `result` | string | Yes | Decision result: `approve`, `decline`, `review`, `hold`, `pass` |
+| `actions` | array | No | List of actions to execute: `["KYC", "OTP", "2FA", "BLOCK_DEVICE"]` |
+| `reason` | string | No | Human-readable reason for the decision |
+| `terminate` | boolean | No | If true, stop processing further decision rules |
+| `default` | boolean | No* | If true, this is the default fallback rule |
+
+*Either `when` or `default` must be specified.
+
+### 7.3 Signal vs Result vs Actions
+
+**Signal** (Ruleset output) - The intermediate decision recommendation from a ruleset:
+- Produced by rulesets after evaluating rules
+- Available as `results.<ruleset_id>.signal`
+- Values: `approve`, `decline`, `review`, `hold`, `pass`
+
+**Result** (Pipeline output) - The final decision outcome:
+| Result | Description | Use Case |
+|--------|-------------|----------|
+| `approve` | Automatically approve the transaction | Low risk, clean transactions |
+| `decline` | Automatically reject the transaction | High risk, fraud detected |
+| `review` | Send to human review queue | Medium risk, needs judgment |
+| `hold` | Temporarily suspend, require additional verification | Suspicious but not definitive |
+| `pass` | Skip/no decision, let downstream handle | Rule not applicable, defer to next |
+
+**Actions** - Optional list of specific actions to execute:
+| Action | Description |
+|--------|-------------|
+| `KYC` | Trigger Know Your Customer verification |
+| `OTP` | Send one-time password verification |
+| `2FA` | Require two-factor authentication |
+| `BLOCK_DEVICE` | Block the device from future transactions |
+| `NOTIFY_SECURITY` | Alert security team |
+| `FREEZE_ACCOUNT` | Temporarily freeze the account |
+| *custom* | Any custom action defined by your system |
+
+### 7.4 Available Context for Decisions
+
+Within decision conditions, you can access:
+
+- `results.<ruleset_id>.signal` - Signal from a ruleset (e.g., `approve`, `decline`, `review`)
+- `results.<ruleset_id>.total_score` - Aggregate score from ruleset
+- `results.<ruleset_id>.triggered_count` - Number of triggered rules
+- `results.<ruleset_id>.triggered_rules` - Array of triggered rule IDs
+- `event.*` - Original event data
+- `features.*` - Calculated features
+
+### 7.5 Multiple Rulesets Example
+
+When using multiple rulesets, combine their signals in decision logic:
+
+```yaml
+pipeline:
+  id: comprehensive_risk_pipeline
+
+  steps:
+    - include:
+        ruleset: device_risk
+    - include:
+        ruleset: geo_risk
+    - include:
+        ruleset: behavioral_risk
+
+  # Decision based on signals from all rulesets
+  decision:
+    # Any decline signal = decline
+    - when: |
+        results.device_risk.signal == "decline" ||
+        results.geo_risk.signal == "decline" ||
+        results.behavioral_risk.signal == "decline"
+      result: decline
+      actions: ["BLOCK_DEVICE", "FREEZE_ACCOUNT"]
+      reason: "Critical risk detected"
+      terminate: true
+
+    # Multiple review signals = decline
+    - when: |
+        (results.device_risk.signal == "review" ? 1 : 0) +
+        (results.geo_risk.signal == "review" ? 1 : 0) +
+        (results.behavioral_risk.signal == "review" ? 1 : 0) >= 2
+      result: decline
+      actions: ["NOTIFY_SECURITY"]
+      reason: "Multiple risk signals"
+
+    # Any review signal = review
+    - when: |
+        results.device_risk.signal == "review" ||
+        results.geo_risk.signal == "review" ||
+        results.behavioral_risk.signal == "review"
+      result: review
+      actions: ["KYC"]
+      reason: "Risk signal detected"
+
+    # Default: approve
+    - default: true
+      result: approve
+```
+
+### 7.6 Benefits of Pipeline-Level Decisions
+
+1. **Reusability** - Same ruleset can be used with different decision thresholds
+2. **Flexibility** - Different pipelines can make different decisions from the same signals
+3. **Clarity** - Clear separation between detection (rules) and action (decisions)
+4. **Testability** - Test ruleset signals independently from decision logic
+5. **Customization** - Easy to adjust thresholds per use case (VIP users, high-value transactions, etc.)
+
+---
+
+## 8. Full Pipeline Example
+
+### 8.1 Login Risk Processing Pipeline
+
+```yaml
+version: "0.2"
 
 pipeline:
   id: login_risk_pipeline
@@ -499,7 +678,7 @@ pipeline:
   description: Comprehensive login risk evaluation with parallel checks and LLM reasoning
   when:
     event.type: login
-  
+
   steps:
     # Step 1: base feature extraction
     - type: extract
@@ -516,7 +695,7 @@ pipeline:
       merge:
         method: all
 
-    # Step 3: execute login ruleset
+    # Step 3: execute login ruleset (produces signals)
     - include:
         ruleset: login_risk_rules
 
@@ -528,13 +707,31 @@ pipeline:
           llm: 0.3
           ip: 0.2
 
-    # Step 5: final action
-    - type: action
+  # Final decision based on signals
+  decision:
+    - when: results.login_risk_rules.signal == "decline"
+      result: decline
+      actions: ["BLOCK_DEVICE", "NOTIFY_SECURITY"]
+      reason: "Critical login risk"
+      terminate: true
+
+    - when: results.login_risk_rules.signal == "review"
+      result: review
+      actions: ["KYC"]
+      reason: "Requires manual review"
+
+    - when: results.login_risk_rules.signal == "hold"
+      result: hold
+      actions: ["2FA"]
+      reason: "Additional verification required"
+
+    - default: true
+      result: approve
 ```
 
 ---
 
-### 7.2 Multi‑Event Pipeline Example
+### 8.2 Multi‑Event Pipeline Example
 
 ```yaml
 version: "0.1"
@@ -573,7 +770,7 @@ pipeline:
 
 ---
 
-### 7.3 Service Integration Pipeline Example
+### 8.3 Service Integration Pipeline Example
 
 ```yaml
 version: "0.1"
@@ -631,7 +828,7 @@ pipeline:
 
 ---
 
-## 8. BNF Grammar (Formal)
+## 9. BNF Grammar (Formal)
 
 ```
 PIPELINE ::=
@@ -697,7 +894,7 @@ OBJECT ::= KEY ":" VALUE { KEY ":" VALUE }
 
 ---
 
-## 9. Related Documentation
+## 10. Related Documentation
 
 For comprehensive understanding of pipelines and the CORINT ecosystem:
 
@@ -722,7 +919,7 @@ For comprehensive understanding of pipelines and the CORINT ecosystem:
 
 ---
 
-## 10. Summary
+## 11. Summary
 
 A CORINT Pipeline:
 
@@ -732,11 +929,22 @@ A CORINT Pipeline:
 - Encapsulates reusable and modular risk flows
 - **Uses imports to declare dependencies on rulesets and sub-pipelines**
 - **Benefits from automatic transitive dependency resolution**
+- **Makes final decisions** based on **signals** from rulesets
 
-**Key Points:**
-- Pipelines orchestrate the execution flow
-- Rulesets are imported and included for execution
-- Dependencies are resolved at compile time
+**Key Points (Three-Layer Model):**
+- **Rules** detect and score individual risk patterns
+- **Rulesets** produce **signals** (`approve`, `decline`, `review`, `hold`, `pass`)
+- **Pipelines** make final decisions with **result** and optional **actions**
+
+**Signal vs Result vs Actions:**
+- `signal`: Ruleset output - intermediate decision recommendation
+- `result`: Pipeline output - final decision outcome (approve/decline/review/hold/pass)
+- `actions`: Optional list of specific actions to execute (KYC, OTP, 2FA, BLOCK_DEVICE, etc.)
+
+**Benefits:**
+- Same ruleset can be reused with different decision thresholds
+- Clear separation between detection and action
 - 80-90% code reduction through modular design
+- Dependencies resolved at compile time
 
 It is the highest‑level construct of CORINT's Risk Definition Language (RDL).

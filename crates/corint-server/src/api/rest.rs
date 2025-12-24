@@ -307,7 +307,7 @@ async fn decide(
     // Convert action to decision result string
     let result_str = response
         .result
-        .action
+        .signal
         .map(|a| format!("{:?}", a).to_uppercase())
         .unwrap_or_else(|| "PASS".to_string());
 
@@ -789,7 +789,7 @@ async fn decide_with_metrics(
     // Convert action to decision result string
     let result_str = response
         .result
-        .action
+        .signal
         .map(|a| format!("{:?}", a).to_uppercase())
         .unwrap_or_else(|| "PASS".to_string());
 

@@ -8,7 +8,7 @@ rule:
   name: Velocity Pattern Detection
   description: |
     Detects velocity abuse patterns with configurable thresholds.
-    This is a template rule that can be instantiated with different parameters.
+    This is a parameterized rule that can be reused with different parameters.
 
   # Parameters with default values
   params:

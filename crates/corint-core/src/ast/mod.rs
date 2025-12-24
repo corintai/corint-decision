@@ -15,7 +15,6 @@ pub mod pipeline;
 pub mod registry;
 pub mod rule;
 pub mod ruleset;
-pub mod template;
 
 pub use expression::{Expression, LogicalGroupOp, UnaryOperator};
 pub use import::{ImportContext, Imports, RdlDocument};
@@ -26,5 +25,4 @@ pub use pipeline::{
 };
 pub use registry::{PipelineRegistry, RegistryEntry};
 pub use rule::{Condition, ConditionGroup, Rule, RuleParams, WhenBlock};
-pub use ruleset::{Action, DecisionRule, DecisionTemplateRef, InferConfig, Ruleset};
-pub use template::{DecisionTemplate, TemplateReference};
+pub use ruleset::{DecisionRule, Ruleset, Signal};

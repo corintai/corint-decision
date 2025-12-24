@@ -439,8 +439,7 @@ fn test_semantic_analyze_valid_ruleset() {
         name: Some("Valid Ruleset".to_string()),
         extends: None,
         rules: vec!["rule1".to_string(), "rule2".to_string()],
-        decision_logic: vec![],
-        decision_template: None,
+        conclusion: vec![],
         description: None,
         metadata: None,
     };
@@ -486,9 +485,9 @@ ruleset:
   name: Test Ruleset
   rules:
     - rule1
-  decision_logic:
+  conclusion:
     - default: true
-      action: approve
+      signal: approve
 "#;
 
     let validator = validator::DslValidator::new();
@@ -584,9 +583,9 @@ ruleset:
   id: auto_detect_ruleset
   name: Auto Detect Ruleset
   rules: []
-  decision_logic:
+  conclusion:
     - default: true
-      action: approve
+      signal: approve
 "#;
 
     let validator = validator::DslValidator::new();
@@ -632,8 +631,7 @@ fn test_compiler_compile_ruleset() {
         name: Some("Test Ruleset".to_string()),
         extends: None,
         rules: vec!["rule1".to_string()],
-        decision_logic: vec![],
-        decision_template: None,
+        conclusion: vec![],
         description: None,
         metadata: None,
     };
@@ -762,8 +760,7 @@ fn test_ruleset_compiler_empty_ruleset() {
         name: Some("Empty Ruleset".to_string()),
         extends: None,
         rules: vec![],
-        decision_logic: vec![],
-        decision_template: None,
+        conclusion: vec![],
         description: None,
         metadata: None,
     };
@@ -901,8 +898,7 @@ fn test_ruleset_with_extends() {
         name: Some("Child Ruleset".to_string()),
         extends: Some("parent_ruleset".to_string()),
         rules: vec!["additional_rule".to_string()],
-        decision_logic: vec![],
-        decision_template: None,
+        conclusion: vec![],
         description: None,
         metadata: None,
     };

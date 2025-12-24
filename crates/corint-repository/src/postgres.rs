@@ -1,8 +1,8 @@
 //! PostgreSQL database repository implementation
 
 use async_trait::async_trait;
-use corint_core::ast::{DecisionTemplate, Pipeline, Rule, Ruleset};
-use corint_parser::{PipelineParser, RuleParser, RulesetParser, TemplateParser};
+use corint_core::ast::{Pipeline, Rule, Ruleset};
+use corint_parser::{PipelineParser, RuleParser, RulesetParser};
 use sqlx::postgres::PgPool;
 use sqlx::Row;
 use std::collections::HashMap;
@@ -21,8 +21,6 @@ pub struct PostgresRepository {
     rule_cache: Arc<RwLock<HashMap<String, CachedArtifact<Rule>>>>,
     /// Cache for rulesets
     ruleset_cache: Arc<RwLock<HashMap<String, CachedArtifact<Ruleset>>>>,
-    /// Cache for templates
-    template_cache: Arc<RwLock<HashMap<String, CachedArtifact<DecisionTemplate>>>>,
     /// Cache for pipelines
     pipeline_cache: Arc<RwLock<HashMap<String, CachedArtifact<Pipeline>>>>,
     /// Cache configuration
@@ -54,7 +52,6 @@ impl PostgresRepository {
             pool,
             rule_cache: Arc::new(RwLock::new(HashMap::new())),
             ruleset_cache: Arc::new(RwLock::new(HashMap::new())),
-            template_cache: Arc::new(RwLock::new(HashMap::new())),
             pipeline_cache: Arc::new(RwLock::new(HashMap::new())),
             cache_config: Arc::new(Mutex::new(CacheConfig::default())),
             stats: Arc::new(Mutex::new(CacheStats::default())),
@@ -67,7 +64,6 @@ impl PostgresRepository {
             pool,
             rule_cache: Arc::new(RwLock::new(HashMap::new())),
             ruleset_cache: Arc::new(RwLock::new(HashMap::new())),
-            template_cache: Arc::new(RwLock::new(HashMap::new())),
             pipeline_cache: Arc::new(RwLock::new(HashMap::new())),
             cache_config: Arc::new(Mutex::new(CacheConfig::default())),
             stats: Arc::new(Mutex::new(CacheStats::default())),
@@ -219,50 +215,6 @@ impl Repository for PostgresRepository {
         Ok((doc.definition, content))
     }
 
-    async fn load_template(
-        &self,
-        identifier: &str,
-    ) -> RepositoryResult<(DecisionTemplate, String)> {
-        // Check cache first
-        if let Some(cached) = self.check_cache(&self.template_cache, identifier).await {
-            return Ok(cached);
-        }
-
-        // Query database
-        let row = sqlx::query(
-            r#"
-            SELECT id, content, version, updated_at
-            FROM templates
-            WHERE id = $1 OR path = $1
-            ORDER BY version DESC
-            LIMIT 1
-            "#,
-        )
-        .bind(identifier)
-        .fetch_optional(&self.pool)
-        .await?;
-
-        let row = row.ok_or_else(|| RepositoryError::NotFound {
-            path: identifier.to_string(),
-        })?;
-
-        let content: String = row.try_get("content")?;
-
-        // Parse the YAML content
-        let doc = TemplateParser::parse_with_imports(&content)?;
-
-        // Store in cache
-        self.store_in_cache(
-            &self.template_cache,
-            identifier,
-            doc.definition.clone(),
-            content.clone(),
-        )
-        .await;
-
-        Ok((doc.definition, content))
-    }
-
     async fn load_pipeline(&self, identifier: &str) -> RepositoryResult<(Pipeline, String)> {
         // Check cache first
         if let Some(cached) = self.check_cache(&self.pipeline_cache, identifier).await {
@@ -330,18 +282,6 @@ impl Repository for PostgresRepository {
             return Ok(true);
         }
 
-        let template_exists: bool = sqlx::query(
-            r#"SELECT EXISTS(SELECT 1 FROM templates WHERE id = $1 OR path = $1) as exists"#,
-        )
-        .bind(identifier)
-        .fetch_one(&self.pool)
-        .await?
-        .try_get("exists")?;
-
-        if template_exists {
-            return Ok(true);
-        }
-
         let pipeline_exists: bool = sqlx::query(
             r#"SELECT EXISTS(SELECT 1 FROM pipelines WHERE id = $1 OR path = $1) as exists"#,
         )
@@ -387,23 +327,6 @@ impl Repository for PostgresRepository {
             .collect())
     }
 
-    async fn list_templates(&self) -> RepositoryResult<Vec<String>> {
-        let rows = sqlx::query(
-            r#"
-            SELECT COALESCE(path, id) as identifier
-            FROM templates
-            ORDER BY updated_at DESC
-            "#,
-        )
-        .fetch_all(&self.pool)
-        .await?;
-
-        Ok(rows
-            .into_iter()
-            .filter_map(|r| r.try_get::<Option<String>, _>("identifier").ok().flatten())
-            .collect())
-    }
-
     async fn list_pipelines(&self) -> RepositoryResult<Vec<String>> {
         let rows = sqlx::query(
             r#"
@@ -435,13 +358,11 @@ impl CacheableRepository for PostgresRepository {
     fn clear_cache(&mut self) {
         let rule_cache = Arc::clone(&self.rule_cache);
         let ruleset_cache = Arc::clone(&self.ruleset_cache);
-        let template_cache = Arc::clone(&self.template_cache);
         let pipeline_cache = Arc::clone(&self.pipeline_cache);
 
         tokio::spawn(async move {
             rule_cache.write().await.clear();
             ruleset_cache.write().await.clear();
-            template_cache.write().await.clear();
             pipeline_cache.write().await.clear();
         });
 
@@ -451,14 +372,12 @@ impl CacheableRepository for PostgresRepository {
     fn clear_cache_entry(&mut self, identifier: &str) {
         let rule_cache = Arc::clone(&self.rule_cache);
         let ruleset_cache = Arc::clone(&self.ruleset_cache);
-        let template_cache = Arc::clone(&self.template_cache);
         let pipeline_cache = Arc::clone(&self.pipeline_cache);
         let id = identifier.to_string();
 
         tokio::spawn(async move {
             rule_cache.write().await.remove(&id);
             ruleset_cache.write().await.remove(&id);
-            template_cache.write().await.remove(&id);
             pipeline_cache.write().await.remove(&id);
         });
     }
@@ -525,35 +444,6 @@ impl WritableRepository for PostgresRepository {
         Ok(())
     }
 
-    async fn save_template(&mut self, template: &DecisionTemplate) -> RepositoryResult<()> {
-        let content = serde_yaml::to_string(template)
-            .map_err(|e| RepositoryError::Other(format!("Failed to serialize template: {}", e)))?;
-
-        let params_json = template
-            .params
-            .as_ref()
-            .and_then(|p| serde_json::to_value(p).ok());
-
-        sqlx::query(
-            r#"
-            INSERT INTO templates (id, content, version, params, updated_at)
-            VALUES ($1, $2, 1, $3, NOW())
-            ON CONFLICT (id) DO UPDATE
-            SET content = $2, version = templates.version + 1, params = $3, updated_at = NOW()
-            "#,
-        )
-        .bind(&template.id)
-        .bind(&content)
-        .bind(&params_json)
-        .execute(&self.pool)
-        .await?;
-
-        // Clear cache for this template
-        self.clear_cache_entry(&template.id);
-
-        Ok(())
-    }
-
     async fn save_pipeline(&mut self, pipeline: &Pipeline) -> RepositoryResult<()> {
         let content = serde_yaml::to_string(pipeline)
             .map_err(|e| RepositoryError::Other(format!("Failed to serialize pipeline: {}", e)))?;
@@ -593,15 +483,6 @@ impl WritableRepository for PostgresRepository {
 
     async fn delete_ruleset(&self, identifier: &str) -> RepositoryResult<()> {
         sqlx::query(r#"DELETE FROM rulesets WHERE id = $1 OR path = $1"#)
-            .bind(identifier)
-            .execute(&self.pool)
-            .await?;
-
-        Ok(())
-    }
-
-    async fn delete_template(&self, identifier: &str) -> RepositoryResult<()> {
-        sqlx::query(r#"DELETE FROM templates WHERE id = $1 OR path = $1"#)
             .bind(identifier)
             .execute(&self.pool)
             .await?;

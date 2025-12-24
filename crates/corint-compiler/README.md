@@ -14,10 +14,9 @@
 - Reference resolution (rule IDs, feature names, etc.)
 - Dependency analysis
 
-### 2. Import Resolution (Phase 3)
+### 2. Import Resolution
 - Resolves `import` statements from repositories
 - Handles ruleset inheritance (`extends`)
-- Instantiates decision templates with parameters
 - Compiles parameterized rules with compile-time parameter inlining
 
 ### 3. Code Generation
@@ -47,7 +46,6 @@
 │   Import Resolver (Phase 3)        │
 │   - Load referenced artifacts      │
 │   - Resolve inheritance            │
-│   - Instantiate templates          │
 └─────────────┬───────────────────────┘
               │
               ▼
@@ -98,13 +96,6 @@ pub struct ImportResolver<R: Repository> {
 impl<R: Repository> ImportResolver<R> {
     /// Resolve ruleset inheritance chain
     pub async fn resolve_ruleset(&mut self, id: &str) -> Result<Ruleset>;
-
-    /// Instantiate decision template with parameters
-    pub async fn instantiate_template(
-        &mut self,
-        template_id: &str,
-        params: &HashMap<String, Value>
-    ) -> Result<DecisionLogic>;
 
     /// Inline rule parameters at compile time
     pub fn inline_parameters(rule: &Rule) -> Result<Rule>;
@@ -196,7 +187,7 @@ The compiler provides detailed error messages:
 
 ```rust
 pub enum CompilerError {
-    /// Undefined reference (rule, feature, template)
+    /// Undefined reference (rule, feature)
     UndefinedReference { id: String, kind: String },
 
     /// Type mismatch in expression
@@ -270,6 +261,5 @@ mod tests {
 ## Related Documentation
 
 - [Ruleset Inheritance](../../docs/dsl/ruleset.md#inheritance)
-- [Decision Templates](../../docs/dsl/ruleset.md#decision-templates)
 - [Parameterized Rules](../../docs/dsl/rule.md#parameters)
 - [Import System](../../docs/dsl/imports.md)

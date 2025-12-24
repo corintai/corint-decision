@@ -329,32 +329,32 @@ fn test_operator_collection_variants() {
 }
 
 // =============================================================================
-// Action Tests
+// Signal Tests
 // =============================================================================
 
 #[test]
-fn test_action_variants() {
-    let actions = vec![
-        Action::Approve,
-        Action::Deny,
-        Action::Review,
-        Action::Challenge,
+fn test_signal_variants() {
+    let signals = vec![
+        Signal::Approve,
+        Signal::Decline,
+        Signal::Review,
+        Signal::Hold,
     ];
 
-    assert_eq!(actions.len(), 4);
+    assert_eq!(signals.len(), 4);
 }
 
 #[test]
-fn test_action_equality() {
-    assert_eq!(Action::Approve, Action::Approve);
-    assert_ne!(Action::Approve, Action::Deny);
+fn test_signal_equality() {
+    assert_eq!(Signal::Approve, Signal::Approve);
+    assert_ne!(Signal::Approve, Signal::Decline);
 }
 
 #[test]
-fn test_action_clone() {
-    let action = Action::Review;
-    let cloned = action.clone();
-    assert_eq!(action, cloned);
+fn test_signal_clone() {
+    let signal = Signal::Review;
+    let cloned = signal.clone();
+    assert_eq!(signal, cloned);
 }
 
 // =============================================================================
@@ -477,9 +477,9 @@ fn test_operator_serde() {
 }
 
 #[test]
-fn test_action_serde() {
-    let action = Action::Deny;
-    let json = serde_json::to_string(&action).unwrap();
-    let deserialized: Action = serde_json::from_str(&json).unwrap();
-    assert_eq!(action, deserialized);
+fn test_signal_serde() {
+    let signal = Signal::Decline;
+    let json = serde_json::to_string(&signal).unwrap();
+    let deserialized: Signal = serde_json::from_str(&json).unwrap();
+    assert_eq!(signal, deserialized);
 }

@@ -39,20 +39,20 @@ ruleset:
     - password_change_risk
 
   # Multi-layer decision logic
-  decision_logic:
+  conclusion:
     # ==========================================
     # Priority 1: Critical Device Threats
     # ==========================================
 
     # Emulator/Virtual device - immediate deny
-    - condition: triggered_rules contains "device_emulator_detection"
-      action: deny
+    - when: triggered_rules contains "device_emulator_detection"
+      signal: decline
       reason: "Critical: Emulator or virtual device detected"
       terminate: true
 
     # Device spoofing - immediate deny
-    - condition: triggered_rules contains "device_spoofing_detection"
-      action: deny
+    - when: triggered_rules contains "device_spoofing_detection"
+      signal: decline
       reason: "Critical: Device fingerprint spoofing detected"
       terminate: true
 
@@ -61,22 +61,22 @@ ruleset:
     # ==========================================
 
     # Impossible travel + account takeover indicators
-    - condition: |
+    - when: |
         triggered_rules contains "impossible_travel_detection" &&
         (triggered_rules contains "account_takeover_new_device" ||
          triggered_rules contains "account_takeover_failed_logins" ||
          triggered_rules contains "account_takeover_geo_change")
-      action: deny
+      signal: decline
       reason: "Critical: Impossible travel with account takeover pattern"
       terminate: true
 
     # Account takeover with password change
-    - condition: |
+    - when: |
         (triggered_rules contains "account_takeover_new_device" ||
          triggered_rules contains "account_takeover_failed_logins" ||
          triggered_rules contains "account_takeover_geo_change") &&
         triggered_rules contains "password_change_risk"
-      action: deny
+      signal: decline
       reason: "Critical: Account takeover with password change attempt"
       terminate: true
 
@@ -85,26 +85,26 @@ ruleset:
     # ==========================================
 
     # Critical Risk >= 150 (multiple high-severity patterns)
-    - condition: total_score >= 150
-      action: deny
+    - when: total_score >= 150
+      signal: decline
       reason: "Critical risk - multiple security threats (score: {total_score})"
       terminate: true
 
     # Very High Risk >= 100
-    - condition: total_score >= 100
-      action: deny
+    - when: total_score >= 100
+      signal: decline
       reason: "Very high risk - clear security threat (score: {total_score})"
       terminate: true
 
     # High Risk >= 70 - Requires additional verification
-    - condition: total_score >= 70
-      action: review
+    - when: total_score >= 70
+      signal: review
       reason: "High risk login - requires MFA or manual review (score: {total_score})"
       terminate: false
 
     # Medium Risk >= 50 - Enhanced monitoring
-    - condition: total_score >= 50
-      action: review
+    - when: total_score >= 50
+      signal: review
       reason: "Medium risk - enhanced monitoring required (score: {total_score})"
       terminate: false
 
@@ -113,8 +113,8 @@ ruleset:
     # ==========================================
 
     # Multiple risk indicators present (2 or more)
-    - condition: triggered_count >= 2
-      action: review
+    - when: triggered_count >= 2
+      signal: review
       reason: "Multiple risk indicators detected ({triggered_count} patterns)"
 
     # ==========================================
@@ -123,7 +123,7 @@ ruleset:
 
     # Low Risk (default) - approve with logging
     - default: true
-      action: approve
+      signal: approve
       reason: "Low risk - normal login pattern"
 
   metadata:

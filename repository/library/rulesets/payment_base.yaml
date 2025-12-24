@@ -26,16 +26,16 @@ ruleset:
     - suspicious_email
 
   # Base decision logic (can be overridden by child rulesets)
-  decision_logic:
+  conclusion:
     # Critical patterns
-    - condition: triggered_rules contains "card_testing"
-      action: deny
+    - when: triggered_rules contains "card_testing"
+      signal: decline
       reason: "Card testing detected"
       terminate: true
 
     # Default action
     - default: true
-      action: approve
+      signal: approve
       reason: "No risk detected"
 
   metadata:

@@ -1,14 +1,14 @@
 //! Repository content types
 //!
 //! This module defines the content types loaded from a repository,
-//! including pipelines, rules, rulesets, templates, and various configurations.
+//! including pipelines, rules, rulesets, and various configurations.
 
 use serde::{Deserialize, Serialize};
 
 /// All content loaded from a repository
 ///
 /// This struct contains all the business configuration loaded from a repository,
-/// including pipelines, rules, rulesets, templates, and various config types.
+/// including pipelines, rules, rulesets, and various config types.
 #[derive(Debug, Clone, Default)]
 pub struct RepositoryContent {
     /// Registry content (pipeline routing configuration)
@@ -22,9 +22,6 @@ pub struct RepositoryContent {
 
     /// Ruleset definitions (id, yaml content)
     pub rulesets: Vec<(String, String)>,
-
-    /// Template definitions (id, yaml content)
-    pub templates: Vec<(String, String)>,
 
     /// API configurations
     pub api_configs: Vec<ApiConfig>,
@@ -60,11 +57,6 @@ impl RepositoryContent {
         self.rulesets.push((id.into(), content.into()));
     }
 
-    /// Add a template
-    pub fn add_template(&mut self, id: impl Into<String>, content: impl Into<String>) {
-        self.templates.push((id.into(), content.into()));
-    }
-
     /// Merge another RepositoryContent into this one
     ///
     /// The other content is appended to existing content.
@@ -77,7 +69,6 @@ impl RepositoryContent {
         self.pipelines.extend(other.pipelines);
         self.rules.extend(other.rules);
         self.rulesets.extend(other.rulesets);
-        self.templates.extend(other.templates);
         self.api_configs.extend(other.api_configs);
         self.datasource_configs.extend(other.datasource_configs);
         self.feature_definitions.extend(other.feature_definitions);
@@ -90,7 +81,6 @@ impl RepositoryContent {
             && self.pipelines.is_empty()
             && self.rules.is_empty()
             && self.rulesets.is_empty()
-            && self.templates.is_empty()
             && self.api_configs.is_empty()
             && self.datasource_configs.is_empty()
             && self.feature_definitions.is_empty()
@@ -103,7 +93,6 @@ impl RepositoryContent {
             + self.pipelines.len()
             + self.rules.len()
             + self.rulesets.len()
-            + self.templates.len()
             + self.api_configs.len()
             + self.datasource_configs.len()
             + self.feature_definitions.len()

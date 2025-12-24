@@ -33,13 +33,6 @@ fn create_mock_manifest(server: &mut Server) -> Mock {
                 "url": "{base_url}/rules/test_rule.yaml",
                 "description": "Test rule"
             }}
-        ],
-        "templates": [
-            {{
-                "id": "test_template",
-                "url": "{base_url}/templates/test_template.yaml",
-                "description": "Test template"
-            }}
         ]
     }}"#
     );
@@ -74,7 +67,7 @@ async fn test_api_repository_with_api_key() {
         .match_header("Authorization", "Bearer test_key_123")
         .with_status(200)
         .with_header("content-type", "application/json")
-        .with_body(r#"{"pipelines": [], "rulesets": [], "rules": [], "templates": []}"#)
+        .with_body(r#"{"pipelines": [], "rulesets": [], "rules": []}"#)
         .create();
 
     let repo = ApiRepository::new(&server.url(), Some("test_key_123"))
@@ -176,17 +169,10 @@ async fn test_load_ruleset_success() {
 name: Test Ruleset
 rules:
   - test_rule
-decision_logic:
-  - condition: !Binary
-      left: !FieldAccess
-        - total_score
-      op: Ge
-      right: !Literal
-        Number: 100.0
-    action:
-      type: deny
-  - default: true
-    action:
+conclusion:
+  - condition: null
+    default: true
+    signal:
       type: approve
 "#;
 
@@ -211,58 +197,17 @@ decision_logic:
 }
 
 #[tokio::test]
-async fn test_load_template_success() {
-    let mut server = Server::new_async().await;
-    let _m = create_mock_manifest(&mut server);
-
-    let template_yaml = r#"id: test_template
-name: Test Template
-params:
-  threshold: integer
-decision_logic:
-  - condition: !Binary
-      left: !FieldAccess
-        - total_score
-      op: Ge
-      right: !FieldAccess
-        - params
-        - threshold
-    action:
-      type: deny
-  - default: true
-    action:
-      type: approve
-"#;
-
-    let _template_mock = server
-        .mock("GET", "/templates/test_template.yaml")
-        .with_status(200)
-        .with_header("content-type", "text/yaml")
-        .with_body(template_yaml)
-        .create();
-
-    let repo = ApiRepository::new(&server.url(), None::<String>)
-        .await
-        .expect("Failed to create repository");
-
-    let (template, content) = repo
-        .load_template("test_template")
-        .await
-        .expect("Failed to load template");
-
-    assert_eq!(template.id, "test_template");
-    assert!(content.contains("test_template"));
-}
-
-#[tokio::test]
 async fn test_load_pipeline_success() {
     let mut server = Server::new_async().await;
     let _m = create_mock_manifest(&mut server);
 
     let pipeline_yaml = r#"id: test_pipeline
 name: Test Pipeline
+entry: step1
 steps:
-  - type: include
+  - id: step1
+    name: Step 1
+    type: ruleset
     ruleset: test_ruleset
 "#;
 
@@ -282,7 +227,7 @@ steps:
         .await
         .expect("Failed to load pipeline");
 
-    assert_eq!(pipeline.id, Some("test_pipeline".to_string()));
+    assert_eq!(pipeline.id, "test_pipeline".to_string());
     assert!(content.contains("test_pipeline"));
 }
 
@@ -348,24 +293,6 @@ async fn test_list_rulesets() {
 
     assert_eq!(rulesets.len(), 1);
     assert_eq!(rulesets[0], "test_ruleset");
-}
-
-#[tokio::test]
-async fn test_list_templates() {
-    let mut server = Server::new_async().await;
-    let _m = create_mock_manifest(&mut server);
-
-    let repo = ApiRepository::new(&server.url(), None::<String>)
-        .await
-        .expect("Failed to create repository");
-
-    let templates = repo
-        .list_templates()
-        .await
-        .expect("Failed to list templates");
-
-    assert_eq!(templates.len(), 1);
-    assert_eq!(templates[0], "test_template");
 }
 
 #[tokio::test]
@@ -449,7 +376,6 @@ async fn test_api_with_authentication_header() {
                 "url": "{base_url}/rules/secure_rule.yaml"
             }}],
             "rulesets": [],
-            "templates": [],
             "pipelines": []
         }}"#
         ))
@@ -513,7 +439,7 @@ async fn test_empty_manifest() {
         .mock("GET", "/manifest")
         .with_status(200)
         .with_header("content-type", "application/json")
-        .with_body(r#"{"rules": [], "rulesets": [], "templates": [], "pipelines": []}"#)
+        .with_body(r#"{"rules": [], "rulesets": [], "pipelines": []}"#)
         .create();
 
     let repo = ApiRepository::new(&server.url(), None::<String>)

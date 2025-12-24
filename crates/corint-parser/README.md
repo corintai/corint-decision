@@ -4,7 +4,7 @@
 
 ## Overview
 
-`corint-parser` converts YAML rule definitions into Abstract Syntax Tree (AST) representations. It handles the parsing of rules, rulesets, pipelines, features, templates, and registry configurations.
+`corint-parser` converts YAML rule definitions into Abstract Syntax Tree (AST) representations. It handles the parsing of rules, rulesets, pipelines, features, and registry configurations.
 
 ## Key Responsibilities
 
@@ -291,7 +291,6 @@ match RuleParser::parse(yaml) {
 ### Phase 3: Import System Support
 - Parse `import` statements
 - Parse `extends` in rulesets
-- Parse `decision_template` references
 - Parse rule `params` definitions
 
 ### Registry Support

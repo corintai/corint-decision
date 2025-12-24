@@ -155,12 +155,12 @@ ruleset:
     - fraud_farm_pattern
     - my_custom_rule_pattern
 
-  decision_logic:
-    - condition: total_score >= 100
-      action: deny
+  conclusion:
+    - when: total_score >= 100
+      signal: decline
       reason: "High risk"
     - default: true
-      action: approve
+      signal: approve
       reason: "Low risk"
 ```
 

@@ -20,7 +20,7 @@ CORINT uses a **flattened namespace architecture** where all data sources are or
 | `service` | Writable | Internal service call results | User profiles, risk history |
 | `llm` | Writable | LLM analysis results | Fraud analysis, content moderation |
 | `vars` | Writable | Simple variables and calculations | Config parameters, thresholds |
-| `result` | Read-only | Ruleset execution results | Pipeline routing based on ruleset decisions |
+| `results` | Read-only | Ruleset/Pipeline execution results | Pipeline routing, final decision output |
 | `sys` | Read-only | System injected metadata | request_id, timestamp, environment |
 | `env` | Read-only | Environment configuration | Feature flags, API keys |
 
@@ -377,59 +377,60 @@ score: event.transaction.amount * vars.risk_multiplier
 
 ---
 
-## 8. result - Ruleset Execution Results
+## 8. results - Execution Results
 
 ### 8.1 Description
 
-The `result` namespace provides access to **ruleset execution results** within a pipeline. This enables pipeline routing decisions based on previous ruleset outcomes.
+The `results` namespace provides access to **ruleset execution results** within a pipeline and stores the **final pipeline decision output**. This enables pipeline routing decisions based on previous ruleset outcomes and provides the final decision to the caller.
 
 ```yaml
 Mutability: Read-only
-Source: Ruleset execution within pipeline
-Lifecycle: Updated after each ruleset step completes
+Source: Ruleset execution within pipeline, Pipeline decision output
+Lifecycle: Updated after each ruleset step completes; final decision written at pipeline end
 ```
 
 ### 8.2 Access Patterns
 
-The `result` namespace supports two access patterns:
+The `results` namespace supports multiple access patterns:
 
-#### 8.2.1 Last Executed Ruleset (Default)
-```yaml
-# Access the most recently executed ruleset's result
-result.action          # Decision action: "allow", "deny", "review"
-result.total_score     # Cumulative risk score
-result.reason          # Decision reason text
-```
-
-#### 8.2.2 Specific Ruleset by ID
+#### 8.2.1 Specific Ruleset by ID
 ```yaml
 # Access a specific ruleset's result by ID
-result.fraud_detection.action
-result.fraud_detection.total_score
-result.account_takeover.triggered_rules
+results.fraud_detection.signal        # Ruleset signal: "approve", "decline", etc.
+results.fraud_detection.total_score   # Cumulative risk score
+results.fraud_detection.triggered_rules
+```
+
+#### 8.2.2 Final Pipeline Decision
+```yaml
+# Access the final pipeline decision output
+results.decision          # Final decision: "approve", "decline", "review", "hold", "pass"
+results.actions           # List of actions: ["KYC", "2FA", "BLOCK_DEVICE"]
+results.reason            # Decision reason text
 ```
 
 ### 8.3 Available Fields
 
 ```yaml
-result:
-  # Decision fields
-  action: string              # "allow", "deny", "review", "challenge"
-  total_score: number         # Cumulative risk score (0-100+)
-  reason: string              # Human-readable decision reason
+results:
+  # Per-ruleset results (accessed via results.<ruleset_id>.*)
+  <ruleset_id>:
+    signal: string              # "approve", "decline", "review", "hold", "pass"
+    total_score: number         # Cumulative risk score (0-1000)
+    reason: string              # Human-readable decision reason
+    triggered_rules: array      # List of triggered rule IDs
+    triggered_count: number     # Number of triggered rules
 
-  # Rule execution details
-  triggered_rules: array      # List of triggered rule IDs
-  rule_count: number          # Number of rules evaluated
-
-  # Metadata
-  ruleset_id: string          # ID of the executed ruleset
-  execution_time_ms: number   # Ruleset execution duration
+  # Final pipeline decision output
+  decision: string              # Final decision: "approve", "decline", "review", "hold", "pass"
+  actions: array                # List of actions to execute: ["KYC", "OTP", "2FA"]
+  reason: string                # Final decision reason
+  score: number                 # Final aggregated score
 ```
 
 ### 8.4 Pipeline Router Usage
 
-The primary use case for `result` is in pipeline routers to make branching decisions:
+The primary use case for `results` is in pipeline routers to make branching decisions:
 
 ```yaml
 pipeline:
@@ -445,17 +446,13 @@ pipeline:
     - id: fraud_router
       type: router
       routes:
-        # Route based on last ruleset's action
-        - when: result.action == "deny"
+        # Route based on ruleset signal
+        - when: results.blacklist_ruleset.signal == "decline"
           next: block_transaction
 
         # Route based on score threshold
-        - when: result.total_score > 80
+        - when: results.blacklist_ruleset.total_score > 80
           next: manual_review
-
-        # Route based on specific ruleset result
-        - when: result.blacklist_ruleset.action == "review"
-          next: enhanced_verification
 
       default: allow_transaction
 ```
@@ -469,52 +466,89 @@ pipeline:
   steps:
     - id: fraud_detection_step
       type: ruleset
-      ruleset: fraud_detection_ruleset
+      ruleset: fraud_detection
       next: behavior_step
 
     - id: behavior_step
       type: ruleset
-      ruleset: user_behavior_ruleset
+      ruleset: user_behavior
       next: final_router
 
     - id: final_router
       type: router
       routes:
-        # Access last executed ruleset (user_behavior_ruleset)
-        - when: result.action == "deny"
+        # Access specific ruleset by ID
+        - when: results.fraud_detection.signal == "decline"
           next: deny_step
 
-        # Access specific ruleset by ID
-        - when: result.fraud_detection_ruleset.total_score > 50
+        - when: results.user_behavior.total_score > 50
           next: review_step
 
         # Combine multiple ruleset results
-        - when: result.fraud_detection_ruleset.action == "review" && result.total_score > 30
+        - when: |
+            results.fraud_detection.signal == "review" &&
+            results.user_behavior.signal == "review"
           next: enhanced_review
 
       default: allow_step
+
+  # Final decision based on signals
+  decision:
+    - when: results.fraud_detection.signal == "decline"
+      decision: decline
+      actions: ["BLOCK_DEVICE"]
+      reason: "Fraud detected"
+      terminate: true
+
+    - default: true
+      decision: approve
 ```
 
-### 8.6 Best Practices
+### 8.6 Final Decision Output
+
+After pipeline execution completes, the `results` namespace contains the final decision:
+
+```yaml
+# Example final results after pipeline execution
+results:
+  # Ruleset results
+  fraud_detection:
+    signal: "review"
+    total_score: 75
+    triggered_rules: ["velocity_check", "new_device"]
+
+  user_behavior:
+    signal: "approve"
+    total_score: 20
+    triggered_rules: []
+
+  # Final pipeline decision
+  decision: "review"
+  actions: ["KYC"]
+  reason: "Medium risk - requires review"
+  score: 75
+```
+
+### 8.7 Best Practices
 
 ✅ **Good:**
 ```yaml
 # Clear, specific field access
-- when: result.action == "deny"
-- when: result.fraud_detection.total_score > 80
+- when: results.fraud_detection.signal == "decline"
+- when: results.fraud_detection.total_score > 80
 
 # Combine with other conditions
-- when: result.action != "deny" && event.amount > 10000
+- when: results.fraud_detection.signal != "decline" && event.amount > 10000
 ```
 
 ❌ **Bad:**
 ```yaml
-# Don't use result outside of pipeline routers
+# Don't use results outside of pipeline routers/decision
 conditions:
-  - result.action == "deny"  # Not available in rule conditions
+  - results.fraud_detection.signal == "decline"  # Not available in rule conditions
 
-# Don't assume result exists before any ruleset executes
-- when: result.action == "allow"  # May be undefined
+# Don't assume results exists before any ruleset executes
+- when: results.fraud_detection.signal == "approve"  # May be undefined
 ```
 
 ---
@@ -689,8 +723,8 @@ Received a piece of data, where should it go?
 ├─ Is it loaded from environment variables/config files?
 │  └─ Yes → env
 │
-├─ Is it the output of a ruleset execution (action, score, etc.)?
-│  └─ Yes → result
+├─ Is it the output of a ruleset/pipeline execution (signal, decision, etc.)?
+│  └─ Yes → results
 │
 ├─ Is it computed result based on existing data?
 │  │
@@ -929,7 +963,7 @@ CORINT's flattened namespace architecture provides:
 4. `service` - Internal service results (writable)
 5. `llm` - LLM analysis (writable)
 6. `vars` - Simple variables (writable)
-7. `result` - Ruleset execution results (read-only)
+7. `results` - Ruleset/Pipeline execution results (read-only)
 8. `sys` - System metadata (read-only)
 9. `env` - Environment config (read-only)
 

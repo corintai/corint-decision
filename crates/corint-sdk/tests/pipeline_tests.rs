@@ -13,7 +13,7 @@
 
 mod common;
 
-use corint_core::ast::Action;
+use corint_core::ast::Signal;
 use corint_core::Value;
 use common::{ResponseAssertions, TestEngine};
 use std::collections::HashMap;
@@ -70,7 +70,7 @@ pipeline:
 
     let response = engine.execute_pipeline("test_pipeline", event).await;
     response.assert_score(25);
-    response.assert_action(Action::Review);
+    response.assert_action(Signal::Review);
 }
 
 // ============================================================================
@@ -156,7 +156,7 @@ pipeline:
 
     let response = engine.execute_pipeline("multi_step_pipeline", event).await;
     response.assert_score(50); // 30 + 20
-    response.assert_action(Action::Review);
+    response.assert_action(Signal::Review);
 }
 
 // ============================================================================
@@ -246,7 +246,7 @@ pipeline:
 
     let response = engine.execute_pipeline("routed_pipeline", event).await;
     response.assert_score(100);
-    response.assert_action(Action::Review);
+    response.assert_action(Signal::Review);
 }
 
 #[tokio::test]
@@ -332,7 +332,7 @@ pipeline:
 
     let response = engine.execute_pipeline("routed_pipeline", event).await;
     response.assert_score(10);
-    response.assert_action(Action::Approve);
+    response.assert_action(Signal::Approve);
 }
 
 // ============================================================================
@@ -651,7 +651,7 @@ pipeline:
 
     let response = engine.execute_pipeline("test_pipeline", event).await;
     response.assert_score(80);
-    response.assert_action(Action::Deny);
+    response.assert_action(Signal::Decline);
 }
 
 // ============================================================================
@@ -807,7 +807,7 @@ pipeline:
 
     let response = engine.execute_pipeline("empty_pipeline", event).await;
     response.assert_score(0);
-    response.assert_action(Action::Approve);
+    response.assert_action(Signal::Approve);
 }
 
 #[tokio::test]
@@ -856,5 +856,5 @@ pipeline:
 
     let response = engine.execute_pipeline("test_pipeline", event).await;
     response.assert_score(0); // Rule should not trigger due to missing field
-    response.assert_action(Action::Approve);
+    response.assert_action(Signal::Approve);
 }

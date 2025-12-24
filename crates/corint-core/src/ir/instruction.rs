@@ -2,7 +2,7 @@
 //!
 //! Low-level instructions for the CORINT runtime execution engine.
 
-use crate::ast::{Action, Expression, Operator};
+use crate::ast::{Expression, Operator, Signal};
 use crate::Value;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -141,10 +141,10 @@ pub enum Instruction {
         value: i32,
     },
 
-    /// Set the action
-    SetAction {
-        /// Action to take
-        action: Action,
+    /// Set the signal (decision result)
+    SetSignal {
+        /// Signal to emit (approve/decline/review/hold/pass)
+        signal: Signal,
     },
 
     /// Mark a rule as triggered
@@ -400,8 +400,8 @@ mod tests {
     fn test_decision_instructions() {
         let set_score = Instruction::SetScore { value: 100 };
         let add_score = Instruction::AddScore { value: 50 };
-        let set_action = Instruction::SetAction {
-            action: Action::Deny,
+        let set_signal = Instruction::SetSignal {
+            signal: Signal::Decline,
         };
         let mark_triggered = Instruction::MarkRuleTriggered {
             rule_id: "rule_123".to_string(),
@@ -410,9 +410,9 @@ mod tests {
         assert!(matches!(set_score, Instruction::SetScore { value: 100 }));
         assert!(matches!(add_score, Instruction::AddScore { value: 50 }));
         assert!(matches!(
-            set_action,
-            Instruction::SetAction {
-                action: Action::Deny
+            set_signal,
+            Instruction::SetSignal {
+                signal: Signal::Decline
             }
         ));
         assert!(matches!(

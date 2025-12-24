@@ -65,8 +65,6 @@ imports:
     - library/rules/payment/card_testing.yaml
   rulesets:
     - library/rulesets/fraud_detection_core.yaml
-  templates:
-    - library/templates/score_based_decision.yaml
 
 ---
 

@@ -196,7 +196,7 @@ impl IntoValue for Value {
 
 /// Assertion helpers for DecisionResponse
 pub trait ResponseAssertions {
-    fn assert_action(&self, expected: corint_core::ast::Action);
+    fn assert_action(&self, expected: corint_core::ast::Signal);
     fn assert_score(&self, expected: i32);
     fn assert_score_range(&self, min: i32, max: i32);
     fn assert_triggered_rules(&self, expected: &[&str]);
@@ -204,12 +204,12 @@ pub trait ResponseAssertions {
 }
 
 impl ResponseAssertions for DecisionResponse {
-    fn assert_action(&self, expected: corint_core::ast::Action) {
-        let actual = self.result.action.clone();
+    fn assert_action(&self, expected: corint_core::ast::Signal) {
+        let actual = self.result.signal.clone();
         assert_eq!(
             actual,
             Some(expected.clone()),
-            "Expected action {:?}, got {:?}",
+            "Expected signal {:?}, got {:?}",
             expected,
             actual
         );

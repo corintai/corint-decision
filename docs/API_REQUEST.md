@@ -100,7 +100,7 @@ POST /v1/decide
 
   // Decision result
   "decision": {
-    "result": string,            // Decision result: "ALLOW", "DENY", "REVIEW", "HOLD", "PASS"
+    "result": string,            // Decision result: "APPROVE", "DECLINE", "REVIEW", "HOLD", "PASS"
     "actions": string[],         // Actions to take (e.g., ["KYC_AUTH", "MONITOR", "BLOCK_TRANSACTION"])
 
     "scores": {
@@ -193,8 +193,8 @@ The `decision` object contains comprehensive information about the risk assessme
 
 | Value | Description | Typical Use Case |
 |-------|-------------|------------------|
-| `ALLOW` | Transaction/action approved | Low risk, proceed normally |
-| `DENY` | Transaction/action rejected | High risk, block immediately |
+| `APPROVE` | Transaction/action approved | Low risk, proceed normally |
+| `DECLINE` | Transaction/action rejected | High risk, block immediately |
 | `REVIEW` | Requires manual review | Medium-high risk, human intervention needed |
 | `HOLD` | Temporarily hold for further processing | Suspicious activity requiring additional checks |
 | `PASS` | No decision made, pass to next stage | Rule conditions not met, continue to next ruleset |
@@ -219,11 +219,11 @@ The `actions` field specifies concrete actions to take. Common action values:
 ### Score Ranges
 
 **Canonical Score (0-1000):**
-- `0-200`: Low risk (typically ALLOW)
-- `201-500`: Medium risk (typically ALLOW with monitoring)
+- `0-200`: Low risk (typically APPROVE)
+- `201-500`: Medium risk (typically APPROVE with monitoring)
 - `501-700`: Medium-high risk (typically REVIEW or CHALLENGE)
-- `701-900`: High risk (typically REVIEW or DENY)
-- `901-1000`: Critical risk (typically DENY)
+- `701-900`: High risk (typically REVIEW or DECLINE)
+- `901-1000`: Critical risk (typically DECLINE)
 
 **Raw Score:** Unprocessed total score from triggered rules. Can exceed 1000.
 
@@ -398,7 +398,7 @@ curl -X POST https://yourdomain/v1/decide \
   "process_time_ms": 45,
   "pipeline_id": "login_risk_assessment",
   "decision": {
-    "result": "ALLOW",
+    "result": "APPROVE",
     "actions": [],
     "scores": {
       "canonical": 150,
@@ -908,7 +908,7 @@ curl https://yourdomain/v1/decide/status/req_20251223110000_s9t0u1 \
   "process_time_ms": 145,
   "pipeline_id": "transaction_fraud_detection",
   "decision": {
-    "result": "ALLOW",
+    "result": "APPROVE",
     "actions": [],
     "scores": {
       "canonical": 250,

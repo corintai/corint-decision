@@ -1,6 +1,6 @@
 //! Execution result types
 
-use corint_core::ast::Action;
+use corint_core::ast::Signal;
 use corint_core::Value;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -8,8 +8,12 @@ use std::collections::HashMap;
 /// Result of executing a decision program
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct DecisionResult {
-    /// The final action to take
-    pub action: Option<Action>,
+    /// The final signal (decision result: approve/decline/review/hold/pass)
+    pub signal: Option<Signal>,
+
+    /// User-defined actions to execute (e.g., ["KYC_AUTH", "OTP", "NOTIFY_USER"])
+    #[serde(default)]
+    pub actions: Vec<String>,
 
     /// Total risk score
     pub score: i32,
@@ -33,8 +37,11 @@ pub struct ExecutionResult {
     /// Triggered rules
     pub triggered_rules: Vec<String>,
 
-    /// Action
-    pub action: Option<Action>,
+    /// Signal (decision result)
+    pub signal: Option<Signal>,
+
+    /// User-defined actions
+    pub actions: Vec<String>,
 
     /// Variables stored during execution
     pub variables: HashMap<String, Value>,
@@ -42,14 +49,21 @@ pub struct ExecutionResult {
 
 impl DecisionResult {
     /// Create a new decision result
-    pub fn new(action: Action, score: i32) -> Self {
+    pub fn new(signal: Signal, score: i32) -> Self {
         Self {
-            action: Some(action),
+            signal: Some(signal),
+            actions: Vec::new(),
             score,
             triggered_rules: Vec::new(),
             explanation: String::new(),
             context: HashMap::new(),
         }
+    }
+
+    /// Add user-defined actions
+    pub fn with_actions(mut self, actions: Vec<String>) -> Self {
+        self.actions = actions;
+        self
     }
 
     /// Add a triggered rule
@@ -75,7 +89,8 @@ impl ExecutionResult {
         Self {
             score: 0,
             triggered_rules: Vec::new(),
-            action: None,
+            signal: None,
+            actions: Vec::new(),
             variables: HashMap::new(),
         }
     }
@@ -118,7 +133,7 @@ mod tests {
 
     #[test]
     fn test_decision_result() {
-        let mut result = DecisionResult::new(Action::Approve, 0);
+        let mut result = DecisionResult::new(Signal::Approve, 0);
 
         result.add_triggered_rule("rule_1".to_string());
         result.add_triggered_rule("rule_2".to_string());

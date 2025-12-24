@@ -2,7 +2,7 @@
 //!
 //! Tests all major runtime components to achieve 80%+ coverage
 
-use corint_core::ast::{Action, Operator, UnaryOperator};
+use corint_core::ast::{Signal, Operator, UnaryOperator};
 use corint_core::ir::{Instruction, Program, ProgramMetadata};
 use corint_core::Value;
 use corint_runtime::context::{ContextInput, ExecutionContext};
@@ -249,14 +249,14 @@ fn test_context_into_decision_result() {
 
     ctx.set_score(75);
     ctx.mark_rule_triggered("rule_1".to_string());
-    ctx.set_action(Action::Review);
+    ctx.set_signal(Signal::Review);
     ctx.store_feature("user_count", Value::Number(10.0));
 
     let decision = ctx.into_decision_result();
 
     assert_eq!(decision.score, 75);
     assert_eq!(decision.triggered_rules.len(), 1);
-    assert_eq!(decision.action, Some(Action::Review));
+    assert_eq!(decision.signal, Some(Signal::Review));
     assert!(decision.context.contains_key("user_count"));
 }
 
@@ -892,7 +892,7 @@ fn test_execution_result_creation() {
     let result = ExecutionResult::new();
     assert_eq!(result.score, 0);
     assert_eq!(result.triggered_rules.len(), 0);
-    assert!(result.action.is_none());
+    assert!(result.signal.is_none());
     assert_eq!(result.variables.len(), 0);
 }
 
@@ -943,8 +943,8 @@ fn test_execution_result_variable_storage() {
 
 #[test]
 fn test_decision_result_creation() {
-    let result = DecisionResult::new(Action::Approve, 0);
-    assert_eq!(result.action, Some(Action::Approve));
+    let result = DecisionResult::new(Signal::Approve, 0);
+    assert_eq!(result.signal, Some(Signal::Approve));
     assert_eq!(result.score, 0);
     assert_eq!(result.triggered_rules.len(), 0);
     assert_eq!(result.context.len(), 0);
@@ -952,7 +952,7 @@ fn test_decision_result_creation() {
 
 #[test]
 fn test_decision_result_with_triggered_rules() {
-    let mut result = DecisionResult::new(Action::Review, 75);
+    let mut result = DecisionResult::new(Signal::Review, 75);
 
     result.add_triggered_rule("rule_1".to_string());
     result.add_triggered_rule("rule_2".to_string());
@@ -962,7 +962,7 @@ fn test_decision_result_with_triggered_rules() {
 
 #[test]
 fn test_decision_result_with_explanation() {
-    let result = DecisionResult::new(Action::Deny, 100)
+    let result = DecisionResult::new(Signal::Decline, 100)
         .with_explanation("High risk score detected".to_string());
 
     assert_eq!(result.explanation, "High risk score detected");
@@ -970,7 +970,7 @@ fn test_decision_result_with_explanation() {
 
 #[test]
 fn test_decision_result_with_context() {
-    let mut result = DecisionResult::new(Action::Challenge, 50);
+    let mut result = DecisionResult::new(Signal::Hold, 50);
 
     result.add_context("user_id".to_string(), Value::String("123".to_string()));
     result.add_context("risk_level".to_string(), Value::String("medium".to_string()));

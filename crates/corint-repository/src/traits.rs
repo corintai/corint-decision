@@ -26,28 +26,6 @@
 //! # }
 //! ```
 //!
-//! ## Phase 3: Loading Templates and Inherited Rulesets
-//!
-//! ```no_run
-//! use corint_repository::{Repository, FileSystemRepository};
-//!
-//! # #[tokio::main]
-//! # async fn main() -> anyhow::Result<()> {
-//! let repo = FileSystemRepository::new("repository")?;
-//!
-//! // Load a decision template (Phase 3)
-//! let (template, _) = repo.load_template("score_based_decision").await?;
-//!
-//! // Load a ruleset that uses inheritance (Phase 3)
-//! let (ruleset, _) = repo.load_ruleset("payment_fraud_detection").await?;
-//! if let Some(parent_id) = &ruleset.extends {
-//!     // Compiler will automatically resolve inheritance
-//!     let (parent, _) = repo.load_ruleset(parent_id).await?;
-//! }
-//! # Ok(())
-//! # }
-//! ```
-//!
 //! ## Phase 4: Using PostgreSQL with Versioning
 //!
 //! ```no_run
@@ -73,13 +51,13 @@
 //! ```
 
 use async_trait::async_trait;
-use corint_core::ast::{DecisionTemplate, Pipeline, Rule, Ruleset};
+use corint_core::ast::{Pipeline, Rule, Ruleset};
 
 use crate::{CacheStats, RepositoryResult};
 
 /// Core repository trait for loading decision artifacts
 ///
-/// This trait defines the interface for loading rules, rulesets, templates,
+/// This trait defines the interface for loading rules, rulesets,
 /// and pipelines from any storage backend.
 ///
 /// # Implementation Notes
@@ -147,7 +125,7 @@ pub trait Repository: Send + Sync {
     /// # Returns
     /// A tuple of (Ruleset, raw_content_string)
     ///
-    /// # Phase 3: Inheritance and Templates
+    /// # Phase 3: Inheritance
     ///
     /// Rulesets may use inheritance:
     ///
@@ -159,53 +137,8 @@ pub trait Repository: Send + Sync {
     ///     - high_amount_check  # Additional rules
     /// ```
     ///
-    /// Or reference decision templates:
-    ///
-    /// ```yaml
-    /// ruleset:
-    ///   id: login_fraud_detection
-    ///   rules:
-    ///     - brute_force_check
-    ///   decision_template: score_based_decision  # References template
-    ///   template_params:
-    ///     deny_threshold: 200
-    ///     review_threshold: 100
-    /// ```
-    ///
-    /// The compiler will resolve inheritance chains and instantiate templates.
+    /// The compiler will resolve inheritance chains.
     async fn load_ruleset(&self, identifier: &str) -> RepositoryResult<(Ruleset, String)>;
-
-    /// Load a decision logic template by path or ID
-    ///
-    /// # Arguments
-    /// * `identifier` - Either a file path or template ID
-    ///
-    /// # Returns
-    /// A tuple of (DecisionTemplate, raw_content_string)
-    ///
-    /// # Phase 3: Decision Templates
-    ///
-    /// Templates provide reusable decision logic patterns:
-    ///
-    /// ```yaml
-    /// decision_template:
-    ///   id: score_based_decision
-    ///   name: Score-Based Three-Tier Decision
-    ///   params:
-    ///     deny_threshold: integer
-    ///     review_threshold: integer
-    ///   logic:
-    ///     - condition: total_score >= params.deny_threshold
-    ///       action: deny
-    ///     - condition: total_score >= params.review_threshold
-    ///       action: review
-    ///     - default: true
-    ///       action: approve
-    /// ```
-    ///
-    /// Templates are loaded by the compiler and instantiated with specific parameters.
-    async fn load_template(&self, identifier: &str)
-        -> RepositoryResult<(DecisionTemplate, String)>;
 
     /// Load a pipeline by path or ID
     ///
@@ -231,11 +164,6 @@ pub trait Repository: Send + Sync {
     ///
     /// Returns a list of ruleset identifiers (paths or IDs)
     async fn list_rulesets(&self) -> RepositoryResult<Vec<String>>;
-
-    /// List all available templates
-    ///
-    /// Returns a list of template identifiers (paths or IDs)
-    async fn list_templates(&self) -> RepositoryResult<Vec<String>>;
 
     /// List all available pipelines
     ///
@@ -398,12 +326,6 @@ pub trait WritableRepository: Repository {
     /// * `ruleset` - The ruleset to save
     async fn save_ruleset(&mut self, ruleset: &Ruleset) -> RepositoryResult<()>;
 
-    /// Save or update a template
-    ///
-    /// # Arguments
-    /// * `template` - The template to save
-    async fn save_template(&mut self, template: &DecisionTemplate) -> RepositoryResult<()>;
-
     /// Save or update a pipeline
     ///
     /// # Arguments
@@ -421,12 +343,6 @@ pub trait WritableRepository: Repository {
     /// # Arguments
     /// * `identifier` - The ruleset identifier (path or ID)
     async fn delete_ruleset(&self, identifier: &str) -> RepositoryResult<()>;
-
-    /// Delete a template
-    ///
-    /// # Arguments
-    /// * `identifier` - The template identifier (path or ID)
-    async fn delete_template(&self, identifier: &str) -> RepositoryResult<()>;
 
     /// Delete a pipeline
     ///

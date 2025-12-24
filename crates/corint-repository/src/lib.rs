@@ -1,6 +1,6 @@
 //! Repository abstraction layer for CORINT Decision Engine
 //!
-//! This crate provides a unified interface for loading rules, rulesets, templates,
+//! This crate provides a unified interface for loading rules, rulesets,
 //! and pipelines from different storage backends (file system, database, etc.).
 //!
 //! # Features
@@ -9,8 +9,7 @@
 //! - **PostgreSQL Repository**: Database-backed storage with versioning (Phase 4)
 //! - **Caching**: Built-in TTL-based caching for performance
 //! - **Async API**: Non-blocking I/O operations with Tokio
-//! - **Template Support**: Load decision templates (Phase 3)
-//! - **Inheritance**: Support for ruleset inheritance chains (Phase 3)
+//! - **Inheritance**: Support for ruleset inheritance chains
 //!
 //! # Quick Start
 //!
@@ -61,27 +60,7 @@
 //! # fn main() {}
 //! ```
 //!
-//! # Phase 3: Templates and Inheritance
-//!
-//! ## Loading Decision Templates
-//!
-//! ```no_run
-//! use corint_repository::{Repository, FileSystemRepository};
-//!
-//! #[tokio::main]
-//! async fn main() -> anyhow::Result<()> {
-//!     let repo = FileSystemRepository::new("repository")?;
-//!
-//!     // Load a decision template
-//!     let (template, _) = repo.load_template("score_based_decision").await?;
-//!     println!("Template: {}", template.id);
-//!
-//!     // Template will be instantiated by compiler with specific parameters
-//!     Ok(())
-//! }
-//! ```
-//!
-//! ## Resolving Inheritance Chains
+//! # Resolving Inheritance Chains
 //!
 //! ```no_run
 //! use corint_repository::{Repository, FileSystemRepository};

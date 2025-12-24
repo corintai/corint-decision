@@ -6,7 +6,7 @@ use crate::error::{ParseError, Result};
 use crate::expression_parser::ExpressionParser;
 use crate::import_parser::ImportParser;
 use crate::yaml_parser::YamlParser;
-use corint_core::ast::{Action, DecisionRule, InferConfig, RdlDocument, Ruleset};
+use corint_core::ast::{DecisionRule, RdlDocument, Ruleset, Signal};
 use serde_yaml::Value as YamlValue;
 
 /// Ruleset parser
@@ -83,9 +83,9 @@ impl RulesetParser {
             .get("metadata")
             .and_then(|v| serde_yaml::from_value(v.clone()).ok());
 
-        // Parse decision logic
-        let decision_logic = if let Some(logic_array) = ruleset_obj
-            .get("decision_logic")
+        // Parse conclusion (ruleset's decision rules)
+        let conclusion = if let Some(logic_array) = ruleset_obj
+            .get("conclusion")
             .and_then(|v| v.as_sequence())
         {
             logic_array
@@ -96,20 +96,12 @@ impl RulesetParser {
             Vec::new()
         };
 
-        // Parse optional decision_template
-        let decision_template = if let Some(template_obj) = ruleset_obj.get("decision_template") {
-            Some(Self::parse_decision_template_ref(template_obj)?)
-        } else {
-            None
-        };
-
         Ok(Ruleset {
             id,
             name,
             extends,
             rules,
-            decision_logic,
-            decision_template,
+            conclusion,
             description,
             metadata,
         })
@@ -117,16 +109,19 @@ impl RulesetParser {
 
     /// Parse a decision rule (public for template parser use)
     pub fn parse_decision_rule(yaml: &YamlValue) -> Result<DecisionRule> {
-        // Parse condition (optional)
-        let condition = YamlParser::get_optional_string(yaml, "condition")
+        // Parse when condition (optional)
+        let condition = YamlParser::get_optional_string(yaml, "when")
             .map(|s| ExpressionParser::parse(&s))
             .transpose()?;
 
         // Parse default flag
         let default = YamlParser::get_optional_bool(yaml, "default").unwrap_or(false);
 
-        // Parse action
-        let action = Self::parse_action(yaml)?;
+        // Parse signal (the decision result: approve/decline/review/hold/pass)
+        let signal = Self::parse_signal(yaml)?;
+
+        // Parse actions (user-defined actions like KYC_AUTH, OTP, NOTIFY_USER)
+        let actions = Self::parse_actions(yaml);
 
         // Parse reason (optional)
         let reason = YamlParser::get_optional_string(yaml, "reason");
@@ -137,76 +132,49 @@ impl RulesetParser {
         Ok(DecisionRule {
             condition,
             default,
-            action,
+            signal,
+            actions,
             reason,
             terminate,
         })
     }
 
-    /// Parse an action
-    fn parse_action(yaml: &YamlValue) -> Result<Action> {
-        let action_str = YamlParser::get_string(yaml, "action")?;
+    /// Parse a signal (decision result: approve/decline/review/hold/pass)
+    fn parse_signal(yaml: &YamlValue) -> Result<Signal> {
+        // Support both "signal" and "action" fields for backward compatibility
+        let signal_str = YamlParser::get_optional_string(yaml, "signal")
+            .or_else(|| YamlParser::get_optional_string(yaml, "action"))
+            .ok_or_else(|| ParseError::MissingField {
+                field: "signal (or action)".to_string(),
+            })?;
 
-        match action_str.as_str() {
-            "approve" => Ok(Action::Approve),
-            "deny" => Ok(Action::Deny),
-            "review" => Ok(Action::Review),
-            "challenge" => Ok(Action::Challenge),
-            "infer" => {
-                // Parse infer config
-                let config = if let Some(config_obj) = yaml.get("config") {
-                    Self::parse_infer_config(config_obj)?
-                } else {
-                    InferConfig {
-                        data_snapshot: Vec::new(),
-                    }
-                };
-                Ok(Action::Infer { config })
-            }
+        match signal_str.as_str() {
+            "approve" => Ok(Signal::Approve),
+            "decline" => Ok(Signal::Decline),
+            // Keep "deny" as alias for backward compatibility
+            "deny" => Ok(Signal::Decline),
+            "review" => Ok(Signal::Review),
+            "hold" => Ok(Signal::Hold),
+            // Keep "challenge" as alias for backward compatibility
+            "challenge" => Ok(Signal::Hold),
+            "pass" => Ok(Signal::Pass),
             _ => Err(ParseError::InvalidValue {
-                field: "action".to_string(),
-                message: format!("Unknown action type: {}", action_str),
+                field: "signal".to_string(),
+                message: format!("Unknown signal type: {}. Valid signals: approve, decline, review, hold, pass", signal_str),
             }),
         }
     }
 
-    /// Parse decision template reference
-    fn parse_decision_template_ref(
-        yaml: &YamlValue,
-    ) -> Result<corint_core::ast::DecisionTemplateRef> {
-        // Parse template ID
-        let template = YamlParser::get_string(yaml, "template")?;
-
-        // Parse optional params
-        let params = if let Some(params_obj) = yaml.get("params") {
-            let params_map: std::collections::HashMap<String, serde_json::Value> =
-                serde_yaml::from_value(params_obj.clone()).map_err(|e| {
-                    ParseError::InvalidValue {
-                        field: "params".to_string(),
-                        message: format!("Failed to parse params: {}", e),
-                    }
-                })?;
-            Some(params_map)
+    /// Parse user-defined actions (e.g., ["KYC_AUTH", "OTP", "NOTIFY_USER"])
+    fn parse_actions(yaml: &YamlValue) -> Vec<String> {
+        if let Some(actions_array) = yaml.get("actions").and_then(|v| v.as_sequence()) {
+            actions_array
+                .iter()
+                .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                .collect()
         } else {
-            None
-        };
-
-        Ok(corint_core::ast::DecisionTemplateRef { template, params })
-    }
-
-    /// Parse infer config
-    fn parse_infer_config(yaml: &YamlValue) -> Result<InferConfig> {
-        let data_snapshot =
-            if let Some(snapshot_array) = yaml.get("data_snapshot").and_then(|v| v.as_sequence()) {
-                snapshot_array
-                    .iter()
-                    .filter_map(|v| v.as_str().map(|s| s.to_string()))
-                    .collect()
-            } else {
-                Vec::new()
-            };
-
-        Ok(InferConfig { data_snapshot })
+            Vec::new()
+        }
     }
 }
 
@@ -223,12 +191,12 @@ ruleset:
   rules:
     - high_amount_transaction
     - new_device_login
-  decision_logic:
-    - condition: total_score > 200
-      action: deny
+  conclusion:
+    - when: total_score > 200
+      action: decline
       reason: High risk score
       terminate: true
-    - condition: total_score > 100
+    - when: total_score > 100
       action: review
       reason: Medium risk score
     - default: true
@@ -240,49 +208,75 @@ ruleset:
         assert_eq!(ruleset.id, "fraud_detection");
         assert_eq!(ruleset.name, Some("Fraud Detection Ruleset".to_string()));
         assert_eq!(ruleset.rules.len(), 2);
-        assert_eq!(ruleset.decision_logic.len(), 3);
+        assert_eq!(ruleset.conclusion.len(), 3);
     }
 
     #[test]
-    fn test_parse_ruleset_with_all_actions() {
+    fn test_parse_ruleset_with_all_signals() {
         let yaml = r#"
 ruleset:
-  id: test_actions
+  id: test_signals
   rules: []
-  decision_logic:
-    - condition: score > 300
-      action: deny
-    - condition: score > 200
-      action: review
-    - condition: score > 100
-      action: infer
-      config:
-        data_snapshot:
-          - user.id
-          - event.type
+  conclusion:
+    - when: score > 300
+      signal: decline
+      actions:
+        - BLOCK_CARD
+        - NOTIFY_USER
+    - when: score > 200
+      signal: review
+      actions:
+        - KYC_AUTH
+    - when: score > 150
+      signal: hold
+    - when: score > 50
+      signal: pass
+    - default: true
+      signal: approve
+"#;
+
+        let ruleset = RulesetParser::parse(yaml).unwrap();
+
+        assert_eq!(ruleset.conclusion.len(), 5);
+
+        // Check decline signal with actions
+        assert!(matches!(ruleset.conclusion[0].signal, Signal::Decline));
+        assert_eq!(ruleset.conclusion[0].actions, vec!["BLOCK_CARD", "NOTIFY_USER"]);
+
+        // Check review signal with actions
+        assert!(matches!(ruleset.conclusion[1].signal, Signal::Review));
+        assert_eq!(ruleset.conclusion[1].actions, vec!["KYC_AUTH"]);
+
+        // Check hold signal
+        assert!(matches!(ruleset.conclusion[2].signal, Signal::Hold));
+        assert!(ruleset.conclusion[2].actions.is_empty());
+
+        // Check pass signal
+        assert!(matches!(ruleset.conclusion[3].signal, Signal::Pass));
+
+        // Check approve signal
+        assert!(matches!(ruleset.conclusion[4].signal, Signal::Approve));
+    }
+
+    #[test]
+    fn test_parse_backward_compatible_action_field() {
+        // Test that "action" field still works for backward compatibility
+        let yaml = r#"
+ruleset:
+  id: test_backward_compat
+  rules: []
+  conclusion:
+    - when: score > 100
+      action: decline
     - default: true
       action: approve
 "#;
 
         let ruleset = RulesetParser::parse(yaml).unwrap();
 
-        assert_eq!(ruleset.decision_logic.len(), 4);
-
-        // Check deny action
-        assert!(matches!(ruleset.decision_logic[0].action, Action::Deny));
-
-        // Check review action
-        assert!(matches!(ruleset.decision_logic[1].action, Action::Review));
-
-        // Check infer action
-        if let Action::Infer { config } = &ruleset.decision_logic[2].action {
-            assert_eq!(config.data_snapshot.len(), 2);
-        } else {
-            panic!("Expected Infer action");
-        }
-
-        // Check approve action
-        assert!(matches!(ruleset.decision_logic[3].action, Action::Approve));
+        assert_eq!(ruleset.conclusion.len(), 2);
+        assert!(matches!(ruleset.conclusion[0].signal, Signal::Decline));
+        assert!(matches!(ruleset.conclusion[1].signal, Signal::Approve));
     }
 
     #[test]
@@ -291,19 +285,19 @@ ruleset:
 ruleset:
   id: test_terminate
   rules: []
-  decision_logic:
-    - condition: critical == true
-      action: deny
+  conclusion:
+    - when: critical == true
+      action: decline
       terminate: true
       reason: Critical condition met
 "#;
 
         let ruleset = RulesetParser::parse(yaml).unwrap();
 
-        assert_eq!(ruleset.decision_logic.len(), 1);
-        assert!(ruleset.decision_logic[0].terminate);
+        assert_eq!(ruleset.conclusion.len(), 1);
+        assert!(ruleset.conclusion[0].terminate);
         assert_eq!(
-            ruleset.decision_logic[0].reason,
+            ruleset.conclusion[0].reason,
             Some("Critical condition met".to_string())
         );
     }
@@ -314,16 +308,16 @@ ruleset:
 ruleset:
   id: test_default
   rules: []
-  decision_logic:
+  conclusion:
     - default: true
       action: approve
 "#;
 
         let ruleset = RulesetParser::parse(yaml).unwrap();
 
-        assert_eq!(ruleset.decision_logic.len(), 1);
-        assert!(ruleset.decision_logic[0].default);
-        assert!(ruleset.decision_logic[0].condition.is_none());
+        assert_eq!(ruleset.conclusion.len(), 1);
+        assert!(ruleset.conclusion[0].default);
+        assert!(ruleset.conclusion[0].condition.is_none());
     }
 
     #[test]
@@ -332,7 +326,7 @@ ruleset:
 ruleset:
   name: Test
   rules: []
-  decision_logic: []
+  conclusion: []
 "#;
 
         let result = RulesetParser::parse(yaml);
@@ -340,13 +334,13 @@ ruleset:
     }
 
     #[test]
-    fn test_invalid_action() {
+    fn test_invalid_signal() {
         let yaml = r#"
 ruleset:
   id: test
   rules: []
-  decision_logic:
-    - action: unknown_action
+  conclusion:
+    - signal: unknown_signal
 "#;
 
         let result = RulesetParser::parse(yaml);

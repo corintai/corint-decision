@@ -5,7 +5,6 @@
 
 use crate::ast::Expression;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 
 /// A ruleset groups multiple rules and defines decision logic
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -24,12 +23,7 @@ pub struct Ruleset {
     pub rules: Vec<String>,
 
     /// Decision logic rules (direct specification)
-    pub decision_logic: Vec<DecisionRule>,
-
-    /// Optional template-based decision logic (resolved at compile time)
-    /// If specified, this takes precedence and gets expanded into decision_logic
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub decision_template: Option<DecisionTemplateRef>,
+    pub conclusion: Vec<DecisionRule>,
 
     /// Optional description
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -40,7 +34,7 @@ pub struct Ruleset {
     pub metadata: Option<serde_json::Value>,
 }
 
-/// A decision rule determines the action based on conditions
+/// A decision rule determines the signal and actions based on conditions
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct DecisionRule {
     /// Condition to evaluate (e.g., total_score > 100)
@@ -50,8 +44,12 @@ pub struct DecisionRule {
     #[serde(default)]
     pub default: bool,
 
-    /// Action to take if condition matches
-    pub action: Action,
+    /// Signal to emit if condition matches (approve/decline/review/hold/pass)
+    pub signal: Signal,
+
+    /// User-defined actions to execute (e.g., ["KYC_AUTH", "OTP", "NOTIFY_USER"])
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub actions: Vec<String>,
 
     /// Optional reason for this decision
     pub reason: Option<String>,
@@ -61,45 +59,25 @@ pub struct DecisionRule {
     pub terminate: bool,
 }
 
-/// Action to take based on decision
+/// Decision signal (the decision result)
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "lowercase")]
-pub enum Action {
+pub enum Signal {
     /// Approve the request
     Approve,
 
-    /// Deny the request
-    Deny,
+    /// Decline the request
+    Decline,
 
     /// Send for manual review
     Review,
 
-    /// Challenge - require additional verification (e.g., 3DS, MFA)
-    Challenge,
+    /// Hold - temporarily suspend, waiting for additional verification or async process
+    /// (e.g., 2FA challenge, KYC verification, cooling period)
+    Hold,
 
-    /// Use LLM to infer decision
-    Infer {
-        /// Configuration for LLM inference
-        config: InferConfig,
-    },
-}
-
-/// Configuration for LLM-based inference
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct InferConfig {
-    /// Fields to include in the data snapshot for LLM
-    pub data_snapshot: Vec<String>,
-}
-
-/// Reference to a decision template with parameter overrides
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct DecisionTemplateRef {
-    /// Template ID to use
-    pub template: String,
-
-    /// Parameter overrides (merged with template defaults)
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub params: Option<HashMap<String, serde_json::Value>>,
+    /// Pass - skip/no decision, let downstream handle
+    Pass,
 }
 
 impl Ruleset {
@@ -110,8 +88,7 @@ impl Ruleset {
             name: None,
             extends: None,
             rules: Vec::new(),
-            decision_logic: Vec::new(),
-            decision_template: None,
+            conclusion: Vec::new(),
             description: None,
             metadata: None,
         }
@@ -149,60 +126,46 @@ impl Ruleset {
 
     /// Add a decision rule
     pub fn add_decision_rule(mut self, decision_rule: DecisionRule) -> Self {
-        self.decision_logic.push(decision_rule);
+        self.conclusion.push(decision_rule);
         self
     }
 
     /// Add multiple decision rules
-    pub fn with_decision_logic(mut self, decision_logic: Vec<DecisionRule>) -> Self {
-        self.decision_logic = decision_logic;
-        self
-    }
-
-    /// Set decision template reference
-    pub fn with_decision_template(mut self, template_ref: DecisionTemplateRef) -> Self {
-        self.decision_template = Some(template_ref);
-        self
-    }
-}
-
-impl DecisionTemplateRef {
-    /// Create a new template reference
-    pub fn new(template: String) -> Self {
-        Self {
-            template,
-            params: None,
-        }
-    }
-
-    /// Add parameter overrides
-    pub fn with_params(mut self, params: HashMap<String, serde_json::Value>) -> Self {
-        self.params = Some(params);
+    pub fn with_conclusion(mut self, conclusion: Vec<DecisionRule>) -> Self {
+        self.conclusion = conclusion;
         self
     }
 }
 
 impl DecisionRule {
     /// Create a new decision rule with a condition
-    pub fn new(condition: Expression, action: Action) -> Self {
+    pub fn new(condition: Expression, signal: Signal) -> Self {
         Self {
             condition: Some(condition),
             default: false,
-            action,
+            signal,
+            actions: Vec::new(),
             reason: None,
             terminate: false,
         }
     }
 
     /// Create a default (catch-all) decision rule
-    pub fn default(action: Action) -> Self {
+    pub fn default(signal: Signal) -> Self {
         Self {
             condition: None,
             default: true,
-            action,
+            signal,
+            actions: Vec::new(),
             reason: None,
             terminate: false,
         }
+    }
+
+    /// Set user-defined actions
+    pub fn with_actions(mut self, actions: Vec<String>) -> Self {
+        self.actions = actions;
+        self
     }
 
     /// Set the reason
@@ -215,15 +178,6 @@ impl DecisionRule {
     pub fn with_terminate(mut self, terminate: bool) -> Self {
         self.terminate = terminate;
         self
-    }
-}
-
-impl Action {
-    /// Create an Infer action
-    pub fn infer(data_snapshot: Vec<String>) -> Self {
-        Self::Infer {
-            config: InferConfig { data_snapshot },
-        }
     }
 }
 
@@ -255,12 +209,14 @@ mod tests {
             Expression::literal(Value::Number(100.0)),
         );
 
-        let decision = DecisionRule::new(condition.clone(), Action::Deny)
+        let decision = DecisionRule::new(condition.clone(), Signal::Decline)
+            .with_actions(vec!["BLOCK_CARD".to_string()])
             .with_reason("Score too high".to_string())
             .with_terminate(true);
 
         assert!(decision.condition.is_some());
-        assert_eq!(decision.action, Action::Deny);
+        assert_eq!(decision.signal, Signal::Decline);
+        assert_eq!(decision.actions, vec!["BLOCK_CARD".to_string()]);
         assert_eq!(decision.reason, Some("Score too high".to_string()));
         assert!(decision.terminate);
         assert!(!decision.default);
@@ -268,35 +224,32 @@ mod tests {
 
     #[test]
     fn test_default_decision_rule() {
-        let decision = DecisionRule::default(Action::Approve);
+        let decision = DecisionRule::default(Signal::Approve);
 
         assert!(decision.condition.is_none());
         assert!(decision.default);
-        assert_eq!(decision.action, Action::Approve);
+        assert_eq!(decision.signal, Signal::Approve);
+        assert!(decision.actions.is_empty());
         assert!(!decision.terminate);
     }
 
     #[test]
-    fn test_action_types() {
-        let approve = Action::Approve;
-        let deny = Action::Deny;
-        let review = Action::Review;
-        let infer = Action::infer(vec!["user.id".to_string(), "event.type".to_string()]);
+    fn test_signal_types() {
+        let approve = Signal::Approve;
+        let decline = Signal::Decline;
+        let review = Signal::Review;
+        let hold = Signal::Hold;
+        let pass = Signal::Pass;
 
-        assert!(matches!(approve, Action::Approve));
-        assert!(matches!(deny, Action::Deny));
-        assert!(matches!(review, Action::Review));
-
-        if let Action::Infer { config } = infer {
-            assert_eq!(config.data_snapshot.len(), 2);
-            assert_eq!(config.data_snapshot[0], "user.id");
-        } else {
-            panic!("Expected Infer action");
-        }
+        assert!(matches!(approve, Signal::Approve));
+        assert!(matches!(decline, Signal::Decline));
+        assert!(matches!(review, Signal::Review));
+        assert!(matches!(hold, Signal::Hold));
+        assert!(matches!(pass, Signal::Pass));
     }
 
     #[test]
-    fn test_complete_ruleset_with_decision_logic() {
+    fn test_complete_ruleset_with_conclusion() {
         // Create a complete ruleset with decision logic
         let ruleset = Ruleset::new("account_takeover".to_string())
             .with_name("Account Takeover Detection".to_string())
@@ -312,8 +265,9 @@ mod tests {
                         Operator::Gt,
                         Expression::literal(Value::Number(200.0)),
                     ),
-                    Action::Deny,
+                    Signal::Decline,
                 )
+                .with_actions(vec!["BLOCK_CARD".to_string(), "NOTIFY_USER".to_string()])
                 .with_reason("High risk score".to_string())
                 .with_terminate(true),
             )
@@ -324,26 +278,30 @@ mod tests {
                         Operator::Gt,
                         Expression::literal(Value::Number(100.0)),
                     ),
-                    Action::Review,
+                    Signal::Review,
                 )
+                .with_actions(vec!["KYC_AUTH".to_string()])
                 .with_reason("Medium risk score".to_string()),
             )
-            .add_decision_rule(DecisionRule::default(Action::Approve));
+            .add_decision_rule(DecisionRule::default(Signal::Approve));
 
         assert_eq!(ruleset.rules.len(), 3);
-        assert_eq!(ruleset.decision_logic.len(), 3);
+        assert_eq!(ruleset.conclusion.len(), 3);
 
-        // First rule: Deny if score > 200
-        assert_eq!(ruleset.decision_logic[0].action, Action::Deny);
-        assert!(ruleset.decision_logic[0].terminate);
+        // First rule: Decline if score > 200
+        assert_eq!(ruleset.conclusion[0].signal, Signal::Decline);
+        assert_eq!(ruleset.conclusion[0].actions, vec!["BLOCK_CARD", "NOTIFY_USER"]);
+        assert!(ruleset.conclusion[0].terminate);
 
         // Second rule: Review if score > 100
-        assert_eq!(ruleset.decision_logic[1].action, Action::Review);
-        assert!(!ruleset.decision_logic[1].terminate);
+        assert_eq!(ruleset.conclusion[1].signal, Signal::Review);
+        assert_eq!(ruleset.conclusion[1].actions, vec!["KYC_AUTH"]);
+        assert!(!ruleset.conclusion[1].terminate);
 
         // Third rule: Default to Approve
-        assert_eq!(ruleset.decision_logic[2].action, Action::Approve);
-        assert!(ruleset.decision_logic[2].default);
+        assert_eq!(ruleset.conclusion[2].signal, Signal::Approve);
+        assert!(ruleset.conclusion[2].actions.is_empty());
+        assert!(ruleset.conclusion[2].default);
     }
 
     #[test]
@@ -351,7 +309,7 @@ mod tests {
         let ruleset = Ruleset::new("test".to_string())
             .with_name("Test Ruleset".to_string())
             .add_rule("rule_1".to_string())
-            .add_decision_rule(DecisionRule::default(Action::Approve));
+            .add_decision_rule(DecisionRule::default(Signal::Approve));
 
         // Serialize to JSON
         let json = serde_json::to_string(&ruleset).unwrap();

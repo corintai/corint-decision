@@ -236,15 +236,15 @@ ruleset:
     - velocity_check
     - payment_method_check
 
-  decision_logic:
+  conclusion:
     # High score threshold
-    - condition: total_score >= 100
-      action: review
+    - when: total_score >= 100
+      signal: review
       reason: "High transaction risk score"
 
     # Default
     - default: true
-      action: approve
+      signal: approve
       reason: "Transaction monitoring passed"
 
   metadata:
@@ -270,15 +270,15 @@ ruleset:
     - suspicious_user_behavior
     - trusted_user_bonus
 
-  decision_logic:
+  conclusion:
     # Suspicious behavior
-    - condition: total_score >= 50
-      action: review
+    - when: total_score >= 50
+      signal: review
       reason: "Suspicious user behavior detected"
 
     # Default
     - default: true
-      action: approve
+      signal: approve
       reason: "User behavior normal"
 
   metadata:
@@ -305,21 +305,21 @@ ruleset:
     - complex_fraud_detection
     - risk_threshold_check
 
-  decision_logic:
+  conclusion:
     # Critical fraud
-    - condition: total_score >= 90
-      action: deny
+    - when: total_score >= 90
+      signal: decline
       reason: "Critical fraud risk detected"
       terminate: true
 
     # High fraud risk
-    - condition: total_score >= 70
-      action: review
+    - when: total_score >= 70
+      signal: review
       reason: "High fraud risk - requires review"
 
     # Default
     - default: true
-      action: approve
+      signal: approve
       reason: "Fraud checks passed"
 
   metadata:

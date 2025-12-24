@@ -11,7 +11,7 @@
 
 use crate::error::{Result, RuntimeError};
 use crate::result::DecisionResult;
-use corint_core::ast::Action;
+use corint_core::ast::Signal;
 use corint_core::Value;
 use serde_json;
 use std::collections::HashMap;
@@ -70,8 +70,8 @@ pub struct DecisionRecord {
     /// Risk score
     pub risk_score: i32,
 
-    /// Decision action
-    pub decision: Action,
+    /// Decision signal
+    pub decision: Signal,
 
     /// Decision reason/explanation
     pub decision_reason: Option<String>,
@@ -400,7 +400,7 @@ impl DecisionRecord {
             event_id,
             pipeline_id,
             risk_score: result.score,
-            decision: result.action.clone().unwrap_or(Action::Approve),
+            decision: result.signal.clone().unwrap_or(Signal::Approve),
             decision_reason: if result.explanation.is_empty() {
                 None
             } else {

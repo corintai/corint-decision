@@ -100,11 +100,11 @@ impl DeadCodeEliminator {
                     Instruction::SetScore { value: v2 },
                 ) if v1 == v2 => true,
 
-                // Don't duplicate SetAction with same action
+                // Don't duplicate SetSignal with same signal
                 (
-                    Some(Instruction::SetAction { action: a1 }),
-                    Instruction::SetAction { action: a2 },
-                ) if a1 == a2 => true,
+                    Some(Instruction::SetSignal { signal: s1 }),
+                    Instruction::SetSignal { signal: s2 },
+                ) if s1 == s2 => true,
 
                 _ => false,
             };
@@ -161,7 +161,7 @@ impl Default for DeadCodeEliminator {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use corint_core::ast::Action;
+    use corint_core::ast::Signal;
     use corint_core::ir::ProgramMetadata;
 
     #[test]
@@ -231,15 +231,15 @@ mod tests {
     }
 
     #[test]
-    fn test_eliminate_duplicate_set_action() {
+    fn test_eliminate_duplicate_set_signal() {
         let eliminator = DeadCodeEliminator::new();
 
         let instructions = vec![
-            Instruction::SetAction {
-                action: Action::Approve,
+            Instruction::SetSignal {
+                signal: Signal::Approve,
             },
-            Instruction::SetAction {
-                action: Action::Approve,
+            Instruction::SetSignal {
+                signal: Signal::Approve,
             }, // Duplicate
             Instruction::Return,
         ];
@@ -251,8 +251,8 @@ mod tests {
         assert_eq!(optimized.instructions.len(), 2);
         assert!(matches!(
             optimized.instructions[0],
-            Instruction::SetAction {
-                action: Action::Approve
+            Instruction::SetSignal {
+                signal: Signal::Approve
             }
         ));
         assert!(matches!(optimized.instructions[1], Instruction::Return));
@@ -404,13 +404,13 @@ mod tests {
             },
             // If amount > 1000, Review (then jump to end)
             Instruction::JumpIfFalse { offset: 3 }, // Skip Review + Jump
-            Instruction::SetAction {
-                action: Action::Review,
+            Instruction::SetSignal {
+                signal: Signal::Review,
             },
-            Instruction::Jump { offset: 2 }, // Jump past default action
-            // Default action - Approve (should NOT be eliminated)
-            Instruction::SetAction {
-                action: Action::Approve,
+            Instruction::Jump { offset: 2 }, // Jump past default signal
+            // Default signal - Approve (should NOT be eliminated)
+            Instruction::SetSignal {
+                signal: Signal::Approve,
             },
             Instruction::Return,
         ];
@@ -422,20 +422,20 @@ mod tests {
 
         let optimized = eliminator.optimize(&program);
 
-        // The bug: dead code eliminator might incorrectly remove the default SetAction(Approve)
+        // The bug: dead code eliminator might incorrectly remove the default SetSignal(Approve)
         // because it thinks the Jump makes it unreachable
         // But the Jump is only taken when the condition is TRUE
-        // When the condition is FALSE, we fall through to the default action
+        // When the condition is FALSE, we fall through to the default signal
 
-        // Verify the default action is still there
+        // Verify the default signal is still there
         assert!(
             optimized.instructions.iter().any(|inst| matches!(
                 inst,
-                Instruction::SetAction {
-                    action: Action::Approve
+                Instruction::SetSignal {
+                    signal: Signal::Approve
                 }
             )),
-            "Default action (Approve) should not be eliminated"
+            "Default signal (Approve) should not be eliminated"
         );
     }
 }

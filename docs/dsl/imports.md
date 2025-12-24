@@ -47,7 +47,6 @@ ruleset:
 |------------|---------|---------|
 | `rules` | Import individual rule definitions | `library/rules/fraud/fraud_farm.yaml` |
 | `rulesets` | Import ruleset definitions | `library/rulesets/fraud_detection_core.yaml` |
-| `templates` | Import decision logic templates | `library/templates/score_based_decision.yaml` |
 
 ---
 
@@ -337,13 +336,10 @@ repository/
 │   │       ├── suspicious_geography.yaml
 │   │       └── suspicious_ip.yaml
 │   │
-│   ├── rulesets/           # Reusable rulesets
-│   │   ├── fraud_detection_core.yaml
-│   │   ├── payment_standard.yaml
-│   │   └── payment_high_value.yaml
-│   │
-│   └── templates/          # Decision logic templates
-│       └── score_based_decision.yaml
+│   └── rulesets/           # Reusable rulesets
+│       ├── fraud_detection_core.yaml
+│       ├── payment_standard.yaml
+│       └── payment_high_value.yaml
 │
 ├── pipelines/              # Business pipelines
 │   ├── fraud_detection.yaml

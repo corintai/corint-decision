@@ -2,7 +2,7 @@
 
 Repository abstraction layer for the CORINT Decision Engine.
 
-This crate provides a unified interface for loading rules, rulesets, templates, and pipelines from different storage backends (file system, database, etc.).
+This crate provides a unified interface for loading rules, rulesets, and pipelines from different storage backends (file system, database, etc.).
 
 ## Features
 
@@ -54,12 +54,6 @@ async fn main() -> anyhow::Result<()> {
     println!("Loaded ruleset: {} with {} rules",
         ruleset.id, ruleset.rules.len());
 
-    // Load a decision logic template
-    let (template, _) = repo
-        .load_template("library/templates/score_based_decision.yaml")
-        .await?;
-    println!("Loaded template: {}", template.id);
-
     Ok(())
 }
 ```
@@ -110,9 +104,8 @@ export DATABASE_URL="postgresql://user:password@localhost/corint"
 # Run migrations in order
 psql $DATABASE_URL < docs/schema/001_create_rules_table.sql
 psql $DATABASE_URL < docs/schema/002_create_rulesets_table.sql
-psql $DATABASE_URL < docs/schema/003_create_templates_table.sql
-psql $DATABASE_URL < docs/schema/004_create_pipelines_table.sql
-psql $DATABASE_URL < docs/schema/005_create_audit_log.sql
+psql $DATABASE_URL < docs/schema/003_create_pipelines_table.sql
+psql $DATABASE_URL < docs/schema/004_create_audit_log.sql
 ```
 
 See the [docs/schema/README.md](../../docs/schema/README.md) for detailed schema documentation.
@@ -174,11 +167,6 @@ for ruleset_path in rulesets {
     println!("Ruleset: {}", ruleset_path);
 }
 
-// List all templates
-let templates = repo.list_templates().await?;
-for template_path in templates {
-    println!("Template: {}", template_path);
-}
 ```
 
 ### Check If Artifact Exists
@@ -200,8 +188,7 @@ repository/
 │   │   ├── fraud/
 │   │   ├── payment/
 │   │   └── geography/
-│   ├── rulesets/       # Reusable ruleset definitions
-│   └── templates/      # Decision logic templates
+│   └── rulesets/       # Reusable ruleset definitions
 └── pipelines/          # Business scenario orchestration
 ```
 
@@ -248,9 +235,6 @@ pub trait Repository: Send + Sync {
     /// Load a ruleset by path or ID
     async fn load_ruleset(&self, identifier: &str) -> RepositoryResult<(Ruleset, String)>;
 
-    /// Load a decision logic template by path or ID
-    async fn load_template(&self, identifier: &str) -> RepositoryResult<(DecisionTemplate, String)>;
-
     /// Load a pipeline by path or ID
     async fn load_pipeline(&self, identifier: &str) -> RepositoryResult<(Pipeline, String)>;
 
@@ -259,9 +243,6 @@ pub trait Repository: Send + Sync {
 
     /// List all available rulesets
     async fn list_rulesets(&self) -> RepositoryResult<Vec<String>>;
-
-    /// List all available templates
-    async fn list_templates(&self) -> RepositoryResult<Vec<String>>;
 
     /// List all available pipelines
     async fn list_pipelines(&self) -> RepositoryResult<Vec<String>>;
@@ -307,9 +288,6 @@ pub trait WritableRepository: Repository {
     /// Save or update a ruleset
     async fn save_ruleset(&mut self, ruleset: &Ruleset) -> RepositoryResult<()>;
 
-    /// Save or update a template
-    async fn save_template(&mut self, template: &DecisionTemplate) -> RepositoryResult<()>;
-
     /// Save or update a pipeline
     async fn save_pipeline(&mut self, pipeline: &Pipeline) -> RepositoryResult<()>;
 
@@ -318,9 +296,6 @@ pub trait WritableRepository: Repository {
 
     /// Delete a ruleset
     async fn delete_ruleset(&self, identifier: &str) -> RepositoryResult<()>;
-
-    /// Delete a template
-    async fn delete_template(&self, identifier: &str) -> RepositoryResult<()>;
 
     /// Delete a pipeline
     async fn delete_pipeline(&self, identifier: &str) -> RepositoryResult<()>;
@@ -407,7 +382,6 @@ The repository supports loading artifacts by either:
 When loading by ID, the repository automatically searches in standard locations:
 - Rules: `library/rules/**/*.yaml`
 - Rulesets: `library/rulesets/**/*.yaml`
-- Templates: `library/templates/**/*.yaml`
 - Pipelines: `pipelines/**/*.yaml`
 
 ### Caching Strategy
@@ -418,7 +392,7 @@ Both FileSystemRepository and PostgresRepository include built-in caching:
 - **TTL (Time-To-Live)**: Configurable expiration (default: 5 minutes)
 - **Hit/Miss Tracking**: Performance statistics and hit rate calculation
 - **Max Entries**: Limit cache size to prevent memory issues
-- **Per-artifact Type**: Separate caches for rules, rulesets, templates, pipelines
+- **Per-artifact Type**: Separate caches for rules, rulesets, pipelines
 - **Thread-Safe**: Uses `Arc<RwLock<>>` for concurrent access
 
 **Cache Behavior:**
@@ -551,26 +525,7 @@ CREATE TABLE rulesets (
 );
 ```
 
-#### 3. `templates` Table
-```sql
-CREATE TABLE templates (
-    id VARCHAR(255) PRIMARY KEY,
-    path VARCHAR(512),
-    content TEXT NOT NULL,
-    version INTEGER NOT NULL DEFAULT 1,
-    description TEXT,
-    params JSONB,                   -- Default parameters (Phase 3)
-    metadata JSONB,
-    created_at TIMESTAMP NOT NULL DEFAULT NOW(),
-    updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
-    created_by VARCHAR(255),
-
-    INDEX idx_templates_path (path),
-    INDEX idx_templates_updated_at (updated_at)
-);
-```
-
-#### 4. `pipelines` Table
+#### 3. `pipelines` Table
 ```sql
 CREATE TABLE pipelines (
     id VARCHAR(255) PRIMARY KEY,
@@ -588,11 +543,11 @@ CREATE TABLE pipelines (
 );
 ```
 
-#### 5. `artifact_audit_log` Table (Optional)
+#### 4. `artifact_audit_log` Table (Optional)
 ```sql
 CREATE TABLE artifact_audit_log (
     id SERIAL PRIMARY KEY,
-    artifact_type VARCHAR(50) NOT NULL,  -- 'rule', 'ruleset', 'template', 'pipeline'
+    artifact_type VARCHAR(50) NOT NULL,  -- 'rule', 'ruleset', 'pipeline'
     artifact_id VARCHAR(255) NOT NULL,
     operation VARCHAR(50) NOT NULL,      -- 'create', 'update', 'delete'
     old_content TEXT,                    -- Previous version
@@ -648,8 +603,7 @@ let program = compiler.compile_pipeline_file(Path::new("pipeline.yaml")).await?;
 
 The compiler automatically:
 - Loads imported rules and rulesets via the repository
-- Resolves inheritance chains (Phase 3 `extends`)
-- Instantiates templates (Phase 3 `decision_template`)
+- Resolves inheritance chains (`extends`)
 - Validates circular dependencies
 - Ensures ID uniqueness
 

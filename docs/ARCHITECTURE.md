@@ -664,35 +664,42 @@ corint-repository──┘──> corint-core (Error, Value)
 │ - Produce scores                                        │
 │                                                          │
 │ Does NOT include:                                        │
-│ - ❌ Action definitions                                 │
+│ - ❌ Signal definitions                                 │
 │ - ❌ Decision logic                                     │
 └─────────────────────────────────────────────────────────┘
                           ↓ scores
 ┌─────────────────────────────────────────────────────────┐
-│ Layer 2: Rulesets (Decision Makers)                     │
+│ Layer 2: Rulesets (Signal Producers)                    │
 ├─────────────────────────────────────────────────────────┤
 │ Responsibilities:                                        │
 │ - Organize related rules                                │
 │ - Evaluate rule combination patterns                    │
-│ - Make decisions based on score, count, combinations    │
-│ - ✅ Define Actions (via decision_logic)               │
-│ - Produce final decisions                               │
+│ - Produce signals based on score, count, combinations   │
+│ - ✅ Define Signals (via conclusion)                   │
+│ - Output: critical_risk, high_risk, medium_risk, etc.  │
+│                                                          │
+│ Does NOT include:                                        │
+│ - ❌ Final decisions (approve/deny/review/challenge)   │
 └─────────────────────────────────────────────────────────┘
-                          ↓ action
+                          ↓ signal
 ┌─────────────────────────────────────────────────────────┐
-│ Layer 3: Pipeline (Orchestrator)                        │
+│ Layer 3: Pipeline (Orchestrator + Decision Maker)       │
 ├─────────────────────────────────────────────────────────┤
 │ Responsibilities:                                        │
 │ - Orchestrate execution flow                            │
 │ - Define step sequence                                  │
 │ - Manage data flow                                      │
 │ - Control branching and parallelism                     │
-│                                                          │
-│ Does NOT include:                                        │
-│ - ❌ Decision logic                                     │
-│ - ❌ Action definitions                                 │
+│ - ✅ Make final decisions (via decision section)       │
+│ - ✅ Decide based on signals from rulesets             │
+│ - Output: approve, deny, review, challenge              │
 └─────────────────────────────────────────────────────────┘
 ```
+
+**Key Design Principle**: Rulesets produce **signals** (risk levels), Pipelines make **decisions** (actions). This separation allows:
+- Same ruleset reused with different decision thresholds
+- VIP users can have lenient decision rules for the same signals
+- Easy A/B testing of decision thresholds without changing detection logic
 
 ### Example
 
@@ -711,7 +718,7 @@ rule:
   # ❌ No action - rules only detect
 ```
 
-**Ruleset** (Decision making):
+**Ruleset** (Signal Production):
 ```yaml
 ruleset:
   id: takeover_detection
@@ -722,33 +729,32 @@ ruleset:
     - unusual_location       # 50 points
     - behavior_anomaly       # 60 points
 
-  # ✅ Decision logic here
-  decision_logic:
-    # Specific combination → deny
-    - condition: |
+  # ✅ Conclusion produces signals, NOT final decisions
+  conclusion:
+    # Specific combination → critical risk signal
+    - when: |
         triggered_rules contains "new_device_login" &&
         triggered_rules contains "unusual_location"
-      action: deny
+      signal: critical_risk
       reason: "Account takeover pattern detected"
+      terminate: true
 
-    # High score → AI analysis
-    - condition: total_score >= 100
-      action: infer
-      infer:
-        data_snapshot:
-          - event.*
-          - context.*
+    # High score → high risk signal
+    - when: total_score >= 100
+      signal: high_risk
+      reason: "High risk score threshold exceeded"
 
-    # Medium score → human review
-    - condition: total_score >= 60
-      action: review
+    # Medium score → medium risk signal
+    - when: total_score >= 60
+      signal: medium_risk
+      reason: "Medium risk score"
 
-    # Default → approve
+    # Default → normal signal
     - default: true
-      action: approve
+      signal: normal
 ```
 
-**Pipeline** (Orchestration only):
+**Pipeline** (Orchestration + Final Decisions):
 ```yaml
 pipeline:
   id: login_security
@@ -775,12 +781,12 @@ pipeline:
                 - event.user.tier == "basic"
         default: default_security_check
 
-    # VIP user security check
+    # VIP user security check (more lenient decisions)
     - step:
         id: vip_security_check
         name: VIP Security Check
         type: ruleset
-        ruleset: vip_takeover_detection
+        ruleset: takeover_detection
         next: end
 
     # Basic user security check
@@ -799,7 +805,36 @@ pipeline:
         ruleset: takeover_detection
         next: end
 
-  # Pipeline orchestrates flow, rulesets make decisions
+  # ✅ Final decisions based on signals from rulesets
+  decision:
+    # Critical risk → always deny
+    - when: context.takeover_detection.signal == "critical_risk"
+      action: deny
+      reason: "Critical security risk detected"
+      terminate: true
+
+    # High risk for VIP → review (lenient)
+    - when: |
+        context.takeover_detection.signal == "high_risk" &&
+        event.user.tier == "vip"
+      action: review
+      reason: "VIP user high risk - manual review"
+
+    # High risk for others → deny
+    - when: context.takeover_detection.signal == "high_risk"
+      action: deny
+      reason: "High security risk detected"
+      terminate: true
+
+    # Medium risk → challenge
+    - when: context.takeover_detection.signal == "medium_risk"
+      action: challenge
+      reason: "Additional verification required"
+
+    # Default → approve
+    - default: true
+      action: approve
+      reason: "Login approved"
 ```
 
 ---

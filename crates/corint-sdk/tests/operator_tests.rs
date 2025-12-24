@@ -5,7 +5,7 @@
 
 mod common;
 
-use corint_core::ast::Action;
+use corint_core::ast::Signal;
 use corint_core::Value;
 use common::{ResponseAssertions, TestEngine};
 use std::collections::HashMap;
@@ -31,11 +31,11 @@ ruleset:
   id: test_ruleset
   rules:
     - high_amount
-  decision_logic:
-    - condition: total_score > 0
-      action: review
+  conclusion:
+    - when: total_score > 0
+      signal: review
     - default: true
-      action: approve
+      signal: approve
 "#;
 
     let engine = TestEngine::new()
@@ -48,7 +48,7 @@ ruleset:
 
     let response = engine.execute_ruleset("test_ruleset", event).await;
     response.assert_score(50);
-    response.assert_action(Action::Review);
+    response.assert_action(Signal::Review);
     response.assert_triggered_rules(&["high_amount"]);
 }
 
@@ -69,11 +69,11 @@ ruleset:
   id: test_ruleset
   rules:
     - high_amount
-  decision_logic:
-    - condition: total_score > 0
-      action: review
+  conclusion:
+    - when: total_score > 0
+      signal: review
     - default: true
-      action: approve
+      signal: approve
 "#;
 
     let engine = TestEngine::new()
@@ -86,7 +86,7 @@ ruleset:
 
     let response = engine.execute_ruleset("test_ruleset", event).await;
     response.assert_score(0);
-    response.assert_action(Action::Approve);
+    response.assert_action(Signal::Approve);
     response.assert_triggered_rules_count(0);
 }
 
@@ -107,9 +107,9 @@ ruleset:
   id: test_ruleset
   rules:
     - low_balance
-  decision_logic:
+  conclusion:
     - default: true
-      action: approve
+      signal: approve
 "#;
 
     let engine = TestEngine::new()
@@ -141,9 +141,9 @@ ruleset:
   id: test_ruleset
   rules:
     - country_us
-  decision_logic:
+  conclusion:
     - default: true
-      action: approve
+      signal: approve
 "#;
 
     let engine = TestEngine::new()
@@ -175,9 +175,9 @@ ruleset:
   id: test_ruleset
   rules:
     - non_premium
-  decision_logic:
+  conclusion:
     - default: true
-      action: approve
+      signal: approve
 "#;
 
     let engine = TestEngine::new()
@@ -209,9 +209,9 @@ ruleset:
   id: test_ruleset
   rules:
     - adult
-  decision_logic:
+  conclusion:
     - default: true
-      action: approve
+      signal: approve
 "#;
 
     let engine = TestEngine::new()
@@ -244,9 +244,9 @@ ruleset:
   id: test_ruleset
   rules:
     - low_risk
-  decision_logic:
+  conclusion:
     - default: true
-      action: approve
+      signal: approve
 "#;
 
     let engine = TestEngine::new()
@@ -281,9 +281,9 @@ ruleset:
   id: test_ruleset
   rules:
     - suspicious_email
-  decision_logic:
+  conclusion:
     - default: true
-      action: approve
+      signal: approve
 "#;
 
     let engine = TestEngine::new()
@@ -315,9 +315,9 @@ ruleset:
   id: test_ruleset
   rules:
     - internal_ip
-  decision_logic:
+  conclusion:
     - default: true
-      action: approve
+      signal: approve
 "#;
 
     let engine = TestEngine::new()
@@ -349,9 +349,9 @@ ruleset:
   id: test_ruleset
   rules:
     - gov_email
-  decision_logic:
+  conclusion:
     - default: true
-      action: approve
+      signal: approve
 "#;
 
     let engine = TestEngine::new()
@@ -387,11 +387,11 @@ ruleset:
   id: test_ruleset
   rules:
     - high_risk_country
-  decision_logic:
-    - condition: total_score >= 80
-      action: deny
+  conclusion:
+    - when: total_score >= 80
+      signal: decline
     - default: true
-      action: approve
+      signal: approve
 "#;
 
     let engine = TestEngine::new()
@@ -403,7 +403,7 @@ ruleset:
 
     let response = engine.execute_ruleset("test_ruleset", event).await;
     response.assert_score(80);
-    response.assert_action(Action::Deny);
+    response.assert_action(Signal::Decline);
     response.assert_triggered_rules(&["high_risk_country"]);
 }
 
@@ -424,11 +424,11 @@ ruleset:
   id: test_ruleset
   rules:
     - high_risk_country
-  decision_logic:
-    - condition: total_score >= 80
-      action: deny
+  conclusion:
+    - when: total_score >= 80
+      signal: decline
     - default: true
-      action: approve
+      signal: approve
 "#;
 
     let engine = TestEngine::new()
@@ -440,7 +440,7 @@ ruleset:
 
     let response = engine.execute_ruleset("test_ruleset", event).await;
     response.assert_score(0);
-    response.assert_action(Action::Approve);
+    response.assert_action(Signal::Approve);
     response.assert_triggered_rules_count(0);
 }
 
@@ -465,9 +465,9 @@ ruleset:
   id: test_ruleset
   rules:
     - high_value_new_user
-  decision_logic:
+  conclusion:
     - default: true
-      action: approve
+      signal: approve
 "#;
 
     let engine = TestEngine::new()
@@ -500,9 +500,9 @@ ruleset:
   id: test_ruleset
   rules:
     - high_value_new_user
-  decision_logic:
+  conclusion:
     - default: true
-      action: approve
+      signal: approve
 "#;
 
     let engine = TestEngine::new()
@@ -536,9 +536,9 @@ ruleset:
   id: test_ruleset
   rules:
     - suspicious_activity
-  decision_logic:
+  conclusion:
     - default: true
-      action: approve
+      signal: approve
 "#;
 
     let engine = TestEngine::new()
@@ -576,9 +576,9 @@ ruleset:
   id: test_ruleset
   rules:
     - verified_user
-  decision_logic:
+  conclusion:
     - default: true
-      action: approve
+      signal: approve
 "#;
 
     let engine = TestEngine::new()
@@ -610,9 +610,9 @@ ruleset:
   id: test_ruleset
   rules:
     - unverified_user
-  decision_logic:
+  conclusion:
     - default: true
-      action: approve
+      signal: approve
 "#;
 
     let engine = TestEngine::new()
@@ -650,9 +650,9 @@ ruleset:
   id: test_ruleset
   rules:
     - complex_rule
-  decision_logic:
+  conclusion:
     - default: true
-      action: approve
+      signal: approve
 "#;
 
     let engine = TestEngine::new()
@@ -688,9 +688,9 @@ ruleset:
   id: test_ruleset
   rules:
     - any_risk
-  decision_logic:
+  conclusion:
     - default: true
-      action: approve
+      signal: approve
 "#;
 
     let engine = TestEngine::new()
@@ -751,13 +751,13 @@ ruleset:
     - high_amount
     - new_user
     - new_device
-  decision_logic:
-    - condition: total_score >= 75
-      action: deny
-    - condition: total_score >= 50
-      action: review
+  conclusion:
+    - when: total_score >= 75
+      signal: decline
+    - when: total_score >= 50
+      signal: review
     - default: true
-      action: approve
+      signal: approve
 "#;
 
     let engine = TestEngine::new()
@@ -774,7 +774,7 @@ ruleset:
 
     let response = engine.execute_ruleset("test_ruleset", event).await;
     response.assert_score(75); // 30 + 20 + 25
-    response.assert_action(Action::Deny);
+    response.assert_action(Signal::Decline);
     response.assert_triggered_rules(&["high_amount", "new_user", "new_device"]);
 }
 
@@ -799,9 +799,9 @@ ruleset:
   id: test_ruleset
   rules:
     - high_transaction
-  decision_logic:
+  conclusion:
     - default: true
-      action: approve
+      signal: approve
 "#;
 
     let engine = TestEngine::new()
@@ -837,9 +837,9 @@ ruleset:
   id: test_ruleset
   rules:
     - risky_location
-  decision_logic:
+  conclusion:
     - default: true
-      action: approve
+      signal: approve
 "#;
 
     let engine = TestEngine::new()

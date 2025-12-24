@@ -13,7 +13,7 @@
 use crate::error::{Result, RuntimeError};
 use crate::result::{DecisionResult, ExecutionResult};
 use chrono::{Datelike, Timelike};
-use corint_core::ast::Action;
+use corint_core::ast::Signal;
 use corint_core::Value;
 use std::collections::HashMap;
 
@@ -347,7 +347,7 @@ impl ExecutionContext {
         }
 
         if !env.contains_key("default_action") {
-            env.insert("default_action".to_string(), Value::String("allow".to_string()));
+            env.insert("default_action".to_string(), Value::String("approve".to_string()));
         }
 
         // Feature flags namespace
@@ -623,9 +623,14 @@ impl ExecutionContext {
         self.result.mark_rule_triggered(rule_id);
     }
 
-    /// Set the action
-    pub fn set_action(&mut self, action: Action) {
-        self.result.action = Some(action);
+    /// Set the signal
+    pub fn set_signal(&mut self, signal: Signal) {
+        self.result.signal = Some(signal);
+    }
+
+    /// Add user-defined actions
+    pub fn add_actions(&mut self, actions: Vec<String>) {
+        self.result.actions.extend(actions);
     }
 
     // ========== Result Conversion ==========
@@ -668,7 +673,8 @@ impl ExecutionContext {
         }
 
         DecisionResult {
-            action: self.result.action,
+            signal: self.result.signal,
+            actions: self.result.actions,
             score: self.result.score,
             triggered_rules: self.result.triggered_rules,
             explanation,
@@ -681,15 +687,15 @@ impl ExecutionContext {
     fn build_explanation(result: &ExecutionResult, _event_data: &HashMap<String, Value>) -> String {
         // Build a human-readable explanation focused on the reasoning
 
-        // Case 1: No rules triggered - explain based on action
+        // Case 1: No rules triggered - explain based on signal
         if result.triggered_rules.is_empty() {
-            return match result.action {
-                Some(Action::Approve) => "No risk indicators detected".to_string(),
-                Some(Action::Review) => "Sent to review based on policy thresholds".to_string(),
-                Some(Action::Deny) => "Blocked by policy rules".to_string(),
-                Some(Action::Challenge) => "Additional verification required by policy".to_string(),
-                Some(Action::Infer { .. }) => "Action to be inferred from risk score".to_string(),
-                None => "No decision action set".to_string(),
+            return match result.signal {
+                Some(Signal::Approve) => "No risk indicators detected".to_string(),
+                Some(Signal::Review) => "Sent to review based on policy thresholds".to_string(),
+                Some(Signal::Decline) => "Blocked by policy rules".to_string(),
+                Some(Signal::Hold) => "Additional verification required by policy".to_string(),
+                Some(Signal::Pass) => "No decision made, deferred to next stage".to_string(),
+                None => "No decision signal set".to_string(),
             };
         }
 
@@ -971,7 +977,7 @@ mod tests {
         assert_eq!(ctx.env.get("max_score").unwrap(), &Value::Number(100.0));
         assert_eq!(
             ctx.env.get("default_action").unwrap(),
-            &Value::String("allow".to_string())
+            &Value::String("approve".to_string())
         );
     }
 

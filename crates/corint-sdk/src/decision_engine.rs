@@ -3,7 +3,7 @@
 use crate::config::EngineConfig;
 use crate::error::{Result, SdkError};
 use corint_compiler::{Compiler, CompilerOptions as CompilerOpts};
-use corint_core::ast::{Action, Condition, ConditionGroup, Expression, Operator, PipelineRegistry, WhenBlock};
+use corint_core::ast::{Condition, ConditionGroup, Expression, Operator, PipelineRegistry, Signal, WhenBlock};
 use corint_core::ir::Program;
 use corint_core::Value;
 use corint_parser::{PipelineParser, RegistryParser, RuleParser, RulesetParser};
@@ -1983,7 +1983,8 @@ impl DecisionEngine {
         let mut execution_result = ExecutionResult::new();
 
         let mut combined_result = DecisionResult {
-            action: None,
+            signal: None,
+            actions: Vec::new(),
             score: 0,
             triggered_rules: Vec::new(),
             explanation: String::new(),
@@ -2187,16 +2188,21 @@ impl DecisionEngine {
 
                                     // Store ruleset result in context for pipeline decision logic
                                     let mut result_map = std::collections::HashMap::new();
-                                    if let Some(ref action) = ruleset_result.action {
+                                    if let Some(ref action) = ruleset_result.signal {
                                         let action_str = match action {
-                                            Action::Approve => "approve",
-                                            Action::Deny => "deny",
-                                            Action::Review => "review",
-                                            Action::Challenge => "challenge",
-                                            Action::Infer { .. } => "infer",
+                                            Signal::Approve => "approve",
+                                            Signal::Decline => "decline",
+                                            Signal::Review => "review",
+                                            Signal::Hold => "hold",
+                                            Signal::Pass => "pass",
                                         };
+                                        // Store as both "action" and "signal" for compatibility
                                         result_map.insert(
                                             "action".to_string(),
+                                            Value::String(action_str.to_string()),
+                                        );
+                                        result_map.insert(
+                                            "signal".to_string(),
                                             Value::String(action_str.to_string()),
                                         );
                                     }
@@ -2237,8 +2243,8 @@ impl DecisionEngine {
                                         .variables
                                         .insert("__last_ruleset_result__".to_string(), Value::Object(result_map));
 
-                                    if ruleset_result.action.is_some() {
-                                        combined_result.action = ruleset_result.action;
+                                    if ruleset_result.signal.is_some() {
+                                        combined_result.signal = ruleset_result.signal;
                                     }
                                     combined_result.explanation = ruleset_result.explanation;
                                     combined_result.score = execution_result.score;
@@ -2249,8 +2255,8 @@ impl DecisionEngine {
                         }
 
                         // Update state from pipeline execution
-                        if result.action.is_some() {
-                            combined_result.action = result.action;
+                        if result.signal.is_some() {
+                            combined_result.signal = result.signal;
                         }
 
                         // First match wins - stop evaluating registry
@@ -2343,7 +2349,7 @@ impl DecisionEngine {
                     // 判断该 pipeline 是否匹配了当前事件（when 条件命中）
                     let matched = result.score != before_score
                         || result.triggered_rules.len() != before_triggers_len
-                        || result.action.is_some()
+                        || result.signal.is_some()
                         || !result.context.is_empty();
 
                     if matched {
@@ -2502,16 +2508,21 @@ impl DecisionEngine {
 
                                 // Store ruleset result in context for pipeline decision logic
                                 let mut result_map = std::collections::HashMap::new();
-                                if let Some(ref action) = ruleset_result.action {
+                                if let Some(ref action) = ruleset_result.signal {
                                     let action_str = match action {
-                                        Action::Approve => "approve",
-                                        Action::Deny => "deny",
-                                        Action::Review => "review",
-                                        Action::Challenge => "challenge",
-                                        Action::Infer { .. } => "infer",
+                                        Signal::Approve => "approve",
+                                        Signal::Decline => "decline",
+                                        Signal::Review => "review",
+                                        Signal::Hold => "hold",
+                                        Signal::Pass => "pass",
                                     };
+                                    // Store as both "action" and "signal" for compatibility
                                     result_map.insert(
                                         "action".to_string(),
+                                        Value::String(action_str.to_string()),
+                                    );
+                                    result_map.insert(
+                                        "signal".to_string(),
                                         Value::String(action_str.to_string()),
                                     );
                                 }
@@ -2553,8 +2564,8 @@ impl DecisionEngine {
                                     .insert("__last_ruleset_result__".to_string(), Value::Object(result_map));
 
                                 // Update combined result with ruleset decision
-                                if ruleset_result.action.is_some() {
-                                    combined_result.action = ruleset_result.action;
+                                if ruleset_result.signal.is_some() {
+                                    combined_result.signal = ruleset_result.signal;
                                 }
                                 combined_result.explanation = ruleset_result.explanation;
                                 combined_result.score = execution_result.score;
@@ -2565,8 +2576,8 @@ impl DecisionEngine {
                     }
 
                     // Update state from pipeline execution
-                    if result.action.is_some() {
-                        combined_result.action = result.action;
+                    if result.signal.is_some() {
+                        combined_result.signal = result.signal;
                     }
                 }
             }
@@ -2624,7 +2635,7 @@ impl DecisionEngine {
                     // Accumulate state
                     execution_result.score = result.score;
                     execution_result.triggered_rules = result.triggered_rules;
-                    execution_result.action = result.action;
+                    execution_result.signal = result.signal;
                     execution_result.variables = result.context;
                 }
 
@@ -2647,8 +2658,8 @@ impl DecisionEngine {
                         .await?;
 
                     // Update combined result with decision from ruleset
-                    if result.action.is_some() {
-                        combined_result.action = result.action;
+                    if result.signal.is_some() {
+                        combined_result.signal = result.signal;
                     }
                 }
             }
@@ -2713,7 +2724,7 @@ impl DecisionEngine {
                 "Queuing decision record for persistence: request_id={}, score={}, action={:?}",
                 request_id,
                 combined_result.score,
-                combined_result.action
+                combined_result.signal
             );
 
             // Write asynchronously (non-blocking)
@@ -2887,14 +2898,14 @@ impl DecisionEngine {
                         );
                         ruleset_trace.conclusion = decision_logic_traces;
                     }
-                } else if let Some(ref action) = combined_result.action {
+                } else if let Some(ref action) = combined_result.signal {
                     // Fallback to combined result if ruleset-specific result not found
                     let action_str = match action {
-                        Action::Approve => "approve",
-                        Action::Deny => "deny",
-                        Action::Review => "review",
-                        Action::Challenge => "challenge",
-                        Action::Infer { .. } => "infer",
+                        Signal::Approve => "approve",
+                        Signal::Decline => "decline",
+                        Signal::Review => "review",
+                        Signal::Hold => "hold",
+                        Signal::Pass => "pass",
                     };
                     ruleset_trace = ruleset_trace.with_decision(action_str, None);
                 }
@@ -3196,7 +3207,7 @@ mod tests {
     #[tokio::test]
     async fn test_ruleset_execution() {
         use crate::builder::DecisionEngineBuilder;
-        use corint_core::ast::Action;
+        use corint_core::ast::Signal;
 
         // Create a temporary YAML file with pipeline
         let yaml_content = r#"
@@ -3215,11 +3226,11 @@ ruleset:
   id: test_execution
   name: Test Execution
   rules: []
-  decision_logic:
-    - condition: amount > 100
-      action: review
+  conclusion:
+    - when: amount > 100
+      signal: review
     - default: true
-      action: approve
+      signal: approve
 "#;
         let temp_file = "/tmp/test_ruleset_exec.yaml";
         std::fs::write(temp_file, yaml_content).unwrap();
@@ -3238,18 +3249,18 @@ ruleset:
         let response = engine.decide(request).await.unwrap();
 
         println!("Test ruleset execution:");
-        println!("  Action: {:?}", response.result.action);
+        println!("  Action: {:?}", response.result.signal);
         println!("  Score: {}", response.result.score);
 
         // Should be Review because 150 > 100
-        assert!(response.result.action.is_some());
-        assert!(matches!(response.result.action, Some(Action::Review)));
+        assert!(response.result.signal.is_some());
+        assert!(matches!(response.result.signal, Some(Signal::Review)));
     }
 
     #[tokio::test]
     async fn test_fraud_detection_ruleset() {
         use crate::builder::DecisionEngineBuilder;
-        use corint_core::ast::Action;
+        use corint_core::ast::Signal;
 
         // Create a temporary YAML file matching fraud_detection.yaml
         let yaml_content = r#"
@@ -3269,19 +3280,19 @@ ruleset:
   name: Fraud Detection Ruleset
   description: Simple fraud detection based on transaction amount
   rules: []
-  decision_logic:
-    - condition: transaction_amount > 10000
-      action: deny
+  conclusion:
+    - when: transaction_amount > 10000
+      signal: decline
       reason: Extremely high value transaction
       terminate: true
-    - condition: transaction_amount > 1000
-      action: review
+    - when: transaction_amount > 1000
+      signal: review
       reason: High value transaction
-    - condition: transaction_amount > 100
-      action: review
+    - when: transaction_amount > 100
+      signal: review
       reason: Elevated transaction amount
     - default: true
-      action: approve
+      signal: approve
 "#;
         let temp_file = "/tmp/test_fraud_detection.yaml";
         std::fs::write(temp_file, yaml_content).unwrap();
@@ -3299,31 +3310,31 @@ ruleset:
         let request = DecisionRequest::new(event_data.clone());
         let response = engine.decide(request).await.unwrap();
         println!("Test Case 1 (50.0):");
-        println!("  Action: {:?}", response.result.action);
+        println!("  Action: {:?}", response.result.signal);
         println!("  Score: {}", response.result.score);
         println!("  Triggered Rules: {:?}", response.result.triggered_rules);
         assert!(
-            matches!(response.result.action, Some(Action::Approve)),
+            matches!(response.result.signal, Some(Signal::Approve)),
             "Expected Some(Approve) but got {:?}",
-            response.result.action
+            response.result.signal
         );
 
         // Test Case 2: High value (5000.0) - should review
         event_data.insert("transaction_amount".to_string(), Value::Number(5000.0));
         let request = DecisionRequest::new(event_data.clone());
         let response = engine.decide(request).await.unwrap();
-        println!("Test Case 2 (5000.0): Action: {:?}", response.result.action);
-        assert!(matches!(response.result.action, Some(Action::Review)));
+        println!("Test Case 2 (5000.0): Action: {:?}", response.result.signal);
+        assert!(matches!(response.result.signal, Some(Signal::Review)));
 
-        // Test Case 3: Very high value (15000.0) - should deny
+        // Test Case 3: Very high value (15000.0) - should decline
         event_data.insert("transaction_amount".to_string(), Value::Number(15000.0));
         let request = DecisionRequest::new(event_data);
         let response = engine.decide(request).await.unwrap();
         println!(
             "Test Case 3 (15000.0): Action: {:?}",
-            response.result.action
+            response.result.signal
         );
-        assert!(matches!(response.result.action, Some(Action::Deny)));
+        assert!(matches!(response.result.signal, Some(Signal::Decline)));
     }
 
     #[tokio::test]
@@ -3346,9 +3357,9 @@ ruleset:
   id: simple_ruleset
   name: Simple Ruleset
   rules: []
-  decision_logic:
+  conclusion:
     - default: true
-      action: approve
+      signal: approve
 "#;
         let temp_file = "/tmp/test_request_id.yaml";
         std::fs::write(temp_file, yaml_content).unwrap();
@@ -3399,9 +3410,9 @@ ruleset:
   id: metadata_ruleset
   name: Metadata Ruleset
   rules: []
-  decision_logic:
+  conclusion:
     - default: true
-      action: approve
+      signal: approve
 "#;
         let temp_file = "/tmp/test_metadata.yaml";
         std::fs::write(temp_file, yaml_content).unwrap();
@@ -3461,11 +3472,11 @@ ruleset:
   id: timing_ruleset
   name: Timing Ruleset
   rules: []
-  decision_logic:
-    - condition: value > 100
-      action: review
+  conclusion:
+    - when: value > 100
+      signal: review
     - default: true
-      action: approve
+      signal: approve
 "#;
         let temp_file = "/tmp/test_timing.yaml";
         std::fs::write(temp_file, yaml_content).unwrap();
@@ -3493,7 +3504,7 @@ ruleset:
     #[tokio::test]
     async fn test_decide_with_missing_fields() {
         use crate::builder::DecisionEngineBuilder;
-        use corint_core::ast::Action;
+        use corint_core::ast::Signal;
 
         let yaml_content = r#"
 pipeline:
@@ -3511,11 +3522,11 @@ ruleset:
   id: missing_field_ruleset
   name: Missing Field Ruleset
   rules: []
-  decision_logic:
-    - condition: optional_field > 100
-      action: review
+  conclusion:
+    - when: optional_field > 100
+      signal: review
     - default: true
-      action: approve
+      signal: approve
 "#;
         let temp_file = "/tmp/test_missing_field.yaml";
         std::fs::write(temp_file, yaml_content).unwrap();
@@ -3535,16 +3546,16 @@ ruleset:
         let response = engine.decide(request).await.unwrap();
 
         println!("Missing field test:");
-        println!("  Action: {:?}", response.result.action);
+        println!("  Action: {:?}", response.result.signal);
 
         // Should approve because condition fails (Null > 100 is false)
-        assert!(matches!(response.result.action, Some(Action::Approve)));
+        assert!(matches!(response.result.signal, Some(Signal::Approve)));
     }
 
     #[tokio::test]
     async fn test_decide_with_content_api() {
         use crate::builder::DecisionEngineBuilder;
-        use corint_core::ast::Action;
+        use corint_core::ast::Signal;
 
         // Simulate loading from repository/API
         let rule_content = r#"
@@ -3563,11 +3574,11 @@ ruleset:
   id: content_ruleset
   name: Content Ruleset
   rules: []
-  decision_logic:
-    - condition: risk_score > 50
-      action: deny
+  conclusion:
+    - when: risk_score > 50
+      signal: decline
     - default: true
-      action: approve
+      signal: approve
 "#;
 
         let engine = DecisionEngineBuilder::new()
@@ -3584,9 +3595,9 @@ ruleset:
         let response = engine.decide(request).await.unwrap();
 
         println!("Content API test:");
-        println!("  Action: {:?}", response.result.action);
+        println!("  Action: {:?}", response.result.signal);
 
-        assert!(matches!(response.result.action, Some(Action::Deny)));
+        assert!(matches!(response.result.signal, Some(Signal::Decline)));
     }
 
     #[tokio::test]
@@ -3609,9 +3620,9 @@ ruleset:
   id: config_test_ruleset
   name: Config Test Ruleset
   rules: []
-  decision_logic:
+  conclusion:
     - default: true
-      action: approve
+      signal: approve
 "#;
         let temp_file = "/tmp/test_config.yaml";
         std::fs::write(temp_file, yaml_content).unwrap();
@@ -3653,7 +3664,7 @@ ruleset:
     #[tokio::test]
     async fn test_rules_in_ruleset() {
         use crate::builder::DecisionEngineBuilder;
-        use corint_core::ast::Action;
+        use corint_core::ast::Signal;
 
         // Test that rules defined in the same file are correctly loaded and executed
         let yaml_content = r#"
@@ -3682,11 +3693,11 @@ ruleset:
   id: test_ruleset
   rules:
     - high_risk
-  decision_logic:
-    - condition: total_score >= 100
-      action: deny
+  conclusion:
+    - when: total_score >= 100
+      signal: decline
     - default: true
-      action: approve
+      signal: approve
 "#;
         let temp_file = "/tmp/test_rules_in_ruleset.yaml";
         std::fs::write(temp_file, yaml_content).unwrap();
@@ -3706,13 +3717,13 @@ ruleset:
 
         println!("Score: {}", response.result.score);
         println!("Triggered rules: {:?}", response.result.triggered_rules);
-        println!("Action: {:?}", response.result.action);
+        println!("Action: {:?}", response.result.signal);
 
         assert_eq!(response.result.score, 100, "Rule should add 100 points");
         assert!(
             response.result.triggered_rules.contains(&"high_risk".to_string()),
             "high_risk rule should be triggered"
         );
-        assert!(matches!(response.result.action, Some(Action::Deny)));
+        assert!(matches!(response.result.signal, Some(Signal::Decline)));
     }
 }

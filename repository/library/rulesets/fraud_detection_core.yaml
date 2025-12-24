@@ -40,22 +40,22 @@ ruleset:
     - new_user_fraud_pattern
 
   # Multi-layer decision logic
-  decision_logic:
+  conclusion:
     # ==========================================
     # Priority 1: Critical Patterns
     # ==========================================
 
     # Fraud farm is always critical - organized fraud
-    - condition: triggered_rules contains "fraud_farm_pattern"
-      action: deny
+    - when: triggered_rules contains "fraud_farm_pattern"
+      signal: decline
       reason: "Critical: Fraud farm detected (organized fraud network)"
       terminate: true
 
     # Multiple high-severity patterns combined
-    - condition: |
+    - when: |
         triggered_rules contains "account_takeover_pattern" &&
         triggered_rules contains "amount_outlier_pattern"
-      action: deny
+      signal: decline
       reason: "Critical: Account takeover with abnormal transaction amount"
       terminate: true
 
@@ -64,32 +64,32 @@ ruleset:
     # ==========================================
 
     # Critical Risk >= 200 (multiple patterns)
-    - condition: total_score >= 200
-      action: deny
+    - when: total_score >= 200
+      signal: decline
       reason: "Critical risk - multiple fraud indicators (score: {total_score})"
       terminate: true
 
     # Very High Risk >= 150
-    - condition: total_score >= 150
-      action: deny
+    - when: total_score >= 150
+      signal: decline
       reason: "Very high risk - strong fraud pattern (score: {total_score})"
       terminate: true
 
     # High Risk >= 100
-    - condition: total_score >= 100
-      action: deny
+    - when: total_score >= 100
+      signal: decline
       reason: "High risk - clear fraud signals (score: {total_score})"
       terminate: true
 
     # Medium-High Risk >= 60
-    - condition: total_score >= 60
-      action: review
+    - when: total_score >= 60
+      signal: review
       reason: "Medium-high risk - manual review required (score: {total_score})"
       terminate: false
 
     # Medium Risk >= 30
-    - condition: total_score >= 30
-      action: review
+    - when: total_score >= 30
+      signal: review
       reason: "Medium risk - enhanced monitoring (score: {total_score})"
       terminate: false
 
@@ -98,8 +98,8 @@ ruleset:
     # ==========================================
 
     # Multiple fraud signals present
-    - condition: triggered_count >= 3
-      action: review
+    - when: triggered_count >= 3
+      signal: review
       reason: "Multiple fraud indicators ({triggered_count} patterns detected)"
 
     # ==========================================
@@ -108,7 +108,7 @@ ruleset:
 
     # Low Risk (default)
     - default: true
-      action: approve
+      signal: approve
       reason: "Low risk - normal pattern"
 
   metadata:

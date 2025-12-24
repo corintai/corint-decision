@@ -29,7 +29,35 @@ pipeline:
         name: Supabase Risk Assessment
         type: ruleset
         ruleset: supabase_risk_assessment
-        next: end
+        # No next = end steps, flow to decision
+
+  # Final decision based on signals from rulesets
+  # Since ruleset now produces standard signals, pipeline just passes them through
+  decision:
+    # Decline signal → decline result
+    - when: results.supabase_risk_assessment.signal == "decline"
+      result: decline
+      reason: "{results.supabase_risk_assessment.reason}"
+      terminate: true
+
+    # Hold signal → hold result
+    - when: results.supabase_risk_assessment.signal == "hold"
+      result: hold
+      actions: ["2FA"]
+      reason: "{results.supabase_risk_assessment.reason}"
+      terminate: true
+
+    # Review signal → review result
+    - when: results.supabase_risk_assessment.signal == "review"
+      result: review
+      actions: ["KYC"]
+      reason: "{results.supabase_risk_assessment.reason}"
+      terminate: true
+
+    # Approve (default)
+    - default: true
+      result: approve
+      reason: "Transaction approved"
 
 ---
 
@@ -91,16 +119,16 @@ rule:
   when:
     all:
       - features.device_event_count_3mo >= 2
-      - features.device_transaction_count_6mo > 5
+      - features.device_transaction_count_6mo >= 4
 
   score: 60
 
 ---
 
 # ========================================
-# STAGE 2: DECISION RULESET
+# STAGE 2: SIGNAL PRODUCTION RULESET
 # ========================================
-# Ruleset is a logical grouping unit, called by pipeline
+# Ruleset produces signals (risk levels), pipeline makes final decisions
 
 ruleset:
   id: supabase_risk_assessment
@@ -108,47 +136,48 @@ ruleset:
   description: |
     Risk assessment ruleset that uses features calculated from Supabase PostgreSQL database.
     Features are computed in real-time from event data stored in Supabase.
-    This ruleset is invoked by the transaction pipeline.
-  
+    This ruleset produces signals, which are consumed by the pipeline's decision section.
+
   rules:
     - high_transaction_volume
     - high_value_transaction
     - rapid_transactions
     - suspicious_device_pattern
-  
-  decision_logic:
-    # Critical risk - immediate block
-    - condition: triggered_rules contains "suspicious_device_pattern"
-      action: deny
-      reason: "BLOCKED: Suspicious device pattern with high transaction volume detected"
+
+  # Conclusion produces signals (initial decision: approve/decline/review/hold/pass)
+  conclusion:
+    # Critical risk - decline immediately
+    - when: triggered_rules contains "suspicious_device_pattern"
+      signal: decline
+      reason: "Suspicious device pattern with high transaction volume detected"
       terminate: true
-    
-    # High risk score threshold
-    - condition: total_score >= 100
-      action: deny
-      reason: "High risk score - transaction denied"
+
+    # High risk - decline
+    - when: total_score >= 100
+      signal: decline
+      reason: "High risk score threshold exceeded"
       terminate: true
-    
-    # Multiple risk indicators
-    - condition: triggered_count >= 3
-      action: challenge
-      reason: "Multiple risk indicators detected - require additional verification"
+
+    # High risk - multiple indicators
+    - when: triggered_count >= 3
+      signal: decline
+      reason: "Multiple risk indicators detected"
       terminate: true
-    
-    # Medium-high risk
-    - condition: total_score >= 80
-      action: challenge
-      reason: "Medium-high risk - require verification"
+
+    # Medium risk - hold for verification
+    - when: total_score >= 80
+      signal: hold
+      reason: "Medium-high risk score"
       terminate: true
-    
-    # Medium risk
-    - condition: total_score >= 35
-      action: review
-      reason: "Medium risk - manual review required"
+
+    # Low risk - review
+    - when: total_score >= 35
+      signal: review
+      reason: "Low risk score"
       terminate: true
-    
-    # Low risk (default)
+
+    # Normal - approve (default)
     - default: true
-      action: approve
-      reason: "Low risk - transaction approved"
+      signal: approve
+      reason: "No significant risk indicators"
 

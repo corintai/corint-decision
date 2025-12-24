@@ -4,7 +4,7 @@
 
 mod common;
 
-use corint_core::ast::Action;
+use corint_core::ast::Signal;
 use corint_core::Value;
 use common::{ResponseAssertions, TestEngine};
 use std::collections::HashMap;
@@ -30,11 +30,11 @@ ruleset:
   id: test_ruleset
   rules:
     - conditional_score
-  decision_logic:
-    - condition: total_score > 0
-      action: review
+  conclusion:
+    - when: total_score > 0
+      signal: review
     - default: true
-      action: approve
+      signal: approve
 "#;
 
     let engine = TestEngine::new()
@@ -44,7 +44,7 @@ ruleset:
     let event = HashMap::new();
     let response = engine.execute_ruleset("test_ruleset", event).await;
     response.assert_score(50);
-    response.assert_action(Action::Review);
+    response.assert_action(Signal::Review);
 }
 
 #[tokio::test]
@@ -64,13 +64,13 @@ ruleset:
   id: test_ruleset
   rules:
     - amount_based_score
-  decision_logic:
-    - condition: total_score >= 100
-      action: deny
-    - condition: total_score >= 50
-      action: review
+  conclusion:
+    - when: total_score >= 100
+      signal: decline
+    - when: total_score >= 50
+      signal: review
     - default: true
-      action: approve
+      signal: approve
 "#;
 
     let engine = TestEngine::new()
@@ -82,14 +82,14 @@ ruleset:
     event_high.insert("amount".to_string(), Value::Number(5000.0));
     let response = engine.execute_ruleset("test_ruleset", event_high).await;
     response.assert_score(100);
-    response.assert_action(Action::Deny);
+    response.assert_action(Signal::Decline);
 
     // Low amount - should get no score
     let mut event_low = HashMap::new();
     event_low.insert("amount".to_string(), Value::Number(500.0));
     let response = engine.execute_ruleset("test_ruleset", event_low).await;
     response.assert_score(0);
-    response.assert_action(Action::Approve);
+    response.assert_action(Signal::Approve);
 }
 
 // ============================================================================
@@ -113,11 +113,11 @@ ruleset:
   id: test_ruleset
   rules:
     - has_username
-  decision_logic:
-    - condition: total_score > 0
-      action: review
+  conclusion:
+    - when: total_score > 0
+      signal: review
     - default: true
-      action: approve
+      signal: approve
 "#;
 
     let engine = TestEngine::new()
@@ -148,11 +148,11 @@ ruleset:
   id: test_ruleset
   rules:
     - email_domain_check
-  decision_logic:
-    - condition: total_score > 0
-      action: review
+  conclusion:
+    - when: total_score > 0
+      signal: review
     - default: true
-      action: approve
+      signal: approve
 "#;
 
     let engine = TestEngine::new()
@@ -186,11 +186,11 @@ ruleset:
   id: test_ruleset
   rules:
     - non_empty_name
-  decision_logic:
-    - condition: total_score > 0
-      action: approve
+  conclusion:
+    - when: total_score > 0
+      signal: approve
     - default: true
-      action: review
+      signal: review
 "#;
 
     let engine = TestEngine::new()
@@ -202,14 +202,14 @@ ruleset:
     event.insert("name".to_string(), Value::String("John".to_string()));
     let response = engine.execute_ruleset("test_ruleset", event).await;
     response.assert_score(5);
-    response.assert_action(Action::Approve);
+    response.assert_action(Signal::Approve);
 
     // Empty name
     let mut event_empty = HashMap::new();
     event_empty.insert("name".to_string(), Value::String("".to_string()));
     let response = engine.execute_ruleset("test_ruleset", event_empty).await;
     response.assert_score(0);
-    response.assert_action(Action::Review);
+    response.assert_action(Signal::Review);
 }
 
 // ============================================================================
@@ -233,11 +233,11 @@ ruleset:
   id: test_ruleset
   rules:
     - total_amount_check
-  decision_logic:
-    - condition: total_score > 0
-      action: review
+  conclusion:
+    - when: total_score > 0
+      signal: review
     - default: true
-      action: approve
+      signal: approve
 "#;
 
     let engine = TestEngine::new()
@@ -268,11 +268,11 @@ ruleset:
   id: test_ruleset
   rules:
     - even_amount_check
-  decision_logic:
-    - condition: total_score > 0
-      action: approve
+  conclusion:
+    - when: total_score > 0
+      signal: approve
     - default: true
-      action: deny
+      signal: decline
 "#;
 
     let engine = TestEngine::new()
@@ -285,7 +285,7 @@ ruleset:
 
     let response = engine.execute_ruleset("test_ruleset", event).await;
     response.assert_score(10);
-    response.assert_action(Action::Approve);
+    response.assert_action(Signal::Approve);
 }
 
 #[tokio::test]
@@ -305,11 +305,11 @@ ruleset:
   id: test_ruleset
   rules:
     - half_limit_check
-  decision_logic:
-    - condition: total_score > 0
-      action: review
+  conclusion:
+    - when: total_score > 0
+      signal: review
     - default: true
-      action: approve
+      signal: approve
 "#;
 
     let engine = TestEngine::new()
@@ -340,11 +340,11 @@ ruleset:
   id: test_ruleset
   rules:
     - quantity_amount_check
-  decision_logic:
-    - condition: total_score > 0
-      action: review
+  conclusion:
+    - when: total_score > 0
+      signal: review
     - default: true
-      action: approve
+      signal: approve
 "#;
 
     let engine = TestEngine::new()
@@ -379,11 +379,11 @@ ruleset:
   id: test_ruleset
   rules:
     - has_user_id
-  decision_logic:
-    - condition: total_score > 0
-      action: approve
+  conclusion:
+    - when: total_score > 0
+      signal: approve
     - default: true
-      action: deny
+      signal: decline
 "#;
 
     let engine = TestEngine::new()
@@ -396,7 +396,7 @@ ruleset:
 
     let response = engine.execute_ruleset("test_ruleset", event).await;
     response.assert_score(10);
-    response.assert_action(Action::Approve);
+    response.assert_action(Signal::Approve);
 }
 
 #[tokio::test]
@@ -417,11 +417,11 @@ ruleset:
   id: test_ruleset
   rules:
     - has_email_check
-  decision_logic:
-    - condition: total_score > 0
-      action: approve
+  conclusion:
+    - when: total_score > 0
+      signal: approve
     - default: true
-      action: review
+      signal: review
 "#;
 
     let engine = TestEngine::new()
@@ -437,7 +437,7 @@ ruleset:
 
     let response = engine.execute_ruleset("test_ruleset", event).await;
     response.assert_score(50);
-    response.assert_action(Action::Approve);
+    response.assert_action(Signal::Approve);
 }
 
 #[tokio::test]
@@ -457,11 +457,11 @@ ruleset:
   id: test_ruleset
   rules:
     - check_optional_field
-  decision_logic:
-    - condition: total_score > 0
-      action: review
+  conclusion:
+    - when: total_score > 0
+      signal: review
     - default: true
-      action: approve
+      signal: approve
 "#;
 
     let engine = TestEngine::new()
@@ -473,13 +473,13 @@ ruleset:
     event_with.insert("amount".to_string(), Value::Number(150.0));
     let response = engine.execute_ruleset("test_ruleset", event_with).await;
     response.assert_score(30);
-    response.assert_action(Action::Review);
+    response.assert_action(Signal::Review);
 
     // Event without amount - should gracefully return score 0
     let event_without = HashMap::new();
     let response = engine.execute_ruleset("test_ruleset", event_without).await;
     response.assert_score(0);
-    response.assert_action(Action::Approve);
+    response.assert_action(Signal::Approve);
 }
 
 #[tokio::test]
@@ -499,11 +499,11 @@ ruleset:
   id: test_ruleset
   rules:
     - check_nested_field
-  decision_logic:
-    - condition: total_score > 0
-      action: approve
+  conclusion:
+    - when: total_score > 0
+      signal: approve
     - default: true
-      action: review
+      signal: review
 "#;
 
     let engine = TestEngine::new()
@@ -522,7 +522,7 @@ ruleset:
 
     let response = engine.execute_ruleset("test_ruleset", event).await;
     response.assert_score(15);
-    response.assert_action(Action::Approve);
+    response.assert_action(Signal::Approve);
 }
 
 // ============================================================================
@@ -546,11 +546,11 @@ ruleset:
   id: test_ruleset
   rules:
     - risky_amount
-  decision_logic:
-    - condition: total_score > 0
-      action: review
+  conclusion:
+    - when: total_score > 0
+      signal: review
     - default: true
-      action: approve
+      signal: approve
 "#;
 
     let engine = TestEngine::new()
@@ -563,7 +563,7 @@ ruleset:
 
     let response = engine.execute_ruleset("test_ruleset", event).await;
     response.assert_score(35);
-    response.assert_action(Action::Review);
+    response.assert_action(Signal::Review);
 }
 
 #[tokio::test]
@@ -583,11 +583,11 @@ ruleset:
   id: test_ruleset
   rules:
     - non_standard_amount
-  decision_logic:
-    - condition: total_score > 0
-      action: review
+  conclusion:
+    - when: total_score > 0
+      signal: review
     - default: true
-      action: approve
+      signal: approve
 "#;
 
     let engine = TestEngine::new()
@@ -600,7 +600,7 @@ ruleset:
 
     let response = engine.execute_ruleset("test_ruleset", event).await;
     response.assert_score(20);
-    response.assert_action(Action::Review);
+    response.assert_action(Signal::Review);
 }
 
 #[tokio::test]
@@ -620,11 +620,11 @@ ruleset:
   id: test_ruleset
   rules:
     - blocked_country
-  decision_logic:
-    - condition: total_score > 0
-      action: deny
+  conclusion:
+    - when: total_score > 0
+      signal: decline
     - default: true
-      action: approve
+      signal: approve
 "#;
 
     let engine = TestEngine::new()
@@ -636,7 +636,7 @@ ruleset:
 
     let response = engine.execute_ruleset("test_ruleset", event).await;
     response.assert_score(100);
-    response.assert_action(Action::Deny);
+    response.assert_action(Signal::Decline);
 }
 
 // ============================================================================
@@ -661,11 +661,11 @@ ruleset:
   id: test_ruleset
   rules:
     - complex_rule
-  decision_logic:
-    - condition: total_score > 0
-      action: approve
+  conclusion:
+    - when: total_score > 0
+      signal: approve
     - default: true
-      action: deny
+      signal: decline
 "#;
 
     let engine = TestEngine::new()
@@ -678,7 +678,7 @@ ruleset:
 
     let response = engine.execute_ruleset("test_ruleset", event).await;
     response.assert_score(60);
-    response.assert_action(Action::Approve);
+    response.assert_action(Signal::Approve);
 }
 
 #[tokio::test]
@@ -699,11 +699,11 @@ ruleset:
   id: test_ruleset
   rules:
     - amount_in_range
-  decision_logic:
-    - condition: total_score > 0
-      action: review
+  conclusion:
+    - when: total_score > 0
+      signal: review
     - default: true
-      action: approve
+      signal: approve
 "#;
 
     let engine = TestEngine::new()
@@ -715,14 +715,14 @@ ruleset:
     event_in.insert("amount".to_string(), Value::Number(500.0));
     let response = engine.execute_ruleset("test_ruleset", event_in).await;
     response.assert_score(25);
-    response.assert_action(Action::Review);
+    response.assert_action(Signal::Review);
 
     // Amount out of range
     let mut event_out = HashMap::new();
     event_out.insert("amount".to_string(), Value::Number(50.0));
     let response = engine.execute_ruleset("test_ruleset", event_out).await;
     response.assert_score(0);
-    response.assert_action(Action::Approve);
+    response.assert_action(Signal::Approve);
 }
 
 #[tokio::test]
@@ -743,11 +743,11 @@ ruleset:
   id: test_ruleset
   rules:
     - risk_combination
-  decision_logic:
-    - condition: total_score > 0
-      action: deny
+  conclusion:
+    - when: total_score > 0
+      signal: decline
     - default: true
-      action: approve
+      signal: approve
 "#;
 
     let engine = TestEngine::new()

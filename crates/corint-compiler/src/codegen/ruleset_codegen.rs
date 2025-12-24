@@ -4,7 +4,7 @@
 
 use crate::codegen::expression_codegen::ExpressionCompiler;
 use crate::error::Result;
-use corint_core::ast::{Action, Expression, Ruleset};
+use corint_core::ast::{Expression, Ruleset, Signal};
 use corint_core::ir::{Instruction, Program, ProgramMetadata};
 
 /// Ruleset compiler
@@ -17,7 +17,7 @@ impl RulesetCompiler {
 
         // Compile decision logic
         // This evaluates conditions and executes appropriate actions
-        instructions.extend(Self::compile_decision_logic(ruleset)?);
+        instructions.extend(Self::compile_conclusion(ruleset)?);
 
         // Always end with return
         instructions.push(Instruction::Return);
@@ -32,12 +32,12 @@ impl RulesetCompiler {
                 .insert("rules".to_string(), ruleset.rules.join(","));
         }
 
-        // Store decision_logic as JSON for trace building
-        if !ruleset.decision_logic.is_empty() {
-            let decision_logic_json = Self::decision_logic_to_json(&ruleset.decision_logic);
+        // Store conclusion as JSON for trace building
+        if !ruleset.conclusion.is_empty() {
+            let conclusion_json = Self::conclusion_to_json(&ruleset.conclusion);
             metadata
                 .custom
-                .insert("decision_logic_json".to_string(), decision_logic_json);
+                .insert("conclusion_json".to_string(), conclusion_json);
         }
 
         Ok(Program::new(instructions, metadata))
@@ -45,16 +45,16 @@ impl RulesetCompiler {
 
     /// Compile decision logic
     ///
-    /// Decision logic maps score ranges or conditions to actions
-    fn compile_decision_logic(ruleset: &Ruleset) -> Result<Vec<Instruction>> {
+    /// Decision logic maps score ranges or conditions to signals
+    fn compile_conclusion(ruleset: &Ruleset) -> Result<Vec<Instruction>> {
         let mut instructions = Vec::new();
 
         // Iterate through decision rules in order
-        for (idx, decision_rule) in ruleset.decision_logic.iter().enumerate() {
+        for (idx, decision_rule) in ruleset.conclusion.iter().enumerate() {
             // Check if this is a default rule (no condition)
             if decision_rule.default {
-                // Execute action directly
-                instructions.extend(Self::compile_action(&decision_rule.action)?);
+                // Execute signal directly
+                instructions.extend(Self::compile_signal(&decision_rule.signal)?);
 
                 if decision_rule.terminate {
                     instructions.push(Instruction::Return);
@@ -69,30 +69,30 @@ impl RulesetCompiler {
 
                 // Calculate the jump offset if condition is false
                 // We need to count the instructions that will be executed if true
-                let mut action_instructions = Self::compile_action(&decision_rule.action)?;
+                let mut signal_instructions = Self::compile_signal(&decision_rule.signal)?;
                 if decision_rule.terminate {
-                    action_instructions.push(Instruction::Return);
+                    signal_instructions.push(Instruction::Return);
                 } else {
-                    // If not terminating, jump to the end after executing this action
+                    // If not terminating, jump to the end after executing this signal
                     // We need to calculate how many instructions remain after this branch
-                    let remaining_rules = ruleset.decision_logic.len() - idx - 1;
+                    let remaining_rules = ruleset.conclusion.len() - idx - 1;
                     if remaining_rules > 0 {
                         // Add a jump to skip the remaining decision logic
-                        action_instructions.push(Instruction::Jump { offset: 999 });
+                        signal_instructions.push(Instruction::Jump { offset: 999 });
                         // Placeholder, will be fixed in second pass
                     }
                 }
 
-                // Jump past the action instructions if condition is false
+                // Jump past the signal instructions if condition is false
                 // Offset is relative to current instruction, so we need to skip:
-                // +1 to get past the JumpIfFalse itself, then skip all action_instructions
-                let jump_offset = (action_instructions.len() + 1) as isize;
+                // +1 to get past the JumpIfFalse itself, then skip all signal_instructions
+                let jump_offset = (signal_instructions.len() + 1) as isize;
                 instructions.push(Instruction::JumpIfFalse {
                     offset: jump_offset,
                 });
 
-                // Add the action instructions
-                instructions.extend(action_instructions);
+                // Add the signal instructions
+                instructions.extend(signal_instructions);
             }
         }
 
@@ -116,41 +116,39 @@ impl RulesetCompiler {
         Ok(instructions)
     }
 
-    /// Compile an action into IR instructions
-    fn compile_action(action: &Action) -> Result<Vec<Instruction>> {
+    /// Compile a signal into IR instructions
+    fn compile_signal(signal: &Signal) -> Result<Vec<Instruction>> {
         let mut instructions = Vec::new();
 
-        match action {
-            Action::Approve => {
-                // Set action to approve
-                instructions.push(Instruction::SetAction {
-                    action: Action::Approve,
+        match signal {
+            Signal::Approve => {
+                // Set signal to approve
+                instructions.push(Instruction::SetSignal {
+                    signal: Signal::Approve,
                 });
             }
-            Action::Deny => {
-                // Set action to deny
-                instructions.push(Instruction::SetAction {
-                    action: Action::Deny,
+            Signal::Decline => {
+                // Set signal to decline
+                instructions.push(Instruction::SetSignal {
+                    signal: Signal::Decline,
                 });
             }
-            Action::Review => {
-                // Set action to review
-                instructions.push(Instruction::SetAction {
-                    action: Action::Review,
+            Signal::Review => {
+                // Set signal to review
+                instructions.push(Instruction::SetSignal {
+                    signal: Signal::Review,
                 });
             }
-            Action::Challenge => {
-                // Set action to challenge (require additional verification)
-                instructions.push(Instruction::SetAction {
-                    action: Action::Challenge,
+            Signal::Hold => {
+                // Set signal to hold (temporarily suspend, require additional verification)
+                instructions.push(Instruction::SetSignal {
+                    signal: Signal::Hold,
                 });
             }
-            Action::Infer { config } => {
-                // Set action to infer with configuration
-                instructions.push(Instruction::SetAction {
-                    action: Action::Infer {
-                        config: config.clone(),
-                    },
+            Signal::Pass => {
+                // Set signal to pass (skip/no decision)
+                instructions.push(Instruction::SetSignal {
+                    signal: Signal::Pass,
                 });
             }
         }
@@ -158,9 +156,9 @@ impl RulesetCompiler {
         Ok(instructions)
     }
 
-    /// Convert decision_logic to JSON for trace building
-    fn decision_logic_to_json(decision_logic: &[corint_core::ast::DecisionRule]) -> String {
-        let json_array: Vec<serde_json::Value> = decision_logic
+    /// Convert conclusion to JSON for trace building
+    fn conclusion_to_json(conclusion: &[corint_core::ast::DecisionRule]) -> String {
+        let json_array: Vec<serde_json::Value> = conclusion
             .iter()
             .map(|rule| {
                 let mut obj = serde_json::Map::new();
@@ -176,18 +174,31 @@ impl RulesetCompiler {
                 // Add default flag
                 obj.insert("default".to_string(), serde_json::Value::Bool(rule.default));
 
-                // Add action
-                let action_str = match &rule.action {
-                    Action::Approve => "approve",
-                    Action::Deny => "deny",
-                    Action::Review => "review",
-                    Action::Challenge => "challenge",
-                    Action::Infer { .. } => "infer",
+                // Add signal (the decision result)
+                let signal_str = match &rule.signal {
+                    Signal::Approve => "APPROVE",
+                    Signal::Decline => "DECLINE",
+                    Signal::Review => "REVIEW",
+                    Signal::Hold => "HOLD",
+                    Signal::Pass => "PASS",
                 };
                 obj.insert(
-                    "action".to_string(),
-                    serde_json::Value::String(action_str.to_string()),
+                    "signal".to_string(),
+                    serde_json::Value::String(signal_str.to_string()),
                 );
+
+                // Add actions (user-defined actions)
+                if !rule.actions.is_empty() {
+                    obj.insert(
+                        "actions".to_string(),
+                        serde_json::Value::Array(
+                            rule.actions
+                                .iter()
+                                .map(|a| serde_json::Value::String(a.clone()))
+                                .collect(),
+                        ),
+                    );
+                }
 
                 // Add reason if present
                 if let Some(ref reason) = rule.reason {
@@ -333,59 +344,85 @@ mod tests {
     }
 
     #[test]
-    fn test_compile_action_approve() {
-        let instructions = RulesetCompiler::compile_action(&Action::Approve).unwrap();
+    fn test_compile_signal_approve() {
+        let instructions = RulesetCompiler::compile_signal(&Signal::Approve).unwrap();
 
         assert_eq!(instructions.len(), 1);
         assert!(matches!(
             instructions[0],
-            Instruction::SetAction {
-                action: Action::Approve
+            Instruction::SetSignal {
+                signal: Signal::Approve
             }
         ));
     }
 
     #[test]
-    fn test_compile_action_deny() {
-        let instructions = RulesetCompiler::compile_action(&Action::Deny).unwrap();
+    fn test_compile_signal_decline() {
+        let instructions = RulesetCompiler::compile_signal(&Signal::Decline).unwrap();
 
         assert_eq!(instructions.len(), 1);
         assert!(matches!(
             instructions[0],
-            Instruction::SetAction {
-                action: Action::Deny
+            Instruction::SetSignal {
+                signal: Signal::Decline
             }
         ));
     }
 
     #[test]
-    fn test_compile_action_review() {
-        let instructions = RulesetCompiler::compile_action(&Action::Review).unwrap();
+    fn test_compile_signal_hold() {
+        let instructions = RulesetCompiler::compile_signal(&Signal::Hold).unwrap();
 
         assert_eq!(instructions.len(), 1);
         assert!(matches!(
             instructions[0],
-            Instruction::SetAction {
-                action: Action::Review
+            Instruction::SetSignal {
+                signal: Signal::Hold
             }
         ));
     }
 
     #[test]
-    fn test_compile_ruleset_with_decision_logic() {
+    fn test_compile_signal_pass() {
+        let instructions = RulesetCompiler::compile_signal(&Signal::Pass).unwrap();
+
+        assert_eq!(instructions.len(), 1);
+        assert!(matches!(
+            instructions[0],
+            Instruction::SetSignal {
+                signal: Signal::Pass
+            }
+        ));
+    }
+
+    #[test]
+    fn test_compile_signal_review() {
+        let instructions = RulesetCompiler::compile_signal(&Signal::Review).unwrap();
+
+        assert_eq!(instructions.len(), 1);
+        assert!(matches!(
+            instructions[0],
+            Instruction::SetSignal {
+                signal: Signal::Review
+            }
+        ));
+    }
+
+    #[test]
+    fn test_compile_ruleset_with_conclusion() {
         let ruleset = Ruleset {
             id: "decision_ruleset".to_string(),
             name: Some("Decision Ruleset".to_string()),
             extends: None,
             rules: vec![],
-            decision_logic: vec![DecisionRule {
+            conclusion: vec![DecisionRule {
                 condition: None,
                 default: true,
-                action: Action::Approve,
-                reason: Some("Default action".to_string()),
+                signal: Signal::Approve,
+                actions: vec![],
+                reason: Some("Default signal".to_string()),
                 terminate: true,
             }],
-            decision_template: None,
             description: None,
             metadata: None,
         };
@@ -405,7 +442,7 @@ mod tests {
             name: Some("Test Conditions".to_string()),
             extends: None,
             rules: vec![],
-            decision_logic: vec![
+            conclusion: vec![
                 DecisionRule {
                     condition: Some(Expression::Binary {
                         left: Box::new(Expression::FieldAccess(vec!["amount".to_string()])),
@@ -413,19 +450,20 @@ mod tests {
                         right: Box::new(Expression::Literal(Value::Number(1000.0))),
                     }),
                     default: false,
-                    action: Action::Review,
+                    signal: Signal::Review,
+                    actions: vec!["KYC_AUTH".to_string()],
                     reason: Some("High amount".to_string()),
                     terminate: false,
                 },
                 DecisionRule {
                     condition: None,
                     default: true,
-                    action: Action::Approve,
+                    signal: Signal::Approve,
+                    actions: vec![],
                     reason: None,
                     terminate: false,
                 },
             ],
-            decision_template: None,
             description: None,
             metadata: None,
         };
@@ -438,7 +476,7 @@ mod tests {
             println!("{}: {:?}", i, inst);
         }
 
-        // Should have instructions for condition check, action setting, and default action
+        // Should have instructions for condition check, signal setting, and default signal
         assert!(program.instructions.len() > 3);
     }
 
@@ -452,7 +490,7 @@ mod tests {
             name: Some("Fraud Detection".to_string()),
             extends: None,
             rules: vec![],
-            decision_logic: vec![
+            conclusion: vec![
                 DecisionRule {
                     condition: Some(Expression::Binary {
                         left: Box::new(Expression::FieldAccess(vec![
@@ -462,7 +500,8 @@ mod tests {
                         right: Box::new(Expression::Literal(Value::Number(10000.0))),
                     }),
                     default: false,
-                    action: Action::Deny,
+                    signal: Signal::Decline,
+                    actions: vec!["BLOCK_CARD".to_string()],
                     reason: Some("Extremely high value".to_string()),
                     terminate: true,
                 },
@@ -475,7 +514,8 @@ mod tests {
                         right: Box::new(Expression::Literal(Value::Number(1000.0))),
                     }),
                     default: false,
-                    action: Action::Review,
+                    signal: Signal::Review,
+                    actions: vec!["KYC_AUTH".to_string()],
                     reason: Some("High value".to_string()),
                     terminate: false,
                 },
@@ -488,19 +528,20 @@ mod tests {
                         right: Box::new(Expression::Literal(Value::Number(100.0))),
                     }),
                     default: false,
-                    action: Action::Review,
+                    signal: Signal::Review,
+                    actions: vec![],
                     reason: Some("Elevated amount".to_string()),
                     terminate: false,
                 },
                 DecisionRule {
                     condition: None,
                     default: true,
-                    action: Action::Approve,
+                    signal: Signal::Approve,
+                    actions: vec![],
                     reason: None,
                     terminate: false,
                 },
             ],
-            decision_template: None,
             description: None,
             metadata: None,
         };
@@ -516,9 +557,9 @@ mod tests {
     }
 }
 #[test]
-fn test_compile_simple_ruleset() {
+fn test_compile_simple_ruleset_outside() {
     use crate::codegen::RulesetCompiler;
-    use corint_core::ast::Action;
+    use corint_core::ast::Signal;
     use corint_core::ast::{DecisionRule, Expression, Operator, Ruleset};
     use corint_core::Value;
 
@@ -527,7 +568,7 @@ fn test_compile_simple_ruleset() {
         name: Some("Test Ruleset".to_string()),
         extends: None,
         rules: vec!["test_rule".to_string()],
-        decision_logic: vec![
+        conclusion: vec![
             DecisionRule {
                 condition: Some(Expression::Binary {
                     left: Box::new(Expression::FieldAccess(vec!["total_score".to_string()])),
@@ -535,19 +576,20 @@ fn test_compile_simple_ruleset() {
                     right: Box::new(Expression::Literal(Value::Number(50.0))),
                 }),
                 default: false,
-                action: Action::Deny,
+                signal: Signal::Decline,
+                actions: vec![],
                 reason: None,
                 terminate: false,
             },
             DecisionRule {
                 condition: None,
                 default: true,
-                action: Action::Approve,
+                signal: Signal::Approve,
+                actions: vec![],
                 reason: None,
                 terminate: false,
             },
         ],
-        decision_template: None,
         description: None,
         metadata: None,
     };

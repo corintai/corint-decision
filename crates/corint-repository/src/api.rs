@@ -1,6 +1,6 @@
 //! HTTP API Repository implementation
 //!
-//! Loads rules, rulesets, templates, and pipelines from a remote HTTP API.
+//! Loads rules, rulesets, and pipelines from a remote HTTP API.
 //!
 //! # Overview
 //!
@@ -80,7 +80,7 @@
 //! - [API_REPOSITORY.md](../../docs/API_REPOSITORY.md) - Complete API documentation
 
 use async_trait::async_trait;
-use corint_core::ast::{DecisionTemplate, Pipeline, Rule, Ruleset};
+use corint_core::ast::{Pipeline, Rule, Ruleset};
 use reqwest::Client;
 use serde::Deserialize;
 use std::collections::HashMap;
@@ -134,10 +134,6 @@ struct ApiManifest {
     /// List of available rules
     #[serde(default)]
     rules: Vec<ArtifactRef>,
-
-    /// List of available templates
-    #[serde(default)]
-    templates: Vec<ArtifactRef>,
 }
 
 /// Reference to an artifact in the API
@@ -303,31 +299,6 @@ impl Repository for ApiRepository {
         Ok((ruleset, content))
     }
 
-    async fn load_template(
-        &self,
-        identifier: &str,
-    ) -> RepositoryResult<(DecisionTemplate, String)> {
-        // Check cache first
-        if let Some(cached) = self.cache.get(identifier) {
-            let template = serde_yaml::from_str(&cached.content).map_err(|e| {
-                RepositoryError::ParseError(format!("Failed to parse template: {}", e))
-            })?;
-            return Ok((template, cached.content.clone()));
-        }
-
-        // Find URL in manifest
-        let url = self.find_artifact_url(identifier, &self.manifest.templates)?;
-
-        // Fetch content
-        let content = self.fetch_content(&url).await?;
-
-        // Parse template
-        let template = serde_yaml::from_str(&content)
-            .map_err(|e| RepositoryError::ParseError(format!("Failed to parse template: {}", e)))?;
-
-        Ok((template, content))
-    }
-
     async fn load_pipeline(&self, identifier: &str) -> RepositoryResult<(Pipeline, String)> {
         // Check cache first
         if let Some(cached) = self.cache.get(identifier) {
@@ -353,7 +324,6 @@ impl Repository for ApiRepository {
     async fn exists(&self, identifier: &str) -> RepositoryResult<bool> {
         Ok(self.manifest.rules.iter().any(|r| r.id == identifier)
             || self.manifest.rulesets.iter().any(|r| r.id == identifier)
-            || self.manifest.templates.iter().any(|t| t.id == identifier)
             || self.manifest.pipelines.iter().any(|p| p.id == identifier))
     }
 
@@ -367,15 +337,6 @@ impl Repository for ApiRepository {
             .rulesets
             .iter()
             .map(|r| r.id.clone())
-            .collect())
-    }
-
-    async fn list_templates(&self) -> RepositoryResult<Vec<String>> {
-        Ok(self
-            .manifest
-            .templates
-            .iter()
-            .map(|t| t.id.clone())
             .collect())
     }
 

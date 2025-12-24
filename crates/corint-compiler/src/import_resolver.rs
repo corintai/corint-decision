@@ -5,8 +5,8 @@
 //! transitively, and validates ID uniqueness.
 
 use crate::error::{CompileError, Result};
-use corint_core::ast::{DecisionTemplate, RdlDocument, Rule, Ruleset};
-use corint_parser::{RuleParser, RulesetParser, TemplateParser};
+use corint_core::ast::{RdlDocument, Rule, Ruleset};
+use corint_parser::{RuleParser, RulesetParser};
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
@@ -21,9 +21,6 @@ pub struct ImportResolver {
     /// Cached loaded rulesets (path -> (Ruleset, source_path))
     ruleset_cache: HashMap<String, (Ruleset, String)>,
 
-    /// Cached loaded templates (path -> (DecisionTemplate, source_path))
-    pub(crate) template_cache: HashMap<String, (DecisionTemplate, String)>,
-
     /// Track loading stack to detect circular dependencies
     loading_stack: Vec<String>,
 }
@@ -35,7 +32,6 @@ impl ImportResolver {
             library_base_path: library_base_path.into(),
             rule_cache: HashMap::new(),
             ruleset_cache: HashMap::new(),
-            template_cache: HashMap::new(),
             loading_stack: Vec::new(),
         }
     }
@@ -51,7 +47,7 @@ impl ImportResolver {
         let mut resolved_rules = Vec::new();
         let mut resolved_rulesets = Vec::new();
 
-        // 1. Load imported rules, rulesets, and templates
+        // 1. Load imported rules and rulesets
         if let Some(imports) = &document.imports {
             // Load imported rules
             for rule_path in &imports.rules {
@@ -68,11 +64,6 @@ impl ImportResolver {
 
                 // Add the ruleset itself
                 resolved_rulesets.push(ruleset);
-            }
-
-            // Load imported templates (templates are resolved later when processing rulesets)
-            for template_path in &imports.templates {
-                self.load_template(template_path)?;
             }
         }
 
@@ -92,7 +83,7 @@ impl ImportResolver {
     /// Resolve imports for a ruleset document and include the main ruleset
     ///
     /// This is a specialized version that also processes the main ruleset definition,
-    /// applying templates and loading its dependencies.
+    /// loading its dependencies.
     pub fn resolve_ruleset_imports(
         &mut self,
         document: &RdlDocument<Ruleset>,
@@ -100,7 +91,7 @@ impl ImportResolver {
         let mut resolved_rules = Vec::new();
         let mut resolved_rulesets = Vec::new();
 
-        // 1. Load imported rules, rulesets, and templates
+        // 1. Load imported rules and rulesets
         if let Some(imports) = &document.imports {
             // Load imported rules
             for rule_path in &imports.rules {
@@ -118,20 +109,10 @@ impl ImportResolver {
                 // Add the ruleset itself
                 resolved_rulesets.push(ruleset);
             }
-
-            // Load imported templates
-            for template_path in &imports.templates {
-                self.load_template(template_path)?;
-            }
         }
 
         // 2. Process the main ruleset definition
-        let mut main_ruleset = document.definition.clone();
-
-        // Apply template if referenced
-        if let Some(template_ref) = main_ruleset.decision_template.clone() {
-            main_ruleset = self.apply_template(main_ruleset, &template_ref)?;
-        }
+        let main_ruleset = document.definition.clone();
 
         // Add the main ruleset
         resolved_rulesets.push(main_ruleset);
@@ -179,48 +160,6 @@ impl ImportResolver {
             .insert(path.to_string(), (rule.clone(), path.to_string()));
 
         Ok((rule, path.to_string()))
-    }
-
-    /// Load a decision template from file with caching
-    pub fn load_template(&mut self, path: &str) -> Result<(DecisionTemplate, String)> {
-        // Check cache first
-        if let Some(cached) = self.template_cache.get(path) {
-            return Ok(cached.clone());
-        }
-
-        // Resolve full path
-        let full_path = self.library_base_path.join(path);
-
-        // Load and parse YAML
-        let content =
-            std::fs::read_to_string(&full_path).map_err(|e| CompileError::ImportNotFound {
-                path: path.to_string(),
-                source: e,
-            })?;
-
-        let document =
-            TemplateParser::parse_with_imports(&content).map_err(|e| CompileError::ParseError {
-                path: path.to_string(),
-                message: e.to_string(),
-            })?;
-
-        let template = document.definition;
-
-        // Cache it
-        self.template_cache
-            .insert(path.to_string(), (template.clone(), path.to_string()));
-
-        Ok((template, path.to_string()))
-    }
-
-    /// Find a loaded template by ID
-    fn find_template_by_id(&self, template_id: &str) -> Option<DecisionTemplate> {
-        for (template, _) in self.template_cache.values() {
-            if template.id == template_id {
-                return Some(template.clone());
-            }
-        }
-        None
     }
 
     /// Load a ruleset with its dependencies (recursive loading)
@@ -285,13 +224,6 @@ impl ImportResolver {
             ruleset = self.apply_inheritance(ruleset, &extends_id, path)?;
         }
 
-        // 5. Apply decision logic template if referenced
-        if let Some(template_ref) = ruleset.decision_template.clone() {
-            ruleset = self.apply_template(ruleset, &template_ref)?;
-            // Clear the template reference since it's now resolved
-            ruleset.decision_template = None;
-        }
-
         // Cache it
         self.ruleset_cache
             .insert(path.to_string(), (ruleset.clone(), path.to_string()));
@@ -306,7 +238,7 @@ impl ImportResolver {
     ///
     /// Inheritance strategy:
     /// - rules: Merge parent + child rules (auto-dedup)
-    /// - decision_logic: Child completely overrides parent (if present)
+    /// - conclusion: Child completely overrides parent (if present)
     /// - name: Child overrides parent (if present)
     /// - description: Child overrides parent (if present)
     /// - metadata: Child overrides parent (if present)
@@ -342,9 +274,9 @@ impl ImportResolver {
         }
         child.rules = merged_rules;
 
-        // Override decision_logic only if child has it
-        if child.decision_logic.is_empty() && !parent.decision_logic.is_empty() {
-            child.decision_logic = parent.decision_logic.clone();
+        // Override conclusion only if child has it
+        if child.conclusion.is_empty() && !parent.conclusion.is_empty() {
+            child.conclusion = parent.conclusion.clone();
         }
 
         // Inherit name if child doesn't have one
@@ -363,73 +295,6 @@ impl ImportResolver {
         }
 
         Ok(child)
-    }
-
-    /// Apply a decision logic template to a ruleset
-    ///
-    /// This resolves template references at compile time:
-    /// 1. Finds the template by ID
-    /// 2. Merges default params with override params
-    /// 3. Substitutes param references in decision logic (simple string replacement for now)
-    /// 4. Replaces ruleset's decision_logic with the instantiated template
-    fn apply_template(
-        &self,
-        mut ruleset: Ruleset,
-        template_ref: &corint_core::ast::DecisionTemplateRef,
-    ) -> Result<Ruleset> {
-        // Find template by ID
-        let template = self
-            .find_template_by_id(&template_ref.template)
-            .ok_or_else(|| {
-                CompileError::CompileError(format!(
-                    "Template '{}' not found. Make sure it's imported before use.",
-                    template_ref.template
-                ))
-            })?;
-
-        // Merge params: template defaults + override params
-        let mut final_params = template.params.clone().unwrap_or_default();
-        if let Some(override_params) = &template_ref.params {
-            for (key, value) in override_params {
-                final_params.insert(key.clone(), value.clone());
-            }
-        }
-
-        // Clone decision logic from template
-        let mut decision_logic = template.decision_logic.clone();
-
-        // Simple parameter substitution in expressions (condition strings and reasons)
-        // Note: This is a simple implementation. For full support, we'd need to modify
-        // the expression parser to handle params at parse time or create a separate
-        // param resolution phase.
-        for rule in &mut decision_logic {
-            // Substitute in reason strings
-            if let Some(reason) = &mut rule.reason {
-                for (key, value) in &final_params {
-                    let placeholder = format!("params.{}", key);
-                    let replacement = match value {
-                        serde_json::Value::Number(n) => n.to_string(),
-                        serde_json::Value::String(s) => s.clone(),
-                        serde_json::Value::Bool(b) => b.to_string(),
-                        _ => value.to_string(),
-                    };
-                    *reason = reason.replace(&placeholder, &replacement);
-                }
-            }
-
-            // Note: For condition expressions, we would need deeper integration with
-            // the expression parser. For now, templates can use placeholder expressions
-            // that will be resolved at runtime if needed, or we keep params in conditions
-            // as-is (they become part of the AST and get evaluated by the expression engine).
-        }
-
-        // Replace ruleset's decision_logic with instantiated template
-        ruleset.decision_logic = decision_logic;
-
-        // Clear the template reference (it's been resolved)
-        ruleset.decision_template = None;
-
-        Ok(ruleset)
     }
 
     /// Find a ruleset by ID in the cache
@@ -573,7 +438,6 @@ impl ImportResolver {
     pub fn clear_cache(&mut self) {
         self.rule_cache.clear();
         self.ruleset_cache.clear();
-        self.template_cache.clear();
         self.loading_stack.clear();
     }
 

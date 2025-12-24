@@ -15,9 +15,6 @@ async fn create_test_repo() -> (TempDir, FileSystemRepository) {
     fs::create_dir_all(repo_path.join("library/rulesets"))
         .await
         .unwrap();
-    fs::create_dir_all(repo_path.join("library/templates"))
-        .await
-        .unwrap();
     fs::create_dir_all(repo_path.join("pipelines"))
         .await
         .unwrap();

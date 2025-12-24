@@ -86,12 +86,12 @@ ruleset:
   rules:
     - rule1
     - rule2
-  decision_logic:
-    - condition: total_score > 100
-      action: deny
+  conclusion:
+    - when: total_score > 100
+      signal: decline
       reason: "High risk"
     - default: true
-      action: approve
+      signal: approve
 "#;
 
     // Old method
@@ -128,22 +128,22 @@ ruleset:
     - account_takeover_pattern
     - velocity_abuse_pattern
 
-  decision_logic:
-    - condition: triggered_rules contains "fraud_farm_pattern"
-      action: deny
+  conclusion:
+    - when: triggered_rules contains "fraud_farm_pattern"
+      signal: decline
       reason: "Critical: Fraud farm detected"
       terminate: true
 
-    - condition: total_score >= 150
-      action: deny
+    - when: total_score >= 150
+      signal: decline
       reason: "High risk score"
 
-    - condition: total_score >= 100
-      action: review
+    - when: total_score >= 100
+      signal: review
       reason: "Multiple fraud indicators"
 
     - default: true
-      action: approve
+      signal: approve
       reason: "No significant fraud indicators"
 "#;
 
@@ -161,7 +161,7 @@ ruleset:
     // Check ruleset
     assert_eq!(doc.definition.id, "fraud_detection_core");
     assert_eq!(doc.definition.rules.len(), 3);
-    assert_eq!(doc.definition.decision_logic.len(), 4);
+    assert_eq!(doc.definition.conclusion.len(), 4);
 }
 
 #[test]
@@ -257,11 +257,11 @@ pipeline:
 
     // Old method
     let pipeline = PipelineParser::parse(yaml).unwrap();
-    assert_eq!(pipeline.id, Some("simple_pipeline".to_string()));
+    assert_eq!(pipeline.id, "simple_pipeline".to_string());
 
     // New method
     let doc = PipelineParser::parse_with_imports(yaml).unwrap();
-    assert_eq!(doc.definition.id, Some("simple_pipeline".to_string()));
+    assert_eq!(doc.definition.id, "simple_pipeline".to_string());
     assert!(!doc.has_imports());
 }
 
@@ -306,7 +306,7 @@ pipeline:
     // Check pipeline
     assert_eq!(
         doc.definition.id,
-        Some("fraud_detection_pipeline".to_string())
+        "fraud_detection_pipeline".to_string()
     );
     assert_eq!(doc.definition.steps.len(), 1);
 }
@@ -347,7 +347,7 @@ pipeline:
     let imports = doc.imports();
     assert_eq!(imports.rulesets.len(), 2);
 
-    assert_eq!(doc.definition.id, Some("payment_pipeline".to_string()));
+    assert_eq!(doc.definition.id, "payment_pipeline".to_string());
 }
 
 #[test]
@@ -367,9 +367,9 @@ rule:
 ruleset:
   id: test_ruleset
   rules: []
-  decision_logic:
+  conclusion:
     - default: true
-      action: approve
+      signal: approve
 "#;
 
     let pipeline_yaml = r#"

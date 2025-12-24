@@ -375,12 +375,12 @@ impl PipelineExecutor {
                     pc += 1;
                 }
 
-                Instruction::SetAction { action } => {
-                    tracing::debug!("SetAction called with action: {:?}", action);
-                    ctx.set_action(action.clone());
+                Instruction::SetSignal { signal } => {
+                    tracing::debug!("SetSignal called with signal: {:?}", signal);
+                    ctx.set_signal(signal.clone());
                     tracing::trace!(
-                        "After set_action, ctx.result.action = {:?}",
-                        ctx.result.action
+                        "After set_signal, ctx.result.signal = {:?}",
+                        ctx.result.signal
                     );
                     pc += 1;
                 }
@@ -853,7 +853,7 @@ impl Default for PipelineExecutor {
 mod tests {
     use super::*;
     use crate::storage::InMemoryStorage;
-    use corint_core::ast::Action;
+    use corint_core::ast::Signal;
     use corint_core::ir::ProgramMetadata;
 
     #[tokio::test]
@@ -937,12 +937,12 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_execute_with_action() {
+    async fn test_execute_with_signal() {
         let executor = PipelineExecutor::new();
 
         let instructions = vec![
-            Instruction::SetAction {
-                action: Action::Approve,
+            Instruction::SetSignal {
+                signal: Signal::Approve,
             },
             Instruction::Return,
         ];
@@ -951,7 +951,7 @@ mod tests {
 
         let result = executor.execute(&program, HashMap::new()).await.unwrap();
 
-        assert_eq!(result.action, Some(Action::Approve));
+        assert_eq!(result.signal, Some(Signal::Approve));
     }
 
     #[tokio::test]

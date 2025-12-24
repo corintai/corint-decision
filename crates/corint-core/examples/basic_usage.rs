@@ -83,7 +83,7 @@ fn main() {
     println!("   Rule Score: {}", rule.score);
     println!("   Description: {:?}", rule.description);
     println!("   Event Type: {:?}", rule.when.event_type);
-    println!("   Number of Conditions: {}", rule.when.conditions.len());
+    println!("   Number of Conditions: {}", rule.when.conditions.as_ref().map(|c| c.len()).unwrap_or(0));
     println!("\n   Full Rule: {:#?}\n", rule);
 
     // Example 6: JSON serialization

@@ -254,11 +254,11 @@ ruleset:
   rules:
     - rule1
     - rule2
-  decision_logic:
-    - condition: total_score >= 100
-      action: deny
+  conclusion:
+    - when: total_score >= 100
+      signal: decline
     - default: true
-      action: approve
+      signal: approve
 "#;
 
     let result = RulesetParser::parse(yaml);
@@ -267,7 +267,7 @@ ruleset:
     let ruleset = result.unwrap();
     assert_eq!(ruleset.id, "test_ruleset");
     assert_eq!(ruleset.rules.len(), 2);
-    assert!(ruleset.decision_logic.len() > 0);
+    assert!(ruleset.conclusion.len() > 0);
 }
 
 #[test]
@@ -280,11 +280,11 @@ ruleset:
   extends: parent_ruleset
   rules:
     - additional_rule
-  decision_logic:
-    - condition: total_score >= 50
-      action: review
+  conclusion:
+    - when: total_score >= 50
+      signal: review
     - default: true
-      action: approve
+      signal: approve
 "#;
 
     let result = RulesetParser::parse(yaml);
@@ -303,9 +303,9 @@ version: "0.1"
 ruleset:
   id: empty_ruleset
   rules: []
-  decision_logic:
+  conclusion:
     - default: true
-      action: approve
+      signal: approve
 "#;
 
     let result = RulesetParser::parse(yaml);
@@ -326,9 +326,9 @@ ruleset:
   description: This ruleset handles fraud detection
   rules:
     - rule1
-  decision_logic:
+  conclusion:
     - default: true
-      action: approve
+      signal: approve
 "#;
 
     let result = RulesetParser::parse(yaml);
@@ -346,18 +346,18 @@ version: "0.1"
 ruleset:
   id: action_ruleset
   rules: []
-  decision_logic:
-    - condition: score > 300
-      action: deny
+  conclusion:
+    - when: score > 300
+      signal: decline
       reason: Very high risk
-    - condition: score > 200
-      action: review
+    - when: score > 200
+      signal: review
       reason: High risk
-    - condition: score > 100
-      action: challenge
+    - when: score > 100
+      signal: hold
       reason: Medium risk
     - default: true
-      action: approve
+      signal: approve
       reason: Low risk
 "#;
 
@@ -365,7 +365,7 @@ ruleset:
     assert!(result.is_ok());
 
     let ruleset = result.unwrap();
-    assert_eq!(ruleset.decision_logic.len(), 4);
+    assert_eq!(ruleset.conclusion.len(), 4);
 }
 
 #[test]
@@ -376,9 +376,9 @@ version: "0.1"
 ruleset:
   id: terminate_ruleset
   rules: []
-  decision_logic:
-    - condition: critical_error == true
-      action: deny
+  conclusion:
+    - when: critical_error == true
+      signal: decline
       terminate: true
       reason: Critical condition met
 "#;
@@ -387,7 +387,7 @@ ruleset:
     assert!(result.is_ok());
 
     let ruleset = result.unwrap();
-    assert!(ruleset.decision_logic[0].terminate);
+    assert!(ruleset.conclusion[0].terminate);
 }
 
 #[test]
@@ -398,7 +398,7 @@ version: "0.1"
 ruleset:
   name: Missing ID
   rules: []
-  decision_logic: []
+  conclusion: []
 "#;
 
     let result = RulesetParser::parse(yaml);
@@ -413,9 +413,9 @@ version: "0.1"
 ruleset:
   id: invalid_action_ruleset
   rules: []
-  decision_logic:
-    - condition: score > 100
-      action: invalid_action
+  conclusion:
+    - when: score > 100
+      signal: invalid_signal
 "#;
 
     let result = RulesetParser::parse(yaml);
@@ -434,9 +434,9 @@ ruleset:
   metadata:
     category: fraud
     version: "1.0.0"
-  decision_logic:
+  conclusion:
     - default: true
-      action: approve
+      signal: approve
 "#;
 
     let result = RulesetParser::parse(yaml);

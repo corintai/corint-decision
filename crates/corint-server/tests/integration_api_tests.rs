@@ -58,13 +58,13 @@ ruleset:
   name: Test Ruleset
   rules:
     - test_rule
-  decision_logic:
-    - condition: total_score >= 100
-      action: deny
-    - condition: total_score >= 50
-      action: review
+  conclusion:
+    - when: total_score >= 100
+      signal: decline
+    - when: total_score >= 50
+      signal: review
     - default: true
-      action: approve
+      signal: approve
 "#;
 
     fs::write(
@@ -282,7 +282,7 @@ fn create_test_router(engine: Arc<corint_sdk::DecisionEngine>) -> Router {
 
         let result_str = response
             .result
-            .action
+            .signal
             .map(|a| format!("{:?}", a).to_uppercase())
             .unwrap_or_else(|| "PASS".to_string());
 

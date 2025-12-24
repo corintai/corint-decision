@@ -32,7 +32,7 @@ mod postgres_tests {
             .expect("Failed to connect to test database. Make sure PostgreSQL is running and DATABASE_URL is set correctly.");
 
         // Clean up existing test data
-        sqlx::query("TRUNCATE TABLE rules, rulesets, templates, pipelines CASCADE")
+        sqlx::query("TRUNCATE TABLE rules, rulesets, pipelines CASCADE")
             .execute(&pool)
             .await
             .ok(); // Ignore error if tables don't exist yet

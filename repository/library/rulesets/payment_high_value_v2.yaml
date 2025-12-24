@@ -22,37 +22,37 @@ ruleset:
     - amount_outlier  # This gets merged with inherited rules
 
   # Override decision logic with stricter thresholds
-  decision_logic:
+  conclusion:
     # Critical patterns (stricter than standard)
-    - condition: |
+    - when: |
         triggered_rules contains "card_testing" ||
         triggered_rules contains "new_account_risk" ||
         triggered_rules contains "amount_outlier"
-      action: deny
+      signal: decline
       reason: "Critical fraud pattern detected for high-value transaction"
       terminate: true
 
     # High score threshold (stricter than standard: 60 vs 100)
-    - condition: total_score >= 60
-      action: deny
+    - when: total_score >= 60
+      signal: decline
       reason: "Risk score too high for large transaction"
       terminate: true
 
     # Multiple risk indicators (stricter)
-    - condition: triggered_count >= 2
-      action: review
+    - when: triggered_count >= 2
+      signal: review
       reason: "Multiple risk indicators detected"
       terminate: true
 
     # Single risk indicator requires challenge
-    - condition: triggered_count >= 1
-      action: challenge
+    - when: triggered_count >= 1
+      signal: hold
       reason: "Require 3DS authentication for high-value transaction"
       terminate: true
 
     # Clean high-value transaction
     - default: true
-      action: approve
+      signal: approve
       reason: "Clean high-value transaction"
 
   metadata:

@@ -108,8 +108,8 @@ impl Executor {
                     pc += 1;
                 }
 
-                Instruction::SetAction { .. } => {
-                    // Action setting would be handled at a higher level
+                Instruction::SetSignal { .. } => {
+                    // Signal setting would be handled at a higher level
                     // For now, just skip it
                     pc += 1;
                 }

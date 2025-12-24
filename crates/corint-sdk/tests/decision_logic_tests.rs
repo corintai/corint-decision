@@ -5,7 +5,7 @@
 
 mod common;
 
-use corint_core::ast::Action;
+use corint_core::ast::Signal;
 use corint_core::Value;
 use common::{ResponseAssertions, TestEngine};
 use std::collections::HashMap;
@@ -31,9 +31,9 @@ ruleset:
   id: test_ruleset
   rules:
     - test_rule
-  decision_logic:
+  conclusion:
     - default: true
-      action: approve
+      signal: approve
       reason: All checks passed
 "#;
 
@@ -45,7 +45,7 @@ ruleset:
     event.insert("score".to_string(), Value::Number(5.0));
 
     let response = engine.execute_ruleset("test_ruleset", event).await;
-    response.assert_action(Action::Approve);
+    response.assert_action(Signal::Approve);
 }
 
 #[tokio::test]
@@ -65,12 +65,12 @@ ruleset:
   id: test_ruleset
   rules:
     - high_risk
-  decision_logic:
-    - condition: total_score >= 100
-      action: deny
+  conclusion:
+    - when: total_score >= 100
+      signal: decline
       reason: High risk detected
     - default: true
-      action: approve
+      signal: approve
 "#;
 
     let engine = TestEngine::new()
@@ -82,7 +82,7 @@ ruleset:
 
     let response = engine.execute_ruleset("test_ruleset", event).await;
     response.assert_score(100);
-    response.assert_action(Action::Deny);
+    response.assert_action(Signal::Decline);
 }
 
 #[tokio::test]
@@ -102,14 +102,14 @@ ruleset:
   id: test_ruleset
   rules:
     - medium_risk
-  decision_logic:
-    - condition: total_score >= 100
-      action: deny
-    - condition: total_score >= 50
-      action: review
+  conclusion:
+    - when: total_score >= 100
+      signal: decline
+    - when: total_score >= 50
+      signal: review
       reason: Manual review required
     - default: true
-      action: approve
+      signal: approve
 "#;
 
     let engine = TestEngine::new()
@@ -121,7 +121,7 @@ ruleset:
 
     let response = engine.execute_ruleset("test_ruleset", event).await;
     response.assert_score(60);
-    response.assert_action(Action::Review);
+    response.assert_action(Signal::Review);
 }
 
 #[tokio::test]
@@ -141,12 +141,12 @@ ruleset:
   id: test_ruleset
   rules:
     - suspicious
-  decision_logic:
-    - condition: total_score >= 40
-      action: challenge
+  conclusion:
+    - when: total_score >= 40
+      signal: hold
       reason: Additional verification required
     - default: true
-      action: approve
+      signal: approve
 "#;
 
     let engine = TestEngine::new()
@@ -158,7 +158,7 @@ ruleset:
 
     let response = engine.execute_ruleset("test_ruleset", event).await;
     response.assert_score(40);
-    response.assert_action(Action::Challenge);
+    response.assert_action(Signal::Hold);
 }
 
 // ============================================================================
@@ -182,11 +182,11 @@ ruleset:
   id: test_ruleset
   rules:
     - exact_score
-  decision_logic:
-    - condition: total_score >= 50
-      action: review
+  conclusion:
+    - when: total_score >= 50
+      signal: review
     - default: true
-      action: approve
+      signal: approve
 "#;
 
     let engine = TestEngine::new()
@@ -198,7 +198,7 @@ ruleset:
 
     let response = engine.execute_ruleset("test_ruleset", event).await;
     response.assert_score(50);
-    response.assert_action(Action::Review); // Exactly at threshold
+    response.assert_action(Signal::Review); // Exactly at threshold
 }
 
 #[tokio::test]
@@ -218,11 +218,11 @@ ruleset:
   id: test_ruleset
   rules:
     - below_threshold
-  decision_logic:
-    - condition: total_score >= 50
-      action: review
+  conclusion:
+    - when: total_score >= 50
+      signal: review
     - default: true
-      action: approve
+      signal: approve
 "#;
 
     let engine = TestEngine::new()
@@ -234,7 +234,7 @@ ruleset:
 
     let response = engine.execute_ruleset("test_ruleset", event).await;
     response.assert_score(49);
-    response.assert_action(Action::Approve); // Below threshold
+    response.assert_action(Signal::Approve); // Below threshold
 }
 
 // ============================================================================
@@ -280,18 +280,18 @@ ruleset:
     - rule1
     - rule2
     - rule3
-  decision_logic:
-    - condition: total_score >= 100
-      action: deny
+  conclusion:
+    - when: total_score >= 100
+      signal: decline
       reason: Critical risk level
-    - condition: total_score >= 70
-      action: review
+    - when: total_score >= 70
+      signal: review
       reason: High risk level
-    - condition: total_score >= 40
-      action: challenge
+    - when: total_score >= 40
+      signal: hold
       reason: Elevated risk level
     - default: true
-      action: approve
+      signal: approve
 "#;
 
     let engine = TestEngine::new()
@@ -308,7 +308,7 @@ ruleset:
 
     let response1 = engine.execute_ruleset("test_ruleset", event1).await;
     response1.assert_score(40);
-    response1.assert_action(Action::Challenge);
+    response1.assert_action(Signal::Hold);
 
     // Test: score = 70 (review)
     let mut event2 = HashMap::new();
@@ -318,7 +318,7 @@ ruleset:
 
     let response2 = engine.execute_ruleset("test_ruleset", event2).await;
     response2.assert_score(70);
-    response2.assert_action(Action::Review);
+    response2.assert_action(Signal::Review);
 
     // Test: score = 120 (deny)
     let mut event3 = HashMap::new();
@@ -328,7 +328,7 @@ ruleset:
 
     let response3 = engine.execute_ruleset("test_ruleset", event3).await;
     response3.assert_score(120);
-    response3.assert_action(Action::Deny);
+    response3.assert_action(Signal::Decline);
 }
 
 // ============================================================================
@@ -363,11 +363,11 @@ ruleset:
   rules:
     - risk_factor
     - trust_factor
-  decision_logic:
-    - condition: total_score >= 50
-      action: review
+  conclusion:
+    - when: total_score >= 50
+      signal: review
     - default: true
-      action: approve
+      signal: approve
 "#;
 
     let engine = TestEngine::new()
@@ -382,7 +382,7 @@ ruleset:
 
     let response = engine.execute_ruleset("test_ruleset", event).await;
     response.assert_score(20); // Net score
-    response.assert_action(Action::Approve); // Below threshold
+    response.assert_action(Signal::Approve); // Below threshold
 }
 
 // ============================================================================
@@ -428,13 +428,13 @@ ruleset:
     - rule1
     - rule2
     - rule3
-  decision_logic:
-    - condition: triggered_count >= 3
-      action: deny
-    - condition: triggered_count >= 2
-      action: review
+  conclusion:
+    - when: triggered_count >= 3
+      signal: decline
+    - when: triggered_count >= 2
+      signal: review
     - default: true
-      action: approve
+      signal: approve
 "#;
 
     let engine = TestEngine::new()
@@ -451,7 +451,7 @@ ruleset:
 
     let response = engine.execute_ruleset("test_ruleset", event).await;
     response.assert_triggered_rules_count(2);
-    response.assert_action(Action::Review);
+    response.assert_action(Signal::Review);
 }
 
 // ============================================================================
@@ -475,11 +475,11 @@ ruleset:
   id: test_ruleset
   rules:
     - test_rule
-  decision_logic:
-    - condition: total_score > 0
-      action: review
+  conclusion:
+    - when: total_score > 0
+      signal: review
     - default: true
-      action: approve
+      signal: approve
       reason: No risks detected
 "#;
 
@@ -492,7 +492,7 @@ ruleset:
 
     let response = engine.execute_ruleset("test_ruleset", event).await;
     response.assert_score(0);
-    response.assert_action(Action::Approve);
+    response.assert_action(Signal::Approve);
     response.assert_triggered_rules_count(0);
 }
 
@@ -528,14 +528,14 @@ ruleset:
   rules:
     - high_amount
     - new_user
-  decision_logic:
-    - condition: total_score >= 50 && triggered_count >= 2
-      action: deny
+  conclusion:
+    - when: total_score >= 50 && triggered_count >= 2
+      signal: decline
       reason: Multiple risk factors
-    - condition: total_score >= 50
-      action: review
+    - when: total_score >= 50
+      signal: review
     - default: true
-      action: approve
+      signal: approve
 "#;
 
     let engine = TestEngine::new()
@@ -550,7 +550,7 @@ ruleset:
 
     let response1 = engine.execute_ruleset("test_ruleset", event1).await;
     response1.assert_score(80);
-    response1.assert_action(Action::Deny);
+    response1.assert_action(Signal::Decline);
 
     // Only high_amount triggered: 50 score, 1 rule -> review
     let mut event2 = HashMap::new();
@@ -559,7 +559,7 @@ ruleset:
 
     let response2 = engine.execute_ruleset("test_ruleset", event2).await;
     response2.assert_score(50);
-    response2.assert_action(Action::Review);
+    response2.assert_action(Signal::Review);
 }
 
 // ============================================================================
@@ -572,9 +572,9 @@ async fn test_empty_ruleset_default_action() {
 ruleset:
   id: empty_ruleset
   rules: []
-  decision_logic:
+  conclusion:
     - default: true
-      action: approve
+      signal: approve
 "#;
 
     let engine = TestEngine::new()
@@ -584,7 +584,7 @@ ruleset:
 
     let response = engine.execute_ruleset("empty_ruleset", event).await;
     response.assert_score(0);
-    response.assert_action(Action::Approve);
+    response.assert_action(Signal::Approve);
     response.assert_triggered_rules_count(0);
 }
 
@@ -609,11 +609,11 @@ ruleset:
   id: test_ruleset
   rules:
     - tracking_rule
-  decision_logic:
-    - condition: triggered_count > 0
-      action: review
+  conclusion:
+    - when: triggered_count > 0
+      signal: review
     - default: true
-      action: approve
+      signal: approve
 "#;
 
     let engine = TestEngine::new()
@@ -626,5 +626,5 @@ ruleset:
     let response = engine.execute_ruleset("test_ruleset", event).await;
     response.assert_score(0);
     response.assert_triggered_rules(&["tracking_rule"]);
-    response.assert_action(Action::Review);
+    response.assert_action(Signal::Review);
 }

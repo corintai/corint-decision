@@ -1,8 +1,13 @@
 # CORINT Risk Definition Language (RDL)
-## Ruleset Specification (v0.1)
+## Ruleset Specification (v0.2)
 
-A **Ruleset** is a named collection of rules that can be reused, grouped, and executed as a unit within CORINT’s Cognitive Risk Intelligence framework.  
+A **Ruleset** is a named collection of rules that can be reused, grouped, and executed as a unit within CORINT's Cognitive Risk Intelligence framework.
 Rulesets enable modular design, separation of concerns, and cleaner pipeline logic.
+
+**Important:** Rulesets produce **conclusions** (signals), NOT final decisions. Final decisions are made at the **Pipeline level** in the `decision:` section. This separation allows:
+- **Reusability**: Same ruleset can be used with different decision thresholds
+- **Flexibility**: Pipeline can combine signals from multiple rulesets
+- **Clarity**: Clear separation between detection/conclusion and final action
 
 ---
 
@@ -13,21 +18,23 @@ ruleset:
   id: string
   name: string
   description: string
-  extends: string                    # ✨ NEW: Parent ruleset ID (Phase 3)
+  extends: string                    # ✨ Parent ruleset ID (Phase 3)
   rules:
     - <rule-id-1>
     - <rule-id-2>
     - <rule-id-3>
-  decision_logic:                   # Option 1: Define directly
-    - <decision-rules>
-  decision_template:                # Option 2: Use template (Phase 3)
-    template: <template-id>
-    params:
-      <param-key>: <param-value>
+  conclusion:                        # Conclusion logic (produces signals, NOT final decisions)
+    - <conclusion-rules>
   metadata:                         # Optional metadata
     version: string
     owner: string
 ```
+
+**Key Terminology:**
+- `conclusion` - Ruleset's assessment logic that produces **signals** (not final decisions)
+- `signal` - The output type (e.g., `high_risk`, `suspicious`, `normal`)
+- `when` - Condition for each conclusion rule
+- Final `decision` (approve/decline/review/hold/pass) is made at **Pipeline level**
 
 ---
 
@@ -112,10 +119,10 @@ ruleset:
   rules:
     - amount_outlier
 
-  # Override decision logic with stricter thresholds
-  decision_logic:
-    - condition: total_score >= 60
-      action: deny
+  # Override conclusion logic with stricter thresholds
+  conclusion:
+    - when: total_score >= 60
+      signal: high_risk
       reason: "Risk score too high for large transaction"
 ```
 
@@ -126,7 +133,7 @@ When a ruleset extends a parent:
 | Field | Behavior | Description |
 |-------|----------|-------------|
 | **`rules`** | **Merge + Auto-dedup** | Parent rules + child rules, duplicates automatically removed |
-| **`decision_logic`** | **Complete override** | Child replaces parent if defined, otherwise inherits parent's logic |
+| **`conclusion`** | **Complete override** | Child replaces parent if defined, otherwise inherits parent's logic |
 | **`name`** | **Override** | Child overrides if defined, otherwise inherits parent's name |
 | **`description`** | **Override** | Child overrides if defined, otherwise inherits parent's description |
 | **`metadata`** | **Override** | Child overrides if defined, otherwise inherits parent's metadata |
@@ -135,7 +142,7 @@ When a ruleset extends a parent:
 
 **Parent Ruleset** (`payment_base.yaml`):
 ```yaml
-version: "0.1"
+version: "0.2"
 
 imports:
   rules:
@@ -159,27 +166,28 @@ ruleset:
     - new_account_risk
     - suspicious_email
 
-  decision_logic:
-    - condition: triggered_rules contains "card_testing"
-      action: deny
+  # Conclusion produces signals, NOT final decisions
+  conclusion:
+    - when: triggered_rules contains "card_testing"
+      signal: critical_risk
       reason: "Card testing detected"
       terminate: true
 
-    - condition: total_score >= 100
-      action: deny
+    - when: total_score >= 100
+      signal: high_risk
       reason: "High risk score"
 
-    - condition: total_score >= 60
-      action: review
+    - when: total_score >= 60
+      signal: medium_risk
       reason: "Medium risk - requires review"
 
     - default: true
-      action: approve
+      signal: low_risk
 ```
 
 **Child Ruleset** (`payment_high_value.yaml`):
 ```yaml
-version: "0.1"
+version: "0.2"
 
 imports:
   rulesets:
@@ -199,29 +207,31 @@ ruleset:
   rules:
     - amount_outlier
 
-  # Override with stricter decision logic
-  decision_logic:
-    - condition: triggered_rules contains "card_testing"
-      action: deny
+  # Override with stricter conclusion logic (produces signals, not final decisions)
+  conclusion:
+    - when: triggered_rules contains "card_testing"
+      signal: critical_risk
       reason: "Card testing detected"
       terminate: true
 
-    - condition: total_score >= 60  # Stricter than parent (was 100)
-      action: deny
+    - when: total_score >= 60  # Stricter than parent (was 100)
+      signal: high_risk
       reason: "Risk score too high for large transaction"
 
-    - condition: triggered_count >= 2
-      action: review
+    - when: triggered_count >= 2
+      signal: medium_risk
       reason: "Multiple risk indicators"
 
     - default: true
-      action: approve
+      signal: low_risk
 ```
 
 **Result After Inheritance Resolution**:
 - **Total rules**: 6 (5 from parent + 1 new)
-- **Decision logic**: Uses child's stricter thresholds
+- **Conclusion logic**: Uses child's stricter thresholds
 - **Zero duplication**: Parent rules defined once, inherited automatically
+- **Signal output**: `critical_risk`, `high_risk`, `medium_risk`, or `low_risk`
+- **Final decision**: Made at Pipeline level based on signal
 
 ### 5.5.4 Multiple Inheritance Variants
 
@@ -232,9 +242,9 @@ Create multiple variants of the same base ruleset with different thresholds:
 ruleset:
   id: payment_standard
   extends: payment_base
-  decision_logic:
-    - condition: total_score >= 100
-      action: deny
+  conclusion:
+    - when: total_score >= 100
+      signal: high_risk
 
 # payment_high_value.yaml - Strict thresholds
 ruleset:
@@ -242,17 +252,17 @@ ruleset:
   extends: payment_base
   rules:
     - amount_outlier  # Add extra rule
-  decision_logic:
-    - condition: total_score >= 60  # Stricter
-      action: deny
+  conclusion:
+    - when: total_score >= 60  # Stricter
+      signal: high_risk
 
 # payment_vip.yaml - Lenient thresholds
 ruleset:
   id: payment_vip
   extends: payment_base
-  decision_logic:
-    - condition: total_score >= 150  # More lenient
-      action: deny
+  conclusion:
+    - when: total_score >= 150  # More lenient
+      signal: high_risk
 ```
 
 ### 5.5.5 Error Detection
@@ -312,7 +322,7 @@ This enables:
 Rulesets use multi-document YAML format with `---` separator:
 
 ```yaml
-version: "0.1"
+version: "0.2"
 
 # First document: Imports
 imports:
@@ -335,9 +345,10 @@ ruleset:
     - account_takeover_pattern
     - suspicious_ip_pattern
 
-  decision_logic:
-    - condition: total_score >= 100
-      action: deny
+  # Conclusion produces signals, NOT final decisions
+  conclusion:
+    - when: total_score >= 100
+      signal: high_risk
 ```
 
 ### 5.5.2 Complete Example with Imports
@@ -345,7 +356,7 @@ ruleset:
 Here's a production-grade ruleset that imports all its rule dependencies:
 
 ```yaml
-version: "0.1"
+version: "0.2"
 
 imports:
   rules:
@@ -372,39 +383,38 @@ ruleset:
     - suspicious_geography_pattern  # 60 points
     - new_user_fraud_pattern    # 50 points
 
-  decision_logic:
-    # Critical patterns - immediate deny
-    - condition: triggered_rules contains "fraud_farm_pattern"
-      action: deny
+  # Conclusion produces signals, NOT final decisions
+  conclusion:
+    # Critical patterns - emit critical_risk signal
+    - when: triggered_rules contains "fraud_farm_pattern"
+      signal: critical_risk
       reason: "Critical: Fraud farm detected"
       terminate: true
 
-    - condition: triggered_rules contains "account_takeover_pattern"
-      action: deny
+    - when: triggered_rules contains "account_takeover_pattern"
+      signal: critical_risk
       reason: "Critical: Account takeover detected"
       terminate: true
 
     # High score threshold
-    - condition: total_score >= 150
-      action: deny
+    - when: total_score >= 150
+      signal: high_risk
       reason: "High risk score"
       terminate: true
 
     # Multiple suspicious indicators
-    - condition: total_score >= 100
-      action: review
+    - when: total_score >= 100
+      signal: medium_risk
       reason: "Multiple fraud indicators"
-      terminate: true
 
     # Single indicator or moderate score
-    - condition: total_score >= 50
-      action: challenge
+    - when: total_score >= 50
+      signal: low_risk
       reason: "Single fraud indicator detected"
-      terminate: true
 
     # Clean transaction
     - default: true
-      action: approve
+      signal: normal
       reason: "No significant fraud indicators"
 
   metadata:
@@ -415,11 +425,11 @@ ruleset:
 
 ### 5.5.3 Multiple Rulesets with Different Thresholds
 
-You can create multiple rulesets that import the same rules but with different decision logic:
+You can create multiple rulesets that import the same rules but with different conclusion logic:
 
 **Standard Risk Ruleset:**
 ```yaml
-version: "0.1"
+version: "0.2"
 
 imports:
   rules:
@@ -439,23 +449,24 @@ ruleset:
     - velocity_check
     - suspicious_ip
 
-  decision_logic:
+  # Conclusion produces signals, NOT final decisions
+  conclusion:
     # Standard threshold: 100 points
-    - condition: total_score >= 100
-      action: deny
+    - when: total_score >= 100
+      signal: high_risk
       reason: "Risk score too high"
 
-    - condition: total_score >= 50
-      action: review
+    - when: total_score >= 50
+      signal: medium_risk
       reason: "Manual review required"
 
     - default: true
-      action: approve
+      signal: low_risk
 ```
 
 **High-Value Transaction Ruleset** (stricter thresholds):
 ```yaml
-version: "0.1"
+version: "0.2"
 
 imports:
   rules:
@@ -480,36 +491,35 @@ ruleset:
     - new_account_risk
     - suspicious_email
 
-  decision_logic:
-    # Critical patterns - immediate deny
-    - condition: |
+  # Conclusion produces signals, NOT final decisions
+  conclusion:
+    # Critical patterns - emit critical_risk signal
+    - when: |
         triggered_rules contains "card_testing" ||
         triggered_rules contains "new_account_risk"
-      action: deny
+      signal: critical_risk
       reason: "Critical fraud pattern detected"
       terminate: true
 
     # Stricter threshold: 60 points (vs 100 in standard)
-    - condition: total_score >= 60
-      action: deny
+    - when: total_score >= 60
+      signal: high_risk
       reason: "Risk score too high for large transaction"
       terminate: true
 
     # Multiple risk indicators
-    - condition: triggered_count >= 2
-      action: review
+    - when: triggered_count >= 2
+      signal: medium_risk
       reason: "Multiple risk indicators detected"
-      terminate: true
 
-    # Single risk indicator - require 3DS
-    - condition: triggered_count >= 1
-      action: challenge
-      reason: "Require 3DS authentication"
-      terminate: true
+    # Single risk indicator
+    - when: triggered_count >= 1
+      signal: low_risk
+      reason: "Single risk indicator"
 
     # Clean high-value transaction
     - default: true
-      action: approve
+      signal: normal
       reason: "Clean high-value transaction"
 ```
 
@@ -609,8 +619,8 @@ ruleset:
     - fraud_farm_pattern
     - account_takeover_pattern
 
-  decision_logic:
-    # ... decision logic ...
+  conclusion:
+    # ... conclusion logic (produces signals) ...
 
   metadata:
     version: "1.0.0"
@@ -638,906 +648,565 @@ ruleset:
 
 ---
 
-## 6. Decision Logic Templates (`decision_template`) **[Phase 3]**
+## 6. `conclusion` (Direct Definition)
 
-**Decision Logic Templates provide reusable, parameterized decision logic patterns that can be shared across multiple rulesets.**
+Conclusion logic evaluates the combined results of all rules and produces signals. **Final decisions are made at the Pipeline level.**
 
-Instead of defining `decision_logic` directly in each ruleset, you can reference a template and customize it with parameters.
-
-### 6.1 Why Use Templates?
-
-**Problem:**
-```yaml
-# payment_standard.yaml - 50 lines
-decision_logic:
-  - condition: total_score >= 100
-    action: deny
-  - condition: total_score >= 60
-    action: review
-  - default: true
-    action: approve
-
-# payment_high_value.yaml - 50 lines (DUPLICATE with different thresholds!)
-decision_logic:
-  - condition: total_score >= 150  # Different threshold
-    action: deny
-  - condition: total_score >= 80   # Different threshold
-    action: review
-  - default: true
-    action: approve
-```
-
-**Solution with Templates:**
-```yaml
-# Define template once
-template:
-  id: score_based_decision
-  params:
-    critical_threshold: 200
-    high_threshold: 100
-  decision_logic: [5 rules]
-
-# Use in multiple rulesets with different params
-ruleset:
-  decision_template:
-    template: score_based_decision
-    params:
-      critical_threshold: 150  # Override!
-```
-
-### 6.2 Template Definition
-
-Templates are defined in separate YAML files:
+### 6.1 Basic Structure
 
 ```yaml
-version: "0.1"
-
----
-
-template:
-  id: score_based_decision
-  name: Score-Based Decision Template
-  description: |
-    Standard score threshold decision logic.
-    Uses total_score from rule evaluation to make decisions.
-
-  # Default parameter values
-  params:
-    critical_threshold: 200
-    high_threshold: 100
-    medium_threshold: 60
-    low_threshold: 30
-
-  # Decision logic with parameter placeholders
-  decision_logic:
-    - condition: total_score >= 200
-      action: deny
-      reason: "Critical risk detected (score: {total_score})"
-      terminate: true
-
-    - condition: total_score >= 100
-      action: deny
-      reason: "High risk detected (score: {total_score})"
-      terminate: true
-
-    - condition: total_score >= 60
-      action: review
-      reason: "Medium risk - requires review (score: {total_score})"
-      terminate: true
-
-    - condition: total_score >= 30
-      action: review
-      reason: "Low risk monitoring"
-      terminate: false
-
-    - default: true
-      action: approve
-      reason: "Transaction approved - low risk"
-```
-
-### 6.3 Using Templates in Rulesets
-
-Import and reference templates with custom parameters:
-
-```yaml
-version: "0.1"
-
-imports:
-  rules:
-    - library/rules/payment/card_testing.yaml
-    - library/rules/payment/velocity_check.yaml
-  templates:
-    - library/templates/score_based_decision.yaml  # ✨ Import template
-
----
-
-ruleset:
-  id: payment_with_template
-  name: Payment Ruleset (Using Template)
-
-  rules:
-    - card_testing
-    - velocity_check
-
-  # Use template instead of defining decision_logic
-  decision_template:
-    template: score_based_decision
-    params:
-      critical_threshold: 150  # Override default (200 -> 150)
-      high_threshold: 80       # Override default (100 -> 80)
-      # medium_threshold: 60   # Use template default
-      # low_threshold: 30      # Use template default
-```
-
-### 6.4 Template Resolution Process
-
-Templates are resolved at **compile-time** (zero runtime overhead):
-
-1. **Parse**: Ruleset references template via `decision_template` field
-2. **Load**: Compiler loads template from imports
-3. **Merge Parameters**: Template defaults + ruleset overrides
-4. **Instantiate**: Apply merged parameters to decision logic
-5. **Replace**: Populate ruleset's `decision_logic` with resolved template
-6. **Clear**: Remove `decision_template` reference (fully resolved)
-
-**After compilation:**
-- Ruleset contains complete `decision_logic` (5 rules from template)
-- Parameters are merged (critical=150, high=80, medium=60, low=30)
-- `decision_template` field is cleared
-- Zero runtime performance impact
-
-### 6.5 Template Types
-
-**1. Score-Based Template**
-
-Uses `total_score` for threshold-based decisions:
-
-```yaml
-template:
-  id: score_based_decision
-  params:
-    critical_threshold: 200
-    high_threshold: 100
-  decision_logic:
-    - condition: total_score >= params.critical_threshold
-      action: deny
-```
-
-**2. Pattern-Based Template**
-
-Uses `triggered_rules` for pattern matching:
-
-```yaml
-template:
-  id: pattern_based_decision
-  decision_logic:
-    - condition: triggered_rules contains "card_testing"
-      action: deny
-      reason: "Critical pattern: Card testing detected"
-      terminate: true
-
-    - condition: triggered_rules contains "fraud_farm"
-      action: deny
-      reason: "Critical pattern: Fraud farm detected"
-      terminate: true
-```
-
-**3. Hybrid Template**
-
-Combines score and pattern matching:
-
-```yaml
-template:
-  id: hybrid_decision
-  params:
-    deny_score: 150
-    review_score: 80
-  decision_logic:
-    # Pattern-based denial (highest priority)
-    - condition: triggered_rules contains "card_testing"
-      action: deny
-      terminate: true
-
-    # Score-based denial
-    - condition: total_score >= params.deny_score
-      action: deny
-      terminate: true
-
-    # Combined: Score + pattern
-    - condition: |
-        total_score >= params.review_score AND
-        triggered_rules contains "velocity_abuse"
-      action: review
-      terminate: true
-```
-
-### 6.6 Multiple Rulesets Sharing Templates
-
-Different rulesets can use the same template with different parameters:
-
-```yaml
-# payment_standard.yaml
-ruleset:
-  id: payment_standard
-  decision_template:
-    template: score_based_decision
-    # Use all defaults
-
-# payment_high_value.yaml
-ruleset:
-  id: payment_high_value
-  decision_template:
-    template: score_based_decision
-    params:
-      critical_threshold: 150  # Stricter
-      high_threshold: 80       # Stricter
-
-# payment_vip.yaml
-ruleset:
-  id: payment_vip
-  decision_template:
-    template: score_based_decision
-    params:
-      critical_threshold: 250  # More lenient
-      high_threshold: 150      # More lenient
-```
-
-### 6.7 Standard Template Library
-
-CORINT provides standard templates out of the box:
-
-| Template | Use Case | Parameters |
-|----------|----------|------------|
-| `score_based_decision` | Threshold-based decisions | `critical_threshold`, `high_threshold`, `medium_threshold`, `low_threshold` |
-| `pattern_based_decision` | Rule pattern matching | None (uses predefined critical patterns) |
-| `hybrid_decision` | Combined score + pattern | `deny_score`, `review_score`, `critical_pattern`, `high_risk_pattern` |
-
-### 6.8 Benefits
-
-1. **Reduced Duplication** - Define decision logic once, reuse everywhere (70%+ code reduction)
-2. **Easy Customization** - Override only the parameters you need
-3. **Consistency** - All rulesets using the same template follow the same pattern
-4. **Maintainability** - Update template once, all users get the change
-5. **Type Safety** - Compile-time validation of template references
-6. **Zero Runtime Overhead** - All resolved at compile-time
-
-**Code Savings Example:**
-- **Without templates**: 3 rulesets × 50 lines decision logic = 150 lines
-- **With templates**: 1 template (50 lines) + 3 rulesets (10 lines each) = 80 lines
-- **Savings**: 70 lines (47% reduction)
-
-### 6.9 Combining Templates and Inheritance
-
-You can use both `extends` and `decision_template`:
-
-```yaml
-ruleset:
-  id: payment_high_value
-  extends: payment_base          # Inherit rules from parent
-  decision_template:              # Use template for decision logic
-    template: score_based_decision
-    params:
-      critical_threshold: 150
-```
-
----
-
-## 7. `decision_logic` (Direct Definition)
-
-**This is where actions are defined when NOT using templates.**
-
-Decision logic evaluates the combined results of all rules and determines the final action.
-
-### 7.1 Basic Structure
-
-```yaml
-decision_logic:
-  - condition: <expression>
-    action: <action-type>
+conclusion:
+  - when: <expression>
+    signal: <signal-type>
     reason: <string>
-  
-  - condition: <expression>
-    action: <action-type>
-    
+
+  - when: <expression>
+    signal: <signal-type>
+
   - default: true
-    action: <action-type>
+    signal: <signal-type>
 ```
 
-### 7.2 Available Context
+### 6.2 Available Context
 
-Within decision_logic conditions, you can access:
+Within conclusion conditions, you can access:
 
 - `total_score` - Sum of all triggered rule scores
 - `triggered_count` - Number of rules that triggered
 - `triggered_rules` - Array of triggered rule IDs
 - `context.*` - Any pipeline context data
 
-### 7.3 Built-in Actions
+### 6.3 Built-in Signals
 
-| Action | Description | Use Case |
+| Signal | Description | Use Case |
 |--------|-------------|----------|
-| `approve` | Automatically approve | Low risk |
-| `deny` | Automatically reject | High risk |
-| `review` | Send to human review | Needs judgment |
-| `infer` | Send to AI analysis (async) | Complex patterns |
+| `critical_risk` | Critical risk detected | Immediate blocking patterns |
+| `high_risk` | High risk level | Above threshold |
+| `medium_risk` | Medium risk level | Needs review |
+| `low_risk` | Low risk level | Minor concerns |
+| `normal` | No significant risk | Clean transaction |
+
+**Note:** Final decisions (`approve`, `decline`, `review`, `hold`, `pass`) are made at **Pipeline level** based on signals.
 
 ---
 
-## 8. Common Decision Patterns
+## 7. Common Conclusion Patterns
 
-### 8.1 Score-Based Decisions
+### 7.1 Score-Based Conclusions
 
-Decisions based on total score:
+Signals based on total score:
 
 ```yaml
-decision_logic:
+conclusion:
   # Critical risk
-  - condition: total_score >= 150
-    action: deny
+  - when: total_score >= 150
+    signal: critical_risk
     reason: "Critical risk score"
-    
+
   # High risk
-  - condition: total_score >= 100
-    action: infer
-    infer:
-      data_snapshot:
-        - event.*
-        - context.*
-    reason: "High risk, needs AI analysis"
-    
-  # Medium risk  
-  - condition: total_score >= 50
-    action: review
+  - when: total_score >= 100
+    signal: high_risk
+    reason: "High risk, needs analysis"
+
+  # Medium risk
+  - when: total_score >= 50
+    signal: medium_risk
     reason: "Medium risk, manual review"
-    
+
   # Low risk
   - default: true
-    action: approve
+    signal: low_risk
     reason: "Low risk"
 ```
 
-### 8.2 Count-Based Decisions
+### 7.2 Count-Based Conclusions
 
-Decisions based on triggered rule count:
+Signals based on triggered rule count:
 
 ```yaml
-decision_logic:
+conclusion:
   # Multiple indicators
-  - condition: triggered_count >= 3
-    action: deny
+  - when: triggered_count >= 3
+    signal: critical_risk
     reason: "Multiple risk indicators"
 
   # Some indicators
-  - condition: triggered_count >= 2
-    action: infer
-    infer:
-      data_snapshot:
-        - event.*
-        - context.*
+  - when: triggered_count >= 2
+    signal: high_risk
     reason: "Multiple signals, needs analysis"
 
   # Single indicator
-  - condition: triggered_count == 1
-    action: review
+  - when: triggered_count == 1
+    signal: medium_risk
     reason: "Single indicator detected"
 
   # No indicators
   - default: true
-    action: approve
+    signal: normal
 ```
 
-### 8.3 Short-Circuit (Early Termination)
+### 7.3 Short-Circuit (Early Termination)
 
 Terminate immediately when specific rule triggers:
 
 ```yaml
-decision_logic:
-  # Critical rule triggered - immediate deny
-  - condition: triggered_rules contains "blocked_user"
-    action: deny
+conclusion:
+  # Critical rule triggered - emit critical_risk and stop
+  - when: triggered_rules contains "blocked_user"
+    signal: critical_risk
     reason: "User is blocked"
     terminate: true  # Stop here, don't evaluate further
-    
-  # High-risk rule triggered - immediate review
-  - condition: triggered_rules contains "critical_security_breach"
-    action: infer
-    infer:
-      data_snapshot:
-        - event.*
-        - context.*
+
+  # High-risk rule triggered
+  - when: triggered_rules contains "critical_security_breach"
+    signal: critical_risk
     reason: "Security breach detected"
     terminate: true
-    
+
   # Otherwise continue with normal logic
-  - condition: total_score >= 80
-    action: review
-    
+  - when: total_score >= 80
+    signal: high_risk
+
   - default: true
-    action: approve
+    signal: normal
 ```
 
-### 8.4 Specific Rule Combinations
+### 7.4 Specific Rule Combinations
 
-Decisions based on specific rule combinations:
+Signals based on specific rule combinations:
 
 ```yaml
-decision_logic:
+conclusion:
   # Classic takeover pattern: device + location + behavior
-  - condition: |
+  - when: |
       triggered_rules contains "new_device" &&
       triggered_rules contains "unusual_location" &&
       triggered_rules contains "behavior_anomaly"
-    action: deny
+    signal: critical_risk
     reason: "Classic account takeover pattern"
-    
+
   # Device + location (suspicious but not definitive)
-  - condition: |
+  - when: |
       triggered_rules contains "new_device" &&
       triggered_rules contains "unusual_location"
-    action: infer
-    infer:
-      data_snapshot:
-        - event.*
-        - context.*
+    signal: high_risk
     reason: "Device and location anomaly"
-    
+
   # Single weak signal
-  - condition: |
+  - when: |
       triggered_rules contains "new_device" &&
       triggered_count == 1
-    action: approve
+    signal: low_risk
     reason: "Only new device, acceptable"
-    
+
   - default: true
-    action: approve
+    signal: normal
 ```
 
-### 8.5 Weighted Scoring with Multipliers
+### 7.5 Weighted Scoring with Multipliers
 
 Weighted scoring with synergy effects:
 
 ```yaml
-decision_logic:
+conclusion:
   # Calculate weighted score
   - set_var: weighted_score
     value: |
       base_score = total_score
-      
+
       # Synergy: if certain rules trigger together, multiply
-      if (triggered_rules contains "new_device" && 
+      if (triggered_rules contains "new_device" &&
           triggered_rules contains "unusual_geo") {
         base_score = base_score * 1.5
       }
-      
+
       if (triggered_count >= 3) {
         base_score = base_score * 1.3
       }
-      
+
       return base_score
-      
-  # Decisions based on weighted score
-  - condition: vars.weighted_score >= 120
-    action: deny
-    
-  - condition: vars.weighted_score >= 80
-    action: infer
-    infer:
-      data_snapshot:
-        - event.*
-        - context.*
-        
-  - condition: vars.weighted_score >= 50
-    action: review
-    
+
+  # Signals based on weighted score
+  - when: vars.weighted_score >= 120
+    signal: critical_risk
+
+  - when: vars.weighted_score >= 80
+    signal: high_risk
+
+  - when: vars.weighted_score >= 50
+    signal: medium_risk
+
   - default: true
-    action: approve
+    signal: normal
 ```
 
-### 8.6 Context-Aware Decisions
+### 7.6 Context-Aware Conclusions
 
-Decisions incorporating pipeline context data:
+Signals incorporating pipeline context data:
 
 ```yaml
-decision_logic:
+conclusion:
   # Consider LLM analysis confidence
-  - condition: |
+  - when: |
       total_score >= 70 &&
       context.llm_analysis.confidence > 0.8
-    action: deny
+    signal: critical_risk
     reason: "High score + high AI confidence"
-    
+
   # Consider user tier
-  - condition: |
+  - when: |
       total_score >= 60 &&
       event.user.tier == "basic"
-    action: review
+    signal: high_risk
     reason: "Medium risk for basic user"
-    
-  - condition: |
+
+  - when: |
       total_score >= 60 &&
       event.user.tier == "premium"
-    action: approve
+    signal: medium_risk
     reason: "Medium risk acceptable for premium user"
-    
+
   # Consider transaction amount
-  - condition: |
+  - when: |
       total_score >= 50 &&
       event.transaction.amount > 10000
-    action: infer
-    infer:
-      data_snapshot:
-        - event.*
-        - context.*
+    signal: high_risk
     reason: "Medium risk + high value"
-    
+
   - default: true
-    action: approve
+    signal: normal
 ```
 
-### 8.7 Time-Based Decisions
+### 7.7 Time-Based Conclusions
 
-Time-based decision logic:
+Time-based conclusion logic:
 
 ```yaml
-decision_logic:
-  # Off-hours + medium risk = more cautious
-  - condition: |
+conclusion:
+  # Off-hours + medium risk = higher signal
+  - when: |
       total_score >= 40 &&
       (hour(event.timestamp) < 6 || hour(event.timestamp) > 22)
-    action: review
+    signal: high_risk
     reason: "Medium risk during off-hours"
-    
-  # Business hours + medium risk = AI analysis
-  - condition: |
+
+  # Business hours + medium risk = moderate signal
+  - when: |
       total_score >= 40 &&
       hour(event.timestamp) >= 6 && hour(event.timestamp) <= 22
-    action: infer
-    infer:
-      data_snapshot:
-        - event.*
-        - context.*
+    signal: medium_risk
     reason: "Medium risk during business hours"
-    
-  - condition: total_score >= 80
-    action: deny
-    
+
+  - when: total_score >= 80
+    signal: critical_risk
+
   - default: true
-    action: approve
+    signal: normal
 ```
 
-### 8.8 Hybrid: Rules + Score + Combination
+### 7.8 Hybrid: Rules + Score + Combination
 
-Combining multiple decision approaches:
+Combining multiple conclusion approaches:
 
 ```yaml
-decision_logic:
+conclusion:
   # Priority 1: Critical rules (short-circuit)
-  - condition: triggered_rules contains "blocked_user"
-    action: deny
+  - when: triggered_rules contains "blocked_user"
+    signal: critical_risk
     reason: "User blocked"
     terminate: true
-    
+
   # Priority 2: Dangerous combinations
-  - condition: |
+  - when: |
       triggered_rules contains "new_device" &&
       triggered_rules contains "unusual_geo" &&
       triggered_rules contains "high_value_transaction"
-    action: deny
+    signal: critical_risk
     reason: "High-risk combination"
-    
+
   # Priority 3: High score threshold
-  - condition: total_score >= 120
-    action: infer
-    infer:
-      data_snapshot:
-        - event.*
-        - context.*
+  - when: total_score >= 120
+    signal: high_risk
     reason: "High risk score"
-    
+
   # Priority 4: Multiple signals
-  - condition: |
+  - when: |
       triggered_count >= 3 &&
       context.llm_analysis.risk_score > 0.7
-    action: review
+    signal: high_risk
     reason: "Multiple signals + AI confirmation"
-    
+
   # Priority 5: Moderate risk
-  - condition: total_score >= 50
-    action: review
+  - when: total_score >= 50
+    signal: medium_risk
     reason: "Moderate risk"
-    
-  # Default: approve
+
+  # Default
   - default: true
-    action: approve
+    signal: normal
 ```
 
 ---
 
-## 9. Complete Examples
+## 8. Complete Examples
 
-### 9.1 Account Takeover Detection
+### 8.1 Account Takeover Detection
 
 ```yaml
-version: "0.1"
+version: "0.2"
 
 ruleset:
   id: account_takeover_detection
   name: Account Takeover Detection
   description: Multi-signal account takeover pattern detection
-  
+
   rules:
     - new_device_login        # score: 40
-    - unusual_location        # score: 50  
+    - unusual_location        # score: 50
     - failed_login_spike      # score: 35
     - behavior_anomaly        # score: 60
     - password_change_attempt # score: 70
-    
-  decision_logic:
+
+  # Conclusion produces signals, final decisions at Pipeline level
+  conclusion:
     # Critical: password change from new device in unusual location
-    - condition: |
+    - when: |
         triggered_rules contains "password_change_attempt" &&
         triggered_rules contains "new_device_login" &&
         triggered_rules contains "unusual_location"
-      action: deny
+      signal: critical_risk
       reason: "Critical takeover indicators"
       terminate: true
-      
+
     # High risk: classic takeover pattern
-    - condition: |
+    - when: |
         triggered_rules contains "new_device_login" &&
         triggered_rules contains "unusual_location" &&
         triggered_rules contains "behavior_anomaly"
-      action: infer
-      infer:
-        data_snapshot:
-          - event.*
-          - context.*
+      signal: high_risk
       reason: "Classic takeover pattern detected"
-      
+
     # Medium risk: multiple signals
-    - condition: triggered_count >= 3
-      action: review
+    - when: triggered_count >= 3
+      signal: medium_risk
       reason: "Multiple suspicious indicators"
-      
+
     # Moderate risk: high score
-    - condition: total_score >= 100
-      action: infer
-      infer:
-        data_snapshot:
-          - event.*
-          - context.account_takeover_detection.*
+    - when: total_score >= 100
+      signal: medium_risk
       reason: "High risk score"
-      
+
     # Low risk
     - default: true
-      action: approve
+      signal: normal
 ```
 
-### 9.2 Transaction Fraud Detection
+### 8.2 Transaction Fraud Detection
 
 ```yaml
-version: "0.1"
+version: "0.2"
 
 ruleset:
   id: transaction_fraud_detection
   name: Transaction Fraud Detection
   description: Real-time transaction fraud detection
-  
+
   rules:
     - high_value_transaction    # score: 60
     - velocity_spike           # score: 50
     - unusual_merchant         # score: 40
     - beneficiary_risk         # score: 70
     - amount_anomaly           # score: 45
-    
-  decision_logic:
-    # Immediate deny: high value + high risk beneficiary
-    - condition: |
+
+  conclusion:
+    # Critical: high value + high risk beneficiary
+    - when: |
         triggered_rules contains "high_value_transaction" &&
         triggered_rules contains "beneficiary_risk" &&
         event.transaction.amount > 50000
-      action: deny
+      signal: critical_risk
       reason: "High-value transaction to risky beneficiary"
-      
-    # AI analysis: complex pattern
-    - condition: |
+
+    # High risk: complex pattern
+    - when: |
         total_score >= 100 ||
         triggered_count >= 3
-      action: infer
-      infer:
-        data_snapshot:
-          - event.transaction
-          - event.user
-          - context.transaction_fraud_detection.triggered_rules
-          - context.transaction_fraud_detection.total_score
+      signal: high_risk
       reason: "Complex fraud pattern needs analysis"
-      
-    # Human review: moderate risk
-    - condition: total_score >= 60
-      action: review
+
+    # Medium risk: moderate score
+    - when: total_score >= 60
+      signal: medium_risk
       reason: "Moderate risk transaction"
-      
-    # Approve: low risk
+
+    # Low risk
     - default: true
-      action: approve
+      signal: normal
 ```
 
-### 9.3 Credit Application Risk
+### 8.3 Credit Application Risk
 
 ```yaml
-version: "0.1"
+version: "0.2"
 
 ruleset:
   id: credit_application_risk
   name: Credit Application Risk Assessment
   description: Evaluate credit application risk
-  
+
   rules:
     - low_credit_score          # score: 80
     - high_debt_ratio          # score: 60
     - employment_unstable      # score: 50
     - income_inconsistent      # score: 40
     - previous_default         # score: 100
-    
-  decision_logic:
-    # Automatic deny: previous default
-    - condition: triggered_rules contains "previous_default"
-      action: deny
+
+  conclusion:
+    # Critical: previous default
+    - when: triggered_rules contains "previous_default"
+      signal: critical_risk
       reason: "Previous loan default"
       terminate: true
-      
+
     # High risk: low credit + high debt
-    - condition: |
+    - when: |
         triggered_rules contains "low_credit_score" &&
         triggered_rules contains "high_debt_ratio"
-      action: infer
-      infer:
-        data_snapshot:
-          - event.applicant
-          - event.application
-          - context.credit_application_risk.*
+      signal: high_risk
       reason: "Poor credit profile"
-      
-    # Moderate risk: score threshold
-    - condition: total_score >= 100
-      action: review
+
+    # Medium risk: score threshold
+    - when: total_score >= 100
+      signal: medium_risk
       reason: "Manual underwriting required"
-      
-    # Low-moderate risk: AI assistance
-    - condition: total_score >= 60
-      action: infer
-      infer:
-        data_snapshot:
-          - event.applicant
-          - context.credit_application_risk.*
+
+    # Low risk: borderline
+    - when: total_score >= 60
+      signal: low_risk
       reason: "Borderline case"
-      
-    # Approve: good credit profile
+
+    # Normal: good credit profile
     - default: true
-      action: approve
+      signal: normal
 ```
 
-### 9.4 Login Risk with Context
+### 8.4 Login Risk with Context
 
 ```yaml
-version: "0.1"
+version: "0.2"
 
 ruleset:
   id: contextual_login_risk
-  name: Contextual Login Risk Detection  
+  name: Contextual Login Risk Detection
   description: Login risk with user tier and time context
-  
+
   rules:
     - suspicious_device        # score: 50
     - geo_anomaly             # score: 60
     - failed_attempts         # score: 40
     - unusual_time            # score: 30
-    
-  decision_logic:
-    # VIP users: more lenient
-    - condition: |
+
+  conclusion:
+    # VIP users: more lenient signal
+    - when: |
         event.user.tier == "vip" &&
         total_score < 100
-      action: approve
+      signal: low_risk
       reason: "VIP user, acceptable risk"
-      
-    # Business hours + moderate risk: AI check
-    - condition: |
+
+    # High risk: always critical
+    - when: total_score >= 120
+      signal: critical_risk
+      reason: "High risk login"
+
+    # Business hours + moderate risk
+    - when: |
         total_score >= 60 &&
         hour(event.timestamp) >= 9 &&
         hour(event.timestamp) <= 18
-      action: infer
-      infer:
-        data_snapshot:
-          - event.*
-          - context.*
+      signal: medium_risk
       reason: "Moderate risk during business hours"
-      
-    # Off-hours + any risk: review
-    - condition: |
+
+    # Off-hours + any risk: higher signal
+    - when: |
         total_score >= 40 &&
         (hour(event.timestamp) < 6 || hour(event.timestamp) > 22)
-      action: review
+      signal: high_risk
       reason: "Risk detected during off-hours"
-      
-    # High risk: always deny
-    - condition: total_score >= 120
-      action: deny
-      reason: "High risk login"
-      
-    # Default: approve
+
+    # Default: normal
     - default: true
-      action: approve
+      signal: normal
 ```
 
 ---
 
-## 10. Best Practices
+## 9. Best Practices
 
-### 10.1 Decision Logic Order
+### 9.1 Conclusion Logic Order
 
-Order decision rules from most specific to most general:
+Order conclusion rules from most specific to most general:
 
 ```yaml
-decision_logic:
+conclusion:
   # 1. Critical rules (short-circuit)
-  - condition: critical_condition
-    action: deny
+  - when: critical_condition
+    signal: critical_risk
     terminate: true
-    
+
   # 2. Specific combinations
-  - condition: specific_pattern
-    action: infer
-    
+  - when: specific_pattern
+    signal: high_risk
+
   # 3. Count-based
-  - condition: triggered_count >= 3
-    action: review
-    
+  - when: triggered_count >= 3
+    signal: medium_risk
+
   # 4. Score-based
-  - condition: total_score >= 80
-    action: review
-    
+  - when: total_score >= 80
+    signal: medium_risk
+
   # 5. Default
   - default: true
-    action: approve
+    signal: normal
 ```
 
-### 10.2 Use Meaningful Reasons
+### 9.2 Use Meaningful Reasons
 
 Always provide clear reasons for audit and explainability:
 
 ```yaml
-decision_logic:
-  - condition: total_score >= 100
-    action: deny
+conclusion:
+  - when: total_score >= 100
+    signal: high_risk
     reason: "Risk score {total_score} exceeds threshold"  # Good: specific
-    
-  - condition: triggered_count >= 3
-    action: review
+
+  - when: triggered_count >= 3
+    signal: medium_risk
     reason: "Multiple risk indicators: {triggered_rules}"  # Good: detailed
 ```
 
-### 10.3 Consider Business Context
+### 9.3 Consider Business Context
 
-Adapt decisions based on business context:
+Adapt signals based on business context:
 
 ```yaml
-decision_logic:
+conclusion:
   # Different thresholds for different user tiers
-  - condition: |
+  - when: |
       event.user.tier == "premium" &&
       total_score < 80
-    action: approve
-    
-  - condition: |
+    signal: low_risk
+
+  - when: |
       event.user.tier == "basic" &&
       total_score < 50
-    action: approve
+    signal: low_risk
 ```
 
 ---
 
-## 11. Related Documentation
+## 10. Related Documentation
 
 For comprehensive understanding of rulesets and the CORINT ecosystem:
 
@@ -1557,29 +1226,27 @@ For comprehensive understanding of rulesets and the CORINT ecosystem:
 
 ---
 
-## 12. Summary
+## 11. Summary
 
 A CORINT Ruleset:
 
 - Groups multiple rules into a reusable logical unit
-- **Defines decision logic** through `decision_logic` or `decision_template` **[Phase 3]**
+- **Defines conclusion logic** through `conclusion` section
 - **Supports inheritance** via `extends` for code reuse **[Phase 3]**
 - Evaluates rule combinations and context
-- **Produces final actions** (approve/deny/review/infer)
+- **Produces signals** (`critical_risk`, `high_risk`, `medium_risk`, `low_risk`, `normal`)
+- **Does NOT make final decisions** - Final decisions (approve/decline/review/hold/pass) are made at **Pipeline level**
 - Integrates cleanly with CORINT Pipelines
 - Improves modularity and maintainability
 - **Uses imports to declare rule dependencies explicitly**
 
-**Key Points:**
-- Rules detect and score
-- Rulesets decide and act
-- Pipelines orchestrate flow
-- Imports enable modular, reusable rule libraries
+**Key Points (Three-Layer Model):**
+- **Rules** detect and score individual risk patterns
+- **Rulesets** produce signals/conclusions based on rule results
+- **Pipelines** make final decisions based on signals
 
 **Phase 3 Features:**
 - **Inheritance (`extends`)** - Child rulesets inherit rules from parent, reducing duplication by 27%+
-- **Decision Logic Templates** - Reusable decision patterns with parameters, reducing duplication by 70%+
-- **Combine both** - Use inheritance for rules and templates for decision logic
 - **Compile-time resolution** - Zero runtime overhead, all resolved during compilation
 
 **Code Reuse Benefits:**
@@ -1589,4 +1256,4 @@ A CORINT Ruleset:
 - Reduced maintenance burden
 - Type-safe with compile-time validation
 
-Rulesets are the decision-making foundation of CORINT's Risk Definition Language (RDL).
+Rulesets are the signal-producing layer of CORINT's Risk Definition Language (RDL).

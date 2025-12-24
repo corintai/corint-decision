@@ -1,8 +1,8 @@
 //! File system based repository implementation
 
 use async_trait::async_trait;
-use corint_core::ast::{DecisionTemplate, Pipeline, Rule, Ruleset};
-use corint_parser::{PipelineParser, RuleParser, RulesetParser, TemplateParser};
+use corint_core::ast::{Pipeline, Rule, Ruleset};
+use corint_parser::{PipelineParser, RuleParser, RulesetParser};
 use path_absolutize::Absolutize;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -22,8 +22,6 @@ pub struct FileSystemRepository {
     rule_cache: Arc<RwLock<HashMap<String, CachedArtifact<Rule>>>>,
     /// Cache for rulesets
     ruleset_cache: Arc<RwLock<HashMap<String, CachedArtifact<Ruleset>>>>,
-    /// Cache for templates
-    template_cache: Arc<RwLock<HashMap<String, CachedArtifact<DecisionTemplate>>>>,
     /// Cache for pipelines
     pipeline_cache: Arc<RwLock<HashMap<String, CachedArtifact<Pipeline>>>>,
     /// Cache configuration
@@ -64,7 +62,6 @@ impl FileSystemRepository {
             root_path: abs_path,
             rule_cache: Arc::new(RwLock::new(HashMap::new())),
             ruleset_cache: Arc::new(RwLock::new(HashMap::new())),
-            template_cache: Arc::new(RwLock::new(HashMap::new())),
             pipeline_cache: Arc::new(RwLock::new(HashMap::new())),
             cache_config: Arc::new(Mutex::new(CacheConfig::default())),
             stats: Arc::new(Mutex::new(CacheStats::default())),
@@ -98,13 +95,11 @@ impl FileSystemRepository {
     /// Searches in:
     /// - library/rules/**/*.yaml
     /// - library/rulesets/**/*.yaml
-    /// - library/templates/**/*.yaml
     /// - pipelines/**/*.yaml
     async fn find_by_id(&self, id: &str, artifact_type: &str) -> RepositoryResult<PathBuf> {
         let search_dirs = match artifact_type {
             "rule" => vec!["library/rules"],
             "ruleset" => vec!["library/rulesets"],
-            "template" => vec!["library/templates"],
             "pipeline" => vec!["pipelines"],
             _ => vec![],
         };
@@ -282,46 +277,6 @@ impl Repository for FileSystemRepository {
         Ok((doc.definition, content))
     }
 
-    async fn load_template(
-        &self,
-        identifier: &str,
-    ) -> RepositoryResult<(DecisionTemplate, String)> {
-        // Check cache first
-        if let Some(cached) = self.check_cache(&self.template_cache, identifier).await {
-            return Ok(cached);
-        }
-
-        // Resolve path
-        let path = self.resolve_path(identifier);
-
-        // If path doesn't exist and identifier doesn't end with .yaml, try finding by ID
-        let path = if !path.exists() && !identifier.ends_with(".yaml") {
-            self.find_by_id(identifier, "template").await?
-        } else {
-            path
-        };
-
-        // Load and parse
-        let content = fs::read_to_string(&path)
-            .await
-            .map_err(|_| RepositoryError::NotFound {
-                path: path.display().to_string(),
-            })?;
-
-        let doc = TemplateParser::parse_with_imports(&content)?;
-
-        // Store in cache
-        self.store_in_cache(
-            &self.template_cache,
-            identifier,
-            doc.definition.clone(),
-            content.clone(),
-        )
-        .await;
-
-        Ok((doc.definition, content))
-    }
-
     async fn load_pipeline(&self, identifier: &str) -> RepositoryResult<(Pipeline, String)> {
         // Check cache first
         if let Some(cached) = self.check_cache(&self.pipeline_cache, identifier).await {
@@ -370,10 +325,6 @@ impl Repository for FileSystemRepository {
 
     async fn list_rulesets(&self) -> RepositoryResult<Vec<String>> {
         self.list_yaml_files("library/rulesets").await
-    }
-
-    async fn list_templates(&self) -> RepositoryResult<Vec<String>> {
-        self.list_yaml_files("library/templates").await
     }
 
     async fn list_pipelines(&self) -> RepositoryResult<Vec<String>> {
@@ -450,7 +401,6 @@ impl CacheableRepository for FileSystemRepository {
         // We use a blocking approach here
         let rule_cache = self.rule_cache.clone();
         let ruleset_cache = self.ruleset_cache.clone();
-        let template_cache = self.template_cache.clone();
         let pipeline_cache = self.pipeline_cache.clone();
 
         // Schedule cache clearing in background task
@@ -458,7 +408,6 @@ impl CacheableRepository for FileSystemRepository {
         tokio::spawn(async move {
             rule_cache.write().await.clear();
             ruleset_cache.write().await.clear();
-            template_cache.write().await.clear();
             pipeline_cache.write().await.clear();
         });
 
@@ -468,14 +417,12 @@ impl CacheableRepository for FileSystemRepository {
     fn clear_cache_entry(&mut self, identifier: &str) {
         let rule_cache = self.rule_cache.clone();
         let ruleset_cache = self.ruleset_cache.clone();
-        let template_cache = self.template_cache.clone();
         let pipeline_cache = self.pipeline_cache.clone();
         let id = identifier.to_string();
 
         tokio::spawn(async move {
             rule_cache.write().await.remove(&id);
             ruleset_cache.write().await.remove(&id);
-            template_cache.write().await.remove(&id);
             pipeline_cache.write().await.remove(&id);
         });
     }
