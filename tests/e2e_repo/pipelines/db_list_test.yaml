@@ -1,0 +1,121 @@
+version: "0.1"
+
+# ========================================
+# E2E Test Pipeline - Database List Test
+# ========================================
+
+---
+
+pipeline:
+  id: db_list_test_pipeline
+  name: Database List E2E Test Pipeline
+  description: Tests database-backed list lookups
+
+  entry: db_list_check
+
+  when:
+    all:
+      - event.type == "db_list_test"
+
+  steps:
+    - step:
+        id: db_list_check
+        name: Database List Check
+        type: ruleset
+        ruleset: db_list_test_ruleset
+
+  # Final decision based on ruleset signals
+  decision:
+    - when: results.db_list_test_ruleset.signal == "decline"
+      result: decline
+      reason: "{results.db_list_test_ruleset.reason}"
+      terminate: true
+
+    - when: results.db_list_test_ruleset.signal == "review"
+      result: review
+      reason: "{results.db_list_test_ruleset.reason}"
+      terminate: true
+
+    - default: true
+      result: approve
+      reason: "No lists matched"
+
+---
+
+# ========================================
+# Rules for Database List Testing
+# ========================================
+
+# Rule: User in Database Blocklist
+rule:
+  id: user_in_db_blocklist
+  name: User in DB Blocklist
+  description: User is in database-backed blocked list
+  when:
+    all:
+      - event.user_id in list.blocked_users_db
+  score: 1000
+
+---
+
+# Rule: IP in Database Blocklist
+rule:
+  id: ip_in_db_blocklist
+  name: IP in DB Blocklist
+  description: IP address is in database-backed blocked list
+  when:
+    all:
+      - event.ip_address in list.blocked_ips_db
+  score: 1000
+
+---
+
+# Rule: Country in High Risk List
+rule:
+  id: country_in_db_high_risk
+  name: Country in DB High Risk List
+  description: Country is in database-backed high risk list
+  when:
+    all:
+      - event.country in list.high_risk_countries_db
+  score: 500
+
+---
+
+# ========================================
+# Ruleset
+# ========================================
+
+ruleset:
+  id: db_list_test_ruleset
+  name: Database List Test Ruleset
+  description: E2E test ruleset for database list lookups
+
+  rules:
+    - user_in_db_blocklist
+    - ip_in_db_blocklist
+    - country_in_db_high_risk
+
+  # Conclusion produces signals
+  conclusion:
+    # Critical risk - blocked user or IP
+    - when: triggered_rules contains "user_in_db_blocklist"
+      signal: decline
+      reason: "User is in database blocklist"
+      terminate: true
+
+    - when: triggered_rules contains "ip_in_db_blocklist"
+      signal: decline
+      reason: "IP is in database blocklist"
+      terminate: true
+
+    # High risk country
+    - when: triggered_rules contains "country_in_db_high_risk"
+      signal: review
+      reason: "Country is in high risk list (database)"
+      terminate: true
+
+    # No match - approve
+    - default: true
+      signal: approve
+      reason: "No database lists matched"

@@ -112,11 +112,50 @@ When you run `./tests/scripts/run_e2e_tests.sh`:
 - **Patterns**: Velocity abuse, account takeover, geographic anomalies
 - **Time Range**: Last 30 days (relative to test execution time)
 
+### Database Lists
+
+In addition to events, the test data generator creates **database-backed list entries** for testing list membership features:
+
+**List Entries (12 total)**:
+- **blocked_users** (5 entries): `sus_0001`, `sus_0002`, `sus_0003`, `sus_0004`, `sus_0005`
+- **blocked_ips** (3 entries): Malicious IP addresses from known botnets
+- **high_risk_countries** (4 entries): `NG`, `RU`, `CN`, `KP`
+
+**Database Schema**:
+```sql
+CREATE TABLE list_entries (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    list_id TEXT NOT NULL,
+    value TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    expires_at TEXT,
+    metadata TEXT
+);
+```
+
+**Query List Data**:
+```bash
+# View all lists
+sqlite3 tests/data/e2e_test.db \
+  "SELECT list_id, COUNT(*) FROM list_entries GROUP BY list_id"
+
+# Check if user is blocked
+sqlite3 tests/data/e2e_test.db \
+  "SELECT COUNT(*) FROM list_entries
+   WHERE list_id = 'blocked_users' AND value = 'sus_0001'"
+
+# Or use the verification script
+bash tests/scripts/verify_db_lists.sh
+```
+
+**Note**: The current implementation uses **memory-backed lists** (loaded from YAML configs) for testing. Database-backed lists require PostgreSQL. The SQLite list data exists for verification and future PostgreSQL migration.
+
 ## Architecture
 
 ```
 tests/
 ├── README.md                          # This file
+├── QUICKSTART.md                      # Quick start guide (Chinese)
 ├── e2e_test.md                        # Detailed test plan
 ├── data/
 │   ├── test_data.sql                 # Generated SQL INSERT statements
@@ -137,7 +176,8 @@ tests/
 │           ├── blocked_ips.yaml
 │           └── high_risk_countries.yaml
 ├── scripts/
-│   ├── generate_test_data.py        # Generate SQLite test data
+│   ├── generate_test_data.py        # Generate SQLite test data + lists
+│   ├── verify_db_lists.sh           # Verify database list entries
 │   └── run_e2e_tests.sh             # Main test runner
 └── results/
     ├── server.log                    # Server output
@@ -167,7 +207,20 @@ SELECT * FROM events WHERE user_id LIKE 'sus_%' LIMIT 10;
 SELECT COUNT(DISTINCT user_id) FROM events;
 ```
 
-### 3. Start Server Manually with Test Config (Optional)
+### 3. Verify Database Lists (After Running Tests)
+
+```bash
+# Run automated verification script
+bash tests/scripts/verify_db_lists.sh
+
+# Manual queries
+sqlite3 tests/data/e2e_test.db "SELECT list_id, COUNT(*) FROM list_entries GROUP BY list_id"
+sqlite3 tests/data/e2e_test.db "SELECT * FROM list_entries WHERE list_id = 'blocked_users'"
+sqlite3 tests/data/e2e_test.db "SELECT * FROM list_entries WHERE list_id = 'blocked_ips'"
+sqlite3 tests/data/e2e_test.db "SELECT * FROM list_entries WHERE list_id = 'high_risk_countries'"
+```
+
+### 4. Start Server Manually with Test Config (Optional)
 
 ```bash
 # Generate data first
@@ -183,7 +236,7 @@ cargo build --release
 target/release/corint-server
 ```
 
-### 4. Manual API Testing
+### 5. Manual API Testing
 
 ```bash
 # Health check
@@ -207,7 +260,7 @@ curl -X POST http://localhost:8080/v1/decide \
   }' | jq
 ```
 
-### 5. View Generated SQL (After Running Tests)
+### 6. View Generated SQL (After Running Tests)
 
 ```bash
 # View first 50 lines of generated SQL

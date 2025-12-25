@@ -15,3 +15,7 @@ registry:
   - pipeline: payment_test_pipeline
     when: event.type == "payment"
     description: Payment flow testing
+
+  - pipeline: db_list_test_pipeline
+    when: event.type == "db_list_test"
+    description: Database list lookup testing

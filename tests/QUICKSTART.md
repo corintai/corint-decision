@@ -12,6 +12,7 @@
 ┌─────────────────────────────────────────────────────────────┐
 │  Step 1: Generate SQL Test Data                            │
 │  ✓ Creates test_data.sql with 445 events                   │
+│  ✓ Creates 12 list entries (blocked users/IPs/countries)   │
 │  ✓ Uses relative timestamps (1h, 24h, 7d, 30d ago)         │
 └─────────────────────────────────────────────────────────────┘
                             ↓
@@ -19,7 +20,8 @@
 │  Step 2: Create SQLite Database                            │
 │  ✓ Deletes old database                                    │
 │  ✓ Executes: sqlite3 e2e_test.db < test_data.sql           │
-│  ✓ Verifies 445 events inserted                            │
+│  ✓ Verifies 445 events + 12 list entries inserted          │
+│  ✓ Displays list statistics (blocked_users/IPs/countries)  │
 └─────────────────────────────────────────────────────────────┘
                             ↓
 ┌─────────────────────────────────────────────────────────────┐
@@ -77,11 +79,23 @@ Generating test data...
   ✓ Payment events: 80 events
   ✓ Account takeover patterns: 15 events
 
+Generating list data...
+  ✓ Blocked users: 5 entries
+  ✓ Blocked IPs: 3 entries
+  ✓ High risk countries: 4 entries
+
 ✓ SQL file generated: tests/data/test_data.sql
 [✓] SQL data generated
 
 [INFO] Step 1.5: Creating database and inserting test data...
-[✓] Database created with 445 events
+[✓] Database created with 445 events and 12 list entries
+
+[INFO] Step 1.6: Verifying database list data...
+[✓] Database list verification passed
+  Lists created:
+  - blocked_ips: 3 entries
+  - blocked_users: 5 entries
+  - high_risk_countries: 4 entries
 
 [INFO] Step 2: Building server...
 [✓] Server built successfully
@@ -147,10 +161,33 @@ Test Summary:
 ```
 tests/
 ├── data/
-│   ├── test_data.sql       # 生成的 SQL 语句（445 条 INSERT）
-│   └── e2e_test.db         # SQLite 数据库
+│   ├── test_data.sql       # 生成的 SQL 语句（445 条事件 + 12 条名单数据）
+│   └── e2e_test.db         # SQLite 数据库（包含事件和名单表）
 └── results/
     └── server.log          # 服务器日志
+```
+
+## 数据库内容
+
+### 事件表 (events)
+- 445 条测试事件
+- 涵盖 transaction, login, payment 等类型
+- 时间戳相对当前时间（1小时到30天前）
+
+### 名单表 (list_entries)
+- **blocked_users**: 5 条（sus_0001 - sus_0005）
+- **blocked_ips**: 3 条（已知恶意IP地址）
+- **high_risk_countries**: 4 条（NG, RU, CN, KP）
+
+### 查询数据库名单
+
+```bash
+# 使用验证脚本
+bash tests/scripts/verify_db_lists.sh
+
+# 或手动查询
+sqlite3 tests/data/e2e_test.db "SELECT list_id, COUNT(*) FROM list_entries GROUP BY list_id"
+sqlite3 tests/data/e2e_test.db "SELECT * FROM list_entries WHERE list_id = 'blocked_users'"
 ```
 
 ## 重新运行测试

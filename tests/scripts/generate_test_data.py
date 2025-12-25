@@ -51,14 +51,30 @@ CREATE TABLE IF NOT EXISTS events (
     metadata TEXT
 );
 
--- Create indexes
+-- Create indexes for events
 CREATE INDEX IF NOT EXISTS idx_user_id ON events(user_id);
 CREATE INDEX IF NOT EXISTS idx_timestamp ON events(timestamp);
 CREATE INDEX IF NOT EXISTS idx_event_type ON events(event_type);
 CREATE INDEX IF NOT EXISTS idx_user_timestamp ON events(user_id, timestamp);
 
+-- Create list_entries table for database-backed lists
+CREATE TABLE IF NOT EXISTS list_entries (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    list_id TEXT NOT NULL,
+    value TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    expires_at TEXT,
+    metadata TEXT
+);
+
+-- Create indexes for list_entries
+CREATE INDEX IF NOT EXISTS idx_list_id ON list_entries(list_id);
+CREATE INDEX IF NOT EXISTS idx_list_value ON list_entries(list_id, value);
+CREATE INDEX IF NOT EXISTS idx_expires_at ON list_entries(expires_at);
+
 -- Clear existing data
 DELETE FROM events;
+DELETE FROM list_entries;
 """
 
 
@@ -343,6 +359,53 @@ def generate_account_takeover_pattern(count=15):
     return events
 
 
+def generate_list_data():
+    """Generate list entries data for database-backed lists"""
+    list_entries = []
+
+    # Blocked users list
+    blocked_users = SUSPICIOUS_USERS[:5]  # Use first 5 suspicious users
+    for user_id in blocked_users:
+        list_entries.append({
+            'list_id': 'blocked_users',
+            'value': user_id,
+            'metadata': json.dumps({'reason': 'suspicious_activity', 'blocked_date': datetime.now().isoformat()})
+        })
+
+    # Blocked IPs list
+    for ip in SUSPICIOUS_IPS:
+        list_entries.append({
+            'list_id': 'blocked_ips',
+            'value': ip,
+            'metadata': json.dumps({'reason': 'malicious_traffic', 'threat_level': 'high'})
+        })
+
+    # High risk countries list
+    for country in SUSPICIOUS_COUNTRIES:
+        list_entries.append({
+            'list_id': 'high_risk_countries',
+            'value': country,
+            'metadata': json.dumps({'risk_level': 'high', 'category': 'fraud_hotspot'})
+        })
+
+    return list_entries
+
+
+def generate_list_insert_statements(list_entries):
+    """Generate SQL INSERT statements for list entries"""
+    sql_statements = []
+
+    for entry in list_entries:
+        list_id = escape_sql_string(entry['list_id'])
+        value = escape_sql_string(entry['value'])
+        metadata = escape_sql_string(entry.get('metadata'))
+
+        sql = f"INSERT INTO list_entries (list_id, value, metadata) VALUES ({list_id}, {value}, {metadata});"
+        sql_statements.append(sql)
+
+    return sql_statements
+
+
 def main():
     print("=" * 60)
     print("CORINT E2E Test Data Generator")
@@ -372,22 +435,38 @@ def main():
         total_events += len(events)
         print(f"  ✓ {name}: {len(events)} events")
 
+    # Generate list data
     print()
-    print(f"Generating SQL statements for {total_events} events...")
+    print("Generating list data...")
+    list_entries = generate_list_data()
+    print(f"  ✓ Blocked users: {len([e for e in list_entries if e['list_id'] == 'blocked_users'])} entries")
+    print(f"  ✓ Blocked IPs: {len([e for e in list_entries if e['list_id'] == 'blocked_ips'])} entries")
+    print(f"  ✓ High risk countries: {len([e for e in list_entries if e['list_id'] == 'high_risk_countries'])} entries")
+
+    print()
+    print(f"Generating SQL statements for {total_events} events and {len(list_entries)} list entries...")
 
     # Write SQL file
     with open(SQL_OUTPUT, 'w') as f:
         # Write schema
         f.write("-- CORINT E2E Test Data\n")
         f.write(f"-- Generated at: {datetime.now().isoformat()}\n")
-        f.write(f"-- Total events: {total_events}\n\n")
+        f.write(f"-- Total events: {total_events}\n")
+        f.write(f"-- Total list entries: {len(list_entries)}\n\n")
 
         f.write(generate_schema_sql())
         f.write("\n")
 
-        # Write INSERT statements
+        # Write event INSERT statements
         insert_statements = generate_insert_statements(all_events)
         for sql in insert_statements:
+            f.write(sql + "\n")
+
+        f.write("\n-- List entries data\n")
+
+        # Write list INSERT statements
+        list_insert_statements = generate_list_insert_statements(list_entries)
+        for sql in list_insert_statements:
             f.write(sql + "\n")
 
     print(f"✓ SQL file generated: {SQL_OUTPUT}")

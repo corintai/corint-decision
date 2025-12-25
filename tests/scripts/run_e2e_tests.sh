@@ -238,7 +238,19 @@ main() {
 
     # Verify data insertion
     EVENT_COUNT=$(sqlite3 "$TEST_DB" "SELECT COUNT(*) FROM events;")
-    log_success "Database created with $EVENT_COUNT events"
+    LIST_COUNT=$(sqlite3 "$TEST_DB" "SELECT COUNT(*) FROM list_entries;")
+    log_success "Database created with $EVENT_COUNT events and $LIST_COUNT list entries"
+
+    # Verify database lists
+    log_info "Step 1.6: Verifying database list data..."
+    bash tests/scripts/verify_db_lists.sh > /tmp/db_list_verification.log 2>&1
+    if [ $? -eq 0 ]; then
+        log_success "Database list verification passed"
+        echo "  Lists created:"
+        sqlite3 "$TEST_DB" "SELECT '  - ' || list_id || ': ' || COUNT(*) || ' entries' FROM list_entries GROUP BY list_id;"
+    else
+        log_error "Database list verification failed - see /tmp/db_list_verification.log"
+    fi
     echo ""
 
     # Step 2: Build server
@@ -294,7 +306,7 @@ main() {
     run_test_case "Normal Transaction" '{
         "event": {
             "type": "transaction",
-            "user_id": "user_0001",
+            "user_id": "user_9998",
             "amount": 150.50,
             "country": "US",
             "ip_address": "192.168.1.100",
@@ -350,7 +362,7 @@ main() {
     run_test_case "Normal Login" '{
         "event": {
             "type": "login",
-            "user_id": "user_0001",
+            "user_id": "user_9999",
             "country": "US",
             "ip_address": "192.168.1.100",
             "device_id": "device_00001",
@@ -374,7 +386,7 @@ main() {
     run_test_case "High Risk Country Login" '{
         "event": {
             "type": "login",
-            "user_id": "user_0003",
+            "user_id": "user_0002",
             "country": "RU",
             "ip_address": "192.168.1.200",
             "device_id": "device_00002",
@@ -390,7 +402,7 @@ main() {
     run_test_case "Normal Payment" '{
         "event": {
             "type": "payment",
-            "user_id": "user_0004",
+            "user_id": "user_9997",
             "amount": 299.99,
             "country": "US",
             "ip_address": "192.168.1.100",

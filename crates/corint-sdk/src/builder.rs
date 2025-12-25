@@ -480,21 +480,30 @@ impl DecisionEngineBuilder {
             // Create list loader
             let mut loader = ListLoader::new(base_path);
 
-            // Configure with database pool if available (for PostgreSQL backends)
+            // Configure with database pool if available (for PostgreSQL/SQLite backends)
             #[cfg(feature = "sqlx")]
             {
                 if let Some(db_url) = database_url {
-                    match sqlx::postgres::PgPoolOptions::new()
-                        .max_connections(5)
-                        .connect(db_url)
-                        .await
-                    {
-                        Ok(pool) => {
-                            loader = loader.with_db_pool(std::sync::Arc::new(pool));
-                            tracing::info!("✓ Database connection established for list backends");
-                        }
-                        Err(e) => {
-                            tracing::warn!("Failed to connect to database for lists: {}", e);
+                    // Try to create appropriate pool based on URL scheme
+                    if db_url.starts_with("sqlite://") {
+                        // Use PostgreSQL pool type as a generic container
+                        // Note: This is a workaround - ideally we'd use sqlx::AnyPool
+                        tracing::warn!("SQLite database lists are not yet supported - using memory-only lists");
+                        tracing::info!("For database-backed lists, please use PostgreSQL");
+                    } else {
+                        // PostgreSQL connection
+                        match sqlx::postgres::PgPoolOptions::new()
+                            .max_connections(5)
+                            .connect(db_url)
+                            .await
+                        {
+                            Ok(pool) => {
+                                loader = loader.with_db_pool(std::sync::Arc::new(pool));
+                                tracing::info!("✓ Database connection established for list backends");
+                            }
+                            Err(e) => {
+                                tracing::warn!("Failed to connect to database for lists: {}", e);
+                            }
                         }
                     }
                 }
