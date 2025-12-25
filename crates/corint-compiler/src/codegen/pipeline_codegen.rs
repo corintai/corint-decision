@@ -21,6 +21,9 @@ struct CompileContext {
 
     /// Compiled instructions
     instructions: Vec<Instruction>,
+
+    /// Position of pipeline when guard jump instruction (if present)
+    pipeline_when_guard_pos: Option<usize>,
 }
 
 impl CompileContext {
@@ -29,6 +32,7 @@ impl CompileContext {
             step_positions: HashMap::new(),
             pending_jumps: Vec::new(),
             instructions: Vec::new(),
+            pipeline_when_guard_pos: None,
         }
     }
 
@@ -55,6 +59,11 @@ impl CompileContext {
         }
         self.pending_jumps.push((jump_pos, target));
     }
+
+    /// Mark the position of pipeline when guard jump instruction
+    fn mark_pipeline_when_guard(&mut self, pos: usize) {
+        self.pipeline_when_guard_pos = Some(pos);
+    }
 }
 
 /// Pipeline compiler
@@ -72,6 +81,21 @@ impl PipelineCompiler {
 
         let mut ctx = CompileContext::new();
 
+        // Step 0: Compile pipeline-level when condition if present
+        // This acts as a guard - if condition fails, skip entire pipeline
+        if let Some(ref when) = pipeline.when {
+            let condition_instructions = Self::compile_when_block(when)?;
+            ctx.instructions.extend(condition_instructions);
+
+            // If condition is false, jump to end (skip entire pipeline)
+            let jump_if_false_pos = ctx.instructions.len();
+            ctx.instructions.push(Instruction::JumpIfFalse { offset: 0 });
+
+            // Mark the position where we'll jump to (after all steps)
+            // We'll backfill this offset after we know the total instruction count
+            ctx.mark_pipeline_when_guard(jump_if_false_pos);
+        }
+
         // Step 1: Topological sort - get ordered list of reachable steps from entry
         let sorted_steps = Self::topological_sort(pipeline)?;
 
@@ -84,14 +108,24 @@ impl PipelineCompiler {
         // Step 3: Add Return instruction at the end
         ctx.instructions.push(Instruction::Return);
 
-        // Step 4: Resolve all pending jumps
+        // Step 4: Resolve pipeline when guard jump (if present)
+        // Jump to Return instruction if when condition fails
+        if let Some(guard_pos) = ctx.pipeline_when_guard_pos {
+            let end_pos = ctx.instructions.len() - 1; // Position of Return instruction
+            let offset = (end_pos as isize) - (guard_pos as isize);
+            if let Instruction::JumpIfFalse { offset: ref mut o } = ctx.instructions[guard_pos] {
+                *o = offset;
+            }
+        }
+
+        // Step 5: Resolve all pending jumps
         Self::resolve_jumps(&mut ctx)?;
 
-        // Step 5: Build program metadata
+        // Step 6: Build program metadata
         let mut metadata = ProgramMetadata::for_pipeline(pipeline.id.clone())
             .with_name(pipeline.name.clone());
 
-        // Step 6: Add step information to metadata for tracing
+        // Step 7: Add step information to metadata for tracing
         let steps_json = Self::build_steps_metadata(&sorted_steps);
         metadata = metadata.with_custom("steps_json".to_string(), steps_json);
 
@@ -467,18 +501,68 @@ impl PipelineCompiler {
 
     /// Compile a WhenBlock into condition instructions
     fn compile_when_block(when: &WhenBlock) -> Result<Vec<Instruction>> {
-        // Handle both old and new formats
-        if let Some(ref group) = when.condition_group {
-            Self::compile_condition_group(group)
+        let mut instructions = Vec::new();
+
+        // Handle condition_group or conditions first (these produce boolean values on stack)
+        let condition_instructions = if let Some(ref group) = when.condition_group {
+            Self::compile_condition_group(group)?
         } else if let Some(ref conditions) = when.conditions {
             // Legacy format: treat as implicit AND
-            Self::compile_legacy_conditions(conditions)
+            Self::compile_legacy_conditions(conditions)?
         } else {
-            // No conditions means always true
-            Ok(vec![Instruction::LoadConst {
-                value: corint_core::Value::Bool(true),
-            }])
+            // No conditions - if event_type was specified, we're done
+            // Otherwise, always true
+            if when.event_type.is_none() {
+                return Ok(vec![Instruction::LoadConst {
+                    value: corint_core::Value::Bool(true),
+                }]);
+            } else {
+                Vec::new()
+            }
+        };
+
+        // If we have both event_type and condition_group/conditions:
+        // 1. CheckEventType is handled separately (it jumps directly, doesn't return value)
+        // 2. We need to compile event_type check as a regular condition expression
+        //    and combine it with condition_group using AND
+        if let Some(ref event_type) = when.event_type {
+            if !condition_instructions.is_empty() {
+                // Compile event_type as a condition: event.type == "transaction"
+                let event_type_expr = corint_core::ast::Expression::binary(
+                    corint_core::ast::Expression::field_access(vec![
+                        "event".to_string(),
+                        "type".to_string(),
+                    ]),
+                    corint_core::ast::Operator::Eq,
+                    corint_core::ast::Expression::literal(corint_core::Value::String(
+                        event_type.clone(),
+                    )),
+                );
+                let event_type_instructions = ExpressionCompiler::compile(&event_type_expr)?;
+                
+                // Combine: event_type_condition AND condition_group
+                instructions.extend(event_type_instructions);
+                instructions.extend(condition_instructions);
+                instructions.push(Instruction::BinaryOp {
+                    op: corint_core::ast::Operator::And,
+                });
+            } else {
+                // Only event_type, no conditions - use CheckEventType for efficiency
+                instructions.push(Instruction::CheckEventType {
+                    expected: event_type.clone(),
+                });
+                // CheckEventType doesn't leave a value on stack, so we need to push true
+                // if it passes (it will jump if it fails)
+                instructions.push(Instruction::LoadConst {
+                    value: corint_core::Value::Bool(true),
+                });
+            }
+        } else {
+            // No event_type, just conditions
+            instructions.extend(condition_instructions);
         }
+
+        Ok(instructions)
     }
 
     /// Compile condition group (new format)

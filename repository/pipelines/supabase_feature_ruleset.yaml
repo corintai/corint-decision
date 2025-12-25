@@ -19,8 +19,7 @@ pipeline:
   # Mandatory when condition - only process transaction events with source="api"
   when:
     all:
-      - event.type == "transaction"
-      - event.source == "api"
+      - event.type == "transaction" 
 
   steps:
     # Execute the transaction risk assessment ruleset
