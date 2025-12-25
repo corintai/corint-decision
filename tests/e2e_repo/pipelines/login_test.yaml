@@ -4,10 +4,14 @@ version: "0.1"
 # E2E Test Pipeline - Login Flow
 # ========================================
 
+---
+
 pipeline:
   id: login_test_pipeline
   name: Login E2E Test Pipeline
   description: Tests login risk assessment
+
+  entry: login_risk_assessment
 
   when:
     all:
@@ -49,7 +53,7 @@ rule:
   description: IP address is in blocklist
   when:
     all:
-      - list_contains('blocked_ips', event.ip_address)
+      - event.ip_address in list.blocked_ips
   score: 1000
 
 ---
@@ -86,7 +90,7 @@ rule:
   when:
     all:
       - features.unique_devices_7d > 1
-      - list_contains('high_risk_countries', event.country)
+      - event.country in list.high_risk_countries
   score: 90
 
 ---

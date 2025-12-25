@@ -1,10 +1,10 @@
 # Blocked Users List
-name: blocked_users
-type: static
-description: List of blocked user IDs
-
-items:
-  - sus_0001
-  - sus_0002
-  - sus_0003
-  - sus_0010
+lists:
+  - id: blocked_users
+    description: "List of blocked user IDs"
+    backend: memory
+    initial_values:
+      - "sus_0001"
+      - "sus_0002"
+      - "sus_0003"
+      - "sus_0010"

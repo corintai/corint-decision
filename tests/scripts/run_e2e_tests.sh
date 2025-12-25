@@ -35,6 +35,12 @@ TEST_SQL="tests/data/test_data.sql"
 RESULTS_DIR="tests/results"
 SERVER_PID_FILE="/tmp/corint_e2e_server.pid"
 
+# Configuration file paths
+CONFIG_DIR="config"
+CONFIG_FILE="$CONFIG_DIR/server.yaml"
+CONFIG_BACKUP="$CONFIG_DIR/server.yaml.backup.$(date +%s)"
+TEST_CONFIG_FILE="tests/e2e_server.yaml"
+
 # Counters
 TOTAL_TESTS=0
 PASSED_TESTS=0
@@ -65,6 +71,44 @@ log_warning() {
     echo -e "${YELLOW}[!]${NC} $1"
 }
 
+backup_config() {
+    if [ -f "$CONFIG_FILE" ]; then
+        log_info "Backing up existing config: $CONFIG_FILE -> $CONFIG_BACKUP"
+        cp "$CONFIG_FILE" "$CONFIG_BACKUP"
+        log_success "Config backed up"
+        return 0
+    else
+        log_warning "No existing config file to backup"
+        return 0
+    fi
+}
+
+restore_config() {
+    if [ -f "$CONFIG_BACKUP" ]; then
+        log_info "Restoring original config: $CONFIG_BACKUP -> $CONFIG_FILE"
+        mv "$CONFIG_BACKUP" "$CONFIG_FILE"
+        log_success "Config restored"
+    else
+        log_warning "No backup config to restore"
+    fi
+}
+
+setup_test_config() {
+    if [ ! -f "$TEST_CONFIG_FILE" ]; then
+        log_error "Test config file not found: $TEST_CONFIG_FILE"
+        exit 1
+    fi
+
+    log_info "Setting up test config: $TEST_CONFIG_FILE -> $CONFIG_FILE"
+
+    # Ensure config directory exists
+    mkdir -p "$CONFIG_DIR"
+
+    # Copy test config to config directory
+    cp "$TEST_CONFIG_FILE" "$CONFIG_FILE"
+    log_success "Test config installed"
+}
+
 cleanup() {
     log_info "Cleaning up..."
 
@@ -86,6 +130,9 @@ cleanup() {
 
     # Also try pkill as fallback
     pkill -f "corint-server" 2>/dev/null || true
+
+    # Restore original config
+    restore_config
 }
 
 # Trap to ensure cleanup on exit
@@ -121,16 +168,16 @@ run_test_case() {
         -H "Content-Type: application/json" \
         -d "$test_data")
 
-    # Extract decision from response
-    local actual_decision=$(echo "$response" | jq -r '.decision // "UNKNOWN"')
-    local status=$(echo "$response" | jq -r '.status // "error"')
+    # Extract decision from response (nested in .decision.result)
+    local actual_decision=$(echo "$response" | jq -r '.decision.result // "UNKNOWN"' | tr '[:upper:]' '[:lower:]')
+    local error=$(echo "$response" | jq -r '.error // empty')
 
     # Check result
-    if [ "$status" = "error" ]; then
-        log_error "$test_name: API ERROR"
+    if [ -n "$error" ]; then
+        log_error "$test_name: API ERROR - $error"
         FAILED_TESTS=$((FAILED_TESTS + 1))
         FAILED_TEST_NAMES+=("$test_name")
-        FAILED_TEST_DETAILS+=("$test_name|API_ERROR|Expected: $expected_decision, Got: API error")
+        FAILED_TEST_DETAILS+=("$test_name|API_ERROR|Expected: $expected_decision, Got: API error - $error")
         return 1
     elif [ "$actual_decision" = "$expected_decision" ]; then
         log_success "$test_name: PASSED (decision: $actual_decision)"
@@ -158,6 +205,13 @@ main() {
 
     # Create results directory
     mkdir -p "$RESULTS_DIR"
+
+    # Step 0: Backup and setup configuration
+    log_info "Step 0: Setting up test configuration..."
+    backup_config
+    setup_test_config
+    log_success "Configuration ready"
+    echo ""
 
     # Step 1: Generate SQL statements
     log_info "Step 1: Generating SQL test data..."
@@ -206,27 +260,14 @@ main() {
     # Set environment variables for server
     export DATABASE_URL="sqlite://$TEST_DB_ABSOLUTE"
 
-    # Create test server config
-    cat > /tmp/e2e_server_config.yaml <<EOF
-host: "127.0.0.1"
-port: $SERVER_PORT
-repository:
-  type: filesystem
-  path: "$TEST_REPO"
-enable_metrics: true
-enable_tracing: false
-log_level: "error"
-EOF
-
-    # Start server in background
-    CONFIG_PATH="/tmp/e2e_server_config.yaml" \
-        RUST_LOG=error \
+    # Start server in background using config/server.yaml (already set up with test config)
+    RUST_LOG=error \
         target/release/corint-server > "$RESULTS_DIR/server.log" 2>&1 &
 
     SERVER_PID=$!
     echo $SERVER_PID > "$SERVER_PID_FILE"
 
-    log_info "Server started (PID: $SERVER_PID)"
+    log_info "Server started with test config (PID: $SERVER_PID)"
 
     # Wait for server to be ready
     if ! wait_for_server; then

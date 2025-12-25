@@ -4,10 +4,14 @@ version: "0.1"
 # E2E Test Pipeline - Transaction Flow
 # ========================================
 
+---
+
 pipeline:
   id: transaction_test_pipeline
   name: Transaction E2E Test Pipeline
   description: Tests transaction processing with various feature types
+
+  entry: transaction_risk_assessment
 
   when:
     all:
@@ -49,7 +53,7 @@ rule:
   description: User is in blocked list
   when:
     all:
-      - list_contains('blocked_users', event.user_id)
+      - event.user_id in list.blocked_users
   score: 1000
 
 ---
@@ -74,7 +78,7 @@ rule:
   description: Transaction amount significantly higher than average
   when:
     all:
-      - features.amount_velocity_ratio > 3.0
+      - features.ratio_txn_to_avg > 3.0
   score: 60
 
 ---
@@ -110,8 +114,8 @@ rule:
   description: Transaction from high-risk country
   when:
     all:
-      - list_contains('high_risk_countries', event.country)
-  score: 40
+      - event.country in list.high_risk_countries
+  score: 80
 
 ---
 

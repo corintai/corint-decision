@@ -1,0 +1,49 @@
+# CORINT Decision Engine Server Configuration for E2E Tests
+# This configuration is optimized for automated testing
+
+# Server host (127.0.0.1 for localhost only)
+host: "127.0.0.1"
+
+# Server port
+port: 8080
+
+# Repository configuration - points to E2E test repository
+repository:
+  type: filesystem
+  # E2E test repository path
+  path: "tests/e2e_repo"
+
+# Data Sources Configuration for E2E Tests
+# SQLite datasource will be configured via environment variable DATABASE_URL
+datasources:
+  # SQLite datasource for E2E testing
+  sqlite_e2e:
+    type: sql
+    provider: sqlite
+    # Connection string will be overridden by DATABASE_URL env var
+    connection_string: "sqlite://tests/data/e2e_test.db"
+    database: "e2e_test"
+    options:
+      max_connections: "3"
+
+# Enable metrics collection for testing
+enable_metrics: true
+
+# Disable tracing for faster test execution
+enable_tracing: false
+
+# Error log level for cleaner test output
+log_level: "error"
+
+# LLM Provider Configuration - minimal config for tests
+# (most E2E tests don't use LLM features)
+llm:
+  default_provider: openai
+  enable_cache: false
+  enable_thinking: false
+
+  openai:
+    api_key: "${OPENAI_API_KEY:-dummy-key-for-testing}"
+    default_model: "gpt-4o-mini"
+    max_tokens: 100
+    temperature: 0.0

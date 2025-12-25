@@ -4,10 +4,14 @@ version: "0.1"
 # E2E Test Pipeline - Payment Flow
 # ========================================
 
+---
+
 pipeline:
   id: payment_test_pipeline
   name: Payment E2E Test Pipeline
   description: Tests payment processing
+
+  entry: payment_risk_assessment
 
   when:
     all:
@@ -49,7 +53,7 @@ rule:
   description: User is blocked
   when:
     all:
-      - list_contains('blocked_users', event.user_id)
+      - event.user_id in list.blocked_users
   score: 1000
 
 ---
@@ -61,7 +65,7 @@ rule:
   description: Payment from high-risk country
   when:
     all:
-      - list_contains('high_risk_countries', event.country)
+      - event.country in list.high_risk_countries
   score: 60
 
 ---
@@ -74,7 +78,7 @@ rule:
   when:
     all:
       - event.amount > 5000
-  score: 80
+  score: 100
 
 ---
 

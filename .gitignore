@@ -32,4 +32,8 @@ Thumbs.db
 # nodejs build
 node_modules
 
+# config files
+config/server.yaml
+config/server.yaml.*
+
 temp
