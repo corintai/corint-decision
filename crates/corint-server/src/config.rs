@@ -15,10 +15,15 @@ pub enum RepositoryType {
     },
     /// Database repository
     Database {
-        /// Database type (postgresql, mysql, sqlite)
-        db_type: DatabaseType,
-        /// Database connection URL
-        url: String,
+        /// Database type (postgresql, mysql, sqlite) - deprecated, use datasource instead
+        #[serde(default)]
+        db_type: Option<DatabaseType>,
+        /// Database connection URL - deprecated, use datasource instead
+        #[serde(default)]
+        url: Option<String>,
+        /// Reference to a datasource defined in datasources section
+        #[serde(default)]
+        datasource: Option<String>,
     },
     /// HTTP API repository
     Api {
@@ -51,6 +56,40 @@ impl Default for RepositoryType {
     }
 }
 
+/// Data source configuration for server-level usage
+/// 
+/// Server-level datasources are used for:
+/// - Repository storage (rules, pipelines, etc.)
+/// - User authentication/authorization
+/// - System-level data storage
+/// 
+/// Note: Feature calculation datasources are defined in repository/configs/datasources/
+/// and are automatically loaded by the SDK.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DatasourceConfig {
+    /// Data source type (sql, feature_store, olap)
+    #[serde(rename = "type")]
+    pub source_type: String,
+
+    /// Provider (postgresql, mysql, sqlite, redis, clickhouse, etc.)
+    pub provider: String,
+
+    /// Connection string or URL
+    pub connection_string: String,
+
+    /// Database name (for SQL databases)
+    #[serde(default)]
+    pub database: Option<String>,
+
+    /// Events table name (for SQL/OLAP databases)
+    #[serde(default)]
+    pub events_table: Option<String>,
+
+    /// Additional options
+    #[serde(default)]
+    pub options: std::collections::HashMap<String, String>,
+}
+
 /// Server configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ServerConfig {
@@ -63,6 +102,15 @@ pub struct ServerConfig {
     /// Repository configuration for loading rules
     #[serde(default)]
     pub repository: RepositoryType,
+
+    /// Data sources configuration (similar to llm configuration)
+    /// Key is the datasource name, value is the datasource configuration
+    #[serde(default)]
+    pub datasources: std::collections::HashMap<String, DatasourceConfig>,
+
+    /// Default datasource name (optional)
+    #[serde(default)]
+    pub default_datasource: Option<String>,
 
     /// Enable metrics
     pub enable_metrics: bool,
@@ -85,6 +133,8 @@ impl Default for ServerConfig {
             host: "127.0.0.1".to_string(),
             port: 8080,
             repository: RepositoryType::default(),
+            datasources: std::collections::HashMap::new(),
+            default_datasource: None,
             enable_metrics: true,
             enable_tracing: true,
             log_level: "info".to_string(),
@@ -132,6 +182,8 @@ mod tests {
         assert!(config.enable_tracing);
         assert_eq!(config.log_level, "info");
         assert!(config.database_url.is_none());
+        assert!(config.datasources.is_empty());
+        assert!(config.default_datasource.is_none());
     }
 
     #[test]
@@ -159,15 +211,32 @@ mod tests {
     }
 
     #[test]
-    fn test_repository_type_database() {
+    fn test_repository_type_database_legacy() {
         let repo = RepositoryType::Database {
-            db_type: DatabaseType::PostgreSQL,
-            url: "postgresql://localhost/db".to_string(),
+            db_type: Some(DatabaseType::PostgreSQL),
+            url: Some("postgresql://localhost/db".to_string()),
+            datasource: None,
         };
 
-        if let RepositoryType::Database { db_type, url } = repo {
-            assert!(matches!(db_type, DatabaseType::PostgreSQL));
-            assert_eq!(url, "postgresql://localhost/db");
+        if let RepositoryType::Database { db_type, url, datasource } = repo {
+            assert!(matches!(db_type, Some(DatabaseType::PostgreSQL)));
+            assert_eq!(url, Some("postgresql://localhost/db".to_string()));
+            assert!(datasource.is_none());
+        } else {
+            panic!("Expected Database repository type");
+        }
+    }
+
+    #[test]
+    fn test_repository_type_database_with_datasource() {
+        let repo = RepositoryType::Database {
+            db_type: None,
+            url: None,
+            datasource: Some("postgres_events".to_string()),
+        };
+
+        if let RepositoryType::Database { datasource, .. } = repo {
+            assert_eq!(datasource, Some("postgres_events".to_string()));
         } else {
             panic!("Expected Database repository type");
         }
@@ -220,6 +289,8 @@ mod tests {
             host: "0.0.0.0".to_string(),
             port: 3000,
             repository: RepositoryType::default(),
+            datasources: std::collections::HashMap::new(),
+            default_datasource: None,
             enable_metrics: true,
             enable_tracing: false,
             log_level: "debug".to_string(),

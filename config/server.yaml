@@ -15,7 +15,13 @@ repository:
 
 # Alternative repository configurations (examples):
 
-# Database repository (PostgreSQL, MySQL, SQLite)
+# Database repository using datasource reference
+# The datasource should be defined in the 'datasources' section below
+# repository:
+#   type: database
+#   datasource: postgres_rules  # References datasource defined in 'datasources' section
+
+# Legacy database repository (still supported for backward compatibility)
 # repository:
 #   type: database
 #   db_type: postgresql
@@ -27,6 +33,54 @@ repository:
 #   base_url: "https://api.example.com/rules"
 #   api_key: "your-api-key-here"  # optional
 
+# Data Sources Configuration
+#
+# Server-level datasources for:
+# - Repository storage (rules, pipelines, etc.)
+# - User authentication/authorization
+# - System-level data storage
+#
+# Note: Feature calculation datasources are defined in repository/configs/datasources/
+# and are automatically loaded by the SDK for feature computation.
+#
+# Configuration Strategy:
+# - Small deployments: Can use same database for both (rules + events), but must configure twice
+#   Example: Define 'postgres_main' here and also in repository/configs/datasources/postgres_events.yaml
+# - Large deployments: Separate databases (rules in one DB, events in another for scalability)
+#   Example: 'postgres_rules' here, 'postgres_events' in repository/configs/datasources/
+#
+# Usage in repository configuration:
+#   repository:
+#     type: database
+#     datasource: postgres_rules  # References a datasource defined below
+datasources:
+  # PostgreSQL datasource for repository storage (rules, pipelines, etc.)
+  postgres_rules:
+    type: sql
+    provider: postgresql
+    connection_string: "postgresql://user:password@localhost:5432/corint_rules"
+    database: "corint_rules"
+    options:
+      max_connections: "5"
+
+  # SQLite datasource for repository storage (testing/small deployments)
+  sqlite_rules:
+    type: sql
+    provider: sqlite
+    connection_string: "sqlite://./data/corint_rules.db"
+    database: "corint_rules"
+    options:
+      max_connections: "3"
+
+  # PostgreSQL datasource for user authentication/authorization
+  # postgres_auth:
+  #   type: sql
+  #   provider: postgresql
+  #   connection_string: "postgresql://user:password@localhost:5432/corint_auth"
+  #   database: "corint_auth"
+  #   options:
+  #     max_connections: "10"
+
 # Enable metrics collection
 enable_metrics: true
 
@@ -35,11 +89,6 @@ enable_tracing: true
 
 # Log level (trace, debug, info, warn, error)
 log_level: "info"
-
-# Database URL for decision result persistence (optional)
-# If not set, decision results will not be persisted to database
-# You can also set DATABASE_URL environment variable as an alternative
-database_url: "postgresql://postgres.hfsbvqfkwbslcuvokmis:XPRozJ3DZox5KUnh@aws-1-ap-southeast-1.pooler.supabase.com:5432/postgres?sslmode=require"
 
 # LLM Provider Configuration
 # Supports OpenAI (including O1/O3 thinking models), Anthropic (Claude with extended thinking),

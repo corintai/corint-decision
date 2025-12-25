@@ -243,9 +243,9 @@ rule:
   datasource: clickhouse_events
   entity: events
   dimension: user_id
-  dimension_value: "{req.user_id}"
+  dimension_value: "{event.user_id}"
   field: amount
-  current_value: "{req.amount}"       # Current value from request
+  current_value: "{event.amount}"
   window: 90d
   when: type == "transaction"         # Database field (no prefix)
 ```
@@ -264,9 +264,9 @@ rule:
   datasource: clickhouse_events
   entity: events
   dimension: user_id
-  dimension_value: "{req.user_id}"
+  dimension_value: "{event.user_id}"
   window: 7d
-  expected_timezone: "{req.user_timezone}"  # Expected timezone from request
+  expected_timezone: "{user.timezone}"
 ```
 
 > **Note:** Simple time checks (off-hours) should use Expression operators.
@@ -303,7 +303,7 @@ rule:
   datasource: clickhouse_events
   entity: events
   dimension: user_id
-  dimension_value: "{req.user_id}"
+  dimension_value: "{event.user_id}"
   window: 1h
   pattern:
     - type == "password_reset"                     # Database field
@@ -320,7 +320,7 @@ rule:
   datasource: clickhouse_events
   entity: events
   dimension: user_id
-  dimension_value: "{req.user_id}"
+  dimension_value: "{event.user_id}"
   window: 7d
   when: type == "transaction"         # Database field (no prefix)
   aggregation: count
@@ -345,7 +345,7 @@ rule:
   type: aggregation
   method: distinct
   dimension: user_id
-  dimension_value: "{req.user_id}"
+  dimension_value: "{event.user_id}"
   field: session_id
   window: 24h
 

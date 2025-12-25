@@ -535,7 +535,9 @@ impl OLAPClient {
 struct SQLClient {
     config: super::config::SQLConfig,
     #[cfg(feature = "sqlx")]
-    pool: Option<sqlx::PgPool>,
+    pg_pool: Option<sqlx::PgPool>,
+    #[cfg(feature = "sqlx")]
+    sqlite_pool: Option<sqlx::SqlitePool>,
 }
 
 impl SQLClient {
@@ -544,42 +546,94 @@ impl SQLClient {
         tracing::info!("Initializing SQL client: {:?}", config.provider);
 
         #[cfg(feature = "sqlx")]
-        let pool = if matches!(config.provider, super::config::SQLProvider::PostgreSQL) {
-            use sqlx::postgres::PgPoolOptions;
+        {
+            let mut pg_pool = None;
+            let mut sqlite_pool = None;
 
-            tracing::info!("Creating PostgreSQL connection pool");
-            // Use provided pool_size or get from config options, default to 10
-            let effective_pool_size = config
-                .options
-                .get("max_connections")
-                .and_then(|s| s.parse::<u32>().ok())
-                .unwrap_or_else(|| pool_size.max(1));
+            match config.provider {
+                super::config::SQLProvider::PostgreSQL => {
+                    use sqlx::postgres::PgPoolOptions;
 
-            let pool = PgPoolOptions::new()
-                .max_connections(effective_pool_size)
-                .connect(&config.connection_string)
-                .await
-                .map_err(|e| {
-                    RuntimeError::RuntimeError(format!("Failed to connect to PostgreSQL: {}", e))
-                })?;
+                    tracing::info!("Creating PostgreSQL connection pool");
+                    // Use provided pool_size or get from config options, default to 10
+                    let effective_pool_size = config
+                        .options
+                        .get("max_connections")
+                        .and_then(|s| s.parse::<u32>().ok())
+                        .unwrap_or_else(|| pool_size.max(1));
 
-            tracing::info!(
-                "✓ PostgreSQL connection pool created successfully (max_connections: {})",
-                effective_pool_size
-            );
-            Some(pool)
-        } else {
-            None
-        };
+                    let pool = PgPoolOptions::new()
+                        .max_connections(effective_pool_size)
+                        .connect(&config.connection_string)
+                        .await
+                        .map_err(|e| {
+                            RuntimeError::RuntimeError(format!("Failed to connect to PostgreSQL: {}", e))
+                        })?;
+
+                    tracing::info!(
+                        "✓ PostgreSQL connection pool created successfully (max_connections: {})",
+                        effective_pool_size
+                    );
+                    pg_pool = Some(pool);
+                }
+                super::config::SQLProvider::SQLite => {
+                    use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
+                    use std::str::FromStr;
+
+                    tracing::info!("Creating SQLite connection pool");
+                    // Use provided pool_size or get from config options, default to 1 (SQLite doesn't need large pools)
+                    let effective_pool_size = config
+                        .options
+                        .get("max_connections")
+                        .and_then(|s| s.parse::<u32>().ok())
+                        .unwrap_or_else(|| pool_size.max(1).min(10)); // SQLite typically uses smaller pools
+
+                    // Parse connection string (SQLite uses file path or sqlite:// URI)
+                    let connect_options = if config.connection_string.starts_with("sqlite://") {
+                        SqliteConnectOptions::from_str(&config.connection_string)
+                            .map_err(|e| {
+                                RuntimeError::RuntimeError(format!("Invalid SQLite connection string: {}", e))
+                            })?
+                    } else {
+                        // Treat as file path
+                        SqliteConnectOptions::new()
+                            .filename(&config.connection_string)
+                            .create_if_missing(true) // Create database file if it doesn't exist
+                    };
+
+                    let pool = SqlitePoolOptions::new()
+                        .max_connections(effective_pool_size)
+                        .connect_with(connect_options)
+                        .await
+                        .map_err(|e| {
+                            RuntimeError::RuntimeError(format!("Failed to connect to SQLite: {}", e))
+                        })?;
+
+                    tracing::info!(
+                        "✓ SQLite connection pool created successfully (max_connections: {})",
+                        effective_pool_size
+                    );
+                    sqlite_pool = Some(pool);
+                }
+                super::config::SQLProvider::MySQL => {
+                    // MySQL not yet implemented
+                    tracing::warn!("MySQL provider not yet implemented");
+                }
+            }
+
+            Ok(Self {
+                config,
+                pg_pool,
+                sqlite_pool,
+            })
+        }
 
         #[cfg(not(feature = "sqlx"))]
-        let _pool = ();
-
-        #[cfg(feature = "sqlx")]
-        return Ok(Self { config, pool });
-
-        #[cfg(not(feature = "sqlx"))]
-        Ok(Self { config })
+        {
+            Ok(Self {
+                config,
+            })
+        }
     }
 }
 
@@ -595,11 +649,9 @@ impl DataSourceImpl for SQLClient {
         // Execute query based on provider
         match self.config.provider {
             super::config::SQLProvider::PostgreSQL => self.execute_postgresql(&sql).await,
+            super::config::SQLProvider::SQLite => self.execute_sqlite(&sql).await,
             super::config::SQLProvider::MySQL => Err(RuntimeError::RuntimeError(
                 "MySQL not yet implemented".to_string(),
-            )),
-            super::config::SQLProvider::SQLite => Err(RuntimeError::RuntimeError(
-                "SQLite not yet implemented".to_string(),
             )),
         }
     }
@@ -648,16 +700,40 @@ impl SQLClient {
             match &time_window.window_type {
                 super::query::TimeWindowType::Relative(rel) => {
                     let seconds = rel.to_seconds();
-                    sql.push_str(&format!(
-                        "{} >= NOW() - INTERVAL '{} seconds'",
-                        time_window.time_field, seconds
-                    ));
+                    match self.config.provider {
+                        super::config::SQLProvider::SQLite => {
+                            // SQLite uses datetime() function
+                            sql.push_str(&format!(
+                                "{} >= datetime('now', '-{} seconds')",
+                                time_window.time_field, seconds
+                            ));
+                        }
+                        _ => {
+                            // PostgreSQL and others use INTERVAL
+                            sql.push_str(&format!(
+                                "{} >= NOW() - INTERVAL '{} seconds'",
+                                time_window.time_field, seconds
+                            ));
+                        }
+                    }
                 }
                 super::query::TimeWindowType::Absolute { start, end } => {
-                    sql.push_str(&format!(
-                        "{} >= TO_TIMESTAMP({}) AND {} < TO_TIMESTAMP({})",
-                        time_window.time_field, start, time_window.time_field, end
-                    ));
+                    match self.config.provider {
+                        super::config::SQLProvider::SQLite => {
+                            // SQLite uses datetime() function with unix timestamp
+                            sql.push_str(&format!(
+                                "{} >= datetime({}, 'unixepoch') AND {} < datetime({}, 'unixepoch')",
+                                time_window.time_field, start, time_window.time_field, end
+                            ));
+                        }
+                        _ => {
+                            // PostgreSQL uses TO_TIMESTAMP
+                            sql.push_str(&format!(
+                                "{} >= TO_TIMESTAMP({}) AND {} < TO_TIMESTAMP({})",
+                                time_window.time_field, start, time_window.time_field, end
+                            ));
+                        }
+                    }
                 }
             }
         }
@@ -679,7 +755,7 @@ impl SQLClient {
     fn build_aggregation(&self, agg: &super::query::Aggregation) -> String {
         let field = agg.field.as_deref().unwrap_or("*");
 
-        // For PostgreSQL, if field contains JSONB access (->>), wrap it with type cast for numeric aggregations
+        // For PostgreSQL/SQLite, if field contains JSON access, wrap it with type cast for numeric aggregations
         let needs_numeric_cast =
             matches!(
                 agg.agg_type,
@@ -693,18 +769,45 @@ impl SQLClient {
 
         // Build field expression with type cast if needed
         let field_expr = if needs_numeric_cast {
-            if field.contains("->>") {
-                // Already has JSONB access, just add cast
-                format!("({})::numeric", field)
-            } else if field == "amount" {
-                // Common case: amount field in attributes JSONB
-                "(attributes->>'amount')::numeric".to_string()
-            } else if field.starts_with("attributes") {
-                // Already has attributes prefix
-                format!("({})::numeric", field)
-            } else {
-                // Assume it's a JSONB field access pattern
-                format!("(attributes->>'{}')::numeric", field)
+            match self.config.provider {
+                super::config::SQLProvider::PostgreSQL => {
+                    if field.contains("->>") {
+                        // Already has JSONB access, just add cast
+                        format!("({})::numeric", field)
+                    } else if field == "amount" {
+                        // Common case: amount field in attributes JSONB
+                        "(attributes->>'amount')::numeric".to_string()
+                    } else if field.starts_with("attributes") {
+                        // Already has attributes prefix
+                        format!("({})::numeric", field)
+                    } else {
+                        // Assume it's a JSONB field access pattern
+                        format!("(attributes->>'{}')::numeric", field)
+                    }
+                }
+                super::config::SQLProvider::SQLite => {
+                    // SQLite uses json_extract() function
+                    if field.contains("->>") {
+                        // Convert PostgreSQL JSONB syntax to SQLite
+                        // Example: "attributes->>'amount'" -> "json_extract(attributes, '$.amount')"
+                        let parts: Vec<&str> = field.split("->>").collect();
+                        if parts.len() == 2 {
+                            let json_field = parts[0].trim();
+                            let json_key = parts[1].trim_matches('"').trim_matches('\'');
+                            format!("CAST(json_extract({}, '$.{}') AS REAL)", json_field, json_key)
+                        } else {
+                            field.to_string()
+                        }
+                    } else if field == "amount" {
+                        "CAST(json_extract(attributes, '$.amount') AS REAL)".to_string()
+                    } else if field.starts_with("attributes") {
+                        // Try to extract JSON path
+                        format!("CAST(json_extract({}, '$') AS REAL)", field)
+                    } else {
+                        format!("CAST(json_extract(attributes, '$.{}') AS REAL)", field)
+                    }
+                }
+                _ => field.to_string(),
             }
         } else {
             field.to_string()
@@ -720,18 +823,46 @@ impl SQLClient {
             super::query::AggregationType::Min => format!("MIN({})", field_expr),
             super::query::AggregationType::Max => format!("MAX({})", field_expr),
             super::query::AggregationType::Median => {
-                format!(
-                    "PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY {})",
-                    field_expr
-                )
+                match self.config.provider {
+                    super::config::SQLProvider::SQLite => {
+                        // SQLite doesn't have PERCENTILE_CONT, use a workaround
+                        format!(
+                            "(SELECT {} FROM (SELECT {} FROM (SELECT {} ORDER BY {}) LIMIT 1 OFFSET (SELECT COUNT(*) / 2 FROM (SELECT {})))",
+                            field_expr, field_expr, field_expr, field_expr, field_expr
+                        )
+                    }
+                    _ => {
+                        format!(
+                            "PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY {})",
+                            field_expr
+                        )
+                    }
+                }
             }
-            super::query::AggregationType::Stddev => format!("STDDEV_POP({})", field_expr),
+            super::query::AggregationType::Stddev => {
+                match self.config.provider {
+                    super::config::SQLProvider::SQLite => format!("STDEV({})", field_expr),
+                    _ => format!("STDDEV_POP({})", field_expr),
+                }
+            }
             super::query::AggregationType::Percentile { p } => {
-                format!(
-                    "PERCENTILE_CONT({}) WITHIN GROUP (ORDER BY {})",
-                    p as f64 / 100.0,
-                    field_expr
-                )
+                match self.config.provider {
+                    super::config::SQLProvider::SQLite => {
+                        // SQLite doesn't have PERCENTILE_CONT, use a workaround
+                        let percentile = p as f64 / 100.0;
+                        format!(
+                            "(SELECT {} FROM (SELECT {} FROM (SELECT {} ORDER BY {}) LIMIT 1 OFFSET (SELECT CAST(COUNT(*) * {} AS INTEGER) FROM (SELECT {})))",
+                            field_expr, field_expr, field_expr, field_expr, percentile, field_expr
+                        )
+                    }
+                    _ => {
+                        format!(
+                            "PERCENTILE_CONT({}) WITHIN GROUP (ORDER BY {})",
+                            p as f64 / 100.0,
+                            field_expr
+                        )
+                    }
+                }
             }
         };
 
@@ -808,7 +939,7 @@ impl SQLClient {
 
         #[cfg(feature = "sqlx")]
         {
-            let pool = self.pool.as_ref().ok_or_else(|| {
+            let pool = self.pg_pool.as_ref().ok_or_else(|| {
                 RuntimeError::RuntimeError(
                     "PostgreSQL connection pool not available. Enable 'sqlx' feature.".to_string(),
                 )
@@ -934,6 +1065,122 @@ impl SQLClient {
         {
             Err(RuntimeError::RuntimeError(
                 "PostgreSQL queries require 'sqlx' feature to be enabled".to_string(),
+            ))
+        }
+    }
+
+    /// Execute query on SQLite
+    async fn execute_sqlite(&self, sql: &str) -> Result<QueryResult> {
+        tracing::info!("Executing SQLite query: {}", sql);
+
+        #[cfg(feature = "sqlx")]
+        {
+            let pool = self.sqlite_pool.as_ref().ok_or_else(|| {
+                RuntimeError::RuntimeError(
+                    "SQLite connection pool not available. Enable 'sqlx' feature.".to_string(),
+                )
+            })?;
+
+            let start = Instant::now();
+
+            // Execute query
+            let rows = sqlx::query(sql).fetch_all(pool).await.map_err(|e| {
+                RuntimeError::RuntimeError(format!("Failed to execute SQLite query: {}", e))
+            })?;
+
+            let execution_time_ms = start.elapsed().as_millis() as u64;
+
+            // Convert rows to QueryResult format
+            let mut result_rows = Vec::new();
+
+            for row in rows {
+                let mut map = HashMap::new();
+
+                // Get column names and values
+                for (idx, column) in row.columns().iter().enumerate() {
+                    let column_name = column.name().to_string();
+
+                    tracing::debug!("Column {}: name={}", idx, column_name);
+
+                    // Try to get value based on type
+                    // SQLite is more flexible with types, but we'll try common types
+                    let value = {
+                        #[cfg(feature = "sqlx")]
+                        {
+                            // Try different types in order of likelihood
+                            if let Ok(v) = row.try_get::<Option<f64>, _>(idx) {
+                                v.map(Value::Number).unwrap_or(Value::Null)
+                            } else if let Ok(v) = row.try_get::<f64, _>(idx) {
+                                Value::Number(v)
+                            } else if let Ok(v) = row.try_get::<Option<i64>, _>(idx) {
+                                v.map(|n| Value::Number(n as f64)).unwrap_or(Value::Null)
+                            } else if let Ok(v) = row.try_get::<i64, _>(idx) {
+                                Value::Number(v as f64)
+                            } else if let Ok(v) = row.try_get::<Option<i32>, _>(idx) {
+                                v.map(|n| Value::Number(n as f64)).unwrap_or(Value::Null)
+                            } else if let Ok(v) = row.try_get::<i32, _>(idx) {
+                                Value::Number(v as f64)
+                            } else if let Ok(v) = row.try_get::<Option<String>, _>(idx) {
+                                if let Some(s) = v {
+                                    // Try to parse as number if possible
+                                    if let Ok(num) = s.parse::<f64>() {
+                                        Value::Number(num)
+                                    } else {
+                                        Value::String(s)
+                                    }
+                                } else {
+                                    Value::Null
+                                }
+                            } else if let Ok(v) = row.try_get::<String, _>(idx) {
+                                // Try to parse as number if possible
+                                if let Ok(num) = v.parse::<f64>() {
+                                    Value::Number(num)
+                                } else {
+                                    Value::String(v)
+                                }
+                            } else if let Ok(v) = row.try_get::<Option<bool>, _>(idx) {
+                                v.map(Value::Bool).unwrap_or(Value::Null)
+                            } else if let Ok(v) = row.try_get::<bool, _>(idx) {
+                                Value::Bool(v)
+                            } else {
+                                // Last resort: try to get as text
+                                if let Ok(v) = row.try_get::<String, _>(idx) {
+                                    if let Ok(num) = v.parse::<f64>() {
+                                        Value::Number(num)
+                                    } else {
+                                        Value::String(v)
+                                    }
+                                } else {
+                                    tracing::warn!("Failed to extract value for column {} (name: {})", idx, column_name);
+                                    Value::Null
+                                }
+                            }
+                        }
+                        #[cfg(not(feature = "sqlx"))]
+                        {
+                            Value::Null
+                        }
+                    };
+
+                    tracing::debug!("Extracted value for {}: {:?}", column_name, value);
+                    map.insert(column_name, value);
+                }
+
+                result_rows.push(map);
+            }
+
+            Ok(QueryResult {
+                rows: result_rows,
+                execution_time_ms,
+                source: self.config.database.clone(),
+                from_cache: false,
+            })
+        }
+
+        #[cfg(not(feature = "sqlx"))]
+        {
+            Err(RuntimeError::RuntimeError(
+                "SQLite queries require 'sqlx' feature to be enabled".to_string(),
             ))
         }
     }

@@ -19,7 +19,7 @@ reqwest = { version = "0.11", features = ["json"] }
 urlencoding = "2.1"
 chrono = "0.4"
 uuid = { version = "1.0", features = ["v4", "serde"] }
-sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio-native-tls", "postgres", "chrono", "bigdecimal", "macros"], optional = true }
+sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio-native-tls", "postgres", "sqlite", "chrono", "bigdecimal", "macros"], optional = true }
 bigdecimal = { version = "0.4", features = ["serde"], optional = true }
 
 # OpenTelemetry dependencies

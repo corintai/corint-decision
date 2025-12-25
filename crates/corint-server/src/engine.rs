@@ -21,7 +21,28 @@ pub async fn init_engine(config: &ServerConfig) -> Result<corint_sdk::DecisionEn
         RepositoryType::FileSystem { path } => {
             RepositoryConfig::file_system(path.to_string_lossy().to_string())
         }
-        RepositoryType::Database { url, .. } => RepositoryConfig::database(url.clone()),
+        RepositoryType::Database { datasource, url, db_type } => {
+            // If datasource name is provided, look it up in server.yaml datasources
+            if let Some(ds_name) = datasource {
+                if let Some(ds_config) = config.datasources.get(ds_name) {
+                    // Use connection string from server.yaml datasource config
+                    RepositoryConfig::database(ds_config.connection_string.clone())
+                } else {
+                    return Err(anyhow::anyhow!(
+                        "Datasource '{}' not found in server.yaml datasources section. \
+                        Please define it in the 'datasources' section of server.yaml.",
+                        ds_name
+                    ));
+                }
+            } else if let Some(url) = url {
+                // Fallback to legacy url field for backward compatibility
+                RepositoryConfig::database(url.clone())
+            } else {
+                return Err(anyhow::anyhow!(
+                    "Database repository requires either 'datasource' or 'url' field"
+                ));
+            }
+        }
         RepositoryType::Api { base_url, api_key } => {
             let config = RepositoryConfig::api(base_url.clone());
             if let Some(key) = api_key {
@@ -61,5 +82,3 @@ pub async fn init_engine(config: &ServerConfig) -> Result<corint_sdk::DecisionEn
 
     Ok(engine)
 }
-
-
