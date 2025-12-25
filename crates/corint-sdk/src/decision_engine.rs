@@ -192,6 +192,16 @@ pub struct DecisionEngine {
 
     /// Optional decision result writer for persisting decision results
     pub(crate) result_writer: Option<Arc<corint_runtime::DecisionResultWriter>>,
+
+    // Reload support: save builder state for reloading
+    /// Repository configuration (if any) for reloading
+    pub(crate) repository_config: Option<corint_repository::RepositoryConfig>,
+
+    /// Feature executor (for reload)
+    pub(crate) feature_executor: Option<Arc<corint_runtime::feature::FeatureExecutor>>,
+
+    /// List service (for reload)
+    pub(crate) list_service: Option<Arc<corint_runtime::lists::ListService>>,
 }
 
 impl DecisionEngine {
@@ -333,6 +343,10 @@ impl DecisionEngine {
         let mut pipeline_executor =
             PipelineExecutor::new().with_external_api_client(Arc::new(api_client));
 
+        // Clone feature_executor and list_service before using them (they will be moved)
+        let feature_executor_clone = feature_executor.clone();
+        let list_service_clone = list_service.clone();
+
         // Set feature executor if provided (for lazy feature calculation)
         if let Some(feature_executor) = feature_executor {
             pipeline_executor = pipeline_executor.with_feature_executor(feature_executor);
@@ -356,6 +370,9 @@ impl DecisionEngine {
             metrics,
             config,
             result_writer: None,
+            repository_config: None,
+            feature_executor: feature_executor_clone,
+            list_service: list_service_clone,
         })
     }
 
@@ -1957,6 +1974,120 @@ impl DecisionEngine {
     }
 
     /// Execute a decision request
+    /// Reload rules and configurations from repository
+    ///
+    /// This method reloads all content from the configured repository and recompiles
+    /// all rules, rulesets, and pipelines. It preserves the feature executor,
+    /// list service, and result writer configurations.
+    ///
+    /// # Returns
+    ///
+    /// Returns an error if the repository is not configured or if reloading fails.
+    pub async fn reload(&mut self) -> Result<()> {
+        use corint_repository::RepositoryLoader;
+
+        // Check if repository is configured
+        let repo_config = self.repository_config.as_ref().ok_or_else(|| {
+            SdkError::Config("Repository not configured. Cannot reload.".to_string())
+        })?;
+
+        tracing::info!("Reloading repository content...");
+
+        // Load content from repository
+        let loader = RepositoryLoader::new(repo_config.clone());
+        let content = loader.load_all().await.map_err(|e| {
+            SdkError::Config(format!("Failed to load repository: {}", e))
+        })?;
+
+        // Create a new config with repository content merged
+        let mut new_config = self.config.clone();
+        
+        // Clear existing rule contents and files (they will be replaced by repository content)
+        new_config.rule_contents.clear();
+        new_config.rule_files.clear();
+        new_config.registry_content = None;
+        new_config.registry_file = None;
+
+        // Merge repository content into config
+        if let Some(registry) = content.registry {
+            new_config.registry_content = Some(registry);
+        }
+
+        // Add all pipelines as rule content
+        for (id, yaml) in content.pipelines {
+            new_config.rule_contents.push((id, yaml));
+        }
+
+        // Recompile all programs
+        let mut programs = Vec::new();
+        let compiler_opts = CompilerOpts {
+            enable_semantic_analysis: new_config.compiler_options.enable_semantic_analysis,
+            enable_constant_folding: new_config.compiler_options.enable_constant_folding,
+            enable_dead_code_elimination: true,
+            library_base_path: "repository".to_string(),
+        };
+
+        let mut compiler = Compiler::with_options(compiler_opts);
+
+        // Compile rule contents (from repository)
+        for (id, content_str) in &new_config.rule_contents {
+            programs.extend(Self::compile_rules_from_content(id, content_str, &mut compiler).await?);
+        }
+
+        // Build ruleset_map, rule_map, and pipeline_map for routing
+        let mut ruleset_map = HashMap::new();
+        let mut rule_map = HashMap::new();
+        let mut pipeline_map = HashMap::new();
+        for program in &programs {
+            match program.metadata.source_type.as_str() {
+                "ruleset" => {
+                    ruleset_map.insert(program.metadata.source_id.clone(), program.clone());
+                }
+                "rule" => {
+                    rule_map.insert(program.metadata.source_id.clone(), program.clone());
+                }
+                "pipeline" => {
+                    pipeline_map.insert(program.metadata.source_id.clone(), program.clone());
+                }
+                _ => {}
+            }
+        }
+
+        // Load optional registry
+        let registry = if let Some(registry_content) = &new_config.registry_content {
+            match RegistryParser::parse(registry_content) {
+                Ok(reg) => {
+                    tracing::info!(
+                        "✓ Reloaded pipeline registry: {} entries",
+                        reg.registry.len()
+                    );
+                    Some(reg)
+                }
+                Err(e) => {
+                    tracing::warn!(
+                        "Failed to parse registry content: {}. Continuing without registry.",
+                        e
+                    );
+                    None
+                }
+            }
+        } else {
+            None
+        };
+
+        // Update engine state
+        self.programs = programs;
+        self.ruleset_map = ruleset_map;
+        self.rule_map = rule_map;
+        self.pipeline_map = pipeline_map;
+        self.registry = registry;
+        self.config = new_config;
+
+        tracing::info!("✓ Repository reloaded successfully");
+
+        Ok(())
+    }
+
     pub async fn decide(&self, mut request: DecisionRequest) -> Result<DecisionResponse> {
         use corint_runtime::result::ExecutionResult;
 

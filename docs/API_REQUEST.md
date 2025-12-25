@@ -12,6 +12,7 @@ This document defines the API request and response format for Corint's risk mana
 - [Error Handling](#error-handling)
 - [Examples](#examples)
 - [Async Request Pattern](#async-request-pattern)
+- [Management APIs](#management-apis)
 - [Best Practices](#best-practices)
 
 ---
@@ -928,6 +929,137 @@ curl https://yourdomain/v1/decide/status/req_20251223110000_s9t0u1 \
   }
 }
 ```
+
+---
+
+## Management APIs
+
+### Repository Reload
+
+The repository reload endpoint allows you to reload all rules, rulesets, pipelines, and configurations from the repository without restarting the server. This is useful for updating rules in production environments.
+
+#### Endpoint
+
+```
+POST /v1/repo/reload
+```
+
+#### Request Headers
+
+| Header | Required | Description |
+|--------|----------|-------------|
+| `Authorization` | ✅ Yes | API key: `Bearer <api_key>` |
+
+**Note:** This endpoint does not require a request body.
+
+#### Response Format
+
+**HTTP Status:** `200 OK` (on success) or `500 Internal Server Error` (on failure)
+
+**Success Response:**
+
+```json
+{
+  "success": true,
+  "message": "Repository reloaded successfully"
+}
+```
+
+**Error Response:**
+
+```json
+{
+  "request_id": "req_20251223110000_abc123",
+  "status": 500,
+  "error": {
+    "code": "INTERNAL_ERROR",
+    "message": "Failed to reload repository: <error details>",
+    "details": {
+      "hint": "Check server logs for more information"
+    }
+  }
+}
+```
+
+#### Behavior
+
+When the reload endpoint is called:
+
+1. **Repository Content Reload**: All content is re-read from the configured repository source:
+   - Pipelines
+   - Rules
+   - Rulesets
+   - Templates
+   - API configurations
+   - Data source configurations
+   - Feature definitions
+   - List configurations
+
+2. **Recompilation**: All loaded content is recompiled into Intermediate Representation (IR) programs
+
+3. **State Preservation**: The following components are preserved during reload:
+   - Feature executor (datasources and feature definitions)
+   - List service (list backends)
+   - Result writer (database connection pool)
+   - Metrics and tracing configuration
+
+4. **Atomic Operation**: The reload operation is atomic - either all content is reloaded successfully, or the operation fails and the previous state is maintained
+
+#### Use Cases
+
+- **Hot Reload**: Update rules in production without downtime
+- **Configuration Updates**: Apply new datasource or feature configurations
+- **Rule Testing**: Quickly test rule changes by reloading from a development repository
+- **A/B Testing**: Switch between different rule configurations
+
+#### Example
+
+**Request:**
+
+```bash
+curl -X POST https://yourdomain/v1/repo/reload \
+  -H "Authorization: Bearer sk_live_abc123..."
+```
+
+**Success Response (200 OK):**
+
+```json
+{
+  "success": true,
+  "message": "Repository reloaded successfully"
+}
+```
+
+**Error Response (500 Internal Server Error):**
+
+```json
+{
+  "request_id": "req_20251223110000_xyz789",
+  "status": 500,
+  "error": {
+    "code": "INTERNAL_ERROR",
+    "message": "Failed to reload repository: Pipeline 'invalid_pipeline' has syntax errors",
+    "details": {
+      "hint": "Check server logs for more information"
+    }
+  }
+}
+```
+
+#### Best Practices
+
+1. **Idempotency**: This endpoint is idempotent - calling it multiple times has the same effect as calling it once
+2. **Error Handling**: Always check the `success` field in the response
+3. **Logging**: Monitor server logs after reload to ensure all content loaded correctly
+4. **Validation**: Validate rule changes in a staging environment before reloading in production
+5. **Backup**: Consider backing up current rule configurations before reloading
+6. **Rate Limiting**: Avoid calling this endpoint too frequently (e.g., more than once per minute)
+
+#### Security Considerations
+
+- **Authentication Required**: This endpoint requires valid API key authentication
+- **Admin Access**: Consider restricting this endpoint to admin users or service accounts only
+- **Audit Logging**: All reload operations should be logged for audit purposes
 
 ---
 

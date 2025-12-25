@@ -41,6 +41,10 @@ pub struct DecisionEngineBuilder {
     list_service: Option<Arc<corint_runtime::lists::ListService>>,
     #[cfg(feature = "sqlx")]
     result_writer: Option<Arc<corint_runtime::DecisionResultWriter>>,
+    #[cfg(feature = "sqlx")]
+    database_url: Option<String>,
+    // Store repository content for auto-initialization
+    repository_content: Option<RepositoryContent>,
 }
 
 impl DecisionEngineBuilder {
@@ -53,6 +57,9 @@ impl DecisionEngineBuilder {
             list_service: None,
             #[cfg(feature = "sqlx")]
             result_writer: None,
+            #[cfg(feature = "sqlx")]
+            database_url: None,
+            repository_content: None,
         }
     }
 
@@ -199,16 +206,30 @@ impl DecisionEngineBuilder {
         self
     }
 
+    /// Set database URL for automatic result writer initialization
+    ///
+    /// This will automatically create a database connection pool and configure
+    /// the result writer when building the engine.
+    #[cfg(feature = "sqlx")]
+    pub fn with_database_url(mut self, url: impl Into<String>) -> Self {
+        self.database_url = Some(url.into());
+        self
+    }
+
     /// Build the decision engine
     ///
     /// If `with_repository()` was called, this will first load all content
     /// from the repository and merge it with any manually added content.
+    /// It will also automatically initialize FeatureExecutor and ListService
+    /// from the repository content if they are not already configured.
     pub async fn build(mut self) -> Result<DecisionEngine> {
         // Load content from repository if configured
         if let Some(repo_config) = &self.repository_config {
             let loader = RepositoryLoader::new(repo_config.clone());
             match loader.load_all().await {
                 Ok(content) => {
+                    // Store content for auto-initialization
+                    self.repository_content = Some(content.clone());
                     // Merge repository content into config
                     self.merge_repository_content(content);
                 }
@@ -221,6 +242,58 @@ impl DecisionEngineBuilder {
             }
         }
 
+        // Auto-initialize FeatureExecutor from repository content if not already set
+        if self.feature_executor.is_none() {
+            if let Some(ref content) = self.repository_content {
+                if let Some(executor) = Self::init_feature_executor_from_content(content, &self.repository_config).await? {
+                    self.feature_executor = Some(Arc::new(executor));
+                    tracing::info!("✓ Auto-initialized FeatureExecutor from repository");
+                }
+            }
+        }
+
+        // Auto-initialize ListService from repository content if not already set
+        if self.list_service.is_none() {
+            if let Some(ref content) = self.repository_content {
+                #[cfg(feature = "sqlx")]
+                let db_url = &self.database_url;
+                #[cfg(not(feature = "sqlx"))]
+                let db_url: &Option<String> = &None;
+                if let Some(service) = Self::init_list_service_from_content(content, &self.repository_config, db_url).await? {
+                    self.list_service = Some(Arc::new(service));
+                    tracing::info!("✓ Auto-initialized ListService from repository");
+                }
+            }
+        }
+
+        // Auto-initialize ResultWriter from database_url if not already set
+        #[cfg(feature = "sqlx")]
+        {
+            if self.result_writer.is_none() {
+                if let Some(ref db_url) = self.database_url {
+                    match sqlx::postgres::PgPoolOptions::new()
+                        .max_connections(5)
+                        .connect(db_url)
+                        .await
+                    {
+                        Ok(pool) => {
+                            use corint_runtime::DecisionResultWriter;
+                            self.result_writer = Some(Arc::new(DecisionResultWriter::new(pool)));
+                            tracing::info!("✓ Auto-initialized ResultWriter from database_url");
+                        }
+                        Err(e) => {
+                            tracing::warn!("Failed to create database connection pool: {}", e);
+                        }
+                    }
+                }
+            }
+        }
+
+        // Save reload information before building
+        let repository_config = self.repository_config.clone();
+        let feature_executor = self.feature_executor.clone();
+        let list_service = self.list_service.clone();
+
         #[cfg_attr(not(feature = "sqlx"), allow(unused_mut))]
         let mut engine = DecisionEngine::new_with_feature_executor(
             self.config,
@@ -228,6 +301,11 @@ impl DecisionEngineBuilder {
             self.list_service,
         )
         .await?;
+
+        // Save reload information
+        engine.repository_config = repository_config;
+        engine.feature_executor = feature_executor;
+        engine.list_service = list_service;
 
         // Set result writer if configured
         #[cfg(feature = "sqlx")]
@@ -267,10 +345,185 @@ impl DecisionEngineBuilder {
         // not added to rule_contents here. The compiler will find them
         // in the library/ directories when needed.
 
-        // TODO: In the future, API configs, datasources, features, and lists
-        // should be passed to the runtime components (FeatureExecutor, ListService, etc.)
-        // For now, the content is loaded but runtime component initialization
-        // would need to be updated to use these configs.
+        // Note: API configs, datasources, features, and lists are now automatically
+        // initialized in build() method from repository content.
+    }
+
+    /// Initialize FeatureExecutor from repository content
+    ///
+    /// This function converts repository DataSourceConfig and FeatureDefinition
+    /// to runtime types and initializes the FeatureExecutor.
+    async fn init_feature_executor_from_content(
+        content: &RepositoryContent,
+        repo_config: &Option<RepositoryConfig>,
+    ) -> Result<Option<FeatureExecutor>> {
+        use corint_runtime::datasource::{DataSourceClient, DataSourceConfig as RuntimeDataSourceConfig};
+        use corint_runtime::feature::registry::FeatureRegistry;
+
+        // Get repository base path for loading feature files
+        let base_path = match repo_config {
+            Some(config) => {
+                match &config.source {
+                    corint_repository::RepositorySource::FileSystem => {
+                        config.base_path.as_ref().map(|p| p.as_str())
+                    }
+                    _ => None, // For non-filesystem repositories, we can't load feature files directly
+                }
+            }
+            None => None,
+        };
+
+        // If we have a filesystem repository, load features from files (more reliable than converting)
+        if let Some(base_path) = base_path {
+            let feature_dir = std::path::Path::new(base_path).join("configs/features");
+            if feature_dir.exists() {
+                let mut registry = FeatureRegistry::new();
+                if let Err(e) = registry.load_from_directory(&feature_dir) {
+                    tracing::warn!("Failed to load features from directory: {}", e);
+                } else {
+                    let mut executor = FeatureExecutor::new().with_stats();
+
+                    // Load datasources from files (more reliable than converting)
+                    let datasource_dir = std::path::Path::new(base_path).join("configs/datasources");
+                    if datasource_dir.exists() {
+                        let mut datasource_count = 0;
+                        if let Ok(entries) = std::fs::read_dir(&datasource_dir) {
+                            for entry in entries.flatten() {
+                                let path = entry.path();
+                                if path.extension().and_then(|s| s.to_str()) == Some("yaml") {
+                                    if let Ok(file_content) = std::fs::read_to_string(&path) {
+                                        if let Ok(config) = serde_yaml::from_str::<RuntimeDataSourceConfig>(&file_content) {
+                                            match DataSourceClient::new(config.clone()).await {
+                                                Ok(client) => {
+                                                    executor.add_datasource(&config.name, client);
+                                                    tracing::info!("  ✓ Loaded datasource: {}", config.name);
+                                                    datasource_count += 1;
+
+                                                    // Also register as "default" if it's the first datasource
+                                                    if datasource_count == 1 {
+                                                        let mut default_config = config.clone();
+                                                        default_config.name = "default".to_string();
+                                                        if let Ok(client_clone) = DataSourceClient::new(default_config).await {
+                                                            executor.add_datasource("default", client_clone);
+                                                            tracing::info!("  ✓ Registered as default datasource");
+                                                        }
+                                                    }
+                                                }
+                                                Err(e) => {
+                                                    tracing::warn!("  ✗ Failed to create datasource {}: {}", config.name, e);
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        if datasource_count > 0 {
+                            // Register features to executor
+                            for feature in registry.all_features() {
+                                if let Err(e) = executor.register_feature(feature.clone()) {
+                                    tracing::warn!("  ✗ Failed to register feature {}: {}", feature.name, e);
+                                }
+                            }
+
+                            let feature_count = registry.count();
+                            if feature_count > 0 {
+                                tracing::info!(
+                                    "✓ Loaded {} datasources, {} features",
+                                    datasource_count, feature_count
+                                );
+                                return Ok(Some(executor));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Fallback: Try to convert from repository content (for non-filesystem repositories)
+        // This is more complex and may not work for all cases
+        if !content.datasource_configs.is_empty() && !content.feature_definitions.is_empty() {
+            tracing::warn!("Repository content conversion not fully implemented. Using filesystem loading is recommended.");
+        }
+
+        Ok(None)
+    }
+
+    /// Initialize ListService from repository content
+    async fn init_list_service_from_content(
+        content: &RepositoryContent,
+        repo_config: &Option<RepositoryConfig>,
+        database_url: &Option<String>,
+    ) -> Result<Option<corint_runtime::lists::ListService>> {
+        use corint_runtime::lists::ListLoader;
+
+        // Get repository base path
+        let base_path = match repo_config {
+            Some(config) => {
+                match &config.source {
+                    corint_repository::RepositorySource::FileSystem => {
+                        config.base_path.as_ref().map(|p| p.as_str())
+                    }
+                    _ => None,
+                }
+            }
+            None => None,
+        };
+
+        if let Some(base_path) = base_path {
+            let lists_dir = std::path::Path::new(base_path).join("configs/lists");
+            if !lists_dir.exists() {
+                return Ok(None);
+            }
+
+            // Create list loader
+            let mut loader = ListLoader::new(base_path);
+
+            // Configure with database pool if available (for PostgreSQL backends)
+            #[cfg(feature = "sqlx")]
+            {
+                if let Some(db_url) = database_url {
+                    match sqlx::postgres::PgPoolOptions::new()
+                        .max_connections(5)
+                        .connect(db_url)
+                        .await
+                    {
+                        Ok(pool) => {
+                            loader = loader.with_db_pool(std::sync::Arc::new(pool));
+                            tracing::info!("✓ Database connection established for list backends");
+                        }
+                        Err(e) => {
+                            tracing::warn!("Failed to connect to database for lists: {}", e);
+                        }
+                    }
+                }
+            }
+
+            // Load all list configurations
+            match loader.load_all().await {
+                Ok(backends) => {
+                    if backends.is_empty() {
+                        Ok(None)
+                    } else {
+                        let list_count = backends.len();
+                        let list_ids: Vec<&str> = backends.keys().map(|s| s.as_str()).collect();
+                        tracing::info!("✓ Loaded {} list(s): {:?}", list_count, list_ids);
+                        Ok(Some(corint_runtime::lists::ListService::new_with_backends(
+                            backends,
+                        )))
+                    }
+                }
+                Err(e) => {
+                    tracing::warn!("Failed to load lists: {}", e);
+                    Ok(None)
+                }
+            }
+        } else {
+            // For non-filesystem repositories, list configs would need to be converted
+            // This is not yet implemented
+            Ok(None)
+        }
     }
 }
 

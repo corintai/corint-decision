@@ -4,17 +4,15 @@
 
 pub mod api;
 pub mod config;
+pub mod engine;
 pub mod error;
 
-use crate::config::{RepositoryType, ServerConfig};
+use crate::config::ServerConfig;
 use anyhow::Result;
-use corint_runtime::datasource::{DataSourceClient, DataSourceConfig};
-use corint_runtime::feature::{FeatureExecutor, FeatureRegistry};
 use corint_runtime::observability::otel::{init_opentelemetry, OtelConfig, OtelContext};
-use corint_sdk::{DecisionEngineBuilder, RepositoryConfig};
 use std::sync::Arc;
 use tokio::net::TcpListener;
-use tracing::{error, info, warn};
+use tracing::info;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 #[tokio::main]
@@ -31,7 +29,7 @@ async fn main() -> Result<()> {
     info!("OpenTelemetry initialized");
 
     // Initialize decision engine
-    let engine = init_engine(&config).await?;
+    let engine = engine::init_engine(&config).await?;
     info!("Decision engine initialized");
 
     // Create router with OTel context
@@ -46,6 +44,7 @@ async fn main() -> Result<()> {
     info!("  Health check: http://{}/health", addr);
     info!("  Decision API: http://{}/v1/decide", addr);
     info!("  Metrics: http://{}/metrics", addr);
+    info!("  Reload repository: POST http://{}/v1/repo/reload", addr);
 
     axum::serve(listener, app).await?;
 
@@ -85,285 +84,3 @@ fn init_otel(config: &ServerConfig) -> Result<OtelContext> {
     init_opentelemetry(otel_config)
 }
 
-/// Initialize decision engine
-async fn init_engine(config: &ServerConfig) -> Result<corint_sdk::DecisionEngine> {
-    // Convert server repository config to SDK repository config
-    let repo_config = match &config.repository {
-        RepositoryType::FileSystem { path } => {
-            RepositoryConfig::file_system(path.to_string_lossy().to_string())
-        }
-        RepositoryType::Database { url, .. } => RepositoryConfig::database(url.clone()),
-        RepositoryType::Api { base_url, api_key } => {
-            let config = RepositoryConfig::api(base_url.clone());
-            if let Some(key) = api_key {
-                config.with_api_key(key.clone())
-            } else {
-                config
-            }
-        }
-    };
-
-    let mut builder = DecisionEngineBuilder::new()
-        .with_repository(repo_config)
-        .enable_metrics(config.enable_metrics)
-        .enable_tracing(config.enable_tracing);
-
-    // Initialize list service (for list lookups)
-    let list_service = init_list_service(config).await?;
-    if let Some(service) = list_service {
-        info!("✓ List service initialized");
-        builder = builder.with_list_service(Arc::new(service));
-    } else {
-        warn!("List service not initialized - lists will not be available");
-    }
-
-    // Initialize feature executor (for lazy feature calculation)
-    let feature_executor = init_feature_executor().await?;
-    if let Some(executor) = feature_executor {
-        info!("✓ Feature executor initialized");
-        builder = builder.with_feature_executor(Arc::new(executor));
-    } else {
-        warn!("Feature executor not initialized - features will not be available");
-    }
-
-    // Initialize result writer for decision persistence (if database_url is configured)
-    #[cfg(feature = "sqlx")]
-    {
-        // Try to get database URL from config first, then fall back to environment variable
-        info!("Checking database configuration...");
-        info!("  Config database_url: {:?}", config.database_url);
-
-        let database_url = config.database_url.clone().or_else(|| {
-            let env_url = std::env::var("DATABASE_URL").ok();
-            info!("  Environment DATABASE_URL: {:?}", env_url.is_some());
-            env_url
-        });
-
-        if let Some(database_url) = database_url {
-            info!(
-                "Initializing decision result writer with database: {}",
-                database_url
-            );
-            match sqlx::postgres::PgPoolOptions::new()
-                .max_connections(5)
-                .connect(&database_url)
-                .await
-            {
-                Ok(pool) => {
-                    info!("✓ Database connection pool created");
-                    info!("Calling builder.with_result_writer()...");
-                    builder = builder.with_result_writer(pool);
-                    info!("✓ Decision result persistence enabled");
-                }
-                Err(e) => {
-                    error!("Failed to create database connection pool: {}", e);
-                    warn!("Decision result persistence will be disabled");
-                }
-            }
-        } else {
-            warn!("Database URL not configured, decision result persistence disabled");
-            warn!("  To enable persistence, set 'database_url' in config/server.yaml or DATABASE_URL environment variable");
-        }
-    }
-    #[cfg(not(feature = "sqlx"))]
-    {
-        info!("sqlx feature not enabled, decision result persistence unavailable");
-    }
-
-    // Build engine (repository content is loaded automatically via with_repository)
-    let engine = builder.build().await?;
-
-    Ok(engine)
-}
-
-/// Initialize feature executor with datasources and features
-async fn init_feature_executor() -> Result<Option<FeatureExecutor>> {
-    // Check if datasource config exists
-    let datasource_dir = std::path::Path::new("repository/configs/datasources");
-    if !datasource_dir.exists() {
-        info!("Datasource directory not found: {:?}", datasource_dir);
-        return Ok(None);
-    }
-
-    // Check if feature config exists
-    let feature_dir = std::path::Path::new("repository/configs/features");
-    if !feature_dir.exists() {
-        info!("Feature directory not found: {:?}", feature_dir);
-        return Ok(None);
-    }
-
-    let mut executor = FeatureExecutor::new().with_stats();
-
-    // Load datasource configurations
-    info!("Loading datasources from: {:?}", datasource_dir);
-    let mut datasource_count = 0;
-
-    if let Ok(entries) = std::fs::read_dir(datasource_dir) {
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if path.extension().and_then(|s| s.to_str()) == Some("yaml") {
-                match std::fs::read_to_string(&path) {
-                    Ok(content) => {
-                        match serde_yaml::from_str::<DataSourceConfig>(&content) {
-                            Ok(config) => {
-                                let datasource_name = config.name.clone();
-                                match DataSourceClient::new(config).await {
-                                    Ok(client) => {
-                                        executor.add_datasource(&datasource_name, client);
-                                        info!("  ✓ Loaded datasource: {}", datasource_name);
-                                        datasource_count += 1;
-
-                                        // Also register as "default" if it's the first datasource
-                                        if datasource_count == 1 {
-                                            // Need to create another client for "default"
-                                            let content_clone = std::fs::read_to_string(&path)?;
-                                            let config_clone: DataSourceConfig =
-                                                serde_yaml::from_str(&content_clone)?;
-                                            if let Ok(client_clone) =
-                                                DataSourceClient::new(config_clone).await
-                                            {
-                                                executor.add_datasource("default", client_clone);
-                                                info!("  ✓ Registered as default datasource");
-                                            }
-                                        }
-                                    }
-                                    Err(e) => {
-                                        warn!(
-                                            "  ✗ Failed to create datasource {}: {}",
-                                            datasource_name, e
-                                        );
-                                    }
-                                }
-                            }
-                            Err(e) => {
-                                warn!("  ✗ Failed to parse datasource config {:?}: {}", path, e);
-                            }
-                        }
-                    }
-                    Err(e) => {
-                        warn!("  ✗ Failed to read datasource config {:?}: {}", path, e);
-                    }
-                }
-            }
-        }
-    }
-
-    if datasource_count == 0 {
-        info!("No datasources loaded");
-        return Ok(None);
-    }
-
-    // Load feature definitions
-    info!("Loading features from: {:?}", feature_dir);
-    let mut registry = FeatureRegistry::new();
-    let mut feature_file_count = 0;
-
-    if let Ok(entries) = std::fs::read_dir(feature_dir) {
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if path.extension().and_then(|s| s.to_str()) == Some("yaml") {
-                match registry.load_from_file(&path) {
-                    Ok(_) => {
-                        info!("  ✓ Loaded features from: {:?}", path.file_name());
-                        feature_file_count += 1;
-                    }
-                    Err(e) => {
-                        warn!("  ✗ Failed to load features from {:?}: {}", path, e);
-                    }
-                }
-            }
-        }
-    }
-
-    info!("Loaded {} feature files", feature_file_count);
-
-    // Register features to executor
-    for feature in registry.all_features() {
-        if let Err(e) = executor.register_feature(feature.clone()) {
-            warn!("  ✗ Failed to register feature {}: {}", feature.name, e);
-        }
-    }
-
-    let feature_count = registry.count();
-    if feature_count == 0 {
-        info!("No features loaded");
-        return Ok(None);
-    }
-
-    info!(
-        "✓ Loaded {} datasources, {} features",
-        datasource_count, feature_count
-    );
-
-    Ok(Some(executor))
-}
-
-/// Initialize list service with configured backends
-async fn init_list_service(
-    config: &ServerConfig,
-) -> Result<Option<corint_runtime::lists::ListService>> {
-    use corint_runtime::lists::ListLoader;
-
-    // Check if list config directory exists
-    let lists_dir = std::path::Path::new("repository/configs/lists");
-    if !lists_dir.exists() {
-        info!("List configuration directory not found: {:?}", lists_dir);
-        return Ok(None);
-    }
-
-    // Get database pool if available for PostgreSQL backends
-    #[cfg(feature = "sqlx")]
-    let db_pool = match &config.database_url {
-        Some(url) => {
-            match sqlx::postgres::PgPoolOptions::new()
-                .max_connections(5)
-                .connect(url)
-                .await
-            {
-                Ok(pool) => {
-                    info!("✓ Database connection established for list backends");
-                    Some(std::sync::Arc::new(pool))
-                }
-                Err(e) => {
-                    warn!("Failed to connect to database for lists: {}", e);
-                    None
-                }
-            }
-        }
-        None => None,
-    };
-
-    #[cfg(not(feature = "sqlx"))]
-    let _db_pool: Option<std::sync::Arc<()>> = None;
-
-    // Create list loader
-    let mut loader = ListLoader::new("repository");
-
-    // Configure with database pool if available
-    #[cfg(feature = "sqlx")]
-    if let Some(pool) = db_pool {
-        loader = loader.with_db_pool(pool);
-    }
-
-    // Load all list configurations
-    info!("Loading lists from: {:?}", lists_dir);
-    match loader.load_all().await {
-        Ok(backends) => {
-            if backends.is_empty() {
-                info!("No lists configured");
-                Ok(None)
-            } else {
-                let list_count = backends.len();
-                let list_ids: Vec<&str> = backends.keys().map(|s| s.as_str()).collect();
-                info!("✓ Loaded {} list(s): {:?}", list_count, list_ids);
-                Ok(Some(corint_runtime::lists::ListService::new_with_backends(
-                    backends,
-                )))
-            }
-        }
-        Err(e) => {
-            error!("Failed to load lists: {}", e);
-            Ok(None)
-        }
-    }
-}

@@ -15,20 +15,21 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::collections::HashMap;
 use std::sync::Arc;
+use tokio::sync::RwLock;
 use tower_http::cors::CorsLayer;
 use tower_http::trace::TraceLayer;
-use tracing::info;
+use tracing::{error, info};
 
 /// Application state
 #[derive(Clone)]
 pub struct AppState {
-    pub engine: Arc<DecisionEngine>,
+    pub engine: Arc<RwLock<DecisionEngine>>,
 }
 
 /// Application state with metrics
 #[derive(Clone)]
 pub struct AppStateWithMetrics {
-    pub engine: Arc<DecisionEngine>,
+    pub engine: Arc<RwLock<DecisionEngine>>,
     pub otel_ctx: Arc<OtelContext>,
 }
 
@@ -210,11 +211,22 @@ pub struct CognitionPayload {
 
 /// Create REST API router
 pub fn create_router(engine: Arc<DecisionEngine>) -> Router {
-    let state = AppState { engine };
+    let state = AppState {
+        engine: Arc::new(RwLock::new(
+            Arc::try_unwrap(engine).unwrap_or_else(|_arc| {
+                // This should not happen during normal initialization
+                // If it does, log a warning and create a minimal engine
+                tracing::warn!("Arc<DecisionEngine> has multiple references during router creation");
+                // We can't clone DecisionEngine, so we panic with a clear message
+                panic!("Cannot create router: DecisionEngine Arc has multiple references. This is a programming error.");
+            })
+        )),
+    };
 
     Router::new()
         .route("/health", get(health))
         .route("/v1/decide", post(decide))
+        .route("/v1/repo/reload", post(reload_repository))  // Changed from GET to POST
         .with_state(state)
         .layer(CorsLayer::permissive())
         .layer(TraceLayer::new_for_http())
@@ -226,7 +238,12 @@ pub fn create_router_with_metrics(
     otel_ctx: Arc<OtelContext>,
 ) -> Router {
     let state = AppStateWithMetrics {
-        engine: engine.clone(),
+        engine: Arc::new(RwLock::new(
+            Arc::try_unwrap(engine).unwrap_or_else(|_arc| {
+                tracing::warn!("Arc<DecisionEngine> has multiple references during router creation");
+                panic!("Cannot create router: DecisionEngine Arc has multiple references. This is a programming error.");
+            })
+        )),
         otel_ctx,
     };
 
@@ -234,6 +251,7 @@ pub fn create_router_with_metrics(
         .route("/health", get(health))
         .route("/metrics", get(metrics))
         .route("/v1/decide", post(decide_with_metrics))
+        .route("/v1/repo/reload", post(reload_repository_with_metrics))  // Changed from GET to POST
         .with_state(state)
         .layer(CorsLayer::permissive())
         .layer(TraceLayer::new_for_http())
@@ -301,8 +319,10 @@ async fn decide(
         request = request.with_trace();
     }
 
-    // Execute decision
-    let response = state.engine.decide(request).await?;
+    // Execute decision (acquire read lock - allows concurrent reads)
+    let engine = state.engine.read().await;
+    let response = engine.decide(request).await?;
+    drop(engine); // Release lock as soon as possible
 
     // Convert action to decision result string
     let result_str = response
@@ -783,8 +803,10 @@ async fn decide_with_metrics(
         request = request.with_trace();
     }
 
-    // Execute decision
-    let response = state.engine.decide(request).await?;
+    // Execute decision (acquire read lock - allows concurrent reads)
+    let engine = state.engine.read().await;
+    let response = engine.decide(request).await?;
+    drop(engine); // Release lock as soon as possible
 
     // Convert action to decision result string
     let result_str = response
@@ -828,5 +850,54 @@ async fn decide_with_metrics(
             None
         },
         trace: response.trace,
+    }))
+}
+
+/// Reload repository endpoint response
+#[derive(Debug, Serialize)]
+pub struct ReloadResponse {
+    pub success: bool,
+    pub message: String,
+}
+
+/// Reload repository endpoint
+async fn reload_repository(State(state): State<AppState>) -> Result<Json<ReloadResponse>, ServerError> {
+    info!("Received repository reload request");
+
+    // Reload engine using SDK's reload method (acquire write lock - exclusive access)
+    {
+        let mut engine = state.engine.write().await;
+        engine.reload().await.map_err(|e| {
+            error!("Failed to reload repository: {}", e);
+            ServerError::InternalError(anyhow::anyhow!("Failed to reload repository: {}", e))
+        })?;
+    }
+
+    info!("Repository reloaded successfully");
+    Ok(Json(ReloadResponse {
+        success: true,
+        message: "Repository reloaded successfully".to_string(),
+    }))
+}
+
+/// Reload repository endpoint with metrics
+async fn reload_repository_with_metrics(
+    State(state): State<AppStateWithMetrics>,
+) -> Result<Json<ReloadResponse>, ServerError> {
+    info!("Received repository reload request");
+
+    // Reload engine using SDK's reload method (acquire write lock - exclusive access)
+    {
+        let mut engine = state.engine.write().await;
+        engine.reload().await.map_err(|e| {
+            error!("Failed to reload repository: {}", e);
+            ServerError::InternalError(anyhow::anyhow!("Failed to reload repository: {}", e))
+        })?;
+    }
+
+    info!("Repository reloaded successfully");
+    Ok(Json(ReloadResponse {
+        success: true,
+        message: "Repository reloaded successfully".to_string(),
     }))
 }
