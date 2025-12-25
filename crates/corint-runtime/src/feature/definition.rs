@@ -511,13 +511,17 @@ impl FeatureDefinition {
         // may not be properly populated even when fields exist in YAML. We only validate method field.
         match self.feature_type {
             FeatureType::Aggregation | FeatureType::State | FeatureType::Sequence
-            | FeatureType::Graph | FeatureType::Expression => {
+            | FeatureType::Graph => {
                 if self.method.is_none() {
                     return Err(format!(
                         "Feature '{}': method required for {:?} type",
                         self.name, self.feature_type
                     ));
                 }
+            }
+            FeatureType::Expression => {
+                // Expression method is optional - defaults to "expression" if not specified
+                // This avoids redundancy since expression type always uses expression method
             }
             FeatureType::Lookup => {
                 // Lookup does not require method
@@ -736,6 +740,41 @@ mod tests {
 
         assert!(feature.validate().is_ok());
         assert_eq!(feature.feature_type, FeatureType::Expression);
+    }
+
+    #[test]
+    fn test_expression_feature_without_method() {
+        // Expression features should validate successfully even without method field
+        // since method is always "expression" for this type (redundant)
+        let feature = FeatureDefinition {
+            name: "txn_velocity_ratio".to_string(),
+            feature_type: FeatureType::Expression,
+            method: None,  // Method field is optional for expression type
+            aggregation: None,
+            state: None,
+            sequence: None,
+            graph: None,
+            expression: Some(ExpressionConfig {
+                expression: Some("txn_count_1h / max(txn_count_24h, 1)".to_string()),
+                depends_on: vec![
+                    "txn_count_1h".to_string(),
+                    "txn_count_24h".to_string(),
+                ],
+                model: None,
+                inputs: None,
+                output: None,
+            }),
+            lookup: None,
+            description: "Transaction velocity ratio".to_string(),
+            dependencies: Vec::new(),
+            tags: Vec::new(),
+            enabled: true,
+            version: "1.0".to_string(),
+        };
+
+        assert!(feature.validate().is_ok());
+        assert_eq!(feature.feature_type, FeatureType::Expression);
+        assert_eq!(feature.method, None);
     }
 
     #[test]

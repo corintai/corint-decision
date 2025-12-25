@@ -1,0 +1,163 @@
+version: "0.1"
+
+# ========================================
+# E2E Test Pipeline - Login Flow
+# ========================================
+
+pipeline:
+  id: login_test_pipeline
+  name: Login E2E Test Pipeline
+  description: Tests login risk assessment
+
+  when:
+    all:
+      - event.type == "login"
+
+  steps:
+    - step:
+        id: login_risk_assessment
+        name: Login Risk Assessment
+        type: ruleset
+        ruleset: login_risk_ruleset
+
+  # Final decision based on ruleset signals
+  decision:
+    - when: results.login_risk_ruleset.signal == "decline"
+      result: decline
+      reason: "{results.login_risk_ruleset.reason}"
+      terminate: true
+
+    - when: results.login_risk_ruleset.signal == "review"
+      result: review
+      reason: "{results.login_risk_ruleset.reason}"
+      terminate: true
+
+    - default: true
+      result: approve
+      reason: "Login approved"
+
+---
+
+# ========================================
+# Rules
+# ========================================
+
+# Rule: Blocked IP
+rule:
+  id: blocked_ip
+  name: Blocked IP
+  description: IP address is in blocklist
+  when:
+    all:
+      - list_contains('blocked_ips', event.ip_address)
+  score: 1000
+
+---
+
+# Rule: Excessive Failed Logins
+rule:
+  id: excessive_failures
+  name: Excessive Failed Logins
+  description: Too many failed login attempts
+  when:
+    all:
+      - features.failed_login_count_24h >= 5
+  score: 200
+
+---
+
+# Rule: Multiple Failed Logins
+rule:
+  id: multiple_failures
+  name: Multiple Failed Logins
+  description: Multiple failed attempts
+  when:
+    all:
+      - features.failed_login_count_24h >= 3
+  score: 100
+
+---
+
+# Rule: New Device High Risk Country
+rule:
+  id: new_device_high_risk_country
+  name: New Device High Risk Country
+  description: Login from new device in high-risk country
+  when:
+    all:
+      - features.unique_devices_7d > 1
+      - list_contains('high_risk_countries', event.country)
+  score: 90
+
+---
+
+# Rule: Unusual Device Count
+rule:
+  id: unusual_device_count
+  name: Unusual Device Count
+  description: Too many different devices
+  when:
+    all:
+      - features.unique_devices_7d >= 5
+  score: 60
+
+---
+
+# Rule: Location Hopping
+rule:
+  id: location_hopping
+  name: Location Hopping
+  description: Activity across many locations
+  when:
+    all:
+      - features.unique_countries_30d >= 4
+  score: 50
+
+---
+
+# ========================================
+# Ruleset
+# ========================================
+
+ruleset:
+  id: login_risk_ruleset
+  name: Login Risk Ruleset
+  description: E2E test ruleset for login risk assessment
+
+  rules:
+    - blocked_ip
+    - excessive_failures
+    - multiple_failures
+    - new_device_high_risk_country
+    - unusual_device_count
+    - location_hopping
+
+  # Conclusion produces signals
+  conclusion:
+    # Critical risk - blocked IP or too many failures
+    - when: triggered_rules contains "blocked_ip"
+      signal: decline
+      reason: "Blocked IP address"
+      terminate: true
+
+    - when: triggered_rules contains "excessive_failures"
+      signal: decline
+      reason: "Excessive failed login attempts"
+      terminate: true
+
+    # High risk
+    - when: total_score >= 150
+      signal: decline
+      reason: "High risk score threshold exceeded"
+      terminate: true
+
+    # Medium risk - review
+    - when: total_score >= 80
+      signal: review
+      reason: "Medium risk score - manual review required"
+      terminate: true
+
+    # Low risk - approve (default)
+    - default: true
+      signal: approve
+      reason: "No significant risk indicators"

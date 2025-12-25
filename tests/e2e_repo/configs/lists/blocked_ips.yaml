@@ -1,0 +1,9 @@
+# Blocked IP Addresses
+name: blocked_ips
+type: static
+description: List of blocked IP addresses
+
+items:
+  - "45.142.212.61"
+  - "185.220.101.52"
+  - "91.109.190.28"

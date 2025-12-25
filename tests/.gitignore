@@ -1,0 +1,8 @@
+# Auto-generated test data and results
+data/test_data.sql
+data/e2e_test.db
+data/*.db
+data/*.sql
+
+# Test results
+results/

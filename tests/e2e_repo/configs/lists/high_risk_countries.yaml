@@ -1,0 +1,10 @@
+# High Risk Countries
+name: high_risk_countries
+type: static
+description: List of high-risk country codes
+
+items:
+  - NG
+  - RU
+  - CN
+  - KP

@@ -1,0 +1,357 @@
+# E2E Test Features
+# Covers all major feature types for comprehensive testing
+# Updated to DSL v0.2 format
+
+features:
+  # =============================================================================
+  # Aggregation Features - Count
+  # =============================================================================
+  - name: user_total_transactions
+    type: aggregation
+    method: count
+    datasource: sqlite_e2e
+    entity: events
+    dimension: user_id
+    dimension_value: "{event.user_id}"
+    window: 90d
+    timestamp_field: timestamp
+    when: event_type == "transaction"
+    description: Total transaction count for user in last 90 days
+
+  - name: txn_count_1h
+    type: aggregation
+    method: count
+    datasource: sqlite_e2e
+    entity: events
+    dimension: user_id
+    dimension_value: "{event.user_id}"
+    window: 1h
+    timestamp_field: timestamp
+    when: event_type == "transaction"
+    description: Transaction count in last 1 hour
+
+  - name: txn_count_24h
+    type: aggregation
+    method: count
+    datasource: sqlite_e2e
+    entity: events
+    dimension: user_id
+    dimension_value: "{event.user_id}"
+    window: 24h
+    timestamp_field: timestamp
+    when: event_type == "transaction"
+    description: Transaction count in last 24 hours
+
+  - name: txn_count_7d
+    type: aggregation
+    method: count
+    datasource: sqlite_e2e
+    entity: events
+    dimension: user_id
+    dimension_value: "{event.user_id}"
+    window: 7d
+    timestamp_field: timestamp
+    when: event_type == "transaction"
+    description: Transaction count in last 7 days
+
+  # =============================================================================
+  # Aggregation Features - Sum
+  # =============================================================================
+  - name: user_total_amount
+    type: aggregation
+    method: sum
+    datasource: sqlite_e2e
+    entity: events
+    dimension: user_id
+    dimension_value: "{event.user_id}"
+    field: amount
+    window: 90d
+    timestamp_field: timestamp
+    when: event_type == "transaction"
+    description: Total transaction amount for user in last 90 days
+
+  - name: txn_amount_24h
+    type: aggregation
+    method: sum
+    datasource: sqlite_e2e
+    entity: events
+    dimension: user_id
+    dimension_value: "{event.user_id}"
+    field: amount
+    window: 24h
+    timestamp_field: timestamp
+    when: event_type == "transaction"
+    description: Total transaction amount in last 24 hours
+
+  # =============================================================================
+  # Aggregation Features - Avg, Max, Min
+  # =============================================================================
+  - name: avg_transaction_amount
+    type: aggregation
+    method: avg
+    datasource: sqlite_e2e
+    entity: events
+    dimension: user_id
+    dimension_value: "{event.user_id}"
+    field: amount
+    window: 30d
+    timestamp_field: timestamp
+    when: event_type == "transaction"
+    description: Average transaction amount for user in last 30 days
+
+  - name: max_transaction_amount
+    type: aggregation
+    method: max
+    datasource: sqlite_e2e
+    entity: events
+    dimension: user_id
+    dimension_value: "{event.user_id}"
+    field: amount
+    window: 30d
+    timestamp_field: timestamp
+    when: event_type == "transaction"
+    description: Maximum transaction amount for user in last 30 days
+
+  - name: min_transaction_amount
+    type: aggregation
+    method: min
+    datasource: sqlite_e2e
+    entity: events
+    dimension: user_id
+    dimension_value: "{event.user_id}"
+    field: amount
+    window: 30d
+    timestamp_field: timestamp
+    when: event_type == "transaction"
+    description: Minimum transaction amount for user in last 30 days
+
+  - name: avg_transaction_amount_7d
+    type: aggregation
+    method: avg
+    datasource: sqlite_e2e
+    entity: events
+    dimension: user_id
+    dimension_value: "{event.user_id}"
+    field: amount
+    window: 7d
+    timestamp_field: timestamp
+    when: event_type == "transaction"
+    description: Average transaction amount for user in last 7 days
+
+  # =============================================================================
+  # Login-specific Features
+  # =============================================================================
+  - name: failed_login_count_24h
+    type: aggregation
+    method: count
+    datasource: sqlite_e2e
+    entity: events
+    dimension: user_id
+    dimension_value: "{event.user_id}"
+    window: 24h
+    timestamp_field: timestamp
+    when:
+      all:
+        - event_type == "login"
+        - status == "failed"
+    description: Failed login attempts in last 24 hours
+
+  - name: successful_login_count_7d
+    type: aggregation
+    method: count
+    datasource: sqlite_e2e
+    entity: events
+    dimension: user_id
+    dimension_value: "{event.user_id}"
+    window: 7d
+    timestamp_field: timestamp
+    when:
+      all:
+        - event_type == "login"
+        - status == "success"
+    description: Successful logins in last 7 days
+
+  # =============================================================================
+  # Device and Location Features - Distinct counts
+  # =============================================================================
+  - name: unique_devices_7d
+    type: aggregation
+    method: distinct
+    datasource: sqlite_e2e
+    entity: events
+    dimension: user_id
+    dimension_value: "{event.user_id}"
+    field: device_id
+    window: 7d
+    timestamp_field: timestamp
+    description: Number of unique devices in last 7 days
+
+  - name: unique_devices_24h
+    type: aggregation
+    method: distinct
+    datasource: sqlite_e2e
+    entity: events
+    dimension: user_id
+    dimension_value: "{event.user_id}"
+    field: device_id
+    window: 24h
+    timestamp_field: timestamp
+    description: Number of unique devices in last 24 hours
+
+  - name: unique_countries_30d
+    type: aggregation
+    method: distinct
+    datasource: sqlite_e2e
+    entity: events
+    dimension: user_id
+    dimension_value: "{event.user_id}"
+    field: country
+    window: 30d
+    timestamp_field: timestamp
+    description: Number of unique countries in last 30 days
+
+  - name: unique_ips_24h
+    type: aggregation
+    method: distinct
+    datasource: sqlite_e2e
+    entity: events
+    dimension: user_id
+    dimension_value: "{event.user_id}"
+    field: ip_address
+    window: 24h
+    timestamp_field: timestamp
+    description: Number of unique IP addresses in last 24 hours
+
+  # =============================================================================
+  # Payment-specific Aggregations
+  # =============================================================================
+  - name: payment_count_24h
+    type: aggregation
+    method: count
+    datasource: sqlite_e2e
+    entity: events
+    dimension: user_id
+    dimension_value: "{event.user_id}"
+    window: 24h
+    timestamp_field: timestamp
+    when: event_type == "payment"
+    description: Payment count in last 24 hours
+
+  - name: payment_sum_7d
+    type: aggregation
+    method: sum
+    datasource: sqlite_e2e
+    entity: events
+    dimension: user_id
+    dimension_value: "{event.user_id}"
+    field: amount
+    window: 7d
+    timestamp_field: timestamp
+    when: event_type == "payment"
+    description: Total payment amount in last 7 days
+
+  - name: max_payment_amount_30d
+    type: aggregation
+    method: max
+    datasource: sqlite_e2e
+    entity: events
+    dimension: user_id
+    dimension_value: "{event.user_id}"
+    field: amount
+    window: 30d
+    timestamp_field: timestamp
+    when: event_type == "payment"
+    description: Maximum payment amount in last 30 days
+
+  # =============================================================================
+  # Cross-dimensional Aggregations (by device)
+  # =============================================================================
+  - name: txn_count_by_device_24h
+    type: aggregation
+    method: count
+    datasource: sqlite_e2e
+    entity: events
+    dimension: device_id
+    dimension_value: "{event.device_id}"
+    window: 24h
+    timestamp_field: timestamp
+    when: event_type == "transaction"
+    description: Transaction count for this device in last 24 hours
+
+  - name: unique_users_by_device_7d
+    type: aggregation
+    method: distinct
+    datasource: sqlite_e2e
+    entity: events
+    dimension: device_id
+    dimension_value: "{event.device_id}"
+    field: user_id
+    window: 7d
+    timestamp_field: timestamp
+    description: Number of unique users for this device in last 7 days
+
+  # =============================================================================
+  # Expression Features - Derived calculations from other features
+  # =============================================================================
+  - name: rate_failed_login
+    type: expression
+    expression: "failed_login_count_24h / max(successful_login_count_7d, 1)"
+    depends_on:
+      - failed_login_count_24h
+      - successful_login_count_7d
+    description: Failed login rate (failed/successful)
+
+  - name: ratio_txn_to_avg
+    type: expression
+    expression: "event.amount / max(avg_transaction_amount, 1)"
+    depends_on:
+      - avg_transaction_amount
+    description: Current transaction amount to average ratio
+
+  - name: txn_velocity_1h_to_24h
+    type: expression
+    expression: "txn_count_1h / max(txn_count_24h / 24, 1)"
+    depends_on:
+      - txn_count_1h
+      - txn_count_24h
+    description: Transaction velocity comparison (1h vs 24h hourly rate)
+
+  - name: amount_concentration_24h
+    type: expression
+    expression: "max_transaction_amount / max(txn_amount_24h, 1)"
+    depends_on:
+      - max_transaction_amount
+      - txn_amount_24h
+    description: Ratio of max transaction to total (concentration indicator)
+
+  - name: txn_amount_range_30d
+    type: expression
+    expression: "max_transaction_amount - min_transaction_amount"
+    depends_on:
+      - max_transaction_amount
+      - min_transaction_amount
+    description: Transaction amount range in last 30 days
+
+  - name: device_velocity_ratio
+    type: expression
+    expression: "unique_devices_24h / max(unique_devices_7d, 1)"
+    depends_on:
+      - unique_devices_24h
+      - unique_devices_7d
+    description: Device usage velocity (24h vs 7d)
+
+  - name: avg_amount_acceleration
+    type: expression
+    expression: "avg_transaction_amount_7d / max(avg_transaction_amount, 1)"
+    depends_on:
+      - avg_transaction_amount_7d
+      - avg_transaction_amount
+    description: Recent average to historical average ratio
+
+  - name: payment_to_txn_ratio
+    type: expression
+    expression: "payment_count_24h / max(txn_count_24h, 1)"
+    depends_on:
+      - payment_count_24h
+      - txn_count_24h
+    description: Payment to transaction ratio

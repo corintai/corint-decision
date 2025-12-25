@@ -1,0 +1,17 @@
+version: "0.1"
+
+# E2E Test Registry
+# Routes events to appropriate test pipelines
+
+registry:
+  - pipeline: transaction_test_pipeline
+    when: event.type == "transaction"
+    description: Transaction flow testing
+
+  - pipeline: login_test_pipeline
+    when: event.type == "login"
+    description: Login flow testing
+
+  - pipeline: payment_test_pipeline
+    when: event.type == "payment"
+    description: Payment flow testing

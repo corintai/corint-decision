@@ -1,0 +1,176 @@
+version: "0.1"
+
+# ========================================
+# E2E Test Pipeline - Transaction Flow
+# ========================================
+
+pipeline:
+  id: transaction_test_pipeline
+  name: Transaction E2E Test Pipeline
+  description: Tests transaction processing with various feature types
+
+  when:
+    all:
+      - event.type == "transaction"
+
+  steps:
+    - step:
+        id: transaction_risk_assessment
+        name: Transaction Risk Assessment
+        type: ruleset
+        ruleset: transaction_risk_ruleset
+
+  # Final decision based on ruleset signals
+  decision:
+    - when: results.transaction_risk_ruleset.signal == "decline"
+      result: decline
+      reason: "{results.transaction_risk_ruleset.reason}"
+      terminate: true
+
+    - when: results.transaction_risk_ruleset.signal == "review"
+      result: review
+      reason: "{results.transaction_risk_ruleset.reason}"
+      terminate: true
+
+    - default: true
+      result: approve
+      reason: "Transaction approved"
+
+---
+
+# ========================================
+# Rules
+# ========================================
+
+# Rule: Blocked User
+rule:
+  id: user_blocked
+  name: User Blocked
+  description: User is in blocked list
+  when:
+    all:
+      - list_contains('blocked_users', event.user_id)
+  score: 1000
+
+---
+
+# Rule: High Value New User
+rule:
+  id: high_value_new_user
+  name: High Value New User
+  description: High value transaction from user with few previous transactions
+  when:
+    all:
+      - event.amount > 1000
+      - features.user_total_transactions < 5
+  score: 80
+
+---
+
+# Rule: Amount Spike
+rule:
+  id: amount_spike
+  name: Amount Spike
+  description: Transaction amount significantly higher than average
+  when:
+    all:
+      - features.amount_velocity_ratio > 3.0
+  score: 60
+
+---
+
+# Rule: High Frequency 1h
+rule:
+  id: high_frequency_1h
+  name: High Frequency 1h
+  description: Too many transactions in 1 hour
+  when:
+    all:
+      - features.txn_count_1h >= 5
+  score: 70
+
+---
+
+# Rule: High Frequency 24h
+rule:
+  id: high_frequency_24h
+  name: High Frequency 24h
+  description: Excessive transactions in 24 hours
+  when:
+    all:
+      - features.txn_count_24h >= 15
+  score: 50
+
+---
+
+# Rule: High Risk Country
+rule:
+  id: high_risk_country
+  name: High Risk Country
+  description: Transaction from high-risk country
+  when:
+    all:
+      - list_contains('high_risk_countries', event.country)
+  score: 40
+
+---
+
+# Rule: Multiple Countries
+rule:
+  id: multiple_countries
+  name: Multiple Countries
+  description: User active in multiple countries recently
+  when:
+    all:
+      - features.unique_countries_30d >= 3
+  score: 30
+
+---
+
+# ========================================
+# Ruleset
+# ========================================
+
+ruleset:
+  id: transaction_risk_ruleset
+  name: Transaction Risk Ruleset
+  description: E2E test ruleset for transaction risk assessment
+
+  rules:
+    - user_blocked
+    - high_value_new_user
+    - amount_spike
+    - high_frequency_1h
+    - high_frequency_24h
+    - high_risk_country
+    - multiple_countries
+
+  # Conclusion produces signals
+  conclusion:
+    # Critical risk - blocked user
+    - when: triggered_rules contains "user_blocked"
+      signal: decline
+      reason: "User is blocked"
+      terminate: true
+
+    # High risk - multiple indicators or high score
+    - when: total_score >= 150
+      signal: decline
+      reason: "High risk score threshold exceeded"
+      terminate: true
+
+    - when: triggered_count >= 3
+      signal: decline
+      reason: "Multiple risk indicators detected"
+      terminate: true
+
+    # Medium risk - review
+    - when: total_score >= 80
+      signal: review
+      reason: "Medium risk score - manual review required"
+      terminate: true
+
+    # Low risk - approve (default)
+    - default: true
+      signal: approve
+      reason: "No significant risk indicators"

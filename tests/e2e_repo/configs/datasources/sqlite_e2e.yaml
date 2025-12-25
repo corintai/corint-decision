@@ -1,0 +1,9 @@
+# SQLite Datasource for E2E Testing
+name: sqlite_e2e
+type: sql
+provider: sqlite
+connection_string: "sqlite://tests/data/e2e_test.db"
+database: "e2e_test"
+events_table: "events"
+options:
+  max_connections: 5

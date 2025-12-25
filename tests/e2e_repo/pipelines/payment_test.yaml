@@ -1,0 +1,136 @@
+version: "0.1"
+
+# ========================================
+# E2E Test Pipeline - Payment Flow
+# ========================================
+
+pipeline:
+  id: payment_test_pipeline
+  name: Payment E2E Test Pipeline
+  description: Tests payment processing
+
+  when:
+    all:
+      - event.type == "payment"
+
+  steps:
+    - step:
+        id: payment_risk_assessment
+        name: Payment Risk Assessment
+        type: ruleset
+        ruleset: payment_risk_ruleset
+
+  # Final decision based on ruleset signals
+  decision:
+    - when: results.payment_risk_ruleset.signal == "decline"
+      result: decline
+      reason: "{results.payment_risk_ruleset.reason}"
+      terminate: true
+
+    - when: results.payment_risk_ruleset.signal == "review"
+      result: review
+      reason: "{results.payment_risk_ruleset.reason}"
+      terminate: true
+
+    - default: true
+      result: approve
+      reason: "Payment approved"
+
+---
+
+# ========================================
+# Rules
+# ========================================
+
+# Rule: User in Blocklist
+rule:
+  id: user_in_blocklist
+  name: User in Blocklist
+  description: User is blocked
+  when:
+    all:
+      - list_contains('blocked_users', event.user_id)
+  score: 1000
+
+---
+
+# Rule: High Risk Location
+rule:
+  id: high_risk_location
+  name: High Risk Location
+  description: Payment from high-risk country
+  when:
+    all:
+      - list_contains('high_risk_countries', event.country)
+  score: 60
+
+---
+
+# Rule: Very High Amount
+rule:
+  id: very_high_amount
+  name: Very High Amount
+  description: Extremely high payment amount
+  when:
+    all:
+      - event.amount > 5000
+  score: 80
+
+---
+
+# Rule: Daily Limit Exceeded
+rule:
+  id: daily_limit_exceeded
+  name: Daily Limit Exceeded
+  description: Daily payment limit exceeded
+  when:
+    all:
+      - features.txn_amount_24h > 10000
+  score: 200
+
+---
+
+# ========================================
+# Ruleset
+# ========================================
+
+ruleset:
+  id: payment_risk_ruleset
+  name: Payment Risk Ruleset
+  description: E2E test ruleset for payment risk assessment
+
+  rules:
+    - user_in_blocklist
+    - high_risk_location
+    - very_high_amount
+    - daily_limit_exceeded
+
+  # Conclusion produces signals
+  conclusion:
+    # Critical risk - blocked user or limit exceeded
+    - when: triggered_rules contains "user_in_blocklist"
+      signal: decline
+      reason: "User is in blocklist"
+      terminate: true
+
+    - when: triggered_rules contains "daily_limit_exceeded"
+      signal: decline
+      reason: "Daily payment limit exceeded"
+      terminate: true
+
+    # High risk
+    - when: total_score >= 150
+      signal: decline
+      reason: "High risk score threshold exceeded"
+      terminate: true
+
+    # Medium risk - review
+    - when: total_score >= 100
+      signal: review
+      reason: "Medium risk - manual review required"
+      terminate: true
+
+    # Low risk - approve (default)
+    - default: true
+      signal: approve
+      reason: "No significant risk indicators"

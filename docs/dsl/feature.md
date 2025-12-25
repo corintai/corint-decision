@@ -352,7 +352,6 @@ rule:
 # Events per session
 - name: events_per_session_7d
   type: expression
-  method: expression
   expression: "total_events_7d / distinct_sessions_7d"
   depends_on:
     - total_events_7d
@@ -431,11 +430,14 @@ rule:
 > **⚠️ Architecture Constraint:** Expression methods **only consume results from other features**. They do not access raw data sources or define time windows.
 
 **✅ expression** - Custom expressions
+
+> **Note:** The `method` field is **optional** for expression type since it's always "expression". Omitting it makes the configuration more concise.
+
 ```yaml
 - name: rate_userid_login_failure
   description: "Login failure rate (failed/total logins)"
   type: expression
-  method: expression
+  # method: expression  # Optional - can be omitted for expression type
   expression: "failed_login_count_1h / login_count_1h"
   depends_on:
     - failed_login_count_1h
@@ -531,8 +533,10 @@ config:
 | State | ✅ Yes | ✅ Yes |
 | Sequence | ✅ Yes | ✅ Yes |
 | Graph | ✅ Yes | ✅ Yes |
-| Expression | ❌ No | ✅ Yes |
+| Expression | ❌ No | ⚠️ Optional* |
 | Lookup | ✅ Yes | ❌ No |
+
+\* Expression `method` defaults to "expression" if omitted
 
 ---
 
@@ -652,7 +656,6 @@ features:
   - name: rate_userid_login_failure
     description: "Login failure rate calculation"
     type: expression
-    method: expression
     expression: "cnt_userid_login_1h_failed / max(cnt_userid_login_24h, 1)"
     depends_on:
       - cnt_userid_login_1h_failed
@@ -690,7 +693,7 @@ rule:
 | `name` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | `description` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | `type` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| `method` | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ |
+| `method` | ✅ | ✅ | ✅ | ✅ | ⚠️ | ❌ |
 | `datasource` | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ |
 | `entity` | ✅ | ✅ | ✅ | ⚠️ | ❌ | ❌ |
 | `dimension` | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ |
@@ -702,6 +705,8 @@ rule:
 | `depends_on` | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ |
 | `key` | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ |
 | `fallback` | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ |
+
+> **Note:** ⚠️ = Optional. For Expression, `method` defaults to "expression" if omitted.
 
 ### 12.2 Recommended Time Windows
 
