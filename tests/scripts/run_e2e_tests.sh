@@ -19,6 +19,18 @@
 
 set -e  # Exit on error
 
+# Determine project root directory
+# If we're in the tests directory, move to parent
+if [ -d "../crates" ] && [ -f "../Cargo.toml" ]; then
+    cd ..
+fi
+
+# Verify we're in the project root
+if [ ! -d "crates" ] || [ ! -f "Cargo.toml" ]; then
+    echo "Error: Must run from project root or tests directory"
+    exit 1
+fi
+
 # Colors for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -399,7 +411,7 @@ main() {
     run_test_case "High Risk Country Login" '{
         "event": {
             "type": "login",
-            "user_id": "user_0002",
+            "user_id": "user_0006",
             "country": "RU",
             "ip_address": "192.168.1.200",
             "device_id": "device_00002",

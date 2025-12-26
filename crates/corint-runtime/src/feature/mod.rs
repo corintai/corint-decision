@@ -7,6 +7,9 @@
 //! - Feature execution engine with caching
 //! - Pipeline integration
 
+mod cache;
+mod expression;
+
 pub mod definition;
 pub mod executor;
 pub mod extractor;

@@ -8,8 +8,10 @@
 
 use crate::context::ExecutionContext;
 use crate::datasource::DataSourceClient;
+use crate::feature::cache::CacheManager;
 use crate::feature::definition::FeatureDefinition;
-use crate::feature::operator::{CacheBackend, CacheConfig, Operator};
+use crate::feature::expression::ExpressionEvaluator;
+use crate::feature::operator::{CacheBackend, Operator};
 use anyhow::{Context as AnyhowContext, Result};
 use corint_core::condition::ConditionParser;
 use corint_core::Value;
@@ -17,92 +19,36 @@ use std::collections::HashMap;
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
-use std::time::{SystemTime, UNIX_EPOCH};
-use tokio::sync::RwLock;
-use tracing::{debug, info, warn};
+use tracing::{debug, warn};
 
-/// Convert Value to String representation
-fn value_to_string(value: &Value) -> String {
-    match value {
-        Value::Null => "null".to_string(),
-        Value::Bool(b) => b.to_string(),
-        Value::Number(n) => n.to_string(),
-        Value::String(s) => s.clone(),
-        Value::Array(_) => "[array]".to_string(),
-        Value::Object(_) => "{object}".to_string(),
-    }
-}
-
-/// Cache entry with value and expiration time
-#[derive(Debug, Clone)]
-struct CacheEntry {
-    value: Value,
-    expires_at: u64, // Unix timestamp in seconds
-}
-
-impl CacheEntry {
-    fn new(value: Value, ttl: u64) -> Self {
-        let now = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_secs();
-        Self {
-            value,
-            expires_at: now + ttl,
-        }
-    }
-
-    fn is_expired(&self) -> bool {
-        let now = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_secs();
-        now >= self.expires_at
-    }
-}
+// Re-export CacheStats for public API
+pub use crate::feature::cache::CacheStats;
 
 /// Feature executor that handles feature computation and caching
 pub struct FeatureExecutor {
-    /// Local L1 cache (in-memory)
-    local_cache: Arc<RwLock<HashMap<String, CacheEntry>>>,
+    /// Cache manager (handles L1/L2 caching and statistics)
+    cache_manager: CacheManager,
 
     /// Data source clients for feature computation
     datasources: HashMap<String, Arc<DataSourceClient>>,
 
     /// Feature definitions registry
     features: HashMap<String, FeatureDefinition>,
-
-    /// Enable cache statistics
-    enable_stats: bool,
-
-    /// Cache hit/miss statistics
-    stats: Arc<RwLock<CacheStats>>,
-}
-
-#[derive(Debug, Default, Clone)]
-pub struct CacheStats {
-    l1_hits: u64,
-    l1_misses: u64,
-    l2_hits: u64,
-    l2_misses: u64,
-    compute_count: u64,
 }
 
 impl FeatureExecutor {
     /// Create a new feature executor
     pub fn new() -> Self {
         Self {
-            local_cache: Arc::new(RwLock::new(HashMap::new())),
+            cache_manager: CacheManager::new(),
             datasources: HashMap::new(),
             features: HashMap::new(),
-            enable_stats: false,
-            stats: Arc::new(RwLock::new(CacheStats::default())),
         }
     }
 
     /// Enable cache statistics
     pub fn with_stats(mut self) -> Self {
-        self.enable_stats = true;
+        self.cache_manager = self.cache_manager.with_stats();
         self
     }
 
@@ -169,39 +115,39 @@ impl FeatureExecutor {
         }
 
         // Try to get from cache
-        if let Some(cache_config) = self.get_cache_config(feature) {
-            let cache_key = self.build_cache_key(feature_name, &context_map);
+        if let Some(cache_config) = self.cache_manager.get_cache_config(feature) {
+            let cache_key = self.cache_manager.build_cache_key(feature_name, &context_map);
 
             // L1 cache check
-            if let Some(value) = self.get_from_l1_cache(&cache_key).await {
-                if self.enable_stats {
-                    self.stats.write().await.l1_hits += 1;
+            if let Some(value) = self.cache_manager.get_from_l1_cache(&cache_key).await {
+                if self.cache_manager.is_stats_enabled() {
+                    self.cache_manager.stats().write().await.l1_hits += 1;
                 }
                 debug!("Feature '{}' L1 cache hit", feature_name);
                 return Ok(value);
             }
 
-            if self.enable_stats {
-                self.stats.write().await.l1_misses += 1;
+            if self.cache_manager.is_stats_enabled() {
+                self.cache_manager.stats().write().await.l1_misses += 1;
             }
 
             // L2 cache check (Redis)
             if cache_config.backend == CacheBackend::Redis {
-                if let Some(value) = self.get_from_l2_cache(&cache_key).await {
-                    if self.enable_stats {
-                        self.stats.write().await.l2_hits += 1;
+                if let Some(value) = self.cache_manager.get_from_l2_cache(&cache_key).await {
+                    if self.cache_manager.is_stats_enabled() {
+                        self.cache_manager.stats().write().await.l2_hits += 1;
                     }
                     debug!("Feature '{}' L2 cache hit", feature_name);
 
                     // Populate L1 cache
-                    self.set_to_l1_cache(&cache_key, value.clone(), cache_config.ttl)
+                    self.cache_manager.set_to_l1_cache(&cache_key, value.clone(), cache_config.ttl)
                         .await;
 
                     return Ok(value);
                 }
 
-                if self.enable_stats {
-                    self.stats.write().await.l2_misses += 1;
+                if self.cache_manager.is_stats_enabled() {
+                    self.cache_manager.stats().write().await.l2_misses += 1;
                 }
             }
 
@@ -210,19 +156,19 @@ impl FeatureExecutor {
                 .compute_feature(feature, &context_map, &dep_values)
                 .await?;
 
-            if self.enable_stats {
-                self.stats.write().await.compute_count += 1;
+            if self.cache_manager.is_stats_enabled() {
+                self.cache_manager.stats().write().await.compute_count += 1;
             }
 
             // Store in cache
-            self.set_to_cache(&cache_key, value.clone(), cache_config)
+            self.cache_manager.set_to_cache(&cache_key, value.clone(), cache_config)
                 .await;
 
             Ok(value)
         } else {
             // No caching, compute directly
-            if self.enable_stats {
-                self.stats.write().await.compute_count += 1;
+            if self.cache_manager.is_stats_enabled() {
+                self.cache_manager.stats().write().await.compute_count += 1;
             }
 
             self.compute_feature(feature, &context_map, &dep_values)
@@ -314,7 +260,7 @@ impl FeatureExecutor {
         datasource: &DataSourceClient,
         context: &HashMap<String, Value>,
     ) -> Result<Value> {
-        use crate::datasource::query::{Query, QueryType, Aggregation, AggregationType, Filter, FilterOperator, TimeWindow, TimeWindowType, RelativeWindow, TimeUnit};
+        use crate::datasource::query::{Query, QueryType, Aggregation, AggregationType, Filter, FilterOperator, TimeWindow, TimeWindowType, RelativeWindow};
 
         let config = feature.aggregation.as_ref()
             .ok_or_else(|| anyhow::anyhow!("Missing aggregation config for feature '{}'", feature.name))?;
@@ -335,7 +281,7 @@ impl FeatureExecutor {
         });
 
         // Substitute dimension_value template with context values
-        let dimension_value = self.substitute_template(&config.dimension_value, context)?;
+        let dimension_value = ExpressionEvaluator::substitute_template(&config.dimension_value, context)?;
 
         // Add dimension filter to constrain the query
         let mut all_filters = filters;
@@ -563,42 +509,6 @@ impl FeatureExecutor {
         }
     }
 
-    /// Substitute template variables with context values
-    fn substitute_template(&self, template: &str, context: &HashMap<String, Value>) -> Result<String> {
-        // Simple template substitution: {event.user_id} -> context["user_id"]
-        let mut result = template.to_string();
-
-        // Extract all {xxx} patterns
-        if let Some(start) = result.find('{') {
-            if let Some(end) = result.find('}') {
-                let var_path = &result[start+1..end];
-
-                // Parse path like "event.user_id" -> ["event", "user_id"]
-                let parts: Vec<&str> = var_path.split('.').collect();
-
-                // For now, just use the last part as the key
-                if let Some(key) = parts.last() {
-                    if let Some(value) = context.get(*key) {
-                        let value_str = match value {
-                            Value::String(s) => s.clone(),
-                            Value::Number(n) => n.to_string(),
-                            Value::Bool(b) => b.to_string(),
-                            _ => return Err(anyhow::anyhow!("Unsupported template value type")),
-                        };
-                        result = result.replace(&result[start..=end], &value_str);
-                    } else {
-                        return Err(anyhow::anyhow!(
-                            "Template variable '{}' not found in context. Available keys: {:?}",
-                            key, context.keys().collect::<Vec<_>>()
-                        ));
-                    }
-                }
-            }
-        }
-
-        Ok(result)
-    }
-
     /// Execute state feature (stub)
     async fn execute_state(
         &self,
@@ -663,102 +573,13 @@ impl FeatureExecutor {
             }
 
             // Evaluate the expression
-            self.evaluate_expression(expr_str, &feature_values)
+            ExpressionEvaluator::evaluate_expression(expr_str, &feature_values)
         } else if config.model.is_some() {
             // ML model scoring (not yet implemented)
             Err(anyhow::anyhow!("ML model scoring not yet implemented for feature '{}'", feature.name))
         } else {
             Err(anyhow::anyhow!("Expression feature '{}' must have either expression or model", feature.name))
         }
-    }
-
-    /// Evaluate a mathematical expression with feature values
-    fn evaluate_expression(
-        &self,
-        expr: &str,
-        feature_values: &HashMap<String, Value>,
-    ) -> Result<Value> {
-        // Simple expression evaluator
-        // Supports: +, -, *, /, feature names, numbers
-
-        // Replace feature names with their values
-        let mut expr_normalized = expr.to_string();
-
-        // Extract all feature names and replace with values
-        for (name, value) in feature_values {
-            let value_num = match value {
-                Value::Number(n) => *n,
-                Value::Null => 0.0,
-                Value::Bool(b) => if *b { 1.0 } else { 0.0 },
-                _ => return Err(anyhow::anyhow!("Feature '{}' has non-numeric value", name)),
-            };
-
-            // Replace feature name with its numeric value
-            expr_normalized = expr_normalized.replace(name, &value_num.to_string());
-        }
-
-        // Evaluate the expression using a simple parser
-        self.eval_math_expr(&expr_normalized)
-    }
-
-    /// Simple math expression evaluator
-    /// Supports: +, -, *, /, parentheses, numbers
-    fn eval_math_expr(&self, expr: &str) -> Result<Value> {
-        // Remove whitespace
-        let expr = expr.replace(' ', "");
-
-        // Try to parse as a simple number first
-        if let Ok(num) = expr.parse::<f64>() {
-            return Ok(Value::Number(num));
-        }
-
-        // Handle division by zero
-        if expr.contains("/0") || expr.contains("/ 0") {
-            return Ok(Value::Null);
-        }
-
-        // Very simple expression parser (handles basic operations)
-        // For production, consider using a proper expression parser crate like `evalexpr`
-
-        // Handle simple binary operations (a op b)
-        for op in &['/', '*', '+', '-'] {
-            if let Some(idx) = expr.rfind(*op) {
-                // Skip if it's a negative sign at the beginning
-                if *op == '-' && idx == 0 {
-                    continue;
-                }
-
-                let left = &expr[..idx];
-                let right = &expr[idx+1..];
-
-                let left_val = match self.eval_math_expr(left)? {
-                    Value::Number(n) => n,
-                    _ => return Err(anyhow::anyhow!("Invalid expression: {}", expr)),
-                };
-
-                let right_val = match self.eval_math_expr(right)? {
-                    Value::Number(n) => n,
-                    _ => return Err(anyhow::anyhow!("Invalid expression: {}", expr)),
-                };
-
-                let result = match op {
-                    '+' => left_val + right_val,
-                    '-' => left_val - right_val,
-                    '*' => left_val * right_val,
-                    '/' => {
-                        if right_val == 0.0 {
-                            return Ok(Value::Null);
-                        }
-                        left_val / right_val
-                    }
-                    _ => unreachable!(),
-                };
-
-                return Ok(Value::Number(result));
-            }
-        }
-
-        Err(anyhow::anyhow!("Unable to evaluate expression: {}", expr))
     }
 
     /// Execute lookup feature - retrieve pre-computed values from Redis/feature store
@@ -772,7 +593,7 @@ impl FeatureExecutor {
             .ok_or_else(|| anyhow::anyhow!("Missing lookup config for feature '{}'", feature.name))?;
 
         // Substitute template in key (e.g., "user_risk_score:{event.user_id}" -> "user_risk_score:123")
-        let key = self.substitute_template(&config.key, context)?;
+        let key = ExpressionEvaluator::substitute_template(&config.key, context)?;
 
         debug!("Lookup feature '{}' fetching key: {}", feature.name, key);
 
@@ -881,81 +702,6 @@ impl FeatureExecutor {
         }
     }
 
-    /// Get cache configuration from feature (currently disabled)
-    fn get_cache_config<'a>(&self, _feature: &'a FeatureDefinition) -> Option<&'a CacheConfig> {
-        // TODO: Implement cache configuration in new feature structure
-        None
-    }
-
-    /// Get cache configuration from old Operator enum (deprecated, kept for tests)
-    fn get_cache_config_from_operator<'a>(&self, operator: &'a Operator) -> Option<&'a CacheConfig> {
-        match operator {
-            Operator::Count(op) => op.params.cache.as_ref(),
-            Operator::Sum(op) => op.params.cache.as_ref(),
-            Operator::Avg(op) => op.params.cache.as_ref(),
-            Operator::Max(op) => op.params.cache.as_ref(),
-            Operator::Min(op) => op.params.cache.as_ref(),
-            Operator::CountDistinct(op) => op.params.cache.as_ref(),
-            Operator::CrossDimensionCount(_) => None, // No cache support for this operator
-            Operator::FirstSeen(_) => None,           // No cache support for this operator
-            Operator::LastSeen(_) => None,            // No cache support for this operator
-            Operator::TimeSince(_) => None,           // No cache support for this operator
-            Operator::Velocity(op) => op.params.cache.as_ref(),
-            _ => None,
-        }
-    }
-
-    /// Build cache key from feature name and context
-    fn build_cache_key(&self, feature_name: &str, context: &HashMap<String, Value>) -> String {
-        // Extract key dimension values from context
-        let mut key_parts = vec![feature_name.to_string()];
-
-        // Add relevant context values (user_id, device_id, ip_address, etc.)
-        for key in &["user_id", "device_id", "ip_address", "merchant_id"] {
-            if let Some(value) = context.get(*key) {
-                let value_str = value_to_string(value);
-                key_parts.push(format!("{}:{}", key, value_str));
-            }
-        }
-
-        key_parts.join(":")
-    }
-
-    /// Get value from L1 cache
-    async fn get_from_l1_cache(&self, key: &str) -> Option<Value> {
-        let cache = self.local_cache.read().await;
-        if let Some(entry) = cache.get(key) {
-            if !entry.is_expired() {
-                return Some(entry.value.clone());
-            }
-        }
-        None
-    }
-
-    /// Set value to L1 cache
-    async fn set_to_l1_cache(&self, key: &str, value: Value, ttl: u64) {
-        let mut cache = self.local_cache.write().await;
-        cache.insert(key.to_string(), CacheEntry::new(value, ttl));
-    }
-
-    /// Get value from L2 cache (Redis)
-    async fn get_from_l2_cache(&self, _key: &str) -> Option<Value> {
-        // TODO: Implement Redis cache lookup
-        // This would use the redis datasource to fetch cached values
-        None
-    }
-
-    /// Set value to cache (L1 and optionally L2)
-    async fn set_to_cache(&self, key: &str, value: Value, config: &CacheConfig) {
-        // Always set L1 cache
-        self.set_to_l1_cache(key, value.clone(), config.ttl).await;
-
-        // Set L2 cache if Redis backend
-        if config.backend == CacheBackend::Redis {
-            // TODO: Implement Redis cache write
-        }
-    }
-
     /// Sort features by dependency order (topological sort)
     fn sort_by_dependencies(&self, feature_names: &[String]) -> Result<Vec<String>> {
         let mut sorted = Vec::new();
@@ -1002,48 +748,38 @@ impl FeatureExecutor {
 
     /// Clear L1 cache
     pub async fn clear_cache(&self) {
-        let mut cache = self.local_cache.write().await;
-        cache.clear();
-        info!("L1 cache cleared");
+        self.cache_manager.clear_cache().await;
     }
 
     /// Get cache statistics
     pub async fn get_stats(&self) -> CacheStats {
-        self.stats.read().await.clone()
+        self.cache_manager.get_stats().await
     }
 
     /// Print cache statistics
     pub async fn print_stats(&self) {
-        if !self.enable_stats {
-            warn!("Statistics not enabled");
-            return;
-        }
+        self.cache_manager.print_stats().await;
+    }
 
-        let stats = self.stats.read().await;
-        let total = stats.l1_hits + stats.l1_misses;
-        let l1_hit_rate = if total > 0 {
-            (stats.l1_hits as f64 / total as f64) * 100.0
-        } else {
-            0.0
-        };
+    // Test helper methods (exposed for testing)
+    #[cfg(test)]
+    async fn set_to_l1_cache(&self, key: &str, value: Value, ttl: u64) {
+        self.cache_manager.set_to_l1_cache(key, value, ttl).await;
+    }
 
-        let l2_total = stats.l2_hits + stats.l2_misses;
-        let l2_hit_rate = if l2_total > 0 {
-            (stats.l2_hits as f64 / l2_total as f64) * 100.0
-        } else {
-            0.0
-        };
+    #[cfg(test)]
+    async fn get_from_l1_cache(&self, key: &str) -> Option<Value> {
+        self.cache_manager.get_from_l1_cache(key).await
+    }
 
-        info!("=== Feature Executor Cache Statistics ===");
-        info!(
-            "L1 Hits: {}, Misses: {}, Hit Rate: {:.2}%",
-            stats.l1_hits, stats.l1_misses, l1_hit_rate
-        );
-        info!(
-            "L2 Hits: {}, Misses: {}, Hit Rate: {:.2}%",
-            stats.l2_hits, stats.l2_misses, l2_hit_rate
-        );
-        info!("Total Computations: {}", stats.compute_count);
+    #[cfg(test)]
+    fn build_cache_key(&self, feature_name: &str, context: &HashMap<String, Value>) -> String {
+        self.cache_manager.build_cache_key(feature_name, context)
+    }
+
+    #[cfg(test)]
+    fn is_stats_enabled(&self) -> bool {
+        self.cache_manager.is_stats_enabled()
     }
 }
 
@@ -1087,28 +823,6 @@ mod tests {
     use crate::feature::operator::Operator;
     use std::time::Duration;
     use tokio::time::sleep;
-
-    #[test]
-    fn test_cache_entry_expiration() {
-        let entry = CacheEntry::new(Value::Number(42.0), 1); // 1 second TTL
-        assert!(!entry.is_expired());
-
-        std::thread::sleep(Duration::from_secs(2));
-        assert!(entry.is_expired());
-    }
-
-    #[test]
-    fn test_cache_entry_not_expired() {
-        let entry = CacheEntry::new(Value::Number(100.0), 3600); // 1 hour TTL
-        assert!(!entry.is_expired());
-    }
-
-    #[test]
-    fn test_cache_entry_value() {
-        let value = Value::String("test_value".to_string());
-        let entry = CacheEntry::new(value.clone(), 300);
-        assert_eq!(entry.value, value);
-    }
 
     #[test]
     fn test_cache_key_building() {
@@ -1218,7 +932,7 @@ mod tests {
     #[test]
     fn test_feature_executor_new() {
         let executor = FeatureExecutor::new();
-        assert!(!executor.enable_stats);
+        assert!(!executor.is_stats_enabled());
         assert_eq!(executor.datasources.len(), 0);
         assert_eq!(executor.features.len(), 0);
     }
@@ -1226,7 +940,7 @@ mod tests {
     #[test]
     fn test_feature_executor_with_stats() {
         let executor = FeatureExecutor::new().with_stats();
-        assert!(executor.enable_stats);
+        assert!(executor.is_stats_enabled());
     }
 
     #[test]
@@ -1336,58 +1050,41 @@ mod tests {
     }
 
     #[test]
-    fn test_value_to_string_conversions() {
-        assert_eq!(value_to_string(&Value::Null), "null");
-        assert_eq!(value_to_string(&Value::Bool(true)), "true");
-        assert_eq!(value_to_string(&Value::Bool(false)), "false");
-        assert_eq!(value_to_string(&Value::Number(42.5)), "42.5");
-        assert_eq!(value_to_string(&Value::String("test".to_string())), "test");
-        assert_eq!(value_to_string(&Value::Array(vec![])), "[array]");
-        assert_eq!(value_to_string(&Value::Object(HashMap::new())), "{object}");
-    }
-
-    #[test]
     fn test_expression_evaluator_simple() {
-        let executor = FeatureExecutor::new();
-
         // Test simple number
-        let result = executor.eval_math_expr("42").unwrap();
+        let result = ExpressionEvaluator::eval_math_expr("42").unwrap();
         assert_eq!(result, Value::Number(42.0));
 
         // Test addition
-        let result = executor.eval_math_expr("10+5").unwrap();
+        let result = ExpressionEvaluator::eval_math_expr("10+5").unwrap();
         assert_eq!(result, Value::Number(15.0));
 
         // Test subtraction
-        let result = executor.eval_math_expr("10-5").unwrap();
+        let result = ExpressionEvaluator::eval_math_expr("10-5").unwrap();
         assert_eq!(result, Value::Number(5.0));
 
         // Test multiplication
-        let result = executor.eval_math_expr("10*5").unwrap();
+        let result = ExpressionEvaluator::eval_math_expr("10*5").unwrap();
         assert_eq!(result, Value::Number(50.0));
 
         // Test division
-        let result = executor.eval_math_expr("10/5").unwrap();
+        let result = ExpressionEvaluator::eval_math_expr("10/5").unwrap();
         assert_eq!(result, Value::Number(2.0));
     }
 
     #[test]
     fn test_expression_evaluator_division_by_zero() {
-        let executor = FeatureExecutor::new();
-
         // Division by zero should return Null
-        let result = executor.eval_math_expr("10/0").unwrap();
+        let result = ExpressionEvaluator::eval_math_expr("10/0").unwrap();
         assert_eq!(result, Value::Null);
     }
 
     #[test]
     fn test_expression_evaluator_complex() {
-        let executor = FeatureExecutor::new();
-
         // Note: Our simple evaluator doesn't handle operator precedence correctly
         // It evaluates "5+10*2" as (5+10)*2 = 30, not 5+(10*2) = 25
         // This is because we search for operators in order /, *, +, - and use rfind
-        let result = executor.eval_math_expr("5+10*2").unwrap();
+        let result = ExpressionEvaluator::eval_math_expr("5+10*2").unwrap();
         assert_eq!(result, Value::Number(30.0));
 
         // For correct precedence, users should use parentheses or separate features
@@ -1396,14 +1093,12 @@ mod tests {
 
     #[test]
     fn test_evaluate_expression_with_features() {
-        let executor = FeatureExecutor::new();
-
         let mut feature_values = HashMap::new();
         feature_values.insert("login_count".to_string(), Value::Number(10.0));
         feature_values.insert("failed_logins".to_string(), Value::Number(3.0));
 
         // Test division expression
-        let result = executor.evaluate_expression(
+        let result = ExpressionEvaluator::evaluate_expression(
             "failed_logins / login_count",
             &feature_values
         ).unwrap();
@@ -1413,33 +1108,31 @@ mod tests {
 
     #[test]
     fn test_substitute_template() {
-        let executor = FeatureExecutor::new();
         let mut context = HashMap::new();
         context.insert("user_id".to_string(), Value::String("user123".to_string()));
         context.insert("device_id".to_string(), Value::String("device456".to_string()));
 
         // Test user_id substitution
-        let result = executor.substitute_template("{event.user_id}", &context).unwrap();
+        let result = ExpressionEvaluator::substitute_template("{event.user_id}", &context).unwrap();
         assert_eq!(result, "user123");
 
         // Test device_id substitution
-        let result = executor.substitute_template("{event.device_id}", &context).unwrap();
+        let result = ExpressionEvaluator::substitute_template("{event.device_id}", &context).unwrap();
         assert_eq!(result, "device456");
 
         // Test with numeric value
         context.insert("count".to_string(), Value::Number(42.0));
-        let result = executor.substitute_template("{event.count}", &context).unwrap();
+        let result = ExpressionEvaluator::substitute_template("{event.count}", &context).unwrap();
         assert_eq!(result, "42");
     }
 
     #[test]
     fn test_substitute_template_with_prefix() {
-        let executor = FeatureExecutor::new();
         let mut context = HashMap::new();
         context.insert("user_id".to_string(), Value::String("123".to_string()));
 
         // Test with key prefix
-        let result = executor.substitute_template("user_risk:{event.user_id}", &context).unwrap();
+        let result = ExpressionEvaluator::substitute_template("user_risk:{event.user_id}", &context).unwrap();
         assert_eq!(result, "user_risk:123");
     }
 
