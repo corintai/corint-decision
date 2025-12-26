@@ -2,16 +2,36 @@
 
 This document outlines the feature types supported and planned for Corint's risk management platform.
 
+## 🚦 Implementation Status Overview
+
+| Feature Category | Status | Production Ready | In Development |
+|-----------------|--------|------------------|----------------|
+| **Aggregation** | 🟢 **Implemented** | count, sum, avg, min, max, distinct | stddev, percentile, median, mode, entropy |
+| **State** | 🔴 **Planned** | - | All methods (z_score, outlier detection, etc.) |
+| **Sequence** | 🔴 **Planned** | - | All methods (pattern matching, trends, etc.) |
+| **Graph** | 🔴 **Planned** | - | All methods (network analysis, centrality, etc.) |
+| **Expression** | 🟢 **Implemented** | expression | ML model integration (planned) |
+| **Lookup** | 🟢 **Implemented** | lookup | - |
+
+**Legend:**
+- 🟢 **Implemented**: Ready for production use
+- 🟡 **Partial**: Some methods implemented
+- 🔴 **Planned**: Documented but not yet implemented
+
+> ⚠️ **Important**: Sections marked as "Planned" show the intended design and API. The implementation is in development and not yet available in production.
+
+---
+
 ## Overview
 
 Feature engineering in risk management follows a structured approach based on **what you want to measure**:
 
-1. **Aggregation (数东西)** - Counting and aggregating events/values
-2. **State (看最近状态)** - Checking current state and statistical comparisons
-3. **Sequence (看过程)** - Analyzing patterns and trends over time
-4. **Graph (看关系图)** - Analyzing connections and networks between entities
-5. **Expression (算分数)** - Computing scores and evaluations
-6. **Lookup (查预算值)** - Retrieving pre-computed feature values
+1. **Aggregation (数东西)** 🟢 - Counting and aggregating events/values
+2. **State (看最近状态)** 🔴 - Checking current state and statistical comparisons
+3. **Sequence (看过程)** 🔴 - Analyzing patterns and trends over time
+4. **Graph (看关系图)** 🔴 - Analyzing connections and networks between entities
+5. **Expression (算分数)** 🟢 - Computing scores and evaluations
+6. **Lookup (查预算值)** 🟢 - Retrieving pre-computed feature values
 
 > **Note:** List/Set operations (blacklist/whitelist checking, etc.) are implemented separately in Corint's list management system and are not covered in this feature engineering document.
 
@@ -19,12 +39,14 @@ Feature engineering in risk management follows a structured approach based on **
 
 ## Methods by Category
 
-### 1. Aggregation Methods
+### 1. Aggregation Methods 🟢 Implemented
 > **Rust Implementation:** `AggregationExecutor::execute(method: AggregationType, config: AggregationConfig)`
 >
 > **Design Pattern:** Unified executor with method-based dispatch
+>
+> **Status:** ✅ Core methods production-ready | 📋 Advanced statistics in development
 
-**Implemented:**
+**✅ Implemented (Production-Ready):**
 - `count` - Count events matching conditions within time window
   - *Example: 用户过去24小时登录了5次*
   - **实际应用场景**:
@@ -538,8 +560,12 @@ impl LookupExecutor {
 
 ---
 
-### 2. State Operators
+### 2. State Operators 🔴 Planned
 > **Rust Implementation:** `StateExecutor::execute(op: StateQueryType, config: StateConfig)`
+>
+> **Status:** 🔴 Not yet implemented - all operators are in development roadmap
+>
+> ⚠️ **Important**: This section describes planned functionality. The implementation is in development and not currently available.
 >
 > **Design Pattern:** Statistical comparison and baseline analysis
 >
@@ -647,8 +673,12 @@ impl StateExecutor {
 }
 ```
 
-### 3. Sequence Operators
+### 3. Sequence Operators 🔴 Planned
 > **Rust Implementation:** `SequenceAnalyzer::analyze(op: SequenceAnalysisType, config: SequenceConfig)`
+>
+> **Status:** 🔴 Not yet implemented - all operators are in development roadmap
+>
+> ⚠️ **Important**: This section describes planned functionality. The implementation is in development and not currently available.
 >
 > **Design Pattern:** Pipeline-based analyzer with composable stages
 
@@ -875,8 +905,12 @@ impl SequenceAnalyzer {
 //   - events_per_session → expression: total_events / distinct_sessions
 ```
 
-### 4. Graph Operators
+### 4. Graph Operators 🔴 Planned
 > **Rust Implementation:** `GraphAnalyzer::analyze(op: GraphAnalysisType, config: GraphConfig)`
+>
+> **Status:** 🔴 Not yet implemented - all operators are in development roadmap
+>
+> ⚠️ **Important**: This section describes planned functionality. The implementation is in development and not currently available.
 >
 > **Design Pattern:** Graph-based analyzer with lazy graph construction
 
@@ -1022,8 +1056,10 @@ impl GraphAnalyzer {
 }
 ```
 
-### 5. Expression Operators
+### 5. Expression Operators 🟢 Implemented
 > **Rust Implementation:** `ExpressionEngine::evaluate(expr: ExpressionType, context: &FeatureContext)`
+>
+> **Status:** ✅ Production-ready | 📋 ML model integration planned
 >
 > **Design Pattern:** Expression engine with pluggable evaluators
 >
@@ -1069,8 +1105,10 @@ impl ExpressionEngine {
 }
 ```
 
-### 6. Lookup Operators
+### 6. Lookup Operators 🟢 Implemented
 > **Rust Implementation:** `DataSource::get(key: &str) -> Result<Value>`
+>
+> **Status:** ✅ Production-ready
 >
 > **Design Pattern:** Simple key-value retrieval from Redis cache
 >

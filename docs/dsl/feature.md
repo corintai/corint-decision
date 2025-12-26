@@ -4,18 +4,38 @@ Quick reference for writing feature definitions in CORINT. For detailed implemen
 
 ---
 
+## Implementation Status
+
+| Feature Type | Status | Implemented Methods | Planned Methods |
+|--------------|--------|---------------------|-----------------|
+| **Aggregation** | 🟢 **Implemented** | count, sum, avg, min, max, distinct | stddev, percentile, median, mode, entropy |
+| **State** | 🔴 **Planned** | - | z_score, deviation_from_baseline, percentile_rank, is_outlier, timezone_consistency |
+| **Sequence** | 🔴 **Planned** | - | consecutive_count, sequence_match, percent_change, streak, pattern_frequency, trend, rate_of_change, anomaly_score, moving_average |
+| **Graph** | 🔴 **Planned** | - | graph_centrality, community_size, shared_entity_count, network_distance |
+| **Expression** | 🟢 **Implemented** | expression | - |
+| **Lookup** | 🟢 **Implemented** | lookup | - |
+
+**Legend:**
+- 🟢 **Implemented**: Ready for production use
+- 🟡 **Partial**: Some methods implemented, others in development
+- 🔴 **Planned**: Documented but not yet implemented
+
+**Note:** SQL generation support exists for some advanced statistics (percentile, stddev, median), but full feature orchestration is still in development.
+
+---
+
 ## 1. Overview
 
 ### 1.1 Feature Types
 
-| Type | Purpose |
-|------|---------|
-| **Aggregation** | Count and aggregate events/values (count, sum, avg, max, min, distinct) |
-| **State** | Statistical comparisons (z-score, deviation, percentile) |
-| **Sequence** | Pattern and trend analysis (consecutive, streak, percent_change) |
-| **Graph** | Network and relationship analysis (centrality, community_size, shared_entity) |
-| **Expression** | Compute from other features (rate, ratio, ML models) |
-| **Lookup** | Retrieve pre-computed values (Redis cache) |
+| Type | Status | Purpose |
+|------|--------|---------|
+| **Aggregation** | 🟢 | Count and aggregate events/values (count, sum, avg, max, min, distinct) |
+| **State** | 🔴 | Statistical comparisons (z-score, deviation, percentile) |
+| **Sequence** | 🔴 | Pattern and trend analysis (consecutive, streak, percent_change) |
+| **Graph** | 🔴 | Network and relationship analysis (centrality, community_size, shared_entity) |
+| **Expression** | 🟢 | Compute from other features (rate, ratio, ML models) |
+| **Lookup** | 🟢 | Retrieve pre-computed values (Redis cache) |
 
 ### 1.2 Basic Structure
 
@@ -101,9 +121,9 @@ rule:
 ```
 ---
 
-## 2. Aggregation
+## 2. Aggregation 🟢 Implemented
 
-**Status:** ✅ Basic operators implemented, 📋 Advanced planned
+**Implementation Status:** ✅ Core operators production-ready | 📋 Advanced statistics in development
 
 ### 2.1 Field Semantics
 
@@ -231,9 +251,11 @@ rule:
 
 ---
 
-## 3. State
+## 3. State 🔴 Planned
 
-**Status:** 📋 All operators planned
+**Implementation Status:** 🔴 Not yet implemented - all operators are in development roadmap
+
+> ⚠️ **Note**: The features documented in this section are planned for future releases and are not currently available in production.
 
 **📋 z_score** - Statistical z-score
 ```yaml
@@ -273,9 +295,11 @@ rule:
 
 ---
 
-## 4. Sequence
+## 4. Sequence 🔴 Planned
 
-**Status:** 📋 All operators planned
+**Implementation Status:** 🔴 Not yet implemented - all operators are in development roadmap
+
+> ⚠️ **Note**: The features documented in this section are planned for future releases and are not currently available in production.
 
 **📋 consecutive_count** - Count consecutive occurrences
 ```yaml
@@ -360,11 +384,13 @@ rule:
 
 ---
 
-## 5. Graph
+## 5. Graph 🔴 Planned
 
-**Status:** 📋 All operators planned
+**Implementation Status:** 🔴 Not yet implemented - all operators are in development roadmap
 
-> **Note:** Simple entity linking (devices per IP) should use `distinct` aggregation, not Graph operators.
+> ⚠️ **Note**: The features documented in this section are planned for future releases and are not currently available in production.
+
+> **Recommendation:** For simple entity linking (devices per IP), use `distinct` aggregation which is already implemented.
 
 ### 5.1 Field Semantics
 
@@ -381,12 +407,13 @@ rule:
 
 ### 5.2 Operators
 
-**📋 graph_centrality** - Network centrality score
+**📋 graph_centrality** - Network centrality score (🔴 Planned)
 ```yaml
+# ⚠️ Not yet implemented - Graph features are in development
 - name: centrality_device_in_user_network
   type: graph
   method: graph_centrality
-  datasource: neo4j_graph
+  datasource: neo4j_graph  # Neo4j support planned
   dimension: device_id
   dimension_value: "{event.device_id}"
   dimension2: user_id
@@ -395,12 +422,13 @@ rule:
 
 **📋 community_size** - Size of connected component
 
-**📋 shared_entity_count** - Count shared connections
+**📋 shared_entity_count** - Count shared connections (🔴 Planned)
 ```yaml
+# ⚠️ Not yet implemented - Graph features are in development
 - name: shared_devices_between_users
   type: graph
   method: shared_entity_count
-  datasource: neo4j_graph
+  datasource: neo4j_graph  # Neo4j support planned
   dimension: user_id
   dimension_value: "{event.user_id}"
   dimension_value2: "{event.target_user_id}"
@@ -408,12 +436,13 @@ rule:
   window: 30d
 ```
 
-**📋 network_distance** - Distance between entities
+**📋 network_distance** - Distance between entities (🔴 Planned)
 ```yaml
+# ⚠️ Not yet implemented - Graph features are in development
 - name: network_dist_to_fraud_account
   type: graph
   method: network_distance
-  datasource: neo4j_graph
+  datasource: neo4j_graph  # Neo4j support planned
   dimension: user_id
   dimension_value: "{event.user_id}"
   dimension_value2: "{known_fraud_user_id}"
@@ -423,9 +452,9 @@ rule:
 
 ---
 
-## 6. Expression
+## 6. Expression 🟢 Implemented
 
-**Status:** ✅ Basic implemented, 📋 ML planned
+**Implementation Status:** ✅ Production-ready | 📋 ML model integration planned
 
 > **⚠️ Architecture Constraint:** Expression methods **only consume results from other features**. They do not access raw data sources or define time windows.
 
@@ -446,9 +475,9 @@ rule:
 
 ---
 
-## 7. Lookup
+## 7. Lookup 🟢 Implemented
 
-**Status:** ✅ Implemented
+**Implementation Status:** ✅ Production-ready
 
 > **⚠️ Architecture Principle:** Lookup features only retrieve pre-computed values; they do not perform computation.
 
@@ -474,12 +503,14 @@ rule:
 
 ### 8.1 Data Source Types
 
-| Type | Purpose | Used By |
-|------|---------|---------|
-| `postgresql` | Transactional/event data | Aggregation |
-| `clickhouse` | High-volume event storage | State, Sequence |
-| `neo4j` | Graph/relationship data | Graph |
-| `redis` | Pre-computed features | Lookup |
+| Type | Status | Purpose | Used By |
+|------|--------|---------|---------|
+| `postgresql` | 🟢 **Implemented** | Transactional/event data | Aggregation, Expression |
+| `clickhouse` | 🟢 **Implemented** | High-volume event storage | Aggregation |
+| `redis` | 🟢 **Implemented** | Pre-computed features | Lookup |
+| `mysql` | 🟢 **Implemented** | Transactional/event data | Aggregation |
+| `sqlite` | 🟢 **Implemented** | Embedded/testing | Aggregation |
+| `neo4j` | 🔴 **Planned** | Graph/relationship data | Graph (when implemented) |
 
 ### 8.2 Configuration Files
 
@@ -511,8 +542,10 @@ config:
   ttl: 86400
 ```
 
-**`repository/configs/datasources/neo4j_graph.yaml`:**
+**`repository/configs/datasources/neo4j_graph.yaml`:** (🔴 Planned - Not yet implemented)
 ```yaml
+# ⚠️ WARNING: Neo4j support is planned but not yet implemented
+# This configuration is for future reference only
 name: neo4j_graph
 type: neo4j
 config:

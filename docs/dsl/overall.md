@@ -259,21 +259,40 @@ Key features:
 
 RDL includes comprehensive feature engineering capabilities for risk control scenarios.
 
-**Core Capabilities:**
-- **Distinct Count** - Unique value counting for association analysis
-  ```yaml
-  count_distinct(device.id, {geo.ip == event.geo.ip}, last_5h) > 10
-  ```
+**Implementation Status:**
 
-- **Association Analysis** - Entity relationship metrics
-  - IP → Device/User associations
-  - Device → User associations
-  - Identity reuse detection
+**🟢 Currently Available (Production-Ready):**
+- **Aggregation Features:**
+  - Basic: count, sum, avg, min, max
+  - Association analysis: count_distinct for unique value counting
+  - Expression features: compute from other features
+  - Lookup features: retrieve pre-computed values
 
-- **Statistical Functions** - Advanced statistics
-  - Percentiles, median, standard deviation
-  - Z-score and outlier detection
-  - Moving averages and rolling windows
+**📋 In Development:**
+- **Advanced Statistics:** percentile, stddev, median, mode (SQL generation exists, orchestration in progress)
+- **State Features:** z_score, outlier detection, baseline comparison
+- **Sequence Features:** pattern matching, consecutive counts, trends
+- **Graph Features:** network analysis, centrality, community detection
+
+**Usage Examples:**
+
+**✅ Available Now:**
+```yaml
+# Distinct Count - Association analysis
+count_distinct(device.id, {geo.ip == event.geo.ip}, last_5h) > 10
+
+# Basic aggregations
+sum(transaction.amount, last_24h)
+avg(transaction.amount, last_7d)
+```
+
+**📋 Coming Soon:**
+```yaml
+# Statistical Functions - In development
+percentile(amounts, last_90d, p=95)
+stddev(amounts, last_30d)
+z_score(current_amount, amounts, last_90d)
+```
 
 **Feature Access**: All calculated features must be accessed using the `features.` namespace prefix:
   ```yaml
@@ -283,22 +302,19 @@ RDL includes comprehensive feature engineering capabilities for risk control sce
     - features.login_count_24h > 10
   ```
 
-- **Velocity Features** - Rate of change detection
-  ```yaml
-  login_velocity_ratio: (count(logins, last_24h) / count(logins, last_7d)) * 7
-  ```
+**Common Use Cases (✅ Available Now):**
+- Login count for an account in the past 7 days ✅
+- Number of device IDs associated with the same IP in the past 5 hours ✅
+- Number of users associated with the same device ✅
+- Transaction sum/avg over time windows ✅
+- Custom velocity ratios using expression features ✅
 
-- **Temporal Features** - Time-based patterns
-  - Time since last event
-  - Off-hours detection
-  - Impossible travel detection
-
-**Common Use Cases:**
-- Login count for an account in the past 7 days
-- Number of device IDs associated with the same IP in the past 5 hours
-- Number of users associated with the same device
-- Whether transaction amount is an outlier (above 95th percentile)
-- Whether user behavior speed has suddenly increased
+**Future Capabilities (📋 Planned):**
+- Statistical outlier detection (above 95th percentile)
+- Z-score based anomaly detection
+- Temporal pattern analysis (impossible travel)
+- Behavioral velocity tracking
+- Sequence pattern matching
 
 (See `feature.md` for complete specification and examples.)
 
