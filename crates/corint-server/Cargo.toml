@@ -20,6 +20,11 @@ axum = { version = "0.7", features = ["macros"] }
 tower = { version = "0.4", features = ["full"] }
 tower-http = { version = "0.5", features = ["cors", "trace"] }
 
+# gRPC
+tonic = "0.12"
+tonic-reflection = "0.12"
+prost = "0.13"
+
 # Serialization
 serde = { workspace = true }
 serde_json = { workspace = true }
@@ -44,6 +49,9 @@ sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio-n
 uuid = { version = "1.6", features = ["v4", "serde"] }
 chrono = { version = "0.4", features = ["serde"] }
 rand = "0.8"
+
+[build-dependencies]
+tonic-build = "0.12"
 
 [dev-dependencies]
 tokio-test = "0.4"

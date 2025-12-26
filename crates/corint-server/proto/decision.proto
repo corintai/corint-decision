@@ -1,0 +1,226 @@
+syntax = "proto3";
+
+package corint.decision.v1;
+
+// Decision service for risk assessment and fraud detection
+service DecisionService {
+  // Make a decision based on event data
+  rpc Decide(DecideRequest) returns (DecideResponse);
+
+  // Health check
+  rpc HealthCheck(HealthCheckRequest) returns (HealthCheckResponse);
+
+  // Reload repository (pipelines, rules, features)
+  rpc ReloadRepository(ReloadRepositoryRequest) returns (ReloadRepositoryResponse);
+}
+
+// Request for making a decision
+message DecideRequest {
+  // Event data (required) - key-value pairs
+  map<string, Value> event = 1;
+
+  // User profile/context (optional)
+  map<string, Value> user = 2;
+
+  // Feature computation results (optional)
+  map<string, Value> features = 3;
+
+  // Request options (optional)
+  RequestOptions options = 4;
+
+  // Request metadata (optional)
+  map<string, string> metadata = 5;
+}
+
+// Request options
+message RequestOptions {
+  // Score normalization strategy
+  optional string score_normalization = 1;
+
+  // Pipeline ID to execute (optional, if not specified, will be determined by registry)
+  optional string pipeline_id = 2;
+
+  // Whether to include detailed trace information
+  bool include_trace = 3;
+
+  // Whether to include feature values in response
+  bool include_features = 4;
+}
+
+// Response from decision
+message DecideResponse {
+  // Unique request ID
+  string request_id = 1;
+
+  // HTTP status code
+  int32 status = 2;
+
+  // Processing time in milliseconds
+  int64 process_time_ms = 3;
+
+  // Pipeline ID that was executed
+  string pipeline_id = 4;
+
+  // Decision result
+  Decision decision = 5;
+
+  // Error message if any
+  optional string error = 6;
+
+  // Execution trace (if requested)
+  optional ExecutionTrace trace = 7;
+
+  // Feature values (if requested)
+  map<string, Value> features = 8;
+}
+
+// Decision result
+message Decision {
+  // Decision result (APPROVE, DECLINE, REVIEW, CHALLENGE)
+  string result = 1;
+
+  // Actions to take
+  repeated Action actions = 2;
+
+  // Risk scores
+  Scores scores = 3;
+
+  // Evidence for the decision
+  Evidence evidence = 4;
+
+  // Human-readable explanation
+  Cognition cognition = 5;
+}
+
+// Action to take
+message Action {
+  // Action type (block_user, send_notification, etc.)
+  string action_type = 1;
+
+  // Action parameters
+  map<string, Value> params = 2;
+}
+
+// Risk scores
+message Scores {
+  // Canonical score (normalized)
+  double canonical = 1;
+
+  // Raw score (before normalization)
+  double raw = 2;
+}
+
+// Evidence for the decision
+message Evidence {
+  // Triggered rules
+  repeated string triggered_rules = 1;
+
+  // Additional evidence data
+  map<string, Value> data = 2;
+}
+
+// Human-readable explanation
+message Cognition {
+  // Summary of the decision
+  string summary = 1;
+
+  // Reason codes
+  repeated string reason_codes = 2;
+
+  // Additional cognition data
+  map<string, Value> data = 3;
+}
+
+// Execution trace
+message ExecutionTrace {
+  // Pipeline trace
+  PipelineTrace pipeline = 1;
+
+  // Step traces
+  repeated StepTrace steps = 2;
+}
+
+// Pipeline trace
+message PipelineTrace {
+  // Pipeline ID
+  string id = 1;
+
+  // Pipeline name
+  string name = 2;
+
+  // Execution status
+  string status = 3;
+}
+
+// Step trace
+message StepTrace {
+  // Step ID
+  string id = 1;
+
+  // Step type
+  string step_type = 2;
+
+  // Execution status
+  string status = 3;
+
+  // Step result
+  map<string, Value> result = 4;
+}
+
+// Generic value type (similar to JSON value)
+message Value {
+  oneof kind {
+    bool bool_value = 1;
+    int64 int_value = 2;
+    double double_value = 3;
+    string string_value = 4;
+    ListValue list_value = 5;
+    MapValue map_value = 6;
+    NullValue null_value = 7;
+  }
+}
+
+// List value
+message ListValue {
+  repeated Value values = 1;
+}
+
+// Map value
+message MapValue {
+  map<string, Value> fields = 1;
+}
+
+// Null value
+enum NullValue {
+  NULL_VALUE = 0;
+}
+
+// Health check request
+message HealthCheckRequest {}
+
+// Health check response
+message HealthCheckResponse {
+  // Health status
+  string status = 1;
+
+  // Server version
+  string version = 2;
+}
+
+// Reload repository request
+message ReloadRepositoryRequest {}
+
+// Reload repository response
+message ReloadRepositoryResponse {
+  // Success status
+  bool success = 1;
+
+  // Message
+  string message = 2;
+
+  // Number of pipelines loaded
+  int32 pipelines_loaded = 3;
+
+  // Number of rules loaded
+  int32 rules_loaded = 4;
+}

@@ -6,6 +6,9 @@ host: "127.0.0.1"
 # Server port
 port: 8080
 
+# gRPC Server port (optional, if not set, gRPC server will not start)
+grpc_port: 50051
+
 # Repository configuration for loading rules and pipelines
 # Supports three types: filesystem, database, api
 repository:

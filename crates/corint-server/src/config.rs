@@ -96,8 +96,12 @@ pub struct ServerConfig {
     /// Server host
     pub host: String,
 
-    /// Server port
+    /// Server port (HTTP)
     pub port: u16,
+
+    /// gRPC server port (optional, if not set, gRPC server will not start)
+    #[serde(default)]
+    pub grpc_port: Option<u16>,
 
     /// Repository configuration for loading rules
     #[serde(default)]
@@ -132,6 +136,7 @@ impl Default for ServerConfig {
         Self {
             host: "127.0.0.1".to_string(),
             port: 8080,
+            grpc_port: None,
             repository: RepositoryType::default(),
             datasources: std::collections::HashMap::new(),
             default_datasource: None,
