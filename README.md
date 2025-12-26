@@ -71,20 +71,31 @@ Define your entire risk stack in a single, declarative language:
 
 Built-in support for risk control analytics:
 
+**✅ Currently Implemented:**
+- **Aggregation Features**: count, sum, avg, min, max, distinct
+- **Expression Features**: Compute from other features
+- **Lookup Features**: Pre-computed values from feature stores
+
+**📋 Planned Features:**
+- **State Features**: z_score, outlier detection, baseline comparison
+- **Sequence Features**: Pattern matching, consecutive counts, trends
+- **Graph Features**: Network analysis, centrality, community detection
+- **Advanced Statistics**: percentile, stddev, median, mode (SQL support exists, feature orchestration in progress)
+
 ```yaml
 features:
-  # Behavioral patterns
+  # ✅ Implemented: Behavioral patterns
   - login_count_7d: count(user.logins, last_7d)
-  
-  # Association analysis (unique counts)
+
+  # ✅ Implemented: Association analysis (unique counts)
   - devices_per_ip_5h: count_distinct(device.id, {ip == event.ip}, last_5h)
   - users_per_device_24h: count_distinct(user.id, {device.id == event.device.id}, last_24h)
-  
-  # Statistical anomaly detection
+
+  # 📋 Planned: Statistical anomaly detection
   - amount_zscore: (amount - avg(amounts, last_30d)) / stddev(amounts, last_30d)
   - is_outlier: amount > percentile(amounts, last_90d, p=95)
-  
-  # Velocity tracking
+
+  # ✅ Implemented: Velocity tracking (using expression features)
   - login_velocity: count(logins, last_24h) / count(logins, last_7d) * 7
 ```
 
@@ -712,9 +723,10 @@ pipeline:
 
 | Feature | Feast/Tecton | CORINT |
 |---------|-------------|---------|
-| Feature Definition | ✅ Yes | ✅ Yes |
+| Feature Definition | ✅ Yes | ✅ Yes (Aggregation/Expression/Lookup) |
 | Online Features | ✅ Yes | ✅ Yes (cached) |
 | Feature Caching | ✅ Yes | ✅ Yes |
+| Advanced Analytics | ✅ Full support | 🟡 Partial (State/Sequence/Graph planned) |
 | Rules Engine | ❌ No | ✅ Built-in |
 | Decision Logic | ❌ External | ✅ Integrated |
 | LLM Integration | ❌ No | ✅ Native |
