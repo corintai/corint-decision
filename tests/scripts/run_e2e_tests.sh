@@ -38,7 +38,7 @@ SERVER_PID_FILE="/tmp/corint_e2e_server.pid"
 # Configuration file paths
 CONFIG_DIR="config"
 CONFIG_FILE="$CONFIG_DIR/server.yaml"
-CONFIG_BACKUP="$CONFIG_DIR/server.yaml.backup.$(date +%s)"
+CONFIG_BACKUP="$CONFIG_DIR/server.yaml.backup"
 TEST_CONFIG_FILE="tests/e2e_server.yaml"
 
 # Counters
@@ -72,6 +72,12 @@ log_warning() {
 }
 
 backup_config() {
+    # Remove old backup if exists
+    if [ -f "$CONFIG_BACKUP" ]; then
+        log_warning "Removing old backup: $CONFIG_BACKUP"
+        rm -f "$CONFIG_BACKUP"
+    fi
+
     if [ -f "$CONFIG_FILE" ]; then
         log_info "Backing up existing config: $CONFIG_FILE -> $CONFIG_BACKUP"
         cp "$CONFIG_FILE" "$CONFIG_BACKUP"
@@ -84,6 +90,13 @@ backup_config() {
 }
 
 restore_config() {
+    # Remove test config
+    if [ -f "$CONFIG_FILE" ]; then
+        log_info "Removing test config: $CONFIG_FILE"
+        rm -f "$CONFIG_FILE"
+    fi
+
+    # Restore original config from backup
     if [ -f "$CONFIG_BACKUP" ]; then
         log_info "Restoring original config: $CONFIG_BACKUP -> $CONFIG_FILE"
         mv "$CONFIG_BACKUP" "$CONFIG_FILE"
