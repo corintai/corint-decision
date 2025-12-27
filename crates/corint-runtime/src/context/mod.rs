@@ -10,9 +10,12 @@
 //! - sys: System injected metadata
 //! - env: Environment configuration
 
+mod env_vars;
+mod field_lookup;
+mod system_vars;
+
 use crate::error::{Result, RuntimeError};
 use crate::result::{DecisionResult, ExecutionResult};
-use chrono::{Datelike, Timelike};
 use corint_core::ast::Signal;
 use corint_core::Value;
 use std::collections::HashMap;
@@ -128,8 +131,8 @@ impl ExecutionContext {
             service: input.service.unwrap_or_default(),
             llm: input.llm.unwrap_or_default(),
             vars: input.vars.unwrap_or_default(),
-            sys: Self::build_system_vars(),
-            env: Self::load_environment_vars(),
+            sys: system_vars::build_system_vars(),
+            env: env_vars::load_environment_vars(),
             result: ExecutionResult::new(),
         })
     }
@@ -152,8 +155,8 @@ impl ExecutionContext {
             service: input.service.unwrap_or_default(),
             llm: input.llm.unwrap_or_default(),
             vars: input.vars.unwrap_or_default(),
-            sys: Self::build_system_vars(),
-            env: Self::load_environment_vars(),
+            sys: system_vars::build_system_vars(),
+            env: env_vars::load_environment_vars(),
             result,
         })
     }
@@ -183,234 +186,6 @@ impl ExecutionContext {
     /// Store variable
     pub fn store_var(&mut self, name: &str, value: Value) {
         self.vars.insert(name.to_string(), value);
-    }
-
-    // ========== System Variables Builder ==========
-
-    /// Build system variables (sys namespace)
-    fn build_system_vars() -> HashMap<String, Value> {
-        let mut sys = HashMap::new();
-        let now = chrono::Utc::now();
-
-        // Request identification
-        sys.insert(
-            "request_id".to_string(),
-            Value::String(uuid::Uuid::new_v4().to_string()),
-        );
-
-        // Time information - ISO formats
-        sys.insert("timestamp".to_string(), Value::String(now.to_rfc3339()));
-        sys.insert(
-            "timestamp_ms".to_string(),
-            Value::Number(now.timestamp_millis() as f64),
-        );
-        sys.insert(
-            "timestamp_sec".to_string(),
-            Value::Number(now.timestamp() as f64),
-        );
-
-        // Date components
-        sys.insert(
-            "date".to_string(),
-            Value::String(now.format("%Y-%m-%d").to_string()),
-        );
-        sys.insert("year".to_string(), Value::Number(now.year() as f64));
-        sys.insert("month".to_string(), Value::Number(now.month() as f64));
-        sys.insert("day".to_string(), Value::Number(now.day() as f64));
-
-        // Month name
-        let month_name = match now.month() {
-            1 => "january",
-            2 => "february",
-            3 => "march",
-            4 => "april",
-            5 => "may",
-            6 => "june",
-            7 => "july",
-            8 => "august",
-            9 => "september",
-            10 => "october",
-            11 => "november",
-            12 => "december",
-            _ => "unknown",
-        };
-        sys.insert("month_name".to_string(), Value::String(month_name.to_string()));
-
-        // Quarter
-        let quarter = ((now.month() - 1) / 3) + 1;
-        sys.insert("quarter".to_string(), Value::Number(quarter as f64));
-
-        // Time components
-        sys.insert(
-            "time".to_string(),
-            Value::String(now.format("%H:%M:%S").to_string()),
-        );
-        sys.insert("hour".to_string(), Value::Number(now.hour() as f64));
-        sys.insert("minute".to_string(), Value::Number(now.minute() as f64));
-        sys.insert("second".to_string(), Value::Number(now.second() as f64));
-
-        // Time of day periods
-        let time_of_day = match now.hour() {
-            0..=5 => "night",
-            6..=11 => "morning",
-            12..=17 => "afternoon",
-            18..=21 => "evening",
-            _ => "night",
-        };
-        sys.insert("time_of_day".to_string(), Value::String(time_of_day.to_string()));
-
-        // Business hours (9 AM - 5 PM)
-        let is_business_hours = now.hour() >= 9 && now.hour() < 17;
-        sys.insert("is_business_hours".to_string(), Value::Bool(is_business_hours));
-
-        // Day of week
-        let day_of_week = match now.weekday() {
-            chrono::Weekday::Mon => "monday",
-            chrono::Weekday::Tue => "tuesday",
-            chrono::Weekday::Wed => "wednesday",
-            chrono::Weekday::Thu => "thursday",
-            chrono::Weekday::Fri => "friday",
-            chrono::Weekday::Sat => "saturday",
-            chrono::Weekday::Sun => "sunday",
-        };
-        sys.insert(
-            "day_of_week".to_string(),
-            Value::String(day_of_week.to_string()),
-        );
-
-        // Day of week as number (1=Monday, 7=Sunday)
-        let day_of_week_num = match now.weekday() {
-            chrono::Weekday::Mon => 1,
-            chrono::Weekday::Tue => 2,
-            chrono::Weekday::Wed => 3,
-            chrono::Weekday::Thu => 4,
-            chrono::Weekday::Fri => 5,
-            chrono::Weekday::Sat => 6,
-            chrono::Weekday::Sun => 7,
-        };
-        sys.insert("day_of_week_num".to_string(), Value::Number(day_of_week_num as f64));
-
-        // Weekend and weekday flags
-        let is_weekend = matches!(now.weekday(), chrono::Weekday::Sat | chrono::Weekday::Sun);
-        sys.insert("is_weekend".to_string(), Value::Bool(is_weekend));
-        sys.insert("is_weekday".to_string(), Value::Bool(!is_weekend));
-
-        // Day of year
-        sys.insert("day_of_year".to_string(), Value::Number(now.ordinal() as f64));
-
-        // Environment information
-        sys.insert(
-            "environment".to_string(),
-            Value::String(
-                std::env::var("ENVIRONMENT").unwrap_or_else(|_| "development".to_string()),
-            ),
-        );
-
-        // Version information
-        sys.insert(
-            "corint_version".to_string(),
-            Value::String(env!("CARGO_PKG_VERSION").to_string()),
-        );
-
-        sys
-    }
-
-    /// Load environment variables (env namespace)
-    ///
-    /// Loads environment configuration from multiple sources:
-    /// 1. System environment variables with CORINT_ prefix
-    /// 2. Common configuration values
-    /// 3. Feature flags
-    fn load_environment_vars() -> HashMap<String, Value> {
-        let mut env = HashMap::new();
-
-        // Load CORINT_* environment variables
-        for (key, value) in std::env::vars() {
-            if key.starts_with("CORINT_") {
-                // Remove CORINT_ prefix and convert to lowercase
-                let config_key = key
-                    .strip_prefix("CORINT_")
-                    .unwrap()
-                    .to_lowercase();
-
-                // Try to parse as different types
-                env.insert(
-                    config_key,
-                    Self::parse_env_value(&value),
-                );
-            }
-        }
-
-        // Add common configuration with defaults
-        if !env.contains_key("max_score") {
-            env.insert("max_score".to_string(), Value::Number(100.0));
-        }
-
-        if !env.contains_key("default_action") {
-            env.insert("default_action".to_string(), Value::String("approve".to_string()));
-        }
-
-        // Feature flags namespace
-        let mut feature_flags = HashMap::new();
-
-        // Check for feature flag environment variables
-        for (key, value) in std::env::vars() {
-            if key.starts_with("FEATURE_") {
-                let flag_name = key
-                    .strip_prefix("FEATURE_")
-                    .unwrap()
-                    .to_lowercase();
-
-                feature_flags.insert(
-                    flag_name,
-                    Self::parse_bool_value(&value),
-                );
-            }
-        }
-
-        // Add default feature flags if not set
-        if !feature_flags.contains_key("enable_llm") {
-            feature_flags.insert("enable_llm".to_string(), Value::Bool(false));
-        }
-        if !feature_flags.contains_key("enable_cache") {
-            feature_flags.insert("enable_cache".to_string(), Value::Bool(true));
-        }
-
-        env.insert("feature_flags".to_string(), Value::Object(feature_flags));
-
-        env
-    }
-
-    /// Parse environment variable value to appropriate type
-    fn parse_env_value(value: &str) -> Value {
-        // Try to parse as number
-        if let Ok(num) = value.parse::<f64>() {
-            return Value::Number(num);
-        }
-
-        // Try to parse as boolean
-        match value.to_lowercase().as_str() {
-            "true" | "yes" | "1" | "on" => return Value::Bool(true),
-            "false" | "no" | "0" | "off" => return Value::Bool(false),
-            _ => {}
-        }
-
-        // Try to parse as JSON (for objects/arrays)
-        if let Ok(json_value) = serde_json::from_str(value) {
-            return json_value;
-        }
-
-        // Default to string
-        Value::String(value.to_string())
-    }
-
-    /// Parse boolean value from string
-    fn parse_bool_value(value: &str) -> Value {
-        match value.to_lowercase().as_str() {
-            "true" | "yes" | "1" | "on" => Value::Bool(true),
-            "false" | "no" | "0" | "off" => Value::Bool(false),
-            _ => Value::Bool(false),
-        }
     }
 
     // ========== Field Lookup (supports all 8 namespaces) ==========
@@ -457,7 +232,7 @@ impl ExecutionContext {
             }
 
             // Otherwise, navigate through the namespace
-            return Self::get_nested_value(data, remaining_path);
+            return field_lookup::get_nested_value(data, remaining_path);
         }
 
         // Fallback for backward compatibility: try event namespace
@@ -519,42 +294,6 @@ impl ExecutionContext {
         }
 
         Ok(current.clone())
-    }
-
-    /// Get nested value from a HashMap following a path
-    fn get_nested_value(data: &HashMap<String, Value>, path: &[String]) -> Result<Value> {
-        if path.is_empty() {
-            return Ok(Value::Null);
-        }
-
-        let key = &path[0];
-        let value = match data.get(key) {
-            Some(v) => v,
-            None => {
-                tracing::debug!("Field not found: {}, returning Null", key);
-                return Ok(Value::Null);
-            }
-        };
-
-        if path.len() == 1 {
-            return Ok(value.clone());
-        }
-
-        // Continue searching down
-        match value {
-            Value::Object(map) => {
-                let remaining = &path[1..];
-                let mut hash_map = HashMap::new();
-                for (k, v) in map.iter() {
-                    hash_map.insert(k.clone(), v.clone());
-                }
-                Self::get_nested_value(&hash_map, remaining)
-            }
-            _ => {
-                tracing::debug!("Cannot access nested field on non-object, returning Null");
-                Ok(Value::Null)
-            }
-        }
     }
 
     // ========== Stack Operations ==========
@@ -1024,88 +763,6 @@ mod tests {
             ])
             .unwrap();
         assert_eq!(value, Value::Bool(true));
-    }
-
-    #[test]
-    fn test_parse_env_value() {
-        // Test number parsing
-        assert_eq!(
-            ExecutionContext::parse_env_value("42.5"),
-            Value::Number(42.5)
-        );
-
-        // Test boolean parsing
-        assert_eq!(ExecutionContext::parse_env_value("true"), Value::Bool(true));
-        assert_eq!(
-            ExecutionContext::parse_env_value("false"),
-            Value::Bool(false)
-        );
-        assert_eq!(ExecutionContext::parse_env_value("yes"), Value::Bool(true));
-        assert_eq!(ExecutionContext::parse_env_value("no"), Value::Bool(false));
-
-        // Test string parsing
-        assert_eq!(
-            ExecutionContext::parse_env_value("hello"),
-            Value::String("hello".to_string())
-        );
-
-        // Test JSON object parsing
-        let json_str = r#"{"key":"value"}"#;
-        if let Value::Object(obj) = ExecutionContext::parse_env_value(json_str) {
-            assert_eq!(obj.get("key").unwrap(), &Value::String("value".to_string()));
-        } else {
-            panic!("Should parse as object");
-        }
-
-        // Test JSON array parsing
-        let json_array = r#"[1,2,3]"#;
-        if let Value::Array(arr) = ExecutionContext::parse_env_value(json_array) {
-            assert_eq!(arr.len(), 3);
-        } else {
-            panic!("Should parse as array");
-        }
-    }
-
-    #[test]
-    fn test_parse_bool_value() {
-        assert_eq!(
-            ExecutionContext::parse_bool_value("true"),
-            Value::Bool(true)
-        );
-        assert_eq!(
-            ExecutionContext::parse_bool_value("TRUE"),
-            Value::Bool(true)
-        );
-        assert_eq!(
-            ExecutionContext::parse_bool_value("yes"),
-            Value::Bool(true)
-        );
-        assert_eq!(ExecutionContext::parse_bool_value("1"), Value::Bool(true));
-        assert_eq!(ExecutionContext::parse_bool_value("on"), Value::Bool(true));
-
-        assert_eq!(
-            ExecutionContext::parse_bool_value("false"),
-            Value::Bool(false)
-        );
-        assert_eq!(
-            ExecutionContext::parse_bool_value("FALSE"),
-            Value::Bool(false)
-        );
-        assert_eq!(
-            ExecutionContext::parse_bool_value("no"),
-            Value::Bool(false)
-        );
-        assert_eq!(ExecutionContext::parse_bool_value("0"), Value::Bool(false));
-        assert_eq!(
-            ExecutionContext::parse_bool_value("off"),
-            Value::Bool(false)
-        );
-
-        // Unknown values default to false
-        assert_eq!(
-            ExecutionContext::parse_bool_value("unknown"),
-            Value::Bool(false)
-        );
     }
 
     #[test]
