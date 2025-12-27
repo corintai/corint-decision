@@ -8,3 +8,8 @@ lists:
       - "sus_0002"
       - "sus_0003"
       - "sus_0010"
+
+  - id: blocked_emails
+    description: "List of blocked email addresses"
+    backend: file
+    path: "configs/lists/data/high_risk_emails.txt"
