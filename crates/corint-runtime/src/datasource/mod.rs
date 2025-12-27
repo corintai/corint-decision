@@ -9,6 +9,9 @@ pub mod cache;
 pub mod client;
 pub mod config;
 pub mod query;
+mod feature_store;
+mod olap;
+mod sql;
 
 pub use cache::{CacheStrategy, CachedResult};
 pub use client::DataSourceClient;
