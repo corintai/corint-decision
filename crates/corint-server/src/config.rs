@@ -293,6 +293,7 @@ mod tests {
         let config = ServerConfig {
             host: "0.0.0.0".to_string(),
             port: 3000,
+            grpc_port: None,
             repository: RepositoryType::default(),
             datasources: std::collections::HashMap::new(),
             default_datasource: None,
