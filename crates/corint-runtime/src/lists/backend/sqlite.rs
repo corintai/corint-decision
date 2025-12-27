@@ -114,9 +114,10 @@ impl ListBackend for SqliteBackend {
 
         // Build query with optional expiration check
         // SQLite uses datetime('now') for current timestamp
+        // Use datetime() to normalize timestamp format before comparison
         let query = if let Some(exp_col) = &self.expiration_column {
             format!(
-                "SELECT 1 FROM {} WHERE list_id = ?1 AND {} = ?2 AND ({} IS NULL OR {} > datetime('now')) LIMIT 1",
+                "SELECT 1 FROM {} WHERE list_id = ?1 AND {} = ?2 AND ({} IS NULL OR datetime({}) > datetime('now')) LIMIT 1",
                 self.table, self.value_column, exp_col, exp_col
             )
         } else {
@@ -177,9 +178,10 @@ impl ListBackend for SqliteBackend {
     async fn get_all(&self, list_id: &str) -> Result<Vec<Value>> {
         let pool = self.get_pool().await?;
 
+        // Use datetime() to normalize timestamp format before comparison
         let query = if let Some(exp_col) = &self.expiration_column {
             format!(
-                "SELECT {} FROM {} WHERE list_id = ?1 AND ({} IS NULL OR {} > datetime('now'))",
+                "SELECT {} FROM {} WHERE list_id = ?1 AND ({} IS NULL OR datetime({}) > datetime('now'))",
                 self.value_column, self.table, exp_col, exp_col
             )
         } else {

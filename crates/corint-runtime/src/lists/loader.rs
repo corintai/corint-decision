@@ -15,12 +15,26 @@ use sqlx::PgPool;
 #[cfg(feature = "sqlx")]
 use super::backend::PostgresBackend;
 
+/// Datasource information for list backends
+#[derive(Debug, Clone)]
+pub struct DatasourceInfo {
+    /// Datasource name
+    pub name: String,
+    /// Provider type (sqlite, postgresql, etc.)
+    pub provider: String,
+    /// Connection string or path
+    pub connection_string: String,
+}
+
 /// List configuration loader
 pub struct ListLoader {
     /// Base directory for list configurations
     base_dir: PathBuf,
 
-    /// Default SQLite database path (for sqlite backend)
+    /// Datasources map (name -> info)
+    datasources: HashMap<String, DatasourceInfo>,
+
+    /// Default SQLite database path (for sqlite backend - deprecated, use datasources)
     sqlite_db_path: Option<PathBuf>,
 
     /// Database pool (optional, for PostgreSQL backend)
@@ -33,6 +47,7 @@ impl ListLoader {
     pub fn new<P: AsRef<Path>>(base_dir: P) -> Self {
         Self {
             base_dir: base_dir.as_ref().to_path_buf(),
+            datasources: HashMap::new(),
             sqlite_db_path: None,
             #[cfg(feature = "sqlx")]
             db_pool: None,
@@ -46,7 +61,23 @@ impl ListLoader {
         self
     }
 
-    /// Set the default SQLite database path for SQLite backends
+    /// Add a datasource configuration
+    pub fn with_datasource(mut self, name: String, provider: String, connection_string: String) -> Self {
+        self.datasources.insert(name.clone(), DatasourceInfo {
+            name,
+            provider,
+            connection_string,
+        });
+        self
+    }
+
+    /// Add multiple datasources
+    pub fn with_datasources(mut self, datasources: HashMap<String, DatasourceInfo>) -> Self {
+        self.datasources.extend(datasources);
+        self
+    }
+
+    /// Set the default SQLite database path for SQLite backends (deprecated)
     pub fn with_sqlite_db_path<P: AsRef<Path>>(mut self, path: P) -> Self {
         self.sqlite_db_path = Some(path.as_ref().to_path_buf());
         self
@@ -129,7 +160,20 @@ impl ListLoader {
     async fn create_backend(&self, config: ListConfig) -> Result<(String, Box<dyn ListBackend>)> {
         let list_id = config.id.clone();
 
-        let backend: Box<dyn ListBackend> = match config.backend {
+        // Check if using datasource reference
+        if let Some(datasource_name) = config.datasource_name() {
+            return self.create_datasource_backend(&list_id, datasource_name, &config).await;
+        }
+
+        // Otherwise use backend type
+        let backend_type = config.backend.clone().ok_or_else(|| {
+            RuntimeError::InvalidOperation(format!(
+                "List '{}' must specify either 'datasource' or 'backend'",
+                list_id
+            ))
+        })?;
+
+        let backend: Box<dyn ListBackend> = match backend_type {
             ListBackendType::Memory => {
                 let mut backend = MemoryBackend::new();
                 // Load initial values
@@ -232,6 +276,92 @@ impl ListLoader {
         };
 
         Ok((list_id, backend))
+    }
+
+    /// Create a backend from datasource reference
+    async fn create_datasource_backend(
+        &self,
+        list_id: &str,
+        datasource_name: &str,
+        config: &ListConfig,
+    ) -> Result<(String, Box<dyn ListBackend>)> {
+        // Look up the datasource
+        let datasource = self.datasources.get(datasource_name).ok_or_else(|| {
+            RuntimeError::InvalidOperation(format!(
+                "Datasource '{}' not found for list '{}'",
+                datasource_name, list_id
+            ))
+        })?;
+
+        // Create backend based on provider type
+        let backend: Box<dyn ListBackend> = match datasource.provider.as_str() {
+            "sqlite" => {
+                // Extract database path from connection string
+                let db_path = datasource
+                    .connection_string
+                    .strip_prefix("sqlite://")
+                    .or_else(|| datasource.connection_string.strip_prefix("sqlite:"))
+                    .unwrap_or(&datasource.connection_string);
+
+                // Use table config from ListConfig or defaults
+                let table = config.table().unwrap_or_else(|| "list_entries".to_string());
+                let value_column = config.value_column().unwrap_or_else(|| "value".to_string());
+                // For SQLite, default to "expires_at" if not specified
+                let expiration_column = config.expiration_column()
+                    .or_else(|| Some("expires_at".to_string()));
+
+                let backend = SqliteBackend::new_with_custom_table(
+                    PathBuf::from(db_path),
+                    table,
+                    value_column,
+                    expiration_column,
+                );
+
+                Box::new(backend)
+            }
+
+            #[cfg(feature = "sqlx")]
+            "postgresql" => {
+                let pool = self.db_pool.as_ref().ok_or_else(|| {
+                    RuntimeError::InvalidOperation(format!(
+                        "PostgreSQL datasource '{}' for list '{}' requires database pool",
+                        datasource_name, list_id
+                    ))
+                })?;
+
+                // Use table config from ListConfig or defaults
+                let table = config.table().unwrap_or_else(|| "list_entries".to_string());
+                let value_column = config.value_column().unwrap_or_else(|| "value".to_string());
+                // For PostgreSQL, expiration_column is optional (None if not configured)
+                let expiration_column = config.expiration_column();
+
+                let backend = PostgresBackend::new_with_custom_table(
+                    Arc::clone(pool),
+                    table,
+                    value_column,
+                    expiration_column,
+                );
+
+                Box::new(backend)
+            }
+
+            #[cfg(not(feature = "sqlx"))]
+            "postgresql" => {
+                return Err(RuntimeError::InvalidOperation(format!(
+                    "PostgreSQL datasource '{}' for list '{}' requires 'sqlx' feature",
+                    datasource_name, list_id
+                )));
+            }
+
+            provider => {
+                return Err(RuntimeError::InvalidOperation(format!(
+                    "Unsupported datasource provider '{}' for list '{}'. Supported: sqlite, postgresql",
+                    provider, list_id
+                )));
+            }
+        };
+
+        Ok((list_id.to_string(), backend))
     }
 }
 

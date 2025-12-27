@@ -1,9 +1,21 @@
-# SQLite Datasource for E2E Testing
+# E2E Test Datasource Configuration
+# This datasource is used by lists to access the SQLite test database
+
+# Datasource name (matches server.yaml datasources)
 name: sqlite_e2e
+
+# Datasource type
 type: sql
+
+# Provider: sqlite, postgresql, etc.
 provider: sqlite
+
+# Connection string - will be overridden by DATABASE_URL environment variable
 connection_string: "sqlite://tests/data/e2e_test.db"
+
+# Database name
 database: "e2e_test"
-events_table: "events"
+
+# Optional settings
 options:
-  max_connections: "5"
+  max_connections: "3"

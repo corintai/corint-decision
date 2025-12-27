@@ -12,8 +12,13 @@ pub struct ListConfig {
     #[serde(default)]
     pub description: String,
 
-    /// Backend type
-    pub backend: ListBackendType,
+    /// Datasource reference (when using datasource-based configuration)
+    #[serde(default)]
+    pub datasource: Option<String>,
+
+    /// Backend type (optional when using datasource)
+    #[serde(default)]
+    pub backend: Option<ListBackendType>,
 
     /// PostgreSQL configuration (when backend = postgresql)
     #[serde(flatten)]
@@ -131,6 +136,29 @@ pub struct ListsConfig {
 }
 
 impl ListConfig {
+    /// Get the datasource name if using datasource reference
+    pub fn datasource_name(&self) -> Option<&str> {
+        self.datasource.as_deref()
+    }
+
+    /// Get the table name (generic, tries to get from any backend config)
+    pub fn table(&self) -> Option<String> {
+        self.sqlite_config.as_ref().and_then(|c| c.table.clone())
+            .or_else(|| self.postgres_config.as_ref().and_then(|c| c.table.clone()))
+    }
+
+    /// Get the value column name (generic, tries to get from any backend config)
+    pub fn value_column(&self) -> Option<String> {
+        self.sqlite_config.as_ref().and_then(|c| c.value_column.clone())
+            .or_else(|| self.postgres_config.as_ref().and_then(|c| c.value_column.clone()))
+    }
+
+    /// Get the expiration column name (generic, tries to get from any backend config)
+    pub fn expiration_column(&self) -> Option<String> {
+        self.sqlite_config.as_ref().and_then(|c| c.expiration_column.clone())
+            .or_else(|| self.postgres_config.as_ref().and_then(|c| c.expiration_column.clone()))
+    }
+
     /// Get the default table name for PostgreSQL backend
     pub fn postgres_table(&self) -> String {
         self.postgres_config
@@ -214,7 +242,7 @@ initial_values:
 
         let config: ListConfig = serde_yaml::from_str(yaml).unwrap();
         assert_eq!(config.id, "test_list");
-        assert_eq!(config.backend, ListBackendType::Memory);
+        assert_eq!(config.backend, Some(ListBackendType::Memory));
         assert_eq!(config.initial_values.len(), 2);
     }
 
@@ -228,7 +256,7 @@ backend: postgresql
 
         let config: ListConfig = serde_yaml::from_str(yaml).unwrap();
         assert_eq!(config.id, "email_blocklist");
-        assert_eq!(config.backend, ListBackendType::PostgreSQL);
+        assert_eq!(config.backend, Some(ListBackendType::PostgreSQL));
         assert_eq!(config.postgres_table(), "list_entries");
         assert_eq!(config.postgres_value_column(), "value");
     }
@@ -245,7 +273,7 @@ reload_interval: 3600
 
         let config: ListConfig = serde_yaml::from_str(yaml).unwrap();
         assert_eq!(config.id, "high_risk_countries");
-        assert_eq!(config.backend, ListBackendType::File);
+        assert_eq!(config.backend, Some(ListBackendType::File));
         assert_eq!(
             config.file_path(),
             Some("repository/configs/lists/data/countries.txt".to_string())

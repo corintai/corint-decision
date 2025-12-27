@@ -1,24 +1,19 @@
 # Database-backed Lists Configuration for E2E Tests
-# These lists are stored in the SQLite database for testing
-# Uses SQLite backend with expiration support
-# Note: db_path is relative to repository root (tests/e2e_repo), so we use relative path to reach tests/data/
+# These lists use datasource reference to sqlite_e2e
+# The datasource is defined in configs/datasources/sqlite_e2e.yaml
 
 lists:
   # Blocked users list - stored in database with expiration support
   - id: blocked_users_db
     description: "Database-backed list of blocked user IDs with expiration"
-    backend: sqlite
-    # Path relative to project root (server working directory)
-    db_path: "tests/data/e2e_test.db"
+    datasource: sqlite_e2e
 
   # Blocked IPs list - stored in database
   - id: blocked_ips_db
     description: "Database-backed list of blocked IP addresses"
-    backend: sqlite
-    db_path: "tests/data/e2e_test.db"
+    datasource: sqlite_e2e
 
   # High risk countries - stored in database
   - id: high_risk_countries_db
     description: "Database-backed list of high-risk country codes"
-    backend: sqlite
-    db_path: "tests/data/e2e_test.db"
+    datasource: sqlite_e2e

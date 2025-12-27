@@ -480,6 +480,70 @@ impl DecisionEngineBuilder {
             // Create list loader
             let mut loader = ListLoader::new(base_path);
 
+            // Load datasources from repository configs/datasources/
+            use corint_runtime::lists::loader::DatasourceInfo;
+            use corint_runtime::datasource::config::{DataSourceConfig as RuntimeDataSourceConfig, DataSourceType};
+            use std::collections::HashMap;
+
+            let datasource_dir = std::path::Path::new(base_path).join("configs/datasources");
+            let mut datasources: HashMap<String, DatasourceInfo> = HashMap::new();
+
+            if datasource_dir.exists() {
+                if let Ok(entries) = std::fs::read_dir(&datasource_dir) {
+                    for entry in entries.flatten() {
+                        let path = entry.path();
+                        if path.extension().and_then(|s| s.to_str()) == Some("yaml") {
+                            if let Ok(file_content) = std::fs::read_to_string(&path) {
+                                if let Ok(config) = serde_yaml::from_str::<RuntimeDataSourceConfig>(&file_content) {
+                                    // Extract provider and connection_string from source_type
+                                    let (provider, connection_string) = match &config.source_type {
+                                        DataSourceType::SQL(sql_config) => {
+                                            let provider = match sql_config.provider {
+                                                corint_runtime::datasource::config::SQLProvider::SQLite => "sqlite",
+                                                corint_runtime::datasource::config::SQLProvider::PostgreSQL => "postgresql",
+                                                corint_runtime::datasource::config::SQLProvider::MySQL => "mysql",
+                                            };
+                                            (provider.to_string(), sql_config.connection_string.clone())
+                                        }
+                                        DataSourceType::OLAP(olap_config) => {
+                                            let provider = match olap_config.provider {
+                                                corint_runtime::datasource::config::OLAPProvider::ClickHouse => "clickhouse",
+                                                corint_runtime::datasource::config::OLAPProvider::Druid => "druid",
+                                                corint_runtime::datasource::config::OLAPProvider::TimescaleDB => "timescaledb",
+                                                corint_runtime::datasource::config::OLAPProvider::InfluxDB => "influxdb",
+                                            };
+                                            (provider.to_string(), olap_config.connection_string.clone())
+                                        }
+                                        DataSourceType::FeatureStore(fs_config) => {
+                                            let provider = match fs_config.provider {
+                                                corint_runtime::datasource::config::FeatureStoreProvider::Redis => "redis",
+                                                corint_runtime::datasource::config::FeatureStoreProvider::Feast => "feast",
+                                                corint_runtime::datasource::config::FeatureStoreProvider::Http => "http",
+                                            };
+                                            (provider.to_string(), fs_config.connection_string.clone())
+                                        }
+                                    };
+
+                                    datasources.insert(config.name.clone(), DatasourceInfo {
+                                        name: config.name.clone(),
+                                        provider,
+                                        connection_string,
+                                    });
+                                    tracing::debug!("  ✓ Loaded datasource for lists: {}", config.name);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Add datasources to loader
+            if !datasources.is_empty() {
+                let datasources_count = datasources.len();
+                loader = loader.with_datasources(datasources);
+                tracing::debug!("✓ Configured {} datasource(s) for list backends", datasources_count);
+            }
+
             // Configure with database pool if available (for PostgreSQL/SQLite backends)
             #[cfg(feature = "sqlx")]
             {
