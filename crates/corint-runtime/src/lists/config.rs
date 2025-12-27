@@ -19,6 +19,10 @@ pub struct ListConfig {
     #[serde(flatten)]
     pub postgres_config: Option<PostgresListConfig>,
 
+    /// SQLite configuration (when backend = sqlite)
+    #[serde(flatten)]
+    pub sqlite_config: Option<SqliteListConfig>,
+
     /// Redis configuration (when backend = redis)
     #[serde(flatten)]
     pub redis_config: Option<RedisListConfig>,
@@ -45,6 +49,7 @@ pub enum ListBackendType {
     Redis,
     File,
     Api,
+    Sqlite,
 }
 
 /// PostgreSQL list configuration
@@ -65,6 +70,26 @@ pub struct PostgresListConfig {
     /// Match type (exact, prefix, regex)
     #[serde(default)]
     pub match_type: Option<String>,
+}
+
+/// SQLite list configuration
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SqliteListConfig {
+    /// Database file path (optional, uses datasource if not specified)
+    #[serde(default)]
+    pub db_path: Option<String>,
+
+    /// Custom table name (optional, defaults to "list_entries")
+    #[serde(default)]
+    pub table: Option<String>,
+
+    /// Value column name (optional, defaults to "value")
+    #[serde(default)]
+    pub value_column: Option<String>,
+
+    /// Expiration column name (optional, defaults to "expires_at")
+    #[serde(default)]
+    pub expiration_column: Option<String>,
 }
 
 /// Redis list configuration
@@ -140,6 +165,35 @@ impl ListConfig {
         self.file_config
             .as_ref()
             .and_then(|c| c.reload_interval)
+    }
+
+    /// Get the database path for SQLite backend
+    pub fn sqlite_db_path(&self) -> Option<String> {
+        self.sqlite_config.as_ref().and_then(|c| c.db_path.clone())
+    }
+
+    /// Get the table name for SQLite backend
+    pub fn sqlite_table(&self) -> String {
+        self.sqlite_config
+            .as_ref()
+            .and_then(|c| c.table.clone())
+            .unwrap_or_else(|| "list_entries".to_string())
+    }
+
+    /// Get the value column name for SQLite backend
+    pub fn sqlite_value_column(&self) -> String {
+        self.sqlite_config
+            .as_ref()
+            .and_then(|c| c.value_column.clone())
+            .unwrap_or_else(|| "value".to_string())
+    }
+
+    /// Get the expiration column name for SQLite backend
+    pub fn sqlite_expiration_column(&self) -> Option<String> {
+        self.sqlite_config
+            .as_ref()
+            .and_then(|c| c.expiration_column.clone())
+            .or_else(|| Some("expires_at".to_string()))
     }
 }
 

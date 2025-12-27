@@ -552,7 +552,9 @@ def generate_crypto_payment_history():
 
 def generate_list_data():
     """Generate list entries data for database-backed lists"""
+    from datetime import timezone
     list_entries = []
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
 
     # Blocked users list
     blocked_users = SUSPICIOUS_USERS[:5]  # Use first 5 suspicious users
@@ -560,7 +562,8 @@ def generate_list_data():
         list_entries.append({
             'list_id': 'blocked_users',
             'value': user_id,
-            'metadata': json.dumps({'reason': 'suspicious_activity', 'blocked_date': datetime.now().isoformat()})
+            'expires_at': None,  # Never expires
+            'metadata': json.dumps({'reason': 'suspicious_activity', 'blocked_date': now.isoformat()})
         })
 
     # Blocked IPs list
@@ -568,6 +571,7 @@ def generate_list_data():
         list_entries.append({
             'list_id': 'blocked_ips',
             'value': ip,
+            'expires_at': None,  # Never expires
             'metadata': json.dumps({'reason': 'malicious_traffic', 'threat_level': 'high'})
         })
 
@@ -576,8 +580,30 @@ def generate_list_data():
         list_entries.append({
             'list_id': 'high_risk_countries',
             'value': country,
+            'expires_at': None,  # Never expires
             'metadata': json.dumps({'risk_level': 'high', 'category': 'fraud_hotspot'})
         })
+
+    # === Expiration test entries ===
+    # These entries use 'blocked_users_db' list_id to match the SQLite backend list config
+
+    # Expired blocked user (should NOT block - Test 23)
+    expired_time = (now - timedelta(days=1)).isoformat()
+    list_entries.append({
+        'list_id': 'blocked_users_db',
+        'value': 'user_expired_block',
+        'expires_at': expired_time,
+        'metadata': json.dumps({'reason': 'test_expiration', 'expired': True})
+    })
+
+    # Active blocked user with future expiration (should block - Test 24)
+    future_time = (now + timedelta(days=30)).isoformat()
+    list_entries.append({
+        'list_id': 'blocked_users_db',
+        'value': 'user_active_block',
+        'expires_at': future_time,
+        'metadata': json.dumps({'reason': 'test_expiration', 'expired': False})
+    })
 
     return list_entries
 
@@ -589,9 +615,10 @@ def generate_list_insert_statements(list_entries):
     for entry in list_entries:
         list_id = escape_sql_string(entry['list_id'])
         value = escape_sql_string(entry['value'])
+        expires_at = escape_sql_string(entry.get('expires_at'))
         metadata = escape_sql_string(entry.get('metadata'))
 
-        sql = f"INSERT INTO list_entries (list_id, value, metadata) VALUES ({list_id}, {value}, {metadata});"
+        sql = f"INSERT INTO list_entries (list_id, value, expires_at, metadata) VALUES ({list_id}, {value}, {expires_at}, {metadata});"
         sql_statements.append(sql)
 
     return sql_statements

@@ -1,6 +1,6 @@
 //! List configuration loader
 
-use super::backend::{FileBackend, ListBackend, MemoryBackend};
+use super::backend::{FileBackend, ListBackend, MemoryBackend, SqliteBackend};
 use super::config::{ListBackendType, ListConfig, ListsConfig};
 use crate::error::{Result, RuntimeError};
 use corint_core::Value;
@@ -20,6 +20,9 @@ pub struct ListLoader {
     /// Base directory for list configurations
     base_dir: PathBuf,
 
+    /// Default SQLite database path (for sqlite backend)
+    sqlite_db_path: Option<PathBuf>,
+
     /// Database pool (optional, for PostgreSQL backend)
     #[cfg(feature = "sqlx")]
     db_pool: Option<Arc<PgPool>>,
@@ -30,6 +33,7 @@ impl ListLoader {
     pub fn new<P: AsRef<Path>>(base_dir: P) -> Self {
         Self {
             base_dir: base_dir.as_ref().to_path_buf(),
+            sqlite_db_path: None,
             #[cfg(feature = "sqlx")]
             db_pool: None,
         }
@@ -39,6 +43,12 @@ impl ListLoader {
     #[cfg(feature = "sqlx")]
     pub fn with_db_pool(mut self, pool: Arc<PgPool>) -> Self {
         self.db_pool = Some(pool);
+        self
+    }
+
+    /// Set the default SQLite database path for SQLite backends
+    pub fn with_sqlite_db_path<P: AsRef<Path>>(mut self, path: P) -> Self {
+        self.sqlite_db_path = Some(path.as_ref().to_path_buf());
         self
     }
 
@@ -191,6 +201,33 @@ impl ListLoader {
                 return Err(RuntimeError::InvalidOperation(
                     "API backend not yet implemented".to_string(),
                 ));
+            }
+
+            ListBackendType::Sqlite => {
+                // Get database path from config or use default
+                let db_path = config
+                    .sqlite_db_path()
+                    .map(PathBuf::from)
+                    .or_else(|| self.sqlite_db_path.clone())
+                    .ok_or_else(|| {
+                        RuntimeError::InvalidOperation(
+                            "SQLite backend requires 'db_path' field or default sqlite_db_path".to_string(),
+                        )
+                    })?;
+
+                // For SQLite, use the path as-is (relative to current working directory)
+                // This is different from file backend which is relative to repository root
+                // because SQLite databases are typically shared across the application
+                let full_path = db_path;
+
+                let backend = SqliteBackend::new_with_custom_table(
+                    full_path,
+                    config.sqlite_table(),
+                    config.sqlite_value_column(),
+                    config.sqlite_expiration_column(),
+                );
+
+                Box::new(backend)
             }
         };
 

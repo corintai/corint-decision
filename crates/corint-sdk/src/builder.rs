@@ -485,11 +485,14 @@ impl DecisionEngineBuilder {
             {
                 if let Some(db_url) = database_url {
                     // Try to create appropriate pool based on URL scheme
-                    if db_url.starts_with("sqlite://") {
-                        // Use PostgreSQL pool type as a generic container
-                        // Note: This is a workaround - ideally we'd use sqlx::AnyPool
-                        tracing::warn!("SQLite database lists are not yet supported - using memory-only lists");
-                        tracing::info!("For database-backed lists, please use PostgreSQL");
+                    if db_url.starts_with("sqlite://") || db_url.starts_with("sqlite:") {
+                        // Extract SQLite database path and set it for SQLite list backends
+                        let db_path = db_url
+                            .strip_prefix("sqlite://")
+                            .or_else(|| db_url.strip_prefix("sqlite:"))
+                            .unwrap_or(db_url);
+                        loader = loader.with_sqlite_db_path(db_path);
+                        tracing::info!("✓ SQLite database path configured for list backends: {}", db_path);
                     } else {
                         // PostgreSQL connection
                         match sqlx::postgres::PgPoolOptions::new()

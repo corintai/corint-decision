@@ -5,10 +5,12 @@
 pub mod file;
 mod memory;
 pub mod postgresql;
+pub mod sqlite;
 
 pub use file::FileBackend;
 pub use memory::MemoryBackend;
 pub use postgresql::PostgresBackend;
+pub use sqlite::SqliteBackend;
 
 use crate::error::Result;
 use corint_core::Value;

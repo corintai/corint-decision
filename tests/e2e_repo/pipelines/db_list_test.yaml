@@ -46,14 +46,26 @@ pipeline:
 # Rules for Database List Testing
 # ========================================
 
-# Rule: User in Database Blocklist
+# Rule: User in Database Blocklist (checks both memory and db-backed lists)
 rule:
   id: user_in_db_blocklist
   name: User in DB Blocklist
-  description: User is in database-backed blocked list
+  description: User is in blocked list (memory-backed for basic tests)
   when:
     all:
       - event.user_id in list.blocked_users
+  score: 1000
+
+---
+
+# Rule: User in DB Blocklist with Expiration
+rule:
+  id: user_in_db_blocklist_expiration
+  name: User in DB Blocklist (Expiration)
+  description: User is in database-backed blocked list with expiration support
+  when:
+    all:
+      - event.user_id in list.blocked_users_db
   score: 1000
 
 ---
@@ -62,7 +74,7 @@ rule:
 rule:
   id: ip_in_db_blocklist
   name: IP in DB Blocklist
-  description: IP address is in database-backed blocked list
+  description: IP address is in blocked list
   when:
     all:
       - event.ip_address in list.blocked_ips
@@ -74,7 +86,7 @@ rule:
 rule:
   id: country_in_db_high_risk
   name: Country in DB High Risk List
-  description: Country is in database-backed high risk list
+  description: Country is in high risk list
   when:
     all:
       - event.country in list.high_risk_countries
@@ -93,29 +105,36 @@ ruleset:
 
   rules:
     - user_in_db_blocklist
+    - user_in_db_blocklist_expiration
     - ip_in_db_blocklist
     - country_in_db_high_risk
 
   # Conclusion produces signals
   conclusion:
-    # Critical risk - blocked user or IP
+    # Critical risk - blocked user (memory list)
     - when: triggered_rules contains "user_in_db_blocklist"
       signal: decline
-      reason: "User is in database blocklist"
+      reason: "User is in blocklist"
+      terminate: true
+
+    # Critical risk - blocked user (db list with expiration)
+    - when: triggered_rules contains "user_in_db_blocklist_expiration"
+      signal: decline
+      reason: "User is in database blocklist (with expiration check)"
       terminate: true
 
     - when: triggered_rules contains "ip_in_db_blocklist"
       signal: decline
-      reason: "IP is in database blocklist"
+      reason: "IP is in blocklist"
       terminate: true
 
     # High risk country
     - when: triggered_rules contains "country_in_db_high_risk"
       signal: review
-      reason: "Country is in high risk list (database)"
+      reason: "Country is in high risk list"
       terminate: true
 
     # No match - approve
     - default: true
       signal: approve
-      reason: "No database lists matched"
+      reason: "No lists matched"

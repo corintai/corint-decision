@@ -11,7 +11,7 @@
 # 4. Collects results and generates report
 # 5. Cleans up server process
 #
-# Test Coverage (28 test cases):
+# Test Coverage (33 test cases):
 #   - Basic Flow Tests (10 tests):
 #     * Transaction flow (normal, blocked user, high value, high-risk country)
 #     * Login flow (normal, blocked IP, high-risk country)
@@ -34,6 +34,9 @@
 #   - Database List Tests (4 tests) [P0]:
 #     * DB blocked user, DB blocked IP, DB high-risk country, DB clean event
 #
+#   - List Expiration Tests (2 tests) [P2]:
+#     * Expired block entry (should approve), Active block entry (should decline)
+#
 #   - Boundary Tests (3 tests) [P1]:
 #     * Score at review threshold, Score below review, Score at decline
 #
@@ -42,6 +45,9 @@
 #
 #   - File Backend List Tests (2 tests) [P2]:
 #     * Blocked email (file list), Clean email
+#
+#   - Error Handling Tests (3 tests) [P2]:
+#     * Unknown event type, Missing event.type, Empty event object
 #
 # Usage:
 #   cd tests
@@ -285,6 +291,63 @@ run_test_case() {
         FAILED_TEST_DETAILS+=("$test_name|WRONG_DECISION|Expected: $expected_decision, Got: $actual_decision")
         return 1
     fi
+}
+
+# Run a test case that expects an error or specific non-standard response
+run_error_test_case() {
+    local test_name="$1"
+    local test_data="$2"
+    local expected_pattern="$3"  # Pattern to match in response (error, no_pipeline, etc.)
+
+    TOTAL_TESTS=$((TOTAL_TESTS + 1))
+
+    # Run API call and capture response
+    local response=$(curl -s -X POST "$API_URL/v1/decide" \
+        -H "Content-Type: application/json" \
+        -d "$test_data")
+
+    # Check for expected pattern in response
+    local has_error=$(echo "$response" | jq -r '.error // empty')
+    local decision=$(echo "$response" | jq -r '.decision.result // empty' | tr '[:upper:]' '[:lower:]')
+    local reason=$(echo "$response" | jq -r '.decision.reason // empty')
+
+    case "$expected_pattern" in
+        "no_pipeline")
+            # Expect either an error or approve with "no matching pipeline" reason
+            if [[ -n "$has_error" ]] || [[ "$decision" == "approve" && "$reason" == *"no matching"* ]]; then
+                log_success "$test_name: PASSED (no pipeline matched)"
+                PASSED_TESTS=$((PASSED_TESTS + 1))
+                PASSED_TEST_NAMES+=("$test_name")
+                return 0
+            fi
+            ;;
+        "error")
+            # Expect an error response
+            if [ -n "$has_error" ]; then
+                log_success "$test_name: PASSED (error returned: $has_error)"
+                PASSED_TESTS=$((PASSED_TESTS + 1))
+                PASSED_TEST_NAMES+=("$test_name")
+                return 0
+            fi
+            ;;
+        "default_fallback")
+            # Expect default pipeline handling - returns PASS with minimal score
+            local pipeline_id=$(echo "$response" | jq -r '.pipeline_id // empty')
+            if [[ "$pipeline_id" == "default" ]] && [[ "$decision" == "pass" ]]; then
+                log_success "$test_name: PASSED (default pipeline fallback)"
+                PASSED_TESTS=$((PASSED_TESTS + 1))
+                PASSED_TEST_NAMES+=("$test_name")
+                return 0
+            fi
+            ;;
+    esac
+
+    # If we get here, the test failed
+    log_error "$test_name: FAILED (expected: $expected_pattern, response: $response)"
+    FAILED_TESTS=$((FAILED_TESTS + 1))
+    FAILED_TEST_NAMES+=("$test_name")
+    FAILED_TEST_DETAILS+=("$test_name|UNEXPECTED_RESPONSE|Expected: $expected_pattern")
+    return 1
 }
 
 # ============================================================================
@@ -734,11 +797,43 @@ main() {
         }
     }' "approve"
 
+    # ========================
+    # List Expiration Tests (P2)
+    # ========================
+    # These tests verify that SQLite list backend correctly handles expiration
+    echo ""
+    echo "--- List Expiration Tests (P2) ---"
+    echo ""
+
+    # Test 23: Expired block entry - should NOT block (expired yesterday)
+    # user_expired_block has expires_at set to yesterday
+    run_test_case "Expired Block Entry" '{
+        "event": {
+            "type": "db_list_test",
+            "user_id": "user_expired_block",
+            "ip_address": "192.168.1.100",
+            "country": "US",
+            "timestamp": "'"$CURRENT_TIME"'"
+        }
+    }' "approve"
+
+    # Test 24: Active block entry - should block (expires in 30 days)
+    # user_active_block has expires_at set to 30 days from now
+    run_test_case "Active Block Entry" '{
+        "event": {
+            "type": "db_list_test",
+            "user_id": "user_active_block",
+            "ip_address": "192.168.1.100",
+            "country": "US",
+            "timestamp": "'"$CURRENT_TIME"'"
+        }
+    }' "decline"
+
     echo ""
     echo "--- Boundary Tests (P1) ---"
     echo ""
 
-    # Test 23: Score boundary - exactly at review threshold (score = 80)
+    # Test 25: Score boundary - exactly at review threshold (score = 80)
     # high_risk_country rule triggers with score 80
     run_test_case "Score At Review Threshold" '{
         "event": {
@@ -752,7 +847,7 @@ main() {
         }
     }' "review"
 
-    # Test 24: Score boundary - just below review threshold
+    # Test 26: Score boundary - just below review threshold
     # Normal transaction, no rules trigger, score = 0
     run_test_case "Score Below Review Threshold" '{
         "event": {
@@ -766,7 +861,7 @@ main() {
         }
     }' "approve"
 
-    # Test 25: Score boundary - at decline threshold (score >= 150)
+    # Test 27: Score boundary - at decline threshold (score >= 150)
     # high_value_new_user (80) + high_risk_country (80) = 160
     run_test_case "Score At Decline Threshold" '{
         "event": {
@@ -784,7 +879,7 @@ main() {
     echo "--- Multi-Rule Trigger Tests (P1) ---"
     echo ""
 
-    # Test 26: Multiple rules triggered (triggered_count >= 3 should decline)
+    # Test 28: Multiple rules triggered (triggered_count >= 3 should decline)
     # This requires a user with history to trigger amount_spike
     # Using high_value_new_user (80) + high_risk_country (80) = 160 -> decline
     run_test_case "Multi-Rule High Score" '{
@@ -803,7 +898,7 @@ main() {
     echo "--- File Backend List Tests (P2) ---"
     echo ""
 
-    # Test 27: File backend blocked email - should decline
+    # Test 29: File backend blocked email - should decline
     # Tests file backend list functionality
     # Email alice.wang23@gmail.com is in high_risk_emails.txt file
     run_test_case "File Backend Blocked Email" '{
@@ -819,7 +914,7 @@ main() {
         }
     }' "decline"
 
-    # Test 28: File backend clean email - should approve
+    # Test 30: File backend clean email - should approve
     # Email not in blocked list
     run_test_case "File Backend Clean Email" '{
         "event": {
@@ -833,6 +928,44 @@ main() {
             "timestamp": "'"$CURRENT_TIME"'"
         }
     }' "approve"
+
+    # NOTE: List Expiration Tests require PostgreSQL backend with expiration_column support.
+    # SQLite is not a supported list backend in CORINT. The test infrastructure is in place
+    # but requires PostgreSQL for full expiration testing. See db_lists.yaml for configuration.
+    # Skipping these tests in SQLite-based E2E environment.
+
+    # ========================
+    # Error Handling Tests (P2)
+    # ========================
+    # These tests verify the server handles edge cases gracefully.
+    # CORINT uses a default pipeline fallback for unmatched events.
+    echo ""
+    echo "--- Error Handling Tests (P2) ---"
+    echo ""
+
+    # Test 31: Unknown event type - handled by default pipeline with PASS
+    run_error_test_case "Unknown Event Type" '{
+        "event": {
+            "type": "unknown_type",
+            "user_id": "user_0001",
+            "amount": 100.00,
+            "timestamp": "'"$CURRENT_TIME"'"
+        }
+    }' "default_fallback"
+
+    # Test 32: Missing event.type field - handled by default pipeline with PASS
+    run_error_test_case "Missing Event Type" '{
+        "event": {
+            "user_id": "user_0001",
+            "amount": 100.00,
+            "timestamp": "'"$CURRENT_TIME"'"
+        }
+    }' "default_fallback"
+
+    # Test 33: Empty event object - handled by default pipeline with PASS
+    run_error_test_case "Empty Event Object" '{
+        "event": {}
+    }' "default_fallback"
 
     echo ""
     echo "============================================================================"
