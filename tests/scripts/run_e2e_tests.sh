@@ -104,10 +104,30 @@ log_warning() {
 }
 
 backup_config() {
-    # Remove old backup if exists
+    # Check if current config is actually the test config (from a previous incomplete run)
+    if [ -f "$CONFIG_FILE" ] && grep -q "E2E Tests" "$CONFIG_FILE" 2>/dev/null; then
+        log_warning "Current config appears to be test config from previous run"
+
+        # If backup exists, it's likely the original config - restore it first
+        if [ -f "$CONFIG_BACKUP" ]; then
+            log_info "Found backup from previous run, restoring it first"
+            restore_config
+        else
+            log_warning "No backup found, current test config will be overwritten"
+            rm -f "$CONFIG_FILE"
+        fi
+    fi
+
+    # Now handle backup properly
     if [ -f "$CONFIG_BACKUP" ]; then
-        log_warning "Removing old backup: $CONFIG_BACKUP"
-        rm -f "$CONFIG_BACKUP"
+        # Check if backup is test config (should not be)
+        if grep -q "E2E Tests" "$CONFIG_BACKUP" 2>/dev/null; then
+            log_warning "Backup appears to be test config, removing it"
+            rm -f "$CONFIG_BACKUP"
+        else
+            # Backup exists and looks valid - keep it but warn
+            log_warning "Old backup exists: $CONFIG_BACKUP (keeping it)"
+        fi
     fi
 
     if [ -f "$CONFIG_FILE" ]; then
@@ -122,19 +142,36 @@ backup_config() {
 }
 
 restore_config() {
-    # Remove test config
-    if [ -f "$CONFIG_FILE" ]; then
-        log_info "Removing test config: $CONFIG_FILE"
-        rm -f "$CONFIG_FILE"
-    fi
-
     # Restore original config from backup
     if [ -f "$CONFIG_BACKUP" ]; then
+        # Verify backup is not test config
+        if grep -q "E2E Tests" "$CONFIG_BACKUP" 2>/dev/null; then
+            log_error "Backup file appears to be test config, not restoring"
+            log_warning "Please manually restore from config/server-example.yaml"
+            rm -f "$CONFIG_BACKUP"
+            return 1
+        fi
+
         log_info "Restoring original config: $CONFIG_BACKUP -> $CONFIG_FILE"
+
+        # Remove test config first
+        if [ -f "$CONFIG_FILE" ]; then
+            rm -f "$CONFIG_FILE"
+        fi
+
+        # Move backup back to config location
         mv "$CONFIG_BACKUP" "$CONFIG_FILE"
-        log_success "Config restored"
+        log_success "Config restored successfully"
     else
-        log_warning "No backup config to restore"
+        # No backup found - check if current config is test config
+        if [ -f "$CONFIG_FILE" ] && grep -q "E2E Tests" "$CONFIG_FILE" 2>/dev/null; then
+            log_warning "No backup config found, but test config is still in place"
+            log_warning "Restoring from server-example.yaml"
+            cp "$CONFIG_DIR/server-example.yaml" "$CONFIG_FILE"
+            log_success "Config restored from example"
+        else
+            log_info "No backup to restore (config may already be restored)"
+        fi
     fi
 }
 
