@@ -129,66 +129,7 @@ impl PipelineExecutor {
 
             match instruction {
                 Instruction::LoadField { path } => {
-                    // Check if this is a feature namespace access (features.xxx)
-                    let value = if path.len() == 2 && path[0] == "features" {
-                        // Explicit feature access: features.xxx
-                        let feature_name = &path[1];
-
-                        // First, check if the feature value was pre-provided in the request
-                        if let Some(existing_value) = ctx.features.get(feature_name) {
-                            tracing::debug!(
-                                "Using pre-provided feature '{}': {:?}",
-                                feature_name,
-                                existing_value
-                            );
-                            existing_value.clone()
-                        } else if let Some(ref feature_executor) = self.feature_executor {
-                            // Feature not pre-provided, try to calculate it
-                            if feature_executor.has_feature(feature_name) {
-                                tracing::debug!(
-                                    "Calculating feature '{}' via FeatureExtractor",
-                                    feature_name
-                                );
-
-                                // Calculate feature on-demand
-                                match feature_executor.execute_feature(feature_name, &ctx).await {
-                                    Ok(feature_value) => {
-                                        // Store the result in features namespace
-                                        ctx.store_feature(feature_name, feature_value.clone());
-                                        tracing::debug!(
-                                            "Feature '{}' calculated: {:?}",
-                                            feature_name,
-                                            feature_value
-                                        );
-                                        feature_value
-                                    }
-                                    Err(e) => {
-                                        tracing::warn!(
-                                            "Failed to calculate feature '{}': {}",
-                                            feature_name,
-                                            e
-                                        );
-                                        Value::Null
-                                    }
-                                }
-                            } else {
-                                return Err(RuntimeError::FieldNotFound(format!(
-                                    "Feature '{}' not found in pre-provided features or FeatureExtractor",
-                                    feature_name
-                                )));
-                            }
-                        } else {
-                            // No pre-provided value and no feature executor
-                            return Err(RuntimeError::FieldNotFound(format!(
-                                "Feature '{}' not found: no pre-provided value and FeatureExtractor not available",
-                                feature_name
-                            )));
-                        }
-                    } else {
-                        // Regular field access: event_data, variables, or special fields
-                        ctx.load_field(path)?
-                    };
-
+                    let value = self.handle_load_field(&mut ctx, path).await?;
                     ctx.push(value);
                     pc += 1;
                 }
@@ -721,6 +662,73 @@ impl PipelineExecutor {
             Value::String(s) => !s.is_empty(),
             Value::Array(a) => !a.is_empty(),
             Value::Object(o) => !o.is_empty(),
+        }
+    }
+
+    /// Handle LoadField instruction with feature resolution
+    async fn handle_load_field(
+        &self,
+        ctx: &mut ExecutionContext,
+        path: &[String],
+    ) -> Result<Value> {
+        // Check if this is a feature namespace access (features.xxx)
+        if path.len() == 2 && path[0] == "features" {
+            // Explicit feature access: features.xxx
+            let feature_name = &path[1];
+
+            // First, check if the feature value was pre-provided in the request
+            if let Some(existing_value) = ctx.features.get(feature_name) {
+                tracing::debug!(
+                    "Using pre-provided feature '{}': {:?}",
+                    feature_name,
+                    existing_value
+                );
+                Ok(existing_value.clone())
+            } else if let Some(ref feature_executor) = self.feature_executor {
+                // Feature not pre-provided, try to calculate it
+                if feature_executor.has_feature(feature_name) {
+                    tracing::debug!(
+                        "Calculating feature '{}' via FeatureExtractor",
+                        feature_name
+                    );
+
+                    // Calculate feature on-demand
+                    match feature_executor.execute_feature(feature_name, ctx).await {
+                        Ok(feature_value) => {
+                            // Store the result in features namespace
+                            ctx.store_feature(feature_name, feature_value.clone());
+                            tracing::debug!(
+                                "Feature '{}' calculated: {:?}",
+                                feature_name,
+                                feature_value
+                            );
+                            Ok(feature_value)
+                        }
+                        Err(e) => {
+                            tracing::warn!(
+                                "Failed to calculate feature '{}': {}",
+                                feature_name,
+                                e
+                            );
+                            Ok(Value::Null)
+                        }
+                    }
+                } else {
+                    Err(RuntimeError::FieldNotFound(format!(
+                        "Feature '{}' not found in pre-provided features or FeatureExtractor",
+                        feature_name
+                    )))
+                }
+            } else {
+                // No pre-provided value and no feature executor
+                Err(RuntimeError::FieldNotFound(format!(
+                    "Feature '{}' not found: no pre-provided value and FeatureExtractor not available",
+                    feature_name
+                )))
+            }
+        } else {
+            // Regular field access: event_data, variables, or special fields
+            ctx.load_field(path)
         }
     }
 }
