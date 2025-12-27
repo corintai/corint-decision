@@ -2,6 +2,7 @@
 //!
 //! Provides executors for running IR programs.
 
+mod operators;
 pub mod pipeline_executor;
 
 // Re-export for convenience
