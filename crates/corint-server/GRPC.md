@@ -78,18 +78,79 @@ service DecisionService {
 
 Install grpcurl: https://github.com/fullstorydev/grpcurl
 
+**Health Check:**
 ```bash
-# Health check
 grpcurl -plaintext localhost:50051 corint.decision.v1.DecisionService/HealthCheck
+```
 
-# Make a decision
+**Response:**
+```json
+{
+  "status": "healthy",
+  "version": "0.1.0"
+}
+```
+
+**Make a Decision - Basic Transaction:**
+```bash
 grpcurl -plaintext -d '{
   "event": {
+    "user_id": {"string_value": "user_001"},
     "type": {"string_value": "transaction"},
-    "user_id": {"string_value": "user_123"},
-    "amount": {"double_value": 100.50}
+    "amount": {"double_value": 100.0}
   }
 }' localhost:50051 corint.decision.v1.DecisionService/Decide
+```
+
+**Response:**
+```json
+{
+  "requestId": "req_20251227033655_8e88cc",
+  "status": 200,
+  "processTimeMs": "12",
+  "pipelineId": "fraud_detection_pipeline",
+  "decision": {
+    "result": "APPROVE",
+    "scores": {
+      "canonical": 7
+    },
+    "evidence": {},
+    "cognition": {
+      "summary": "No risk indicators detected"
+    }
+  }
+}
+```
+
+**Make a Decision - With User Context:**
+```bash
+grpcurl -plaintext -d '{
+  "event": {
+    "user_id": {"string_value": "user_003"},
+    "type": {"string_value": "transaction"},
+    "amount": {"double_value": 250.0},
+    "merchant_id": {"string_value": "merchant_001"}
+  },
+  "user": {
+    "account_age_days": {"int_value": 30},
+    "is_verified": {"bool_value": true}
+  }
+}' localhost:50051 corint.decision.v1.DecisionService/Decide
+```
+
+**Reload Repository:**
+```bash
+grpcurl -plaintext localhost:50051 corint.decision.v1.DecisionService/ReloadRepository
+```
+
+**List Available Services:**
+```bash
+grpcurl -plaintext localhost:50051 list
+```
+
+**Describe a Service:**
+```bash
+grpcurl -plaintext localhost:50051 describe corint.decision.v1.DecisionService
 ```
 
 #### Using Python Client
