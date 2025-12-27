@@ -79,10 +79,15 @@ DELETE FROM list_entries;
 
 
 def generate_timestamp(hours_ago=0, days_ago=0, minutes_ago=0):
-    """Generate timestamp relative to current time"""
-    now = datetime.now()
+    """Generate timestamp relative to current UTC time
+
+    IMPORTANT: Use UTC to match the test runner which uses `date -u`
+    """
+    from datetime import timezone
+    now = datetime.now(timezone.utc)
     offset = timedelta(hours=hours_ago, days=days_ago, minutes=minutes_ago)
-    return (now - offset).isoformat()
+    # Remove timezone info for isoformat to match expected format
+    return (now - offset).replace(tzinfo=None).isoformat()
 
 
 def escape_sql_string(s):
@@ -359,6 +364,192 @@ def generate_account_takeover_pattern(count=15):
     return events
 
 
+def generate_failed_login_history():
+    """Generate failed login history for brute force detection testing (Test 17)"""
+    events = []
+
+    # Generate 10 failed logins for user_0105 within last 24 hours
+    # This will trigger excessive_failures rule (>= 5 failed logins)
+    user_id = "user_0105"
+    for i in range(10):
+        hours_ago = random.uniform(0, 23)  # Within last 24 hours
+
+        events.append((
+            "login",
+            user_id,
+            generate_timestamp(hours_ago=hours_ago),
+            None,  # amount
+            None,  # currency
+            None,  # merchant_id
+            random.choice(DEVICES),
+            random.choice(IPS),
+            random.choice(COUNTRIES),
+            f"{user_id}@example.com",
+            None,  # phone
+            "failed",  # Critical: status is failed
+            json.dumps({
+                "login_method": "password",
+                "failed_attempts": i + 1,
+                "user_agent": "Mozilla/5.0",
+                "brute_force_test": True
+            })
+        ))
+
+    # Also generate some failed logins for other suspicious users
+    for user in random.sample(SUSPICIOUS_USERS, 3):
+        for i in range(6):  # 6 failed logins each
+            hours_ago = random.uniform(0, 23)
+            events.append((
+                "login",
+                user,
+                generate_timestamp(hours_ago=hours_ago),
+                None, None, None,
+                random.choice(DEVICES),
+                random.choice(SUSPICIOUS_IPS),
+                random.choice(SUSPICIOUS_COUNTRIES),
+                f"{user}@example.com",
+                None,
+                "failed",
+                json.dumps({
+                    "login_method": "password",
+                    "failed_attempts": random.randint(1, 5),
+                    "user_agent": "Mozilla/5.0"
+                })
+            ))
+
+    return events
+
+
+def generate_high_frequency_transactions():
+    """Generate high frequency transactions for velocity detection (Test 13)"""
+    events = []
+
+    # Generate 20 transactions for a dedicated test user within last 24 hours
+    # This will trigger high_frequency_24h rule (>= 15 transactions)
+    # IMPORTANT: Use user_velocity_24h (not in NORMAL_USERS pool) to avoid
+    # mixing with random base data that could trigger multiple_countries rule
+    user_id = "user_velocity_24h"
+    for i in range(20):
+        hours_ago = random.uniform(1.5, 23)  # Within 24 hours but avoid 1h window
+
+        events.append((
+            "transaction",
+            user_id,
+            generate_timestamp(hours_ago=hours_ago),
+            round(random.uniform(100, 500), 2),
+            "USD",
+            random.choice(MERCHANTS),
+            random.choice(DEVICES),
+            random.choice(IPS),
+            "US",  # Fixed country to avoid multiple_countries rule
+            f"{user_id}@example.com",
+            None,
+            "completed",
+            json.dumps({
+                "payment_method": "credit_card",
+                "velocity_test": True,
+                "high_frequency": True
+            })
+        ))
+
+    # Also generate high frequency transactions for another test user
+    # Generate 8 transactions within 1 hour for 1h frequency test
+    user_id_1h = "user_velocity_1h"
+    for i in range(8):
+        minutes_ago = random.uniform(0, 55)  # Within last hour
+
+        events.append((
+            "transaction",
+            user_id_1h,
+            generate_timestamp(minutes_ago=minutes_ago),
+            round(random.uniform(50, 200), 2),
+            "USD",
+            random.choice(MERCHANTS),
+            random.choice(DEVICES),
+            random.choice(IPS),
+            "US",  # Fixed country to avoid multiple_countries rule
+            f"{user_id_1h}@example.com",
+            None,
+            "completed",
+            json.dumps({
+                "payment_method": "credit_card",
+                "velocity_1h_test": True
+            })
+        ))
+
+    return events
+
+
+def generate_vip_user_history():
+    """Generate VIP user historical transaction data (Test 12)"""
+    events = []
+
+    vip_user = "user_vip_001"
+
+    # Generate 90 days of historical transactions
+    # 2-3 transactions per day with higher amounts typical for VIP
+    for day in range(90):
+        transactions_per_day = random.randint(2, 3)
+        for _ in range(transactions_per_day):
+            hours_ago = (day * 24) + random.uniform(0, 24)
+
+            events.append((
+                "transaction",
+                vip_user,
+                generate_timestamp(hours_ago=hours_ago),
+                round(random.uniform(2000, 8000), 2),  # Higher amounts for VIP
+                "USD",
+                random.choice(MERCHANTS),
+                "device_vip_001",  # Consistent device
+                random.choice(IPS),
+                "US",  # Consistent country
+                f"{vip_user}@example.com",
+                "+15551234567",
+                "completed",
+                json.dumps({
+                    "payment_method": "credit_card",
+                    "vip_status": True,
+                    "verified": True,
+                    "account_age_days": 1000
+                })
+            ))
+
+    return events
+
+
+def generate_crypto_payment_history():
+    """Generate crypto payment history for crypto payment tests (Test 16)"""
+    events = []
+
+    user_id = "user_0104"
+
+    # Generate some crypto payment history
+    for i in range(5):
+        hours_ago = random.uniform(24, 240)  # Past 1-10 days
+
+        events.append((
+            "payment",
+            user_id,
+            generate_timestamp(hours_ago=hours_ago),
+            round(random.uniform(500, 2000), 2),
+            "USD",
+            random.choice(MERCHANTS),
+            random.choice(DEVICES),
+            random.choice(IPS),
+            "US",
+            f"{user_id}@example.com",
+            None,
+            "completed",
+            json.dumps({
+                "payment_method": "crypto",
+                "payment_type": "one_time",
+                "crypto_type": random.choice(["BTC", "ETH", "USDT"])
+            })
+        ))
+
+    return events
+
+
 def generate_list_data():
     """Generate list entries data for database-backed lists"""
     list_entries = []
@@ -431,6 +622,22 @@ def main():
     total_events = 0
     for name, generator, count in generators:
         events = generator(count)
+        all_events.extend(events)
+        total_events += len(events)
+        print(f"  ✓ {name}: {len(events)} events")
+
+    # Additional test-specific data generators (no count parameter)
+    print()
+    print("Generating test-specific data...")
+    additional_generators = [
+        ("Failed login history (Test 17)", generate_failed_login_history),
+        ("High frequency transactions (Test 13)", generate_high_frequency_transactions),
+        ("VIP user history (Test 12)", generate_vip_user_history),
+        ("Crypto payment history (Test 16)", generate_crypto_payment_history),
+    ]
+
+    for name, generator in additional_generators:
+        events = generator()
         all_events.extend(events)
         total_events += len(events)
         print(f"  ✓ {name}: {len(events)} events")

@@ -94,6 +94,19 @@ rule:
 
 ---
 
+# Rule: Crypto Payment Risk
+rule:
+  id: crypto_payment_risk
+  name: Crypto Payment Risk
+  description: High-value crypto payment detection
+  when:
+    all:
+      - event.payment_method == "crypto"
+      - event.amount > 1000
+  score: 100
+
+---
+
 # ========================================
 # Ruleset
 # ========================================
@@ -108,6 +121,7 @@ ruleset:
     - high_risk_location
     - very_high_amount
     - daily_limit_exceeded
+    - crypto_payment_risk
 
   # Conclusion produces signals
   conclusion:

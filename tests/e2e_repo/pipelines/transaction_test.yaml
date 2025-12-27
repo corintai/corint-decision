@@ -131,6 +131,18 @@ rule:
 
 ---
 
+# Rule: Email Blocked (File Backend List Test)
+rule:
+  id: email_blocked
+  name: Email Blocked
+  description: Email is in blocked list (tests file backend)
+  when:
+    all:
+      - event.email in list.blocked_emails
+  score: 1000
+
+---
+
 # ========================================
 # Ruleset
 # ========================================
@@ -142,6 +154,7 @@ ruleset:
 
   rules:
     - user_blocked
+    - email_blocked
     - high_value_new_user
     - amount_spike
     - high_frequency_1h
@@ -155,6 +168,12 @@ ruleset:
     - when: triggered_rules contains "user_blocked"
       signal: decline
       reason: "User is blocked"
+      terminate: true
+
+    # Critical risk - blocked email (file backend list)
+    - when: triggered_rules contains "email_blocked"
+      signal: decline
+      reason: "Email is in blocked list"
       terminate: true
 
     # High risk - multiple indicators or high score

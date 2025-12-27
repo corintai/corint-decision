@@ -53,7 +53,7 @@ rule:
   description: User is in database-backed blocked list
   when:
     all:
-      - event.user_id in list.blocked_users_db
+      - event.user_id in list.blocked_users
   score: 1000
 
 ---
@@ -65,7 +65,7 @@ rule:
   description: IP address is in database-backed blocked list
   when:
     all:
-      - event.ip_address in list.blocked_ips_db
+      - event.ip_address in list.blocked_ips
   score: 1000
 
 ---
@@ -77,7 +77,7 @@ rule:
   description: Country is in database-backed high risk list
   when:
     all:
-      - event.country in list.high_risk_countries_db
+      - event.country in list.high_risk_countries
   score: 500
 
 ---

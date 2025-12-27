@@ -11,7 +11,7 @@
 # 4. Collects results and generates report
 # 5. Cleans up server process
 #
-# Test Coverage (18 test cases):
+# Test Coverage (28 test cases):
 #   - Basic Flow Tests (10 tests):
 #     * Transaction flow (normal, blocked user, high value, high-risk country)
 #     * Login flow (normal, blocked IP, high-risk country)
@@ -20,7 +20,7 @@
 #   - Advanced Risk Detection (3 tests):
 #     * Multi-factor fraud pattern detection
 #     * VIP user differential treatment
-#     * Velocity/frequency anomaly detection
+#     * Velocity/frequency anomaly detection (with historical data)
 #
 #   - Enhanced Coverage (3 tests):
 #     * Geographic mismatch (IP vs registered country)
@@ -28,8 +28,20 @@
 #     * Crypto payment risk assessment
 #
 #   - Edge Cases (2 tests):
-#     * Brute force login detection
+#     * Brute force login detection (with historical failed logins)
 #     * Amount anomaly detection
+#
+#   - Database List Tests (4 tests) [P0]:
+#     * DB blocked user, DB blocked IP, DB high-risk country, DB clean event
+#
+#   - Boundary Tests (3 tests) [P1]:
+#     * Score at review threshold, Score below review, Score at decline
+#
+#   - Multi-Rule Trigger Tests (1 test) [P1]:
+#     * Multiple rules with high combined score
+#
+#   - File Backend List Tests (2 tests) [P2]:
+#     * Blocked email (file list), Clean email
 #
 # Usage:
 #   cd tests
@@ -411,10 +423,11 @@ main() {
     }' "decline"
 
     # Test 3: High value from new user - should review
+    # Use a unique user ID not in any data pool to ensure 0 historical transactions
     run_test_case "High Value New User" '{
         "event": {
             "type": "transaction",
-            "user_id": "user_0050",
+            "user_id": "user_new_highvalue",
             "amount": 5000.00,
             "country": "US",
             "ip_address": "192.168.1.100",
@@ -543,10 +556,10 @@ main() {
         }
     }' "decline"
 
-    # Test 12: VIP user high value transaction - should approve with VIP logic
-    # NOTE: Current ruleset doesn't have VIP whitelist logic, so high-value
-    # transactions without history trigger review. Expected: review (not approve)
-    # until VIP rules are added to the ruleset.
+    # Test 12: VIP user high value transaction - should approve
+    # UPDATED: VIP user now has 225+ historical transactions from test data,
+    # so high_value_new_user rule (requires < 5 transactions) doesn't trigger.
+    # Approve is the correct expected result.
     run_test_case "VIP User High Value" '{
         "event": {
             "type": "transaction",
@@ -562,24 +575,23 @@ main() {
             "dispute_count": 0,
             "average_transaction": 8000.00
         }
-    }' "review"
+    }' "approve"
 
-    # Test 13: Velocity anomaly detection
-    # NOTE: Current test data doesn't have users with enough transactions (need 15+)
-    # to trigger high_frequency rules. Using a normal user with moderate history.
-    # Expected: approve (no velocity threshold exceeded)
-    # TODO: Update test data generator to create true velocity abuse patterns
-    run_test_case "Velocity Check - Normal User" '{
+    # Test 13: Velocity anomaly detection - high frequency in 24h
+    # user_velocity_24h has 20+ transactions in last 24h (from generate_high_frequency_transactions)
+    # Combined with high_risk_country (NG), the multi-rule combination triggers decline
+    # (triggered_count >= 3 conclusion in ruleset)
+    run_test_case "Velocity Check - High Frequency" '{
         "event": {
             "type": "transaction",
-            "user_id": "user_0017",
+            "user_id": "user_velocity_24h",
             "amount": 500.00,
-            "country": "US",
+            "country": "NG",
             "ip_address": "192.168.1.100",
             "device_id": "device_00002",
             "timestamp": "'"$CURRENT_TIME"'"
         }
-    }' "approve"
+    }' "decline"
 
     echo ""
     echo "--- Enhanced Coverage Tests (Medium Priority) ---"
@@ -622,12 +634,11 @@ main() {
         }
     }' "review"
 
-    # Test 16: Crypto payment risk - should approve
-    # NOTE: Current payment_risk_ruleset doesn't have rules to detect crypto payments
-    # This test validates that without crypto-specific rules, a normal payment is approved
-    # Expected: approve (amount 3000 < 5000 threshold, US not in high-risk countries)
-    # TODO: Add crypto payment detection rule to payment_risk_ruleset
-    run_test_case "Crypto Payment Check" '{
+    # Test 16: Crypto payment risk - should review
+    # UPDATED: crypto_payment_risk rule added to payment_risk_ruleset
+    # crypto payment with amount > 1000 triggers crypto_payment_risk (score 100)
+    # Score 100 >= 100 (payment review threshold) -> review
+    run_test_case "Crypto Payment Risk" '{
         "event": {
             "type": "payment",
             "user_id": "user_0104",
@@ -635,33 +646,28 @@ main() {
             "country": "US",
             "ip_address": "192.168.1.100",
             "timestamp": "'"$CURRENT_TIME"'",
-            "payment_method": "crypto",
-            "verified": false,
-            "account_age_days": 30
+            "payment_method": "crypto"
         }
-    }' "approve"
+    }' "review"
 
     echo ""
     echo "--- Edge Case Tests (Low Priority) ---"
     echo ""
 
-    # Test 17: Brute force login detection - should approve
-    # NOTE: Brute force rules check features.failed_login_count_24h (historical data)
-    # not event.login_attempts (current event field). Clean user has no history.
-    # Expected: approve (no failed login history in database)
-    # TODO: Create test user with actual failed login history in test data
-    run_test_case "Brute Force Check" '{
+    # Test 17: Brute force login detection - should decline
+    # UPDATED: user_0105 now has 10 failed logins in last 24h (from generate_failed_login_history)
+    # This triggers excessive_failures rule (>= 5 failed logins) with score 200
+    # Score 200 >= 150 -> decline
+    run_test_case "Brute Force Detection" '{
         "event": {
             "type": "login",
             "user_id": "user_0105",
             "country": "US",
             "ip_address": "192.168.1.100",
             "device_id": "device_00005",
-            "timestamp": "'"$CURRENT_TIME"'",
-            "login_attempts": 8,
-            "session_duration": 30
+            "timestamp": "'"$CURRENT_TIME"'"
         }
-    }' "approve"
+    }' "decline"
 
     # Test 18: Amount anomaly - should review
     # $9000 transaction vs $2000 average (4.5x spike)
@@ -679,6 +685,154 @@ main() {
             "account_age_days": 180
         }
     }' "review"
+
+    echo ""
+    echo "--- Database List Tests (P0) ---"
+    echo ""
+
+    # Test 19: Database blocked user check
+    run_test_case "DB Blocked User" '{
+        "event": {
+            "type": "db_list_test",
+            "user_id": "sus_0001",
+            "ip_address": "192.168.1.100",
+            "country": "US",
+            "timestamp": "'"$CURRENT_TIME"'"
+        }
+    }' "decline"
+
+    # Test 20: Database blocked IP check
+    run_test_case "DB Blocked IP" '{
+        "event": {
+            "type": "db_list_test",
+            "user_id": "user_9999",
+            "ip_address": "45.142.212.61",
+            "country": "US",
+            "timestamp": "'"$CURRENT_TIME"'"
+        }
+    }' "decline"
+
+    # Test 21: Database high risk country check
+    run_test_case "DB High Risk Country" '{
+        "event": {
+            "type": "db_list_test",
+            "user_id": "user_9999",
+            "ip_address": "192.168.1.100",
+            "country": "NG",
+            "timestamp": "'"$CURRENT_TIME"'"
+        }
+    }' "review"
+
+    # Test 22: Database list - clean event (no matches)
+    run_test_case "DB List Clean Event" '{
+        "event": {
+            "type": "db_list_test",
+            "user_id": "user_9999",
+            "ip_address": "192.168.1.100",
+            "country": "US",
+            "timestamp": "'"$CURRENT_TIME"'"
+        }
+    }' "approve"
+
+    echo ""
+    echo "--- Boundary Tests (P1) ---"
+    echo ""
+
+    # Test 23: Score boundary - exactly at review threshold (score = 80)
+    # high_risk_country rule triggers with score 80
+    run_test_case "Score At Review Threshold" '{
+        "event": {
+            "type": "transaction",
+            "user_id": "user_boundary_1",
+            "amount": 150.00,
+            "country": "NG",
+            "ip_address": "192.168.1.100",
+            "device_id": "device_00001",
+            "timestamp": "'"$CURRENT_TIME"'"
+        }
+    }' "review"
+
+    # Test 24: Score boundary - just below review threshold
+    # Normal transaction, no rules trigger, score = 0
+    run_test_case "Score Below Review Threshold" '{
+        "event": {
+            "type": "transaction",
+            "user_id": "user_boundary_2",
+            "amount": 50.00,
+            "country": "US",
+            "ip_address": "192.168.1.100",
+            "device_id": "device_00001",
+            "timestamp": "'"$CURRENT_TIME"'"
+        }
+    }' "approve"
+
+    # Test 25: Score boundary - at decline threshold (score >= 150)
+    # high_value_new_user (80) + high_risk_country (80) = 160
+    run_test_case "Score At Decline Threshold" '{
+        "event": {
+            "type": "transaction",
+            "user_id": "user_boundary_3",
+            "amount": 5000.00,
+            "country": "NG",
+            "ip_address": "192.168.1.100",
+            "device_id": "device_00001",
+            "timestamp": "'"$CURRENT_TIME"'"
+        }
+    }' "decline"
+
+    echo ""
+    echo "--- Multi-Rule Trigger Tests (P1) ---"
+    echo ""
+
+    # Test 26: Multiple rules triggered (triggered_count >= 3 should decline)
+    # This requires a user with history to trigger amount_spike
+    # Using high_value_new_user (80) + high_risk_country (80) = 160 -> decline
+    run_test_case "Multi-Rule High Score" '{
+        "event": {
+            "type": "transaction",
+            "user_id": "user_multi_1",
+            "amount": 8000.00,
+            "country": "RU",
+            "ip_address": "192.168.1.100",
+            "device_id": "device_00001",
+            "timestamp": "'"$CURRENT_TIME"'"
+        }
+    }' "decline"
+
+    echo ""
+    echo "--- File Backend List Tests (P2) ---"
+    echo ""
+
+    # Test 27: File backend blocked email - should decline
+    # Tests file backend list functionality
+    # Email alice.wang23@gmail.com is in high_risk_emails.txt file
+    run_test_case "File Backend Blocked Email" '{
+        "event": {
+            "type": "transaction",
+            "user_id": "user_file_test_1",
+            "amount": 100.00,
+            "country": "US",
+            "ip_address": "192.168.1.100",
+            "device_id": "device_00001",
+            "email": "alice.wang23@gmail.com",
+            "timestamp": "'"$CURRENT_TIME"'"
+        }
+    }' "decline"
+
+    # Test 28: File backend clean email - should approve
+    # Email not in blocked list
+    run_test_case "File Backend Clean Email" '{
+        "event": {
+            "type": "transaction",
+            "user_id": "user_file_test_2",
+            "amount": 100.00,
+            "country": "US",
+            "ip_address": "192.168.1.100",
+            "device_id": "device_00001",
+            "email": "legitimate.user@company.com",
+            "timestamp": "'"$CURRENT_TIME"'"
+        }
+    }' "approve"
 
     echo ""
     echo "============================================================================"
