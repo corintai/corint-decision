@@ -1,6 +1,6 @@
 //! List configuration loader
 
-use super::backend::{FileBackend, ListBackend, MemoryBackend, PostgresBackend};
+use super::backend::{FileBackend, ListBackend, MemoryBackend};
 use super::config::{ListBackendType, ListConfig, ListsConfig};
 use crate::error::{Result, RuntimeError};
 use corint_core::Value;
@@ -11,6 +11,9 @@ use tokio::fs;
 
 #[cfg(feature = "sqlx")]
 use sqlx::PgPool;
+
+#[cfg(feature = "sqlx")]
+use super::backend::PostgresBackend;
 
 /// List configuration loader
 pub struct ListLoader {

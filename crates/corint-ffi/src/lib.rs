@@ -9,7 +9,6 @@ use std::ptr;
 use std::sync::Arc;
 
 use corint_sdk::{DecisionEngineBuilder, DecisionRequest, RepositoryConfig};
-use serde_json::Value as JsonValue;
 
 mod types;
 mod utils;

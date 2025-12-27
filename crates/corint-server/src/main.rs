@@ -12,7 +12,6 @@ use crate::api::grpc::DecisionGrpcService;
 use crate::config::ServerConfig;
 use anyhow::Result;
 use corint_runtime::observability::otel::{init_opentelemetry, OtelConfig, OtelContext};
-use corint_sdk::DecisionEngine;
 use std::sync::Arc;
 use tokio::net::TcpListener;
 use tokio::sync::RwLock;
@@ -65,7 +64,7 @@ async fn main() -> Result<()> {
         let file_descriptor_set = include_bytes!("../proto/decision_descriptor.bin");
         let reflection_service = tonic_reflection::server::Builder::configure()
             .register_encoded_file_descriptor_set(file_descriptor_set)
-            .build()
+            .build_v1()
             .unwrap();
 
         // Spawn gRPC server in background

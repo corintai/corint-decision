@@ -1,9 +1,9 @@
 //! Trace building utilities for execution traces
 
 use super::when_evaluator::WhenEvaluator;
-use corint_core::ast::{Expression, Operator, WhenBlock};
+use corint_core::ast::{Expression, WhenBlock};
 use corint_core::Value;
-use corint_runtime::{ConclusionTrace, ConditionTrace, ExecutionTrace, PipelineTrace, RuleTrace, RulesetTrace, StepTrace};
+use corint_runtime::{ConclusionTrace, ConditionTrace, StepTrace};
 use std::collections::HashMap;
 
 pub(super) struct TraceBuilder;

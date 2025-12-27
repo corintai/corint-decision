@@ -50,6 +50,7 @@ impl CompileContext {
     }
 
     /// Add a conditional jump instruction that needs to be resolved later
+    #[allow(dead_code)]
     pub(super) fn add_pending_conditional_jump(&mut self, target: String, jump_if_true: bool) {
         let jump_pos = self.instructions.len();
         if jump_if_true {

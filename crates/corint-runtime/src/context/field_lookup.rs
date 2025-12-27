@@ -64,6 +64,7 @@ pub(super) fn get_nested_value(data: &HashMap<String, Value>, path: &[String]) -
 ///
 /// # Returns
 /// * The value at the path, or Value::Null if not found or value is not an object
+#[allow(dead_code)]
 pub(super) fn navigate_path(value: &Value, path: &[String]) -> Result<Value> {
     match value {
         Value::Object(map) => {

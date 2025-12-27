@@ -3,7 +3,7 @@
 //! Compiles Rule AST nodes into IR programs.
 
 use super::expression_codegen::ExpressionCompiler;
-use crate::error::{CompileError, Result};
+use crate::error::Result;
 use corint_core::ast::rule::{Condition, ConditionGroup};
 use corint_core::ast::{Rule, UnaryOperator};
 use corint_core::ir::{Instruction, Program, ProgramMetadata};

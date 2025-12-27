@@ -1,7 +1,6 @@
 //! List configuration structures
 
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 
 /// List configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]

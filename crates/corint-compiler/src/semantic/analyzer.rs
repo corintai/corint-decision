@@ -99,6 +99,7 @@ impl SemanticAnalyzer {
     }
 
     /// Analyze a single pipeline step
+    #[allow(dead_code)]
     fn analyze_step(
         &mut self,
         step: &corint_core::ast::Step,
@@ -223,7 +224,7 @@ impl SemanticAnalyzer {
     }
 
     /// Collect variable references from an expression
-    #[allow(clippy::only_used_in_recursion)]
+    #[allow(dead_code, clippy::only_used_in_recursion)]
     fn collect_variable_references(&self, expr: &Expression, references: &mut HashSet<String>) {
         match expr {
             Expression::FieldAccess(path) => {

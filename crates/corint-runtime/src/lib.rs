@@ -37,7 +37,7 @@ pub use llm::{
 };
 pub use observability::{Metrics, MetricsCollector};
 pub use result::{
-    ConclusionTrace, ConditionTrace, DecisionLogicTrace, DecisionRecord, DecisionResult, DecisionResultWriter,
+    ConclusionTrace, ConditionTrace, DecisionRecord, DecisionResult, DecisionResultWriter,
     ExecutionResult, ExecutionTrace, PipelineTrace, RuleExecutionRecord, RuleTrace, RulesetTrace,
     StepTrace,
 };

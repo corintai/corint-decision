@@ -200,6 +200,7 @@ impl ConclusionTrace {
 
 // Backwards compatibility alias
 #[deprecated(since = "0.1.0", note = "Use ConclusionTrace instead")]
+#[allow(dead_code)]
 pub type DecisionLogicTrace = ConclusionTrace;
 
 /// Trace of a ruleset evaluation

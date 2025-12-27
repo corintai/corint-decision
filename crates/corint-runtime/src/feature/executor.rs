@@ -654,6 +654,7 @@ impl FeatureExecutor {
     }
 
     /// Get data source name from old Operator enum (deprecated, kept for tests)
+    #[allow(dead_code)]
     fn get_datasource_name_from_operator(&self, operator: &Operator) -> String {
         match operator {
             // Operators with explicit datasource field
@@ -790,6 +791,7 @@ impl Default for FeatureExecutor {
 }
 
 /// Parse window string (e.g., "24h", "7d", "30d") to WindowConfig
+#[allow(dead_code)]
 fn parse_window(window_str: &str) -> Option<crate::feature::operator::WindowConfig> {
     use crate::feature::operator::{WindowConfig, WindowUnit};
 

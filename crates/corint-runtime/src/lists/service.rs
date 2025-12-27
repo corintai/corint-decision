@@ -1,6 +1,6 @@
 //! List service for managing lists
 
-use super::backend::{ListBackend, MemoryBackend};
+use super::backend::ListBackend;
 use crate::error::{Result, RuntimeError};
 use corint_core::Value;
 use std::collections::HashMap;

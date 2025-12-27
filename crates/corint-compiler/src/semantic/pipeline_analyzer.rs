@@ -166,9 +166,8 @@ fn validate_step(
     if let Some(next) = &step.next {
         // next is StepNext::StepId(String)
         use corint_core::ast::pipeline::StepNext;
-        if let StepNext::StepId(next_id) = next {
-            validate_step_reference(next_id, &step.id, step_map, result);
-        }
+        let StepNext::StepId(next_id) = next;
+        validate_step_reference(next_id, &step.id, step_map, result);
     }
 }
 
@@ -235,9 +234,8 @@ fn check_circular_dependencies(
 
             if let Some(next) = &step.next {
                 use corint_core::ast::pipeline::StepNext;
-                if let StepNext::StepId(next_id) = next {
-                    next_steps.push(next_id.as_str());
-                }
+                let StepNext::StepId(next_id) = next;
+                next_steps.push(next_id.as_str());
             }
 
             // Visit each next step
@@ -307,10 +305,9 @@ fn find_reachable_steps(
 
             if let Some(next) = &step.next {
                 use corint_core::ast::pipeline::StepNext;
-                if let StepNext::StepId(next_id) = next {
-                    if !reachable.contains(next_id) {
-                        queue.push_back(next_id.clone());
-                    }
+                let StepNext::StepId(next_id) = next;
+                if !reachable.contains(next_id) {
+                    queue.push_back(next_id.clone());
                 }
             }
         }
@@ -322,7 +319,7 @@ fn find_reachable_steps(
 /// W002: Check for dead ends (steps without next/routes/default)
 fn check_dead_ends(
     pipeline: &Pipeline,
-    step_map: &HashMap<String, &PipelineStep>,
+    _step_map: &HashMap<String, &PipelineStep>,
     result: &mut PipelineAnalysisResult,
 ) {
     for step in &pipeline.steps {

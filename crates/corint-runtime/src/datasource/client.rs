@@ -11,8 +11,6 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
-#[cfg(feature = "sqlx")]
-use sqlx::{Column, Row};
 
 /// Unified data source client
 pub struct DataSourceClient {

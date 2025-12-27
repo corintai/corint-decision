@@ -1,10 +1,9 @@
 //! Rule compilation and loading utilities
 
 use crate::error::{Result, SdkError};
-use corint_compiler::{Compiler, CompilerOptions as CompilerOpts};
+use corint_compiler::Compiler;
 use corint_core::ir::Program;
 use corint_parser::{PipelineParser, RegistryParser, RuleParser, RulesetParser};
-use std::collections::HashMap;
 use std::path::Path;
 
 pub(super) struct CompilerHelper;

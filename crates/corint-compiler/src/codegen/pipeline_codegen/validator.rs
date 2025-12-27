@@ -69,9 +69,8 @@ pub(super) fn get_next_step_ids(step: &PipelineStep) -> Vec<String> {
 
     // Collect from next
     if let Some(next) = &step.next {
-        if let StepNext::StepId(next_id) = next {
-            next_ids.push(next_id.clone());
-        }
+        let StepNext::StepId(next_id) = next;
+        next_ids.push(next_id.clone());
     }
 
     next_ids

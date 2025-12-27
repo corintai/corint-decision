@@ -21,7 +21,7 @@ pub async fn init_engine(config: &ServerConfig) -> Result<corint_sdk::DecisionEn
         RepositoryType::FileSystem { path } => {
             RepositoryConfig::file_system(path.to_string_lossy().to_string())
         }
-        RepositoryType::Database { datasource, url, db_type } => {
+        RepositoryType::Database { datasource, url, db_type: _ } => {
             // If datasource name is provided, look it up in server.yaml datasources
             if let Some(ds_name) = datasource {
                 if let Some(ds_config) = config.datasources.get(ds_name) {

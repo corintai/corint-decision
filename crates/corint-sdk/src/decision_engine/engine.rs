@@ -4,18 +4,17 @@ use super::when_evaluator::WhenEvaluator;
 use super::trace_builder::TraceBuilder;
 use super::compiler_helper::CompilerHelper;
 
-use super::types::{DecisionOptions, DecisionRequest, DecisionResponse};
+use super::types::{DecisionRequest, DecisionResponse};
 use crate::config::EngineConfig;
 use crate::error::{Result, SdkError};
 use corint_compiler::{Compiler, CompilerOptions as CompilerOpts};
-use corint_core::ast::{Condition, ConditionGroup, Expression, Operator, PipelineRegistry, Signal, WhenBlock};
+use corint_core::ast::{PipelineRegistry, Signal};
 use corint_core::ir::Program;
 use corint_core::Value;
-use corint_parser::{PipelineParser, RegistryParser, RuleParser, RulesetParser};
+use corint_parser::RegistryParser;
 use corint_runtime::{
-    ApiConfig, ConclusionTrace, ConditionTrace, ContextInput, DecisionResult, ExecutionTrace,
+    ApiConfig, ConditionTrace, DecisionResult, ExecutionTrace,
     ExternalApiClient, MetricsCollector, PipelineExecutor, PipelineTrace, RuleTrace, RulesetTrace,
-    StepTrace,
 };
 use std::collections::HashMap;
 use std::path::Path;
@@ -1161,7 +1160,7 @@ impl DecisionEngine {
                     }
                 } else if let Some(ref action) = combined_result.signal {
                     // Fallback to combined result if ruleset-specific result not found
-                    let action_str = match action {
+                    let _action_str = match action {
                         Signal::Approve => "approve",
                         Signal::Decline => "decline",
                         Signal::Review => "review",

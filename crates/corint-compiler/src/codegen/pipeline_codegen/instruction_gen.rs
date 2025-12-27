@@ -37,9 +37,9 @@ pub(super) fn compile_step(step: &PipelineStep, ctx: &mut CompileContext) -> Res
 
 /// Compile step-level when condition as a guard
 fn compile_step_when_guard(
-    when: &WhenBlock,
-    step: &PipelineStep,
-    ctx: &mut CompileContext,
+    _when: &WhenBlock,
+    _step: &PipelineStep,
+    _ctx: &mut CompileContext,
 ) -> Result<()> {
     // TODO: Implement proper step-level when guards
     // For now, step-level when conditions are not used in comprehensive_dsl_demo.yaml
@@ -104,11 +104,8 @@ fn compile_router_step(step: &PipelineStep, ctx: &mut CompileContext) -> Result<
 fn compile_ruleset_step(step: &PipelineStep, ctx: &mut CompileContext) -> Result<()> {
     // Get next step ID for tracing
     let next_step_id = step.next.as_ref().map(|n| {
-        if let StepNext::StepId(id) = n {
-            id.clone()
-        } else {
-            "end".to_string()
-        }
+        let StepNext::StepId(id) = n;
+        id.clone()
     });
 
     // Mark step as executed
@@ -292,9 +289,8 @@ fn compile_subpipeline_step(step: &PipelineStep, ctx: &mut CompileContext) -> Re
 /// Compile the unconditional next jump for a step
 fn compile_next_jump(step: &PipelineStep, ctx: &mut CompileContext) -> Result<()> {
     if let Some(next) = &step.next {
-        if let StepNext::StepId(next_id) = next {
-            ctx.add_pending_jump(next_id.clone());
-        }
+        let StepNext::StepId(next_id) = next;
+        ctx.add_pending_jump(next_id.clone());
     }
     Ok(())
 }

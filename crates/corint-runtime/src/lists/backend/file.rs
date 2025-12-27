@@ -22,6 +22,7 @@ pub struct FileBackend {
     entries: Arc<RwLock<HashSet<String>>>,
 
     /// Whether automatic reloading is enabled
+    #[allow(dead_code)]
     reload_enabled: bool,
 }
 
@@ -119,7 +120,7 @@ impl ListBackend for FileBackend {
         Ok(entries.contains(&search_str))
     }
 
-    async fn add(&mut self, _list_id: &str, value: Value) -> Result<()> {
+    async fn add(&mut self, _list_id: &str, _value: Value) -> Result<()> {
         // File backend is read-only for now
         // Adding values would require writing back to the file
         Err(RuntimeError::InvalidOperation(
@@ -127,7 +128,7 @@ impl ListBackend for FileBackend {
         ))
     }
 
-    async fn remove(&mut self, _list_id: &str, value: &Value) -> Result<()> {
+    async fn remove(&mut self, _list_id: &str, _value: &Value) -> Result<()> {
         // File backend is read-only
         Err(RuntimeError::InvalidOperation(
             "File backend is read-only".to_string(),

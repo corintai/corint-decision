@@ -207,6 +207,7 @@ impl CacheManager {
     }
 
     /// Get cache configuration from old Operator enum (deprecated, kept for tests)
+    #[allow(dead_code)]
     pub(super) fn get_cache_config_from_operator<'a>(&self, operator: &'a Operator) -> Option<&'a CacheConfig> {
         match operator {
             Operator::Count(op) => op.params.cache.as_ref(),

@@ -5,7 +5,7 @@ lists:
   # Blocked users list - stored in database
   - id: blocked_users_db
     description: "Database-backed list of blocked user IDs"
-    backend: postgresql  # Using postgresql backend which works with SQLite via sqlx
+    backend: sqlite
     table: list_entries
     value_column: value
     expiration_column: expires_at
@@ -13,7 +13,7 @@ lists:
   # Blocked IPs list - stored in database
   - id: blocked_ips_db
     description: "Database-backed list of blocked IP addresses"
-    backend: postgresql
+    backend: sqlite
     table: list_entries
     value_column: value
     expiration_column: expires_at
@@ -21,7 +21,7 @@ lists:
   # High risk countries - stored in database
   - id: high_risk_countries_db
     description: "Database-backed list of high-risk country codes"
-    backend: postgresql
+    backend: sqlite
     table: list_entries
     value_column: value
     expiration_column: expires_at

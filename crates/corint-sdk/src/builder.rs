@@ -452,7 +452,7 @@ impl DecisionEngineBuilder {
 
     /// Initialize ListService from repository content
     async fn init_list_service_from_content(
-        content: &RepositoryContent,
+        _content: &RepositoryContent,
         repo_config: &Option<RepositoryConfig>,
         database_url: &Option<String>,
     ) -> Result<Option<corint_runtime::lists::ListService>> {

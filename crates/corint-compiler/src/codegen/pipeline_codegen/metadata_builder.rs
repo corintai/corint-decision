@@ -39,9 +39,8 @@ pub(super) fn build_steps_metadata(steps: &[&PipelineStep]) -> String {
 
             // Add next step if present
             if let Some(next) = &step.next {
-                if let StepNext::StepId(next_id) = next {
-                    info["next"] = serde_json::Value::String(next_id.clone());
-                }
+                let StepNext::StepId(next_id) = next;
+                info["next"] = serde_json::Value::String(next_id.clone());
             }
 
             // Add step-specific details
@@ -159,7 +158,7 @@ fn condition_to_string(condition: &Condition) -> String {
 
 /// Convert Expression to a human-readable string
 fn expression_to_string(expr: &corint_core::ast::Expression) -> String {
-    use corint_core::ast::{Expression, Operator, UnaryOperator};
+    use corint_core::ast::{Expression, UnaryOperator};
     match expr {
         Expression::FieldAccess(path) => path.join("."),
         Expression::Literal(value) => value_to_readable_string(value),
