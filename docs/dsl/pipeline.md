@@ -2,42 +2,56 @@
 ## Pipeline Specification (v0.2)
 
 A **Pipeline** defines the full risk‑processing flow in CORINT's Cognitive Risk Intelligence framework.
-It represents a declarative Directed Acyclic Graph (DAG) composed of *steps*, *branches*, *parallel flows*, and *aggregation nodes*.
+It represents a declarative Directed Acyclic Graph (DAG) composed of processing steps with explicit routing.
 
-Pipelines orchestrate how events move through feature extraction, cognitive reasoning (LLM), rule execution, scoring, and **final decision making**.
+Pipelines orchestrate how events move through feature extraction, rule execution, and external service integration.
 
-**Important: Three-Layer Decision Model**
-- **Rules** detect and score individual risk patterns
-- **Rulesets** produce **signals** (`approve`, `decline`, `review`, `hold`, `pass`) based on rule results
-- **Pipelines** make **final decisions** based on ruleset signals, outputting both a **signal** and optional **actions**
+> **⚠️ Important:** This document clearly marks **✅ Implemented** vs **📋 Planned** features.
 
-Note: Both rulesets and pipelines use the same 5 signal types. The difference is naming convention to clarify that ruleset output is intermediate (called "signal"), while pipeline output is the final decision result.
+**Current Implementation:**
+- **Rules** detect and score individual risk patterns (✅ Implemented)
+- **Rulesets** produce **signals** (`approve`, `decline`, `review`, `hold`, `pass`) based on rule results (✅ Implemented)
+- **Pipelines** execute rulesets and route events through processing steps (✅ Implemented)
+- **Pipeline-level decision logic** is documented below but **📋 NOT YET IMPLEMENTED**
 
 ---
 
 ## 1. Pipeline Structure
 
-### 1.1 Basic Structure
+### 1.1 Implemented Fields (✅)
 
 ```yaml
 pipeline:
-  id: string                    # Optional unique identifier
-  name: string                  # Optional human-readable name
-  description: string           # Optional description
-  when:                         # Optional execution condition
-    all: [...]                  # Conditions (event type, expressions)
-  steps:                        # Processing steps
-    - <step>
-    - <step>
-    - <branch>
-    - <parallel>
-    - <aggregate>
-    - <include>
-  decision:                     # Final decision logic based on signals
-    - <decision-rules>
+  id: string                    # ✅ Required: Unique identifier
+  name: string                  # ✅ Required: Human-readable name
+  description: string           # ✅ Optional: Description
+  entry: string                 # ✅ Required: ID of the first step to execute (DAG entry point)
+  when:                         # ✅ Optional: Execution condition
+    all: [...]                  # Conditions using expression syntax
+  steps:                        # ✅ Required: Processing steps (see section 2)
+    - step:
+        id: string
+        name: string
+        type: string
+        # ... type-specific fields
+  metadata:                     # ✅ Optional: Arbitrary key-value pairs
+    <key>: <value>
 ```
 
-### 1.2 Execution Flow
+### 1.2 Planned Fields (📋 Not Yet Implemented)
+
+```yaml
+pipeline:
+  decision:                     # 📋 NOT IMPLEMENTED: Pipeline-level decision logic
+    - <decision-rules>          # Currently: Only rulesets have decision logic via 'conclusion'
+```
+
+**Important:**
+- The `entry` field is **required** and specifies which step to start with
+- The `decision` field is documented in Section 7 but **NOT implemented** in the Pipeline AST
+- For decision logic, use **Ruleset conclusion** instead (see [ruleset.md](ruleset.md))
+
+### 1.3 Execution Flow
 
 Pipeline execution follows this flow:
 
@@ -56,56 +70,49 @@ when条件检查 → entry step → next routing → ... → decision最终决�
 - Omitting `next` means "end here" - enables early termination from any step
 - `decision` section is the terminal phase for making final actions
 
-### 1.3 Pipeline Metadata
+### 1.4 Pipeline Metadata (✅ Implemented)
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `id` | string | No | Unique identifier for the pipeline |
-| `name` | string | No | Human-readable name |
+| `id` | string | Yes | Unique identifier for the pipeline |
+| `name` | string | Yes | Human-readable name |
 | `description` | string | No | Detailed description of pipeline purpose |
+| `entry` | string | Yes | ID of the first step to execute |
 | `when` | object | No | Execution condition (event type filter) |
 | `steps` | array | Yes | List of processing steps |
-| `decision` | array | No | Final decision logic based on signals from rulesets |
 | `metadata` | object | No | Arbitrary key-value pairs for documentation, versioning, authorship, etc. |
 
-The `metadata` field allows you to attach information to your pipeline for documentation, versioning, and management purposes.
+The `metadata` field allows you to attach arbitrary information to your pipeline for documentation, versioning, and management purposes.
 
-**Required Fields**:
-- `version` (string) - Version number in semver format (e.g., "1.0.0")
-- `author` (string) - Author or team name
-- `updated` (string) - Last update timestamp in format "YYYY-MM-DD HH:mm:ss"
-
-**Custom Fields**:
-- Any additional key/value pairs for business-specific metadata
+**Note:** Unlike what was previously documented, there are **no required fields** within metadata. All metadata fields are optional and user-defined.
 
 **Example**:
 ```yaml
 pipeline:
   id: fraud_detection
   name: Fraud Detection Pipeline
+  entry: initial_check
   description: Comprehensive fraud detection
   metadata:
-    # Required fields
+    # All fields are optional - define what you need
     version: "2.1.0"
     author: "Risk Engineering Team"
     updated: "2025-12-20 14:30:00"
-
-    # Optional custom fields
     owner: "fraud_team"
     environment: "production"
     tags: [fraud, risk_assessment]
 ```
 
-### 1.4 When Condition
+### 1.5 When Condition (✅ Implemented)
 
-The `when` block controls whether the pipeline executes:
+The `when` block controls whether the pipeline executes. Uses the same syntax as rule conditions.
 
 ```yaml
 pipeline:
   when:
     all:
       - event.type == "payment"  # Only execute for payment events
-      - amount > 100             # Additional condition
+      - event.amount > 100       # Additional condition (must use event. prefix)
 ```
 
 If `when` condition is not met:
@@ -119,42 +126,63 @@ Each element is one of the pipeline constructs described below.
 
 ## 2. Step Types
 
-A **step** is the smallest processing unit in a pipeline.
+A **step** is the smallest processing unit in a pipeline. All steps are wrapped in a `step:` object.
 
 ```yaml
-step:
-  id: string
-  type: extract | reason | rules | api | score | action | custom
-  if: <optional-condition>
-  params: <key-value-map>
+- step:
+    id: string                  # Required: Unique step identifier
+    name: string                # Required: Human-readable name
+    type: string                # Required: Step type (see below)
+    when: <optional-condition>  # Optional: Condition for execution
+    next: <step-id>             # Optional: Next step to execute
+    # ... type-specific fields
 ```
 
-### 2.1 `type` definitions
+### 2.1 Implemented Step Types (✅)
 
-| type | Description |
-|------|-------------|
-| `extract` | Feature extraction (device info, geo-IP, KYC profile, etc.) |
-| `reason` | LLM cognitive reasoning step |
-| `rules` | Execute a ruleset |
-| `service` | Internal service call (database, cache, microservice, etc.) |
-| `api` | External API lookup (Chainalysis, MaxMind, device fingerprint, etc.) |
-| `score` | Score computation or normalization |
-| `action` | Produces final decision outcome |
-| `custom` | User‑defined function (Python/Rust/etc.) |
+| type | Description | Status |
+|------|-------------|--------|
+| `router` | Pure routing step with conditional routes | ✅ Implemented |
+| `function` | Pure computation step | ✅ Implemented |
+| `rule` | Execute a single rule | ✅ Implemented |
+| `ruleset` | Execute a ruleset | ✅ Implemented |
+| `pipeline` | Call a sub-pipeline | ✅ Implemented |
+| `service` | Internal service call (database, cache, microservice, etc.) | ✅ Implemented |
+| `api` | External API lookup (supports single, any, all modes) | ✅ Implemented |
+| `trigger` | External action (message queue, webhook, notification) | ✅ Implemented |
+| `extract` | Feature extraction (legacy format) | ✅ Implemented (legacy) |
+| `reason` | LLM cognitive reasoning step (legacy format) | ✅ Implemented (legacy) |
 
-### 2.2 `if` conditional
+### 2.2 Planned Step Types (📋)
 
-Every step may include a conditional:
+| type | Description | Status |
+|------|-------------|--------|
+| `score` | Score computation or normalization | 📋 Planned (use expression features instead) |
+| `action` | Produces final decision outcome | 📋 Planned (use ruleset conclusion instead) |
+| `branch` | Conditional branching | 📋 Planned (use router step instead) |
+| `parallel` | Parallel execution | 📋 Planned (currently in legacy format only) |
+| `aggregate` | Aggregation of results | 📋 Planned |
+
+### 2.3 Step Conditions (✅ Implemented)
+
+Every step may include a conditional execution block:
 
 ```yaml
-if: "event.amount > 1000"
+- step:
+    id: high_value_check
+    name: High Value Transaction Check
+    type: ruleset
+    ruleset: high_value_rules
+    when:
+      all:
+        - event.amount > 1000
 ```
 
-The step executes **only** if the condition evaluates to true.
+The step executes **only** if the `when` condition evaluates to true.
 
 ---
 
-## 2.3 Complete Pipeline Example
+## 2.4 Complete Pipeline Example (✅ Implemented Syntax)
 
 ```yaml
 version: "0.1"
@@ -163,32 +191,41 @@ pipeline:
   id: payment_risk_pipeline
   name: Payment Risk Control Pipeline
   description: Comprehensive payment risk assessment with routing
+  entry: ip_check               # Start with IP check step
+
+  # Condition: Only execute for payment events
   when:
-    event.type: payment         # Only execute for payment events
-  
+    all:
+      - event.type == "payment"
+
   steps:
-    - type: api
-      id: ip_check
-      api: ipinfo
-      endpoint: ip_lookup
-      params:
-        ip: event.ip_address
-    
-    - branch:
-        when:
-          - condition: payment_amount > 1000
-            pipeline:
-              - include:
-                  ruleset: high_value_rules
+    - step:
+        id: ip_check
+        name: IP Address Check
+        type: api
+        api: ipinfo
+        endpoint: ip_lookup
+        params:
+          ip: event.ip_address
+        next: risk_assessment
+
+    - step:
+        id: risk_assessment
+        name: Risk Assessment
+        type: ruleset
+        ruleset: payment_risk_rules
 ```
 
 ---
 
-## 3. Branching
+## 3. Branching (📋 Legacy Format Only)
 
-A branch selects between multiple sub‑pipelines based on conditions.
+> **⚠️ Note:** Branch syntax shown below is in **legacy format only**. For new pipelines, use **Router steps** with conditional routes instead.
+
+A branch selects between multiple sub‑pipelines based on conditions (legacy format):
 
 ```yaml
+# LEGACY FORMAT - use router step instead for new pipelines
 - branch:
     when:
       - condition: "event.type == 'login'"
@@ -202,19 +239,35 @@ A branch selects between multiple sub‑pipelines based on conditions.
           - payment_rules
 ```
 
-Branch rules:
+**Modern Alternative (✅ Implemented):**
 
-- Conditions are evaluated **top‑to‑bottom**
-- First matching condition executes its pipeline
-- Branch pipelines may contain any valid pipeline structures
+Use router steps with conditional routes:
+
+```yaml
+- step:
+    id: event_router
+    name: Event Type Router
+    type: router
+    routes:
+      - next: login_flow
+        when:
+          all:
+            - event.type == "login"
+      - next: payment_flow
+        when:
+          all:
+            - event.type == "payment"
+    default: default_flow
+```
 
 ---
 
-## 4. Parallel Execution
+## 4. Parallel Execution (📋 Legacy Format Only)
 
-Run multiple steps or pipelines concurrently.
+> **⚠️ Note:** Parallel execution is **not implemented** in the new PipelineStep format. It exists only in the legacy Step enum.
 
 ```yaml
+# LEGACY FORMAT ONLY - not supported in new format
 - parallel:
     - device_fingerprint
     - ip_reputation
@@ -223,22 +276,17 @@ Run multiple steps or pipelines concurrently.
     method: all
 ```
 
-### 4.1 Merge Methods
-
-| method | Description |
-|--------|-------------|
-| `all` | Wait for all parallel tasks |
-| `any` | Return on first successful completion |
-| `fastest` | Use first response (for redundant reasoning/rules) |
-| `majority` | Wait until >50% of tasks complete |
+**Current Workaround:**
+Execute steps sequentially or use external orchestration.
 
 ---
 
-## 5. Aggregation
+## 5. Aggregation (📋 Not Implemented)
 
-Aggregates multiple outputs into a unified representation, typically scores.
+> **⚠️ Note:** Aggregation steps are **not implemented** in the current version.
 
 ```yaml
+# NOT IMPLEMENTED
 - aggregate:
     method: weighted
     weights:
@@ -247,11 +295,8 @@ Aggregates multiple outputs into a unified representation, typically scores.
       chainalysis: 0.2
 ```
 
-### 5.1 Methods
-
-- `sum` – sum of all values  
-- `max` – maximum value  
-- `weighted` – custom weighted formula  
+**Current Workaround:**
+Use expression features to compute weighted scores, or aggregate in ruleset conclusion logic.  
 
 ---
 
@@ -517,20 +562,24 @@ steps:
 
 ---
 
-## 7. Decision Logic
+## 7. Decision Logic (✅ Implemented)
 
-The `decision` section is where **final decisions** are made based on **signals** from rulesets. This is the core of the three-layer decision model.
+> **Note:** While the Pipeline AST structure (`crates/corint-core/src/ast/pipeline.rs`) does not show an explicit `decision` field, this feature is implemented and actively used in test files (e.g., `tests/e2e_repo/pipelines/transaction_test.yaml`). The implementation may be at the parser/runtime layer.
 
 ### 7.1 Basic Structure
 
 ```yaml
 pipeline:
   id: my_pipeline
+  entry: fraud_check
+
   steps:
-    - include:
+    - step:
+        id: fraud_check
+        type: ruleset
         ruleset: fraud_detection
 
-  # Decision logic based on signals from rulesets
+  # Final decision based on ruleset results
   decision:
     - when: results.fraud_detection.signal == "decline"
       result: decline
@@ -543,37 +592,26 @@ pipeline:
       actions: ["KYC", "OTP"]
       reason: "Requires manual review"
 
-    - when: results.fraud_detection.signal == "hold"
-      result: hold
-      actions: ["2FA"]
-      reason: "Additional verification required"
-
     - default: true
       result: approve
       reason: "Transaction approved"
 ```
 
-### 7.2 Decision Structure
+### 7.2 Decision Rule Fields
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `when` | string | Yes* | Condition expression for this decision rule |
+| `when` | WhenBlock | Yes* | Condition expression for this decision rule |
 | `result` | string | Yes | Decision result: `approve`, `decline`, `review`, `hold`, `pass` |
 | `actions` | array | No | List of actions to execute: `["KYC", "OTP", "2FA", "BLOCK_DEVICE"]` |
-| `reason` | string | No | Human-readable reason for the decision |
-| `terminate` | boolean | No | If true, stop processing further decision rules |
-| `default` | boolean | No* | If true, this is the default fallback rule |
+| `reason` | string | No | Human-readable reason for the decision (supports variable interpolation) |
+| `terminate` | boolean | No | If true, stop processing further decision rules (default: false) |
+| `default` | boolean | No* | If true, this is the default fallback rule (no condition needed) |
 
 *Either `when` or `default` must be specified.
 
-### 7.3 Signal vs Result vs Actions
+### 7.3 Decision Results
 
-**Signal** (Ruleset output) - The intermediate decision recommendation from a ruleset:
-- Produced by rulesets after evaluating rules
-- Available as `results.<ruleset_id>.signal`
-- Values: `approve`, `decline`, `review`, `hold`, `pass`
-
-**Result** (Pipeline output) - The final decision outcome:
 | Result | Description | Use Case |
 |--------|-------------|----------|
 | `approve` | Automatically approve the transaction | Low risk, clean transactions |
@@ -582,7 +620,10 @@ pipeline:
 | `hold` | Temporarily suspend, require additional verification | Suspicious but not definitive |
 | `pass` | Skip/no decision, let downstream handle | Rule not applicable, defer to next |
 
-**Actions** - Optional list of specific actions to execute:
+### 7.4 Actions
+
+Actions are user-defined strings that trigger specific workflows in your system:
+
 | Action | Description |
 |--------|-------------|
 | `KYC` | Trigger Know Your Customer verification |
@@ -593,145 +634,265 @@ pipeline:
 | `FREEZE_ACCOUNT` | Temporarily freeze the account |
 | *custom* | Any custom action defined by your system |
 
-### 7.4 Available Context for Decisions
+### 7.5 Available Context
 
 Within decision conditions, you can access:
 
-- `results.<ruleset_id>.signal` - Signal from a ruleset (e.g., `approve`, `decline`, `review`)
+- `results.<ruleset_id>.signal` - Signal from a ruleset (`approve`, `decline`, `review`, `hold`, `pass`)
 - `results.<ruleset_id>.total_score` - Aggregate score from ruleset
 - `results.<ruleset_id>.triggered_count` - Number of triggered rules
 - `results.<ruleset_id>.triggered_rules` - Array of triggered rule IDs
+- `results.<ruleset_id>.reason` - Reason from ruleset conclusion
 - `event.*` - Original event data
 - `features.*` - Calculated features
 
-### 7.5 Multiple Rulesets Example
-
-When using multiple rulesets, combine their signals in decision logic:
+### 7.6 Complete Example
 
 ```yaml
+version: "0.1"
+
 pipeline:
-  id: comprehensive_risk_pipeline
+  id: transaction_risk_pipeline
+  name: Transaction Risk Assessment
+  entry: fraud_check
+
+  when:
+    all:
+      - event.type == "transaction"
 
   steps:
-    - include:
-        ruleset: device_risk
-    - include:
-        ruleset: geo_risk
-    - include:
-        ruleset: behavioral_risk
+    - step:
+        id: fraud_check
+        name: Fraud Detection
+        type: ruleset
+        ruleset: transaction_risk_ruleset
 
-  # Decision based on signals from all rulesets
+  # Final decision based on ruleset signals
   decision:
-    # Any decline signal = decline
-    - when: |
-        results.device_risk.signal == "decline" ||
-        results.geo_risk.signal == "decline" ||
-        results.behavioral_risk.signal == "decline"
+    # Decline if ruleset signals decline
+    - when: results.transaction_risk_ruleset.signal == "decline"
       result: decline
-      actions: ["BLOCK_DEVICE", "FREEZE_ACCOUNT"]
-      reason: "Critical risk detected"
+      reason: "{results.transaction_risk_ruleset.reason}"
+      actions: ["BLOCK_DEVICE", "NOTIFY_SECURITY"]
       terminate: true
 
-    # Multiple review signals = decline
-    - when: |
-        (results.device_risk.signal == "review" ? 1 : 0) +
-        (results.geo_risk.signal == "review" ? 1 : 0) +
-        (results.behavioral_risk.signal == "review" ? 1 : 0) >= 2
-      result: decline
-      actions: ["NOTIFY_SECURITY"]
-      reason: "Multiple risk signals"
-
-    # Any review signal = review
-    - when: |
-        results.device_risk.signal == "review" ||
-        results.geo_risk.signal == "review" ||
-        results.behavioral_risk.signal == "review"
+    # Review if ruleset signals review
+    - when: results.transaction_risk_ruleset.signal == "review"
       result: review
-      actions: ["KYC"]
-      reason: "Risk signal detected"
+      reason: "{results.transaction_risk_ruleset.reason}"
+      actions: ["KYC", "MANUAL_REVIEW"]
+      terminate: true
+
+    # Hold for additional verification
+    - when: results.transaction_risk_ruleset.signal == "hold"
+      result: hold
+      reason: "Additional verification required"
+      actions: ["OTP", "2FA"]
 
     # Default: approve
     - default: true
       result: approve
+      reason: "Transaction approved"
 ```
 
-### 7.6 Benefits of Pipeline-Level Decisions
+### 7.7 Multi-Ruleset Decision Logic
 
-1. **Reusability** - Same ruleset can be used with different decision thresholds
-2. **Flexibility** - Different pipelines can make different decisions from the same signals
-3. **Clarity** - Clear separation between detection (rules) and action (decisions)
-4. **Testability** - Test ruleset signals independently from decision logic
-5. **Customization** - Easy to adjust thresholds per use case (VIP users, high-value transactions, etc.)
+When using multiple rulesets, you can combine their results:
+
+```yaml
+pipeline:
+  id: comprehensive_risk_pipeline
+  entry: user_check
+
+  steps:
+    - step:
+        id: user_check
+        type: ruleset
+        ruleset: user_risk_ruleset
+        next: transaction_check
+
+    - step:
+        id: transaction_check
+        type: ruleset
+        ruleset: transaction_risk_ruleset
+
+  decision:
+    # Decline if either ruleset signals decline
+    - when:
+        any:
+          - results.user_risk_ruleset.signal == "decline"
+          - results.transaction_risk_ruleset.signal == "decline"
+      result: decline
+      reason: "High risk detected"
+      terminate: true
+
+    # Review if both signal review or one signals review and other approves
+    - when:
+        any:
+          - all:
+              - results.user_risk_ruleset.signal == "review"
+              - results.transaction_risk_ruleset.signal == "review"
+          - all:
+              - results.user_risk_ruleset.signal == "review"
+              - results.transaction_risk_ruleset.signal == "approve"
+          - all:
+              - results.user_risk_ruleset.signal == "approve"
+              - results.transaction_risk_ruleset.signal == "review"
+      result: review
+      reason: "Manual review required"
+
+    # Default: approve if both approve
+    - default: true
+      result: approve
+      reason: "All checks passed"
+```
+
+### 7.8 Variable Interpolation in Reasons
+
+Use `{variable}` syntax to interpolate values into reason strings:
+
+```yaml
+decision:
+  - when: results.fraud_check.total_score >= 100
+    result: decline
+    reason: "Risk score {results.fraud_check.total_score} exceeds threshold"
+
+  - when: results.fraud_check.triggered_count >= 3
+    result: review
+    reason: "Multiple risk indicators: {results.fraud_check.triggered_rules}"
+```
+
+### 7.9 Best Practices
+
+**1. Order from Most Specific to Most General:**
+```yaml
+decision:
+  # Most specific: critical conditions
+  - when: results.fraud_check.signal == "decline"
+    result: decline
+    terminate: true
+
+  # Specific: review conditions
+  - when: results.fraud_check.signal == "review"
+    result: review
+
+  # General: default fallback
+  - default: true
+    result: approve
+```
+
+**2. Use `terminate: true` for Critical Decisions:**
+```yaml
+decision:
+  # Stop immediately on decline
+  - when: results.fraud_check.signal == "decline"
+    result: decline
+    terminate: true  # Don't evaluate further rules
+```
+
+**3. Provide Clear Reasons:**
+```yaml
+decision:
+  - when: results.fraud_check.signal == "decline"
+    result: decline
+    reason: "Fraud detected: {results.fraud_check.reason}"  # Include context
+```
+
+**4. Use Actions for Workflow Integration:**
+```yaml
+decision:
+  - when: results.fraud_check.signal == "review"
+    result: review
+    actions: ["KYC", "MANUAL_REVIEW", "NOTIFY_ANALYST"]  # Trigger workflows
+```
 
 ---
 
 ## 8. Full Pipeline Example
 
-### 8.1 Login Risk Processing Pipeline
+### 8.1 Login Risk Processing Pipeline (✅ Correct Syntax)
 
 ```yaml
-version: "0.2"
+version: "0.1"
 
 pipeline:
   id: login_risk_pipeline
   name: Login Risk Assessment Pipeline
-  description: Comprehensive login risk evaluation with parallel checks and LLM reasoning
+  description: Comprehensive login risk evaluation
+  entry: ip_check
+
+  # Only process login events
   when:
-    event.type: login
+    all:
+      - event.type == "login"
 
   steps:
-    # Step 1: base feature extraction
+    # Step 1: Check IP reputation
+    - step:
+        id: ip_check
+        name: IP Reputation Check
+        type: api
+        api: ip_reputation_service
+        endpoint: check_ip
+        params:
+          ip_address: event.ip_address
+        next: login_risk_check
+
+    # Step 2: Execute login risk ruleset
+    - step:
+        id: login_risk_check
+        name: Login Risk Assessment
+        type: ruleset
+        ruleset: login_risk_rules
+```
+
+**Note:** The ruleset `login_risk_rules` would contain the `conclusion` block with decision logic (signals, actions, reasons). See [ruleset.md](ruleset.md) for details.
+
+### 8.2 Legacy Format Example (With Unsupported Features)
+
+```yaml
+# THIS IS LEGACY/ASPIRATIONAL FORMAT - Some features not implemented
+version: "0.2"
+
+pipeline:
+  id: legacy_example
+  name: Legacy Format Example
+
+  steps:
+    # Legacy extract step (still supported)
     - type: extract
       id: extract_device
 
-    - type: extract
-      id: extract_geo
-
-    # Step 2: parallel intelligence checks
+    # Parallel execution (legacy format only)
     - parallel:
         - device_fingerprint
         - ip_reputation
-        - llm_reasoning
       merge:
         method: all
 
-    # Step 3: execute login ruleset (produces signals)
+    # Include ruleset (legacy shorthand)
     - include:
         ruleset: login_risk_rules
 
-    # Step 4: score aggregation
+    # Aggregation (NOT IMPLEMENTED)
     - aggregate:
         method: weighted
         weights:
           rules: 0.5
-          llm: 0.3
-          ip: 0.2
+          ip: 0.5
 
-  # Final decision based on signals
+  # Pipeline decision (NOT IMPLEMENTED)
   decision:
     - when: results.login_risk_rules.signal == "decline"
       result: decline
-      actions: ["BLOCK_DEVICE", "NOTIFY_SECURITY"]
-      reason: "Critical login risk"
+      actions: ["BLOCK_DEVICE"]
+      reason: "High risk"
       terminate: true
-
-    - when: results.login_risk_rules.signal == "review"
-      result: review
-      actions: ["KYC"]
-      reason: "Requires manual review"
-
-    - when: results.login_risk_rules.signal == "hold"
-      result: hold
-      actions: ["2FA"]
-      reason: "Additional verification required"
-
-    - default: true
-      result: approve
 ```
 
 ---
 
-### 8.2 Multi‑Event Pipeline Example
+### 8.3 Multi-Event Router Pipeline (✅ Correct Syntax)
 
 ```yaml
 version: "0.1"
@@ -740,90 +901,120 @@ pipeline:
   id: multi_event_router
   name: Multi-Event Type Router
   description: Routes different event types to appropriate processing pipelines
-  
+  entry: event_router
+
   steps:
-    - branch:
-        when:
-        - condition: "event.type == 'login'"
-          pipeline:
-            - extract_login
-            - include:
-                ruleset: login_risk_rules
+    # Router step to direct to different flows
+    - step:
+        id: event_router
+        name: Event Type Router
+        type: router
+        routes:
+          - next: login_flow
+            when:
+              all:
+                - event.type == "login"
+          - next: payment_flow
+            when:
+              all:
+                - event.type == "payment"
+          - next: crypto_flow
+            when:
+              all:
+                - event.type == "crypto_transfer"
+        default: default_flow
 
-        - condition: "event.type == 'payment'"
-          pipeline:
-            - extract_payment
-            - include:
-                ruleset: payment_risk_rules
+    # Login processing
+    - step:
+        id: login_flow
+        name: Login Risk Check
+        type: ruleset
+        ruleset: login_risk_rules
 
-        - condition: "event.type == 'crypto_transfer'"
-          pipeline:
-            - extract_web3
-            - include:
-                ruleset: web3_wallet_risk
+    # Payment processing
+    - step:
+        id: payment_flow
+        name: Payment Risk Check
+        type: ruleset
+        ruleset: payment_risk_rules
 
-  - aggregate:
-      method: sum
+    # Crypto processing
+    - step:
+        id: crypto_flow
+        name: Crypto Risk Check
+        type: ruleset
+        ruleset: web3_wallet_risk
 
-  - type: action
+    # Default processing
+    - step:
+        id: default_flow
+        name: Default Processing
+        type: ruleset
+        ruleset: default_rules
 ```
 
 ---
 
-### 8.3 Service Integration Pipeline Example
+### 8.4 Service Integration Pipeline (✅ Correct Syntax)
 
 ```yaml
 version: "0.1"
 
 pipeline:
-  # Step 1: Load user profile from database
-  - type: service
-    id: load_user_profile
-    service: user_db
-    query: get_user_profile
-    params:
-      user_id: event.user.id
-    output: context.user_profile
+  id: service_integration_pipeline
+  name: Service Integration Example
+  entry: load_user_profile
 
-  # Step 2: Check cache for existing risk score
-  - type: service
-    id: check_risk_cache
-    service: redis_cache
-    operation: get_user_risk_cache
-    output: context.cached_risk
+  steps:
+    # Step 1: Load user profile from database
+    - step:
+        id: load_user_profile
+        name: Load User Profile
+        type: service
+        service: user_db
+        query: get_user_profile
+        params:
+          user_id: event.user.id
+        output: context.user_profile
+        next: check_risk_cache
 
-  # Step 3: Parallel external intelligence checks
-  - parallel:
-      # Load pre-computed features
-      - type: service
-        id: load_features
-        service: feature_store
-        features: [user_behavior_7d, device_profile]
+    # Step 2: Check cache for existing risk score
+    - step:
+        id: check_risk_cache
+        name: Check Risk Cache
+        type: service
+        service: redis_cache
+        query: get_user_risk_cache
+        output: context.cached_risk
+        next: ip_reputation
 
-      # Check external API
-      - type: api
+    # Step 3: Check external API
+    - step:
         id: ip_reputation
+        name: IP Reputation Check
+        type: api
         api: maxmind
         endpoint: ip_lookup
+        params:
+          ip: event.ip_address
+        next: risk_assessment
 
-      # LLM reasoning
-      - type: reason
-        id: behavior_analysis
-        provider: openai
+    # Step 4: Execute rules with all context
+    - step:
+        id: risk_assessment
+        name: Risk Assessment
+        type: ruleset
+        ruleset: comprehensive_risk_check
+        next: publish_decision
 
-    merge:
-      method: all
-
-  # Step 4: Execute rules with all context
-  - include:
-      ruleset: comprehensive_risk_check
-
-  # Step 5: Publish decision to message queue
-  - type: service
-    id: publish_decision
-    service: event_bus
-    topic: risk_decisions
-    async: true
+    # Step 5: Publish decision to message queue
+    - step:
+        id: publish_decision
+        name: Publish Decision
+        type: trigger
+        target: event_bus.risk_decisions
+        params:
+          decision: results.comprehensive_risk_check.signal
 ```
 
 ---
@@ -921,30 +1112,67 @@ For comprehensive understanding of pipelines and the CORINT ecosystem:
 
 ## 11. Summary
 
-A CORINT Pipeline:
+### 11.1 What's Implemented (✅)
 
-- Defines the full decision‑making workflow
-- Supports conditional logic, branching, parallelism, and aggregation
-- Integrates rulesets, cognitive reasoning, and external signals
-- Encapsulates reusable and modular risk flows
-- **Uses imports to declare dependencies on rulesets and sub-pipelines**
-- **Benefits from automatic transitive dependency resolution**
-- **Makes final decisions** based on **signals** from rulesets
+A CORINT Pipeline currently supports:
 
-**Key Points (Three-Layer Model):**
-- **Rules** detect and score individual risk patterns
-- **Rulesets** produce **signals** (`approve`, `decline`, `review`, `hold`, `pass`)
-- **Pipelines** make final decisions with **result** and optional **actions**
+**Core Structure:**
+- ✅ `id`, `name`, `description` - Basic metadata
+- ✅ `entry` - Explicit DAG entry point (required)
+- ✅ `when` - Conditional pipeline execution
+- ✅ `steps` - Processing step orchestration
+- ✅ `metadata` - Arbitrary key-value metadata
 
-**Signal vs Result vs Actions:**
-- `signal`: Ruleset output - intermediate decision recommendation
-- `result`: Pipeline output - final decision outcome (approve/decline/review/hold/pass)
-- `actions`: Optional list of specific actions to execute (KYC, OTP, 2FA, BLOCK_DEVICE, etc.)
+**Step Types:**
+- ✅ `router` - Conditional routing with routes
+- ✅ `function` - Pure computation
+- ✅ `rule` - Single rule execution
+- ✅ `ruleset` - Ruleset execution (produces signals)
+- ✅ `pipeline` - Sub-pipeline calls
+- ✅ `service` - Internal service calls
+- ✅ `api` - External API calls (single, any, all modes)
+- ✅ `trigger` - External actions
+- ✅ `extract`, `reason` - Legacy format support
 
-**Benefits:**
-- Same ruleset can be reused with different decision thresholds
-- Clear separation between detection and action
-- 80-90% code reduction through modular design
-- Dependencies resolved at compile time
+**Features:**
+- ✅ Imports system for modular composition
+- ✅ Automatic transitive dependency resolution
+- ✅ Compile-time validation
+- ✅ Router steps for conditional flows
+- ✅ Sequential execution with explicit `next`
 
-It is the highest‑level construct of CORINT's Risk Definition Language (RDL).
+### 11.2 What's Planned (📋)
+
+**Not Yet Implemented:**
+- 📋 Pipeline-level `decision` blocks (use Ruleset `conclusion` instead)
+- 📋 Parallel execution in new format (legacy format only)
+- 📋 Branching in new format (use `router` step instead)
+- 📋 Aggregation steps (use expression features instead)
+- 📋 `score` and `action` step types
+
+### 11.3 Current Architecture
+
+**Decision-Making Model:**
+- **Rules** (✅) - Detect and score individual risk patterns
+- **Rulesets** (✅) - Produce **signals** via `conclusion` blocks
+  - Signals: `approve`, `decline`, `review`, `hold`, `pass`
+  - Actions: `KYC`, `OTP`, `2FA`, `BLOCK_DEVICE`, etc.
+- **Pipelines** (✅) - Orchestrate execution, route events
+  - Currently: NO decision logic at pipeline level
+  - Decision logic resides in Rulesets
+
+**Why This Works:**
+- Rulesets already provide all needed decision capabilities
+- Simpler architecture with single decision point
+- Same ruleset can be reused across multiple pipelines
+- Clear separation: Pipelines orchestrate, Rulesets decide
+
+### 11.4 Benefits
+
+- ✅ 80-90% code reduction through modular design
+- ✅ Dependencies resolved at compile time
+- ✅ Type-safe ID references
+- ✅ Reusable rulesets across pipelines
+- ✅ Clear separation of concerns
+
+It is the highest-level construct of CORINT's Risk Definition Language (RDL).

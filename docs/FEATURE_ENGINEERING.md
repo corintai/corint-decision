@@ -4,9 +4,9 @@ This document outlines the feature types supported and planned for Corint's risk
 
 ## 🚦 Implementation Status Overview
 
-| Feature Category | Status | Production Ready | In Development |
+| Feature Category | Status | Production Ready | Planned |
 |-----------------|--------|------------------|----------------|
-| **Aggregation** | 🟢 **Implemented** | count, sum, avg, min, max, distinct | stddev, percentile, median, mode, entropy |
+| **Aggregation** | 🟢 **Implemented** | count, sum, avg, min, max, distinct, stddev, median, percentile | variance, mode, entropy |
 | **State** | 🔴 **Planned** | - | All methods (z_score, outlier detection, etc.) |
 | **Sequence** | 🔴 **Planned** | - | All methods (pattern matching, trends, etc.) |
 | **Graph** | 🔴 **Planned** | - | All methods (network analysis, centrality, etc.) |
@@ -169,8 +169,7 @@ Feature engineering in risk management follows a structured approach based on **
       window: 24h
     ```
 
-**Planned:**
-- `stddev` - Standard deviation
+- `stddev` - Standard deviation (✅ Implemented)
   - *Example: User transaction amount standard deviation ¥350, high volatility*
   - **Real-world Use Cases**:
     - Behavior stability analysis: Transaction amount standard deviation too large, unstable behavior, may be account theft
@@ -190,7 +189,55 @@ Feature engineering in risk management follows a structured approach based on **
       when: type == "transaction"         # Database field (no prefix)
     ```
 
-- `variance` - Variance
+- `percentile` - Nth percentile value (✅ Implemented)
+  - *Example: User transaction amount P95 is ¥1,800*
+  - **Real-world Use Cases**:
+    - Abnormal threshold setting: Transactions exceeding P95 require additional verification
+    - Dynamic limits: Set daily limits based on user P90 transaction amount
+    - Credit limit: User P75 spending amount as credit limit reference
+  - **YAML Example**:
+    ```yaml
+    - name: p95_userid_txn_amt_30d
+      type: aggregation
+      method: percentile
+      datasource: postgresql_events
+      entity: events
+      dimension: user_id
+      dimension_value: "{event.user_id}"
+      field: amount
+      percentile: 95                  # Required: percentile value (1-99)
+      window: 30d
+      when: type == "transaction"         # Database field (no prefix)
+    ```
+  - **Note:** SQL generation varies by database provider:
+    - PostgreSQL: `PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY field)`
+    - MySQL: Uses approximation with window functions
+    - SQLite: Uses custom percentile function
+    - ClickHouse: `quantile(0.95)(field)`
+
+- `median` - Median value (✅ Implemented, same as 50th percentile)
+  - *Example: User transaction amount median ¥450*
+  - **Real-world Use Cases**:
+    - Outlier-resistant statistics: Median is not affected by extreme values, more accurately reflects user typical behavior
+    - User profiling: Median order amount for user value assessment
+    - Abnormal detection: Current transaction is 10 times the median, requires verification
+  - **YAML Example**:
+    ```yaml
+    - name: median_userid_txn_amt_30d
+      type: aggregation
+      method: median
+      datasource: postgresql_events
+      entity: events
+      dimension: user_id
+      dimension_value: "{event.user_id}"
+      field: amount
+      window: 30d
+      when: type == "transaction"         # Database field (no prefix)
+    ```
+  - **Note:** Median is implemented as `percentile(50)` internally. Database-specific SQL generation same as percentile.
+
+**📋 Planned (Not Yet Implemented):**
+- `variance` - Variance (📋 Planned)
   - *Example: User transaction amount variance 122,500*
   - **Real-world Use Cases**:
     - Risk scoring: High variance users have higher risk, unpredictable behavior
@@ -210,48 +257,7 @@ Feature engineering in risk management follows a structured approach based on **
       when: type == "transaction"         # Database field (no prefix)
     ```
 
-- `percentile` - Nth percentile value
-  - *Example: User transaction amount P95 is ¥1,800*
-  - **Real-world Use Cases**:
-    - Abnormal threshold setting: Transactions exceeding P95 require additional verification
-    - Dynamic limits: Set daily limits based on user P90 transaction amount
-    - Credit limit: User P75 spending amount as credit limit reference
-  - **YAML Example**:
-    ```yaml
-    - name: p95_userid_txn_amt_30d
-      type: aggregation
-      method: percentile
-      datasource: postgresql_events
-      entity: events
-      dimension: user_id
-      dimension_value: "{event.user_id}"
-      field: amount
-      percentile: 95
-      window: 30d
-      when: type == "transaction"         # Database field (no prefix)
-    ```
-
-- `median` - Median value (50th percentile)
-  - *Example: User transaction amount median ¥450*
-  - **Real-world Use Cases**:
-    - Outlier-resistant statistics: Median is not affected by extreme values, more accurately reflects user typical behavior
-    - User profiling: Median order amount for user value assessment
-    - Abnormal detection: Current transaction is 10 times the median, requires verification
-  - **YAML Example**:
-    ```yaml
-    - name: median_userid_txn_amt_30d
-      type: aggregation
-      method: median
-      datasource: postgresql_events
-      entity: events
-      dimension: user_id
-      dimension_value: "{event.user_id}"
-      field: amount
-      window: 30d
-      when: type == "transaction"         # Database field (no prefix)
-    ```
-
-- `mode` - Most frequent value
+- `mode` - Most frequent value (📋 Planned)
   - *Example: User most frequent transaction amount ¥100*
   - **Real-world Use Cases**:
     - Recharge pattern recognition: User most frequently recharges ¥100, abnormal recharge of ¥10,000 requires verification
@@ -271,7 +277,7 @@ Feature engineering in risk management follows a structured approach based on **
       when: type == "transaction"         # Database field (no prefix)
     ```
 
-- `entropy` - Shannon entropy (diversity measure)
+- `entropy` - Shannon entropy (diversity measure) (📋 Planned)
   - *Example: User transaction type entropy 2.3, diverse behavior*
   - **Real-world Use Cases**:
     - Bot detection: Entropy too low (<0.5), single behavior pattern, may be bot
@@ -296,9 +302,14 @@ Feature engineering in risk management follows a structured approach based on **
 **Principle:** Aggregation = Single data source + Single window + Single grouping + One-pass scan
 
 ```rust
-enum AggregationType {
+// From corint-runtime/src/feature/definition.rs
+enum AggregationMethod {
+    // ✅ Implemented
     Count, Sum, Avg, Max, Min, Distinct,
-    StdDev, Variance, Percentile(u8), Median, Mode, Entropy,
+    Stddev, Median, Percentile,
+
+    // 📋 Planned (not yet implemented)
+    Variance, Mode, Entropy,
 }
 
 struct AggregationConfig {

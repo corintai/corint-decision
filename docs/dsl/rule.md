@@ -1,24 +1,42 @@
 # CORINT Risk Definition Language (RDL)
 ## Rule Specification (v0.1)
 
-A **Rule** is the smallest executable logic unit within CORINT’s Cognitive Risk Intelligence framework.  
-Rules define deterministic or AI-augmented conditions used to evaluate risk events and generate risk scores or actions.
+A **Rule** is the smallest executable logic unit within CORINT's Cognitive Risk Intelligence framework.
+Rules define deterministic conditions used to evaluate risk events and generate risk scores.
+
+> **⚠️ Important:** This document clearly marks **✅ Implemented** vs **📋 Planned** features.
 
 ---
 
 ## 1. Rule Structure
 
+### 1.1 Implemented Fields (✅)
+
 ```yaml
 rule:
-  id: string
-  name: string
-  description: string
-  params:                    # ✨ NEW: Parameters (Phase 3)
+  id: string                 # ✅ Required: Unique identifier
+  name: string               # ✅ Required: Human-readable name
+  description: string        # ✅ Optional: Rule description
+  params:                    # ✅ Parsed (Phase 3): Parameters (runtime substitution not yet implemented)
     <param-key>: <value>
-  when: <condition-block>
-  score: number
-  metadata:                  # Optional metadata
+  when: <condition-block>    # ✅ Required: Condition logic
+  score: number              # ✅ Required: Risk score (supports negative values)
+  metadata:                  # ✅ Optional: Arbitrary metadata
     <key>: <value>
+```
+
+### 1.2 Planned Fields (📋 Not Yet Implemented)
+
+The following fields are documented for future implementation but are **NOT** currently supported:
+
+```yaml
+rule:
+  priority: number           # 📋 NOT IMPLEMENTED
+  depends_on: [...]          # 📋 NOT IMPLEMENTED
+  conflicts_with: [...]      # 📋 NOT IMPLEMENTED
+  group: string              # 📋 NOT IMPLEMENTED
+  group_priority: number     # 📋 NOT IMPLEMENTED
+  dynamic_threshold: {...}   # 📋 NOT IMPLEMENTED
 ```
 
 ---
@@ -72,90 +90,142 @@ when:
     - ...
 ```
 
-### 5.1 Event Filter
+### 5.1 Condition Syntax (✅ Implemented)
 
-A single key-value pair that determines if the rule applies to a given event type.
-
-```yaml
-event.type: login
-```
-
-### 5.2 Conditions
-
-A list of logical expressions evaluated **AND** by default.
-
-Example:
+CORINT supports structured condition logic using `all`, `any`, and `not`:
 
 ```yaml
 when:
+  all:                                      # All conditions must be true (AND)
+    - event.type == "login"                 # Event field access
+    - event.country in ["RU", "NG"]         # Membership check
+    - event.device.is_new == true           # Nested field access
+    - features.login_failed_count_24h > 3   # Feature access with features. prefix
+```
+
+**Important:** Unlike feature definitions, rules use the `event.` prefix to access event fields.
+
+### 5.2 Logical Operators (✅ Implemented)
+
+**all** - All conditions must be true (AND logic):
+```yaml
+when:
   all:
-    - geo.country in ["RU", "NG"]
-    - device.is_new == true
-    - features.login_failed_count_24h > 3  # Feature access with features. prefix
+    - event.amount > 1000
+    - event.country == "US"
+    - features.txn_count_24h < 10
+```
+
+**any** - At least one condition must be true (OR logic):
+```yaml
+when:
+  any:
+    - event.country in ["RU", "NG", "CN"]
+    - features.risk_score > 80
+    - event.amount > 10000
+```
+
+**not** - Negation:
+```yaml
+when:
+  not:
+    - event.verified == true
+```
+
+**Nested logic**:
+```yaml
+when:
+  all:
+    - event.type == "transaction"
+    - any:
+        - event.amount > 10000
+        - event.country in ["RU", "CN"]
+    - not:
+        - event.user_id in list.vip_users
 ```
 
 **Note**: When accessing calculated features, always use the `features.` namespace prefix:
 - ✅ `features.transaction_sum_7d > 5000` - Correct
 - ❌ `transaction_sum_7d > 5000` - Incorrect (will not work)
 
-#### Supported Operators
+### 5.3 Supported Operators (✅ Implemented)
 
-| Operator | Meaning |
-|----------|---------|
-| `==` | equal |
-| `!=` | not equal |
-| `<, >, <=, >=` | numeric comparison |
-| `in` | membership in array/list |
-| `regex` | regular-expression match |
-| `exists` | field exists |
-| `missing` | field is missing |
+| Operator | Meaning | Example |
+|----------|---------|---------|
+| `==` | equal | `event.status == "active"` |
+| `!=` | not equal | `event.country != "US"` |
+| `<, >, <=, >=` | numeric comparison | `event.amount > 1000` |
+| `in` | membership in array | `event.country in ["RU", "NG"]` |
+| `in list` | membership in custom list | `event.user_id in list.blocked_users` |
+| `not in` | not in array | `event.status not in ["blocked", "suspended"]` |
+| `not in list` | not in custom list | `event.email not in list.vip_emails` |
+| `contains` | string contains substring | `event.email contains "@suspicious.com"` |
+| `starts_with` | string starts with | `event.phone starts_with "+1"` |
+| `ends_with` | string ends with | `event.email ends_with ".com"` |
+| `regex` | regular expression match | `event.id regex "^TX-[0-9]{8}$"` |
+
+> **Note:** `exists` and `missing` operators are NOT currently implemented. Check for null/non-null values instead: `event.field == null` or `event.field != null`
 
 ---
 
-## 6. LLM-Based Conditions
+## 6. LLM-Based Conditions (📋 NOT IMPLEMENTED)
 
-RDL allows rules to incorporate LLM-powered cognitive reasoning.
+> **⚠️ WARNING:** This section documents planned features that are **NOT currently implemented**.
+> Do NOT use LLM operators in production rules - they will fail at runtime.
 
-### 6.1 Text Reasoning
+The following LLM-based condition syntax is planned for future releases but not yet available:
+
+### 6.1 Text Reasoning (📋 Planned)
 
 ```yaml
+# ⚠️ NOT YET IMPLEMENTED
 - LLM.reason(event) contains "suspicious"
 ```
 
-### 6.2 Tag-Based Reasoning
+### 6.2 Tag-Based Reasoning (📋 Planned)
 
 ```yaml
+# ⚠️ NOT YET IMPLEMENTED
 - LLM.tags contains "device_mismatch"
 ```
 
-### 6.3 Score-Based Reasoning
+### 6.3 Score-Based Reasoning (📋 Planned)
 
 ```yaml
+# ⚠️ NOT YET IMPLEMENTED
 - LLM.score > 0.7
 ```
 
-### 6.4 Structured JSON Output
+### 6.4 Structured JSON Output (📋 Planned)
 
 ```yaml
+# ⚠️ NOT YET IMPLEMENTED
 - LLM.output.risk_score > 0.3
 ```
 
+**Current Workaround:** Implement LLM reasoning in your application layer before sending events to CORINT.
+
 ---
 
-## 7. External API Conditions
+## 7. External API Conditions (📋 NOT IMPLEMENTED)
 
-Rules may reference third-party risk signals:
+> **⚠️ WARNING:** This section documents planned features that are **NOT currently implemented**.
+
+The following external API condition syntax is planned but not yet available:
 
 ```yaml
+# ⚠️ NOT YET IMPLEMENTED
 - external_api.Chainalysis.risk_score > 80
+- external_api.DeviceFingerprint.is_suspicious == true
 ```
 
-Other examples:
+**Planned integrations:**
+- Device fingerprint providers
+- IP reputation lookups
+- Email risk scoring
+- Web3 on-chain intelligence
 
-- Device fingerprint provider  
-- IP reputation lookup  
-- Email risk scoring  
-- Web3 on-chain intelligence  
+**Current Workaround:** Fetch external API data in your application layer and include it in the event data sent to CORINT.
 
 ---
 
@@ -370,26 +440,30 @@ Override per environment:
 
 ---
 
-## 10. Dynamic Thresholds
+## 10. Dynamic Thresholds (📋 NOT IMPLEMENTED)
+
+> **⚠️ WARNING:** This entire section documents planned features that are **NOT currently implemented**.
+> The `dynamic_threshold` field does NOT exist in the Rule struct and will cause parse errors.
 
 ### 10.1 Overview
 
-Static thresholds may not adapt well to changing patterns. Dynamic thresholds allow rules to automatically adjust based on historical data.
+Static thresholds may not adapt well to changing patterns. Dynamic thresholds (when implemented) will allow rules to automatically adjust based on historical data.
 
-### 10.2 Dynamic Threshold Definition
+### 10.2 Dynamic Threshold Definition (📋 Planned)
 
 ```yaml
+# ⚠️ NOT YET IMPLEMENTED - This will cause parse errors
 rule:
   id: adaptive_velocity_check
   name: Adaptive Transaction Velocity Check
   description: Detect unusual transaction velocity using adaptive thresholds
 
   when:
-    event.type: transaction
     all:
-      - event.velocity > dynamic_threshold.value
+      - event.type == "transaction"
+      - event.velocity > dynamic_threshold.value  # NOT SUPPORTED
 
-  # Dynamic threshold configuration
+  # Dynamic threshold configuration (NOT SUPPORTED)
   dynamic_threshold:
     id: user_velocity_threshold
 
@@ -551,87 +625,101 @@ rule:
   score: 50
 ```
 
+**Current Workaround:** Use feature engineering to compute percentile-based thresholds as features, then reference them in rules:
+```yaml
+# Compute threshold as a feature
+- name: user_txn_p95
+  type: aggregation
+  method: percentile
+  percentile: 95
+  # ...
+
+# Use in rule condition
+rule:
+  when:
+    all:
+      - event.amount > features.user_txn_p95
+```
+
 ---
 
-## 11. Rule Dependencies and Conflict Management
+## 11. Rule Dependencies and Conflict Management (📋 NOT IMPLEMENTED)
 
-### 10.1 Overview
+> **⚠️ WARNING:** This entire section documents planned features that are **NOT currently implemented**.
+> Fields like `priority`, `depends_on`, `conflicts_with`, and `group` do NOT exist in the Rule struct.
 
-As rule sets grow, managing dependencies and conflicts becomes critical. CORINT provides mechanisms to:
+### 10.1 Overview (Planned)
+
+When implemented, CORINT will provide mechanisms to:
 - Define rule execution order
 - Specify dependencies between rules
 - Detect and handle conflicts
 - Set rule priorities
 
-### 10.2 Rule Priority
+### 10.2 Rule Priority (📋 Planned)
 
 ```yaml
+# ⚠️ NOT YET IMPLEMENTED - priority field does not exist
 rule:
   id: critical_blocklist_check
   name: Blocklist Check
 
-  # Priority: higher number = higher priority
-  # Range: 0-1000, default: 100
-  priority: 900
+  # Priority: higher number = higher priority (NOT SUPPORTED)
+  priority: 900  # WILL CAUSE PARSE ERROR OR BE IGNORED
 
   when:
     all:
-      - user.id in blocklist
+      - event.user_id in list.blocklist  # Use "in list" operator instead
 
   score: 1000
 ```
 
-### 10.3 Rule Dependencies
+### 10.3 Rule Dependencies (📋 Planned)
 
 ```yaml
+# ⚠️ NOT YET IMPLEMENTED - depends_on field does not exist
 rule:
   id: complex_fraud_pattern
   name: Complex Fraud Pattern Detection
 
-  # This rule depends on other rules running first
-  depends_on:
+  # This rule depends on other rules running first (NOT SUPPORTED)
+  depends_on:                            # WILL CAUSE PARSE ERROR OR BE IGNORED
     - rule: device_fingerprint_check
-      required: true              # Must run before this rule
-
-    - rule: velocity_check
       required: true
 
-    - rule: geo_analysis
-      required: false             # Optional dependency
-
-  # Access dependency results in conditions
+  # Access dependency results in conditions (NOT SUPPORTED)
   when:
-    event.type: transaction
     all:
-      # Use results from dependency rules
-      - context.rules.device_fingerprint_check.triggered == true
-      - context.rules.velocity_check.score > 30
+      - event.type == "transaction"
+      # context.rules.* does NOT exist
+      - context.rules.device_fingerprint_check.triggered == true  # NOT SUPPORTED
 
   score: 80
 ```
 
-### 10.4 Dependency Graph
+**Current Workaround:** Rules are currently evaluated independently. Rulesets aggregate all triggered rules' scores.
+
+### 10.4 Dependency Graph (📋 Planned)
 
 ```yaml
+# ⚠️ NOT YET IMPLEMENTED
 rule:
   id: rule_c
-  depends_on:
+  depends_on:                    # NOT SUPPORTED
     - rule: rule_a
     - rule: rule_b
-
-# Execution order: rule_a → rule_b → rule_c (based on dependencies)
-# If rule_a and rule_b have no dependencies, they can run in parallel
 ```
 
-### 10.5 Conflict Detection
+### 10.5 Conflict Detection (📋 Planned)
 
 ```yaml
+# ⚠️ NOT YET IMPLEMENTED
 rule:
   id: high_value_approved_user
   name: High Value Approved User
 
-  # Declare potential conflicts
-  conflicts_with:
+  # Declare potential conflicts (NOT SUPPORTED)
+  conflicts_with:                # NOT SUPPORTED
     - rule: high_value_new_user
       resolution: priority        # priority | first_match | both
       reason: "Same transaction cannot be both approved and new user"
@@ -649,43 +737,30 @@ rule:
   score: -30                      # Reduce risk for approved users
 ```
 
-### 10.6 Conflict Resolution Strategies
+### 10.6 Conflict Resolution Strategies (📋 Planned)
 
 ```yaml
-conflict_resolution:
-  # Global conflict resolution strategy
-  default_strategy: priority       # priority | first_match | all | manual
-
-  strategies:
-    priority:
-      description: "Higher priority rule wins"
-
-    first_match:
-      description: "First triggered rule wins"
-
-    all:
-      description: "All conflicting rules can trigger"
-      score_aggregation: sum
-
-    manual:
-      description: "Require manual resolution"
-      escalate_to: risk_analyst
+# ⚠️ NOT YET IMPLEMENTED
+conflict_resolution:              # NOT SUPPORTED
+  default_strategy: priority
+  # ...
 ```
 
-### 10.7 Rule Groups
+### 10.7 Rule Groups (📋 Planned)
 
 ```yaml
+# ⚠️ NOT YET IMPLEMENTED - group fields do not exist
 rule:
   id: geo_risk_high
   name: High Risk Geography
 
-  # Rule group for mutual exclusivity
-  group: geo_risk_level
-  group_priority: 3               # Highest in group
+  # Rule group for mutual exclusivity (NOT SUPPORTED)
+  group: geo_risk_level           # NOT SUPPORTED
+  group_priority: 3               # NOT SUPPORTED
 
   when:
     all:
-      - geo.country in ["NK", "IR", "SY"]
+      - event.country in ["NK", "IR", "SY"]  # Use event. prefix
   score: 100
 
 ---
@@ -694,12 +769,12 @@ rule:
   id: geo_risk_medium
   name: Medium Risk Geography
 
-  group: geo_risk_level
-  group_priority: 2
+  group: geo_risk_level           # NOT SUPPORTED
+  group_priority: 2               # NOT SUPPORTED
 
   when:
     all:
-      - geo.country in ["RU", "CN", "NG"]
+      - event.country in ["RU", "CN", "NG"]  # Correct syntax
   score: 50
 
 ---
@@ -708,25 +783,24 @@ rule:
   id: geo_risk_low
   name: Low Risk Geography
 
-  group: geo_risk_level
-  group_priority: 1               # Lowest in group
+  group: geo_risk_level           # NOT SUPPORTED
+  group_priority: 1               # NOT SUPPORTED
 
   when:
     all:
-      - geo.country in ["BR", "IN", "MX"]
+      - event.country in ["BR", "IN", "MX"]  # Correct syntax
   score: 20
-
-# Only one rule in group can trigger (highest priority match)
 ```
 
-### 10.8 Conditional Dependencies
+### 10.8 Conditional Dependencies (📋 Planned)
 
 ```yaml
+# ⚠️ NOT YET IMPLEMENTED
 rule:
   id: enhanced_verification
   name: Enhanced Verification Required
 
-  depends_on:
+  depends_on:                     # NOT SUPPORTED
     - rule: basic_verification
       required: true
 
@@ -889,7 +963,7 @@ See `ruleset.md` for decision-making configuration.
 
 ## 14. Complete Examples
 
-### 13.1 Login Risk Example
+### 13.1 Login Risk Example (✅ Correct Syntax)
 
 ```yaml
 version: "0.1"
@@ -897,69 +971,102 @@ version: "0.1"
 rule:
   id: high_risk_login
   name: High-Risk Login Detection
-  description: Detect risky login behavior using rules + LLM reasoning.
+  description: Detect risky login behavior based on device, location, and history.
 
   when:
-    event.type: login
     all:
-      - device.is_new == true
-      - geo.country in ["RU", "UA", "NG"]
-      - user.login_failed_count > 3
-      - LLM.reason(event) contains "suspicious"
-      - LLM.score > 0.7
+      - event.type == "login"                       # Correct syntax with ==
+      - event.device.is_new == true                 # Use event. prefix
+      - event.country in ["RU", "UA", "NG"]         # Correct syntax
+      - features.login_failed_count_24h > 3         # Access feature with features. prefix
 
-  score: +80
+  score: 80                                          # No need for + prefix
 ```
+
+> **Note:** The original example showed LLM conditions which are NOT implemented. Use feature engineering instead.
 
 ---
 
-### 13.2 Loan Application Consistency Rule
+### 13.2 Transaction Risk Example (✅ Correct Syntax)
 
 ```yaml
 version: "0.1"
 
 rule:
-  id: loan_inconsistency
-  name: Loan Application Inconsistency
-  description: Detect inconsistencies between declared user info and LLM inference.
+  id: high_value_new_user
+  name: High Value Transaction from New User
+  description: Detect high-value transactions from users with limited history.
 
   when:
-    event.type: loan_application
     all:
-      - applicant.income < 3000
-      - applicant.request_amount > applicant.income * 3
-      - LLM.output.employment_stability < 0.3
+      - event.type == "transaction"
+      - event.amount > 5000
+      - features.user_total_transactions < 5        # Low transaction count
 
-  score: +120
+  score: 120
 ```
 
 ---
 
 ## 15. Summary
 
-A CORINT Rule:
+### 15.1 Implemented Features (✅)
 
-- Defines an atomic risk detection
-- Combines structured logic + LLM reasoning
-- Produces a score when triggered
-- **Does not define action** (actions defined in Ruleset)
-- **Supports parameterization** via `params` field **[Phase 3]**
-- Supports **dynamic thresholds** for adaptive detection
-- Manages **dependencies** and **conflicts** with other rules
-- Forms the basis of reusable Rulesets
-- Integrates seamlessly into Pipelines
+A CORINT Rule currently supports:
 
-**Phase 3 Features:**
-- **Parameterized Rules (`params`)** - Define configurable parameters with default values
-- **Metadata Support** - Enhanced metadata for better governance and tracking
-- **Future-Ready** - AST and parser ready for parameter substitution and rule instantiation
+**Core Fields:**
+- ✅ `id` - Unique identifier
+- ✅ `name` - Human-readable name
+- ✅ `description` - Optional description
+- ✅ `when` - Condition logic (all/any/not)
+- ✅ `score` - Risk score (supports negative values)
+- ✅ `metadata` - Arbitrary metadata
+- ✅ `params` - Parameters (parsed, runtime substitution not yet implemented)
 
-**Benefits of Parameterization:**
-- Define rules once with configurable thresholds
-- Easy customization per region/environment/use case
-- Reduced code duplication through reusable rule templates
-- A/B testing without code changes
-- Type-safe parameter configuration
+**Condition Logic:**
+- ✅ Logical operators: `all` (AND), `any` (OR), `not` (NOT)
+- ✅ Nested condition groups
+- ✅ Event field access with `event.` prefix
+- ✅ Feature access with `features.` prefix
+- ✅ Comparison operators: `==`, `!=`, `<`, `>`, `<=`, `>=`
+- ✅ Membership operators: `in`, `not in`, `in list`, `not in list`
+- ✅ String operators: `contains`, `starts_with`, `ends_with`, `regex`
+
+**Integration:**
+- ✅ Forms the basis of reusable Rulesets
+- ✅ Integrates seamlessly into Pipelines
+- ✅ **Does not define actions** (actions defined in Ruleset)
+
+### 15.2 Planned Features (📋)
+
+The following are documented for future implementation:
+
+**NOT YET IMPLEMENTED:**
+- 📋 LLM-based conditions (`LLM.reason()`, `LLM.score`, etc.)
+- 📋 External API conditions (`external_api.*`)
+- 📋 Dynamic thresholds (`dynamic_threshold` field)
+- 📋 Rule dependencies (`depends_on` field)
+- 📋 Rule priorities (`priority` field)
+- 📋 Conflict management (`conflicts_with` field)
+- 📋 Rule groups (`group`, `group_priority` fields)
+- 📋 Parameter substitution in conditions (params are parsed but not substituted)
+- 📋 `exists` and `missing` operators
+
+### 15.3 Current Capabilities
+
+**What you can do today:**
+- Define deterministic risk detection rules
+- Access event fields and computed features
+- Use complex boolean logic with nesting
+- Assign positive or negative risk scores
+- Organize rules into rulesets
+- Add metadata for governance
+
+**What requires workarounds:**
+- LLM reasoning → Implement in application layer before sending events
+- External APIs → Fetch data and include in event payload
+- Dynamic thresholds → Use percentile features with feature engineering
+- Rule dependencies → Use ruleset-level score aggregation
 
 This document establishes the authoritative specification of RDL Rules for CORINT v0.1.
 

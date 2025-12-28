@@ -327,17 +327,17 @@ ruleset:
     - trusted_user_bypass
     - high_risk_country_check
 
-  decision_logic:
-    - condition: total_score >= 500
-      action: deny
+  conclusion:
+    - when: total_score >= 500
+      signal: decline
       reason: "Found in critical blocklist"
 
-    - condition: total_score < 0
-      action: approve
+    - when: total_score < 0
+      signal: approve
       reason: "Trusted user bypass"
 
     - default: true
-      action: review
+      signal: review
 
   metadata:
     version: "1.0.0"
@@ -393,7 +393,7 @@ pipeline:
           - next: deny_step
             when:
               all:
-                - context.fraud_rules.total_score >= 200
+                - results.fraud_detection_core.total_score >= 200
           - next: approve_step
         default: approve_step
 

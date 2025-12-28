@@ -12,17 +12,17 @@ This document defines how CORINT manages variables, context, and data flow throu
 
 CORINT uses a **flattened namespace architecture** where all data sources are organized at the same level. This design classifies data by **processing method** rather than data source.
 
-| Namespace | Mutability | Description | Use Cases |
-|-----------|------------|-------------|-----------|
-| `event` | Read-only | User request raw data | Business data from API requests |
-| `features` | Writable | Complex feature computations | Database aggregations, historical analysis |
-| `api` | Writable | External API call results | Device fingerprinting, IP geolocation |
-| `service` | Writable | Internal service call results | User profiles, risk history |
-| `llm` | Writable | LLM analysis results | Fraud analysis, content moderation |
-| `vars` | Writable | Simple variables and calculations | Config parameters, thresholds |
-| `results` | Read-only | Ruleset/Pipeline execution results | Pipeline routing, final decision output |
-| `sys` | Read-only | System injected metadata | request_id, timestamp, environment |
-| `env` | Read-only | Environment configuration | Feature flags, API keys |
+| Namespace | Mutability | Description | Implementation Status |
+|-----------|------------|-------------|----------------------|
+| `event` | Read-only | User request raw data | ✅ Fully implemented |
+| `features` | Writable | Complex feature computations | ✅ Fully implemented |
+| `api` | Writable | External API call results | ✅ Fully implemented |
+| `service` | Writable | Internal service call results | ✅ Fully implemented |
+| `llm` | Writable | LLM analysis results | ✅ Fully implemented |
+| `vars` | Writable | Simple variables and calculations | ✅ Fully implemented |
+| `sys` | Read-only | System injected metadata | ✅ Fully implemented |
+| `env` | Read-only | Environment configuration | ✅ Fully implemented |
+| `results` | Read-only | Ruleset execution results | ⚠️ Pipeline execution layer |
 
 **Core Principles**:
 1. **Classify by processing method**, not data source
@@ -377,16 +377,18 @@ score: event.transaction.amount * vars.risk_multiplier
 
 ---
 
-## 8. results - Execution Results
+## 8. results - Execution Results (⚠️ Partially Implemented)
 
 ### 8.1 Description
 
-The `results` namespace provides access to **ruleset execution results** within a pipeline and stores the **final pipeline decision output**. This enables pipeline routing decisions based on previous ruleset outcomes and provides the final decision to the caller.
+The `results` namespace provides access to **ruleset execution results** within a pipeline. This enables pipeline routing decisions based on previous ruleset outcomes.
+
+**⚠️ Note:** The `results` namespace is not part of the base ExecutionContext. Availability depends on pipeline execution layer implementation.
 
 ```yaml
 Mutability: Read-only
-Source: Ruleset execution within pipeline, Pipeline decision output
-Lifecycle: Updated after each ruleset step completes; final decision written at pipeline end
+Source: Ruleset execution within pipeline
+Lifecycle: Updated after each ruleset step completes
 ```
 
 ### 8.2 Access Patterns
@@ -401,13 +403,6 @@ results.fraud_detection.total_score   # Cumulative risk score
 results.fraud_detection.triggered_rules
 ```
 
-#### 8.2.2 Final Pipeline Decision
-```yaml
-# Access the final pipeline decision output
-results.decision          # Final decision: "approve", "decline", "review", "hold", "pass"
-results.actions           # List of actions: ["KYC", "2FA", "BLOCK_DEVICE"]
-results.reason            # Decision reason text
-```
 
 ### 8.3 Available Fields
 
@@ -420,12 +415,6 @@ results:
     reason: string              # Human-readable decision reason
     triggered_rules: array      # List of triggered rule IDs
     triggered_count: number     # Number of triggered rules
-
-  # Final pipeline decision output
-  decision: string              # Final decision: "approve", "decline", "review", "hold", "pass"
-  actions: array                # List of actions to execute: ["KYC", "OTP", "2FA"]
-  reason: string                # Final decision reason
-  score: number                 # Final aggregated score
 ```
 
 ### 8.4 Pipeline Router Usage
@@ -485,48 +474,35 @@ pipeline:
           next: review_step
 
         # Combine multiple ruleset results
-        - when: |
-            results.fraud_detection.signal == "review" &&
-            results.user_behavior.signal == "review"
+        - when:
+            all:
+              - results.fraud_detection.signal == "review"
+              - results.user_behavior.signal == "review"
           next: enhanced_review
 
       default: allow_step
-
-  # Final decision based on signals
-  decision:
-    - when: results.fraud_detection.signal == "decline"
-      decision: decline
-      actions: ["BLOCK_DEVICE"]
-      reason: "Fraud detected"
-      terminate: true
-
-    - default: true
-      decision: approve
 ```
 
-### 8.6 Final Decision Output
+### 8.6 Ruleset Results Example
 
-After pipeline execution completes, the `results` namespace contains the final decision:
+After multiple rulesets execute, the `results` namespace contains their outputs:
 
 ```yaml
-# Example final results after pipeline execution
+# Example results after pipeline execution
 results:
-  # Ruleset results
+  # First ruleset result
   fraud_detection:
     signal: "review"
     total_score: 75
     triggered_rules: ["velocity_check", "new_device"]
+    reason: "Medium risk detected"
 
+  # Second ruleset result
   user_behavior:
     signal: "approve"
     total_score: 20
     triggered_rules: []
-
-  # Final pipeline decision
-  decision: "review"
-  actions: ["KYC"]
-  reason: "Medium risk - requires review"
-  score: 75
+    reason: "Normal behavior"
 ```
 
 ### 8.7 Best Practices
@@ -565,15 +541,15 @@ Source: System auto-generated
 Lifecycle: Generated per request
 ```
 
-### 8.2 System Variable Categories
+### 9.2 System Variable Categories
 
-#### 8.2.1 Request Identification
+#### 9.2.1 Request Identification
 ```yaml
 sys.request_id: "550e8400-e29b-41d4-a716-446655440000"
 sys.correlation_id: "parent-request-12345"  # Optional
 ```
 
-#### 8.2.2 Time Information
+#### 9.2.2 Time Information
 ```yaml
 sys.timestamp: "2024-01-15T10:30:00Z"       # ISO 8601
 sys.timestamp_ms: 1705315800000              # Unix milliseconds
@@ -584,14 +560,14 @@ sys.day_of_week: "monday"                    # monday-sunday
 sys.is_weekend: false                        # boolean
 ```
 
-#### 8.2.3 Environment Information
+#### 9.2.3 Environment Information
 ```yaml
 sys.environment: "production"                # development/staging/production
 sys.region: "us-west-1"                      # Deployment region
 sys.tenant_id: "tenant_abc123"               # Multi-tenant ID (optional)
 ```
 
-#### 8.2.4 Execution Context
+#### 9.2.4 Execution Context
 ```yaml
 sys.pipeline_id: "fraud_detection_pipeline"
 sys.pipeline_version: "2.1.0"
@@ -599,33 +575,33 @@ sys.ruleset_id: "account_takeover_rules"
 sys.rule_id: "impossible_travel_detection"  # Available within rule
 ```
 
-#### 8.2.5 Performance Metrics
+#### 9.2.5 Performance Metrics
 ```yaml
 sys.execution_time_ms: 245                   # Current execution time
 sys.execution_step: 5                        # Current step number
 sys.timeout_ms: 5000                         # Execution timeout limit
 ```
 
-#### 8.2.6 Version Information
+#### 9.2.6 Version Information
 ```yaml
 sys.corint_version: "1.2.3"                  # CORINT engine version
 sys.api_version: "v1"                        # API version
 ```
 
-#### 8.2.7 Client Information
+#### 9.2.7 Client Information
 ```yaml
 sys.client_id: "mobile_app_ios_v2.1"
 sys.client_ip: "203.0.113.42"                # Client IP (if different from event)
 sys.user_agent: "Mozilla/5.0 ..."
 ```
 
-#### 8.2.8 Debug Information
+#### 9.2.8 Debug Information
 ```yaml
 sys.debug_mode: false
 sys.trace_enabled: true
 ```
 
-### 8.3 Using System Variables
+### 9.3 Using System Variables
 
 ```yaml
 conditions:
@@ -950,21 +926,23 @@ api.ip_check:
 
 CORINT's flattened namespace architecture provides:
 
-- **Clear data separation** - 9 distinct namespaces by processing method
+- **Clear data separation** - 8 core namespaces + results (pipeline-level)
 - **Simple access** - No `ctx.` prefix needed, direct namespace access
 - **Type safety** - Read-only vs writable enforcement
 - **Extensibility** - Easy to add new data sources
 - **Observability** - Clear tracking of data origin and processing
 
-**The 9 Namespaces:**
+**The 8 Core Namespaces (✅ Implemented):**
 1. `event` - User request raw data (read-only)
 2. `features` - Complex computations (writable)
 3. `api` - External API results (writable)
 4. `service` - Internal service results (writable)
 5. `llm` - LLM analysis (writable)
 6. `vars` - Simple variables (writable)
-7. `results` - Ruleset/Pipeline execution results (read-only)
-8. `sys` - System metadata (read-only)
-9. `env` - Environment config (read-only)
+7. `sys` - System metadata (read-only)
+8. `env` - Environment config (read-only)
+
+**Pipeline-Level Namespace (⚠️ Partially Implemented):**
+9. `results` - Ruleset execution results (read-only, pipeline execution layer)
 
 For complete implementation details, see [CONTEXT_GUIDE.md](../CONTEXT_GUIDE.md).

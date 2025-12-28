@@ -107,9 +107,9 @@ ruleset:
   rules:
     - fraud_farm_pattern
     - account_takeover_pattern
-  decision_logic:
-    - condition: total_score >= 100
-      action: deny
+  conclusion:
+    - when: total_score >= 100
+      signal: decline
 ```
 
 **Pipelines (Layer 3 - Orchestrators)**
@@ -128,10 +128,14 @@ imports:
 
 pipeline:
   id: fraud_detection_pipeline
+  entry: fraud_check
   when:
-    event.type: transaction
+    all:
+      - event.type == "transaction"
   steps:
-    - include:
+    - step:
+        id: fraud_check
+        type: ruleset
         ruleset: fraud_detection_core
 ```
 
@@ -432,30 +436,30 @@ ruleset:
     - suspicious_geography_pattern
     - new_user_fraud_pattern
 
-  decision_logic:
+  conclusion:
     # Critical patterns
-    - condition: triggered_rules contains "fraud_farm_pattern"
-      action: deny
+    - when: triggered_rules contains "fraud_farm_pattern"
+      signal: decline
       reason: "Critical: Fraud farm detected"
       terminate: true
 
     # Score thresholds
-    - condition: total_score >= 200
-      action: deny
+    - when: total_score >= 200
+      signal: decline
       reason: "Critical risk (score: {total_score})"
       terminate: true
 
-    - condition: total_score >= 100
-      action: deny
+    - when: total_score >= 100
+      signal: decline
       reason: "High risk (score: {total_score})"
       terminate: true
 
-    - condition: total_score >= 60
-      action: review
+    - when: total_score >= 60
+      signal: review
       reason: "Medium-high risk (score: {total_score})"
 
     - default: true
-      action: approve
+      signal: approve
       reason: "Low risk"
 
   metadata:
@@ -513,11 +517,11 @@ ruleset:
     - card_testing              # From library
     - my_custom_rule            # Custom
 
-  decision_logic:
-    - condition: total_score >= 150
-      action: deny
+  conclusion:
+    - when: total_score >= 150
+      signal: decline
     - default: true
-      action: approve
+      signal: approve
 ```
 
 ### 8.5 Multiple Rulesets in Pipeline

@@ -1,63 +1,81 @@
-# CORINT Risk Definition Language (RDL)
-## Expression Language Specification (v0.1)
+# CORINT Expression Language Reference (v0.2)
 
-The **Expression Language** is the foundation of RDL's condition evaluation system.  
-It provides a rich set of operators, functions, and logical combinators for defining sophisticated risk conditions.
+The **Expression Language** powers CORINT's condition evaluation system for rules and pipelines.
+
+> **⚠️ Important:** This document clearly marks **✅ Implemented** vs **📋 Planned** features.
 
 ---
 
 ## 1. Overview
 
-RDL expressions are used in:
-- Rule `conditions`
-- Pipeline `if` statements
-- Branch `condition` clauses
-- Dynamic score calculations
+### 1.1 Expression Usage
 
-Expressions evaluate to boolean (for conditions) or numeric/string values (for calculations).
+Expressions are used in:
+- **Rule `when` conditions** - Match events to rules
+- **Pipeline `when` blocks** - Route events to pipelines
+- **Decision logic** - Final decision determination
+- **Feature expressions** - Mathematical computations (limited scope)
+
+### 1.2 Expression Contexts
+
+CORINT has **two separate expression evaluators** with different capabilities:
+
+| Context | Evaluator | Purpose | Supported Operations |
+|---------|-----------|---------|---------------------|
+| **Rules/Pipelines** | WhenEvaluator | Condition matching | ✅ Full comparison, logical, list operations |
+| **Feature Expressions** | ExpressionEvaluator | Math computations | ✅ Basic arithmetic (+, -, *, /, parentheses) only |
 
 ---
 
-## 2. Basic Syntax
+## 2. Field Access (✅ Implemented)
 
-### 2.1 Field Access
+### 2.1 Event Field Access
 
-Access nested fields using dot notation:
-
-```yaml
-user.profile.age
-transaction.amount
-device.fingerprint.hash
-geo.location.country
-```
-
-**Feature Access**: All calculated features must be accessed using the `features.` namespace prefix:
+Access event fields using dot notation:
 
 ```yaml
-features.transaction_sum_7d
-features.login_count_24h
-features.unique_devices_7d
+# In rules and pipelines
+when:
+  all:
+    - event.type == "transaction"
+    - event.amount > 1000
+    - event.user_id == "user123"
 ```
 
-**Examples:**
+**Nested field access:**
 ```yaml
-# Event fields (no prefix)
-- event.amount > 1000
-- user.profile.tier == "premium"
-
-# Calculated features (features. prefix required)
-- features.transaction_sum_7d > 5000
-- features.login_count_24h > 10
+- event.user.profile.age > 18
+- event.metadata.device_type == "mobile"
 ```
 
-### 2.2 Array/List Indexing
+### 2.2 Feature Access
+
+Access computed features using the `features.` prefix:
 
 ```yaml
-transaction.items[0].price
-user.addresses[1].city
+when:
+  all:
+    - features.transaction_sum_7d > 5000
+    - features.login_count_24h > 10
+    - features.unique_devices_7d < 3
 ```
 
-### 2.3 Literals
+### 2.3 Result Access
+
+Access results from previous steps:
+
+```yaml
+when:
+  all:
+    - results.user_risk_ruleset.signal == "review"
+    - results.device_check.score > 50
+```
+
+---
+
+## 3. Literals (✅ Implemented)
+
+### 3.1 Supported Literal Types
 
 ```yaml
 # Numbers
@@ -65,9 +83,9 @@ user.addresses[1].city
 3.14
 -100
 
-# Strings
-"hello"
-'world'
+# Strings (double or single quotes)
+"hello world"
+'test@example.com'
 
 # Booleans
 true
@@ -77,667 +95,473 @@ false
 null
 
 # Arrays
-["RU", "NG", "UA"]
+["US", "UK", "CA"]
 [1, 2, 3, 4, 5]
 ```
 
 ---
 
-## 3. Comparison Operators
+## 4. Comparison Operators (✅ Implemented)
 
 | Operator | Description | Example |
 |----------|-------------|---------|
-| `==` | Equal | `user.age == 25` |
-| `!=` | Not equal | `device.type != "mobile"` |
-| `<` | Less than | `amount < 1000` |
-| `>` | Greater than | `score > 80` |
-| `<=` | Less than or equal | `attempts <= 3` |
-| `>=` | Greater than or equal | `balance >= 100` |
+| `==` | Equal | `event.status == "active"` |
+| `!=` | Not equal | `event.country != "US"` |
+| `<` | Less than | `event.amount < 1000` |
+| `>` | Greater than | `event.score > 80` |
+| `<=` | Less than or equal | `features.failed_login_count_24h <= 3` |
+| `>=` | Greater than or equal | `event.balance >= 100` |
+
+**Example:**
+```yaml
+rule:
+  id: high_value_transaction
+  when:
+    all:
+      - event.type == "transaction"
+      - event.amount >= 1000
+      - event.verified == true
+  score: 50
+```
 
 ---
 
-## 4. Logical Operators
+## 5. Logical Operators (✅ Implemented)
 
-### 4.1 AND (Implicit and Explicit)
-
-Implicit AND (default for condition lists):
+### 5.1 AND Logic (all)
 
 ```yaml
-conditions:
-  - user.age > 18
-  - geo.country == "US"
-  # Both must be true
+when:
+  all:
+    - event.type == "login"
+    - event.country == "US"
+    - features.login_count_24h < 10
 ```
 
-Explicit AND:
+### 5.2 OR Logic (any)
 
 ```yaml
-conditions:
-  - all:
-      - user.age > 18
-      - geo.country == "US"
-      - device.is_trusted == true
+when:
+  any:
+    - event.country in ["RU", "NG", "UA"]
+    - features.risk_score > 80
+    - event.vip_status == true
 ```
 
-### 4.2 OR
+### 5.3 NOT Logic (not)
 
 ```yaml
-conditions:
-  - any:
-      - geo.country in ["RU", "NG"]
-      - user.risk_score > 80
-      - device.is_new == true
-  # At least one must be true
+when:
+  not:
+    - event.verified == true
 ```
 
-### 4.3 NOT
+### 5.4 Nested Logic
 
 ```yaml
-conditions:
-  - not:
-      user.is_verified == true
-      
-  # Alternative syntax
-  - user.is_verified != true
+when:
+  all:
+    - event.type == "transaction"
+    - any:
+        - event.amount > 10000
+        - event.country in ["RU", "CN"]
+    - not:
+        - event.user_id in list.blocked_users
 ```
 
-### 4.4 Complex Nested Logic
+---
+
+## 6. Membership Operators (✅ Implemented)
+
+### 6.1 Array Membership (`in` / `not in`)
+
+Check if value is in an array:
 
 ```yaml
-conditions:
-  # (A AND B) OR (C AND D)
-  - any:
-      - all:
-          - user.age < 25
-          - transaction.amount > 5000
-      - all:
-          - geo.country in ["RU", "CN"]
-          - device.is_new == true
-          
-  # A AND (B OR C) AND NOT D
-  - all:
-      - user.is_active == true
+when:
+  all:
+    - event.country in ["US", "UK", "CA"]
+    - event.status not in ["blocked", "suspended"]
+```
+
+### 6.2 List Membership (`in list` / `not in list`)
+
+Check membership in configured custom lists:
+
+```yaml
+when:
+  all:
+    - event.user_id in list.blocked_users
+    - event.ip_address in list.blocked_ips
+    - event.email not in list.vip_emails
+```
+
+**List configuration** is required in `lists/` directory. See [list.md](list.md) for details.
+
+---
+
+## 7. String Operators (✅ Implemented)
+
+| Operator | Description | Example |
+|----------|-------------|---------|
+| `contains` | String contains substring | `event.email contains "@suspicious.com"` |
+| `starts_with` | String starts with | `event.phone starts_with "+1"` |
+| `ends_with` | String ends with | `event.email ends_with ".com"` |
+| `regex` | Regular expression match | `event.transaction_id regex "^TX-[0-9]{8}$"` |
+
+**Example:**
+```yaml
+rule:
+  id: suspicious_email
+  when:
+    any:
+      - event.email contains "test"
+      - event.email ends_with "@temporary.com"
+      - event.email regex "^[0-9]+@"
+  score: 70
+```
+
+---
+
+## 8. Arithmetic Operators (✅ Implemented in Feature Expressions)
+
+> **Note:** Arithmetic is primarily used in **Feature Expressions**, not rule conditions.
+
+### 8.1 Supported Operators
+
+| Operator | Operation | Example |
+|----------|-----------|---------|
+| `+` | Addition | `a + b` |
+| `-` | Subtraction | `a - b` |
+| `*` | Multiplication | `a * b` |
+| `/` | Division | `a / b` |
+| `( )` | Parentheses | `(a + b) * c` |
+
+### 8.2 Feature Expression Examples
+
+```yaml
+# Feature definitions with expressions
+features:
+  - name: transaction_rate
+    type: expression
+    expression: "txn_count_24h / (txn_count_7d + 0.0001)"
+    # Dependencies auto-extracted
+
+  - name: amount_ratio
+    type: expression
+    expression: "event.amount / (avg_transaction_amount + 0.0001)"
+
+  - name: velocity_spike
+    type: expression
+    expression: "txn_count_1h / (txn_count_24h + 0.0001)"
+```
+
+**Limitations:**
+- No function calls (use workarounds like `(x + 0.0001)` instead of `max(x, 1)`)
+- No modulo `%` operator in feature expressions
+- Only basic arithmetic: `+`, `-`, `*`, `/`, parentheses
+
+---
+
+## 9. Operator Precedence
+
+**Rule/Pipeline Conditions:**
+1. Field access, literals
+2. Comparison operators (`==`, `!=`, `<`, `>`, `<=`, `>=`)
+3. `in`, `contains`, `regex`, etc.
+4. Logical `all` (AND)
+5. Logical `any` (OR)
+6. Logical `not`
+
+**Feature Expressions:**
+1. Parentheses `( )`
+2. Multiplication `*`, Division `/`
+3. Addition `+`, Subtraction `-`
+
+---
+
+## 10. Planned Features (📋 Not Yet Implemented)
+
+The following features are documented for future implementation:
+
+### 10.1 Mathematical Functions (📋 Planned)
+
+```yaml
+# NOT YET SUPPORTED
+- abs(event.amount_change) > 10000
+- max(event.amounts) > 50000
+- min(event.credit_scores) < 300
+- round(event.fee_rate, 2) == 0.03
+```
+
+**Current Workaround:** Use feature expressions with basic arithmetic.
+
+### 10.2 String Functions (📋 Planned)
+
+```yaml
+# NOT YET SUPPORTED
+- lower(event.email) == "admin@company.com"
+- upper(event.country) in ["US", "UK"]
+- length(event.password) >= 8
+```
+
+**Current Workaround:** Pre-process data or use external validation.
+
+### 10.3 Date/Time Functions (📋 Planned)
+
+```yaml
+# NOT YET SUPPORTED
+- days_between(event.last_login, now()) > 90
+- hour(event.timestamp) >= 22
+- age_in_years(event.birth_date) >= 18
+```
+
+**Current Workaround:** Calculate in application layer before sending event.
+
+### 10.4 Array Functions (📋 Planned)
+
+```yaml
+# NOT YET SUPPORTED
+- length(event.addresses) > 1
+- first(event.login_history).timestamp > "2024-01-01"
+```
+
+**Current Workaround:** Use aggregation features with count/distinct methods.
+
+### 10.5 Ternary Expressions (📋 Planned)
+
+```yaml
+# NOT YET SUPPORTED
+score: event.is_premium ? 0 : 50
+```
+
+**Current Workaround:** Use multiple rules with different conditions.
+
+### 10.6 Null-Safe Navigation (📋 Planned)
+
+```yaml
+# NOT YET SUPPORTED
+- event.user.profile?.age > 18
+- event.metadata?.risk_level == "high"
+```
+
+**Current Workaround:** Ensure complete event data structure.
+
+### 10.7 Default Values (📋 Planned)
+
+```yaml
+# NOT YET SUPPORTED
+- (event.risk_score ?? 50) > 80
+```
+
+**Current Workaround:** Handle defaults in application layer.
+
+---
+
+## 11. Syntax Examples
+
+### 11.1 Rule Condition Example
+
+```yaml
+rule:
+  id: high_risk_transaction
+  name: High Risk Transaction Detection
+  when:
+    all:
+      - event.type == "transaction"
+      - event.amount >= 5000
       - any:
-          - user.tier == "premium"
-          - user.balance > 10000
+          - event.country in ["RU", "NG", "CN"]
+          - features.risk_score > 70
       - not:
-          user.is_blocked == true
+          - event.user_id in list.vip_users
+  score: 100
+```
+
+### 11.2 Pipeline Matching Example
+
+```yaml
+pipeline:
+  id: transaction_pipeline
+  name: Transaction Processing
+  when:
+    all:
+      - event.type == "transaction"
+      - event.amount > 0
+
+  steps:
+    - step:
+        id: risk_check
+        type: ruleset
+        ruleset: transaction_risk_ruleset
+
+  decision:
+    - when: results.transaction_risk_ruleset.signal == "decline"
+      result: decline
+      reason: "High risk detected"
+      terminate: true
+```
+
+### 11.3 Feature Expression Example
+
+```yaml
+features:
+  # Aggregation features
+  - name: failed_login_count_24h
+    type: aggregation
+    method: count
+    datasource: postgresql_events
+    entity: events
+    dimension: user_id
+    dimension_value: "{event.user_id}"
+    window: 24h
+    when: type == "login" AND status == "failed"
+
+  - name: total_login_count_24h
+    type: aggregation
+    method: count
+    datasource: postgresql_events
+    entity: events
+    dimension: user_id
+    dimension_value: "{event.user_id}"
+    window: 24h
+    when: type == "login"
+
+  # Expression feature - failure rate
+  - name: login_failure_rate
+    type: expression
+    expression: "failed_login_count_24h / (total_login_count_24h + 0.0001)"
+    # Dependencies auto-extracted from expression
 ```
 
 ---
 
-## 5. Membership Operators
+## 12. Best Practices
 
-### 5.1 `in` - List Membership
-
-```yaml
-- geo.country in ["RU", "NG", "UA"]
-- user.id in blocked_user_list
-- transaction.category in ["gambling", "crypto"]
-```
-
-### 5.2 `not_in` - Exclusion
-
-```yaml
-- geo.country not_in ["US", "UK", "CA"]
-- device.type not_in ["bot", "emulator"]
-```
-
-### 5.3 `contains` - String/Array Contains
-
-```yaml
-# String contains
-- user.email contains "@suspicious.com"
-- transaction.description contains "test"
-
-# Array contains element
-- user.roles contains "admin"
-```
-
-### 5.4 `in list.<list_id>` / `not in list.<list_id>` - Custom List Membership
-
-Check membership in configured custom lists (supports PostgreSQL, Redis, File, Memory, and API backends):
-
-```yaml
-# Check if value is in a list
-- user.email in list.email_blocklist
-- event.ip in list.ip_blocklist
-- user.id in list.vip_users
-
-# Check if value is NOT in a list
-- user.email not in list.email_allowlist
-- device.id not in list.trusted_devices
-```
-
-**Note:** Lists must be configured in the list configuration file with a unique ID and backend type.
-
-📖 **See [list.md](list.md)** for complete specification including:
-- List configuration and backend types
-- API endpoints for list management
-- Performance considerations
-- Best practices
-
----
-
-## 6. Existence Operators
-
-### 6.1 `exists` - Field Existence Check
-
-```yaml
-- user.phone exists
-- device.fingerprint exists
-```
-
-### 6.2 `missing` - Field Absence Check
-
-```yaml
-- user.kyc_document missing
-- transaction.receipt_id missing
-```
-
-### 6.3 `is_null` / `is_not_null`
-
-```yaml
-- user.last_login is_null
-- device.id is_not_null
-```
-
----
-
-## 7. String Operators
-
-### 7.1 `regex` - Regular Expression Match
-
-```yaml
-- user.email regex "^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$"
-- transaction.id regex "^TX-[0-9]{8}$"
-```
-
-### 7.2 `starts_with` / `ends_with`
-
-```yaml
-- user.email starts_with "test"
-- user.phone ends_with "0000"
-```
-
-### 7.3 String Functions
-
-```yaml
-- lower(user.email) == "admin@company.com"
-- upper(geo.country) in ["US", "UK"]
-- trim(user.name) != ""
-- length(user.password) >= 8
-```
-
----
-
-## 8. Arithmetic Operations
-
-### 8.1 Basic Arithmetic
-
-```yaml
-- transaction.amount + transaction.fee > 1000
-- user.balance - transaction.amount < 0
-- transaction.items[0].price * transaction.items[0].quantity > 500
-- transaction.total / transaction.items_count > 100
-- user.age % 10 == 0
-```
-
-### 8.2 Mathematical Functions
-
-```yaml
-- abs(account.balance_change) > 10000
-- max(transaction.amounts) > 50000
-- min(user.credit_scores) < 300
-- round(transaction.fee_rate, 2) == 0.03
-- floor(user.age / 10) == 6
-- ceil(loan.interest_rate) == 5
-```
-
----
-
-## 9. Aggregation Functions
-
-### 9.1 Time-Based Aggregations
-
-```yaml
-# Count events in time window
-- count(login.attempts, last_hour) > 5
-- count(transactions, last_24h) > 100
-
-# Sum over time window
-- sum(transaction.amounts, last_24h) > 10000
-- sum(withdrawal.amounts, last_7d) > user.monthly_limit
-
-# Average over time window
-- avg(transaction.amount, last_30d) < 100
-- avg(login.duration, last_week) > 300
-
-# Max/Min over time window
-- max(transaction.amount, last_month) > 50000
-- min(account.balance, last_year) < 0
-```
-
-### 9.2 Time Windows
-
-Supported time window expressions:
-
-- `last_hour` / `last_1h`
-- `last_24h` / `last_day`
-- `last_7d` / `last_week`
-- `last_30d` / `last_month`
-- `last_90d` / `last_quarter`
-- `last_365d` / `last_year`
-
-Custom windows:
-
-```yaml
-- count(events, "2h") > 10        # last 2 hours
-- sum(amounts, "15m") > 5000      # last 15 minutes
-- avg(scores, "6M") > 0.8         # last 6 months
-```
-
-### 9.3 Advanced Statistical Analysis
-
-For more complex statistical analysis and feature engineering (such as distinct count, association analysis, percentiles, etc.), see the dedicated **Feature Engineering** specification:
-
-📖 **See [feature.md](feature.md)** for:
-- **Distinct count** - `count_distinct()` for unique value counting
-- **Association analysis** - IP/Device/User relationship metrics
-- **Percentile calculations** - Outlier detection with percentiles
-- **Velocity features** - Rate of change and pattern detection
-- **Statistical anomaly detection** - Z-scores, standard deviation
-- **Feature groups** - Organized feature extraction
-
-**Example preview:**
-
-```yaml
-# Distinct count - count unique values
-- count_distinct(
-    field: device.id,
-    where: {geo.ip == event.geo.ip},
-    window: last_5h
-  ) > 10
-
-# Percentile-based outlier detection
-- event.transaction.amount > percentile(
-    transaction.amount,
-    where: {user.id == event.user.id},
-    window: last_30d,
-    p: 95
-  )
-```
-
----
-
-## 10. Array Functions
-
-```yaml
-# Array length
-- length(user.addresses) > 1
-- size(transaction.items) >= 5
-
-# Array contains
-- contains(user.roles, "admin")
-- contains(transaction.flags, "suspicious")
-
-# Array operations
-- first(user.login_history).timestamp > "2024-01-01"
-- last(transactions).amount > 1000
-- unique(transaction.recipient_ids).length > 10
-```
-
----
-
-## 11. Date/Time Functions
-
-```yaml
-# Current time
-- now() - user.created_at > duration("30d")
-
-# Date parsing
-- parse_date(user.birth_date) < parse_date("2000-01-01")
-
-# Date arithmetic
-- days_between(user.last_login, now()) > 90
-- hours_since(transaction.timestamp) < 24
-- age_in_years(user.birth_date) >= 18
-
-# Date components
-- year(transaction.date) == 2024
-- month(user.created_at) == 12
-- day_of_week(transaction.date) in ["saturday", "sunday"]
-- hour(transaction.timestamp) >= 22 || hour(transaction.timestamp) <= 6
-```
-
----
-
-## 12. Type Conversion Functions
-
-```yaml
-- to_number(user.age_string) > 18
-- to_string(transaction.amount) contains ".99"
-- to_bool(user.verified_flag) == true
-```
-
----
-
-## 13. LLM Expression Integration
-
-### 13.1 LLM Result Access
-
-```yaml
-# Access LLM reasoning output
-- LLM.reason(event) contains "suspicious"
-- LLM.reason(user_profile) not_contains "trustworthy"
-
-# Access LLM tags
-- LLM.tags contains "device_mismatch"
-- LLM.tags contains "behavior_anomaly"
-
-# Access LLM scores
-- LLM.score > 0.7
-- LLM.confidence >= 0.8
-
-# Access structured LLM output
-- LLM.output.risk_score > 0.3
-- LLM.output.employment_stability < 0.4
-- LLM.output.is_fraudulent == true
-```
-
-### 13.2 Multiple LLM Results
-
-```yaml
-# Named LLM steps
-- LLM.user_analysis.risk_level == "high"
-- LLM.transaction_check.anomaly_score > 0.6
-
-# Compare multiple LLM results
-- LLM.model_a.score > 0.7 && LLM.model_b.score > 0.7
-```
-
----
-
-## 14. External API Expression Integration
-
-```yaml
-# Third-party risk scores
-- external_api.Chainalysis.risk_score > 80
-- external_api.MaxMind.risk_level == "high"
-
-# Device fingerprinting
-- external_api.FingerprintJS.confidence > 0.9
-- external_api.DeviceAtlas.is_bot == true
-
-# Email validation
-- external_api.EmailRep.reputation < 50
-- external_api.HaveIBeenPwned.breaches > 0
-
-# Custom API fields
-- external_api.CustomRiskService.fraud_probability >= 0.75
-```
-
----
-
-## 15. Context Variables
-
-### 15.1 Pipeline Variables
-
-```yaml
-# Define variables in pipeline
-vars:
-  risk_threshold: 80
-  max_transaction: 10000
-
-# Use in conditions
-conditions:
-  - user.risk_score > vars.risk_threshold
-  - transaction.amount <= vars.max_transaction
-```
-
-### 15.2 Previous Step Results
-
-```yaml
-# Reference results from previous steps
-- context.extract_device.device_score > 50
-- context.llm_analysis.risk_level == "high"
-- context.ip_reputation.score < 30
-```
-
-### 15.3 System Variables
-
-```yaml
-# Built-in system variables
-- sys.current_time > user.session_expires_at
-- sys.request_id exists
-- sys.environment == "production"
-```
-
----
-
-## 16. Conditional Expressions (Ternary)
-
-```yaml
-# Ternary operator: condition ? true_value : false_value
-score: user.is_premium ? 0 : 50
-weight: transaction.amount > 10000 ? 0.8 : 0.5
-
-# In conditions
-- (user.age < 18 ? user.guardian_verified : user.verified) == true
-```
-
----
-
-## 17. Performance Considerations
-
-### 17.1 Short-Circuit Evaluation
-
-Logical operators use short-circuit evaluation:
-
-```yaml
-# If first condition is false, second is not evaluated
-- user.is_active == true && expensive_check(user.id) == true
-
-# If first condition is true, second is not evaluated
-- user.is_blocked == true || expensive_api_call() > 0.8
-```
-
-### 17.2 Caching Hints
-
-```yaml
-# Suggest caching for expensive operations
-- @cache(ttl=3600) external_api.IPQuality.score > 80
-- @cache(key="device:{device.id}") complex_calculation() > threshold
-```
-
----
-
-## 18. BNF Grammar (Formal)
-
-```
-EXPRESSION ::= LOGICAL_EXPR
-
-LOGICAL_EXPR ::= 
-    | OR_EXPR
-
-OR_EXPR ::= AND_EXPR { "||" AND_EXPR }
-          | "any:" LIST_OF_EXPR
-
-AND_EXPR ::= NOT_EXPR { "&&" NOT_EXPR }
-           | "all:" LIST_OF_EXPR
-
-NOT_EXPR ::= "!" COMPARISON_EXPR
-           | "not:" COMPARISON_EXPR
-           | COMPARISON_EXPR
-
-COMPARISON_EXPR ::=
-    | ADDITIVE_EXPR COMPARE_OP ADDITIVE_EXPR
-    | ADDITIVE_EXPR "in" (ARRAY_LITERAL | LIST_REFERENCE)
-    | ADDITIVE_EXPR "not" "in" (ARRAY_LITERAL | LIST_REFERENCE)
-    | ADDITIVE_EXPR "contains" ADDITIVE_EXPR
-    | ADDITIVE_EXPR "regex" STRING_LITERAL
-    | ADDITIVE_EXPR "exists"
-    | ADDITIVE_EXPR "missing"
-    | ADDITIVE_EXPR "is_null"
-    | ADDITIVE_EXPR "is_not_null"
-    | ADDITIVE_EXPR
-
-COMPARE_OP ::= "==" | "!=" | "<" | ">" | "<=" | ">="
-
-ADDITIVE_EXPR ::= MULTIPLICATIVE_EXPR { ("+" | "-") MULTIPLICATIVE_EXPR }
-
-MULTIPLICATIVE_EXPR ::= UNARY_EXPR { ("*" | "/" | "%") UNARY_EXPR }
-
-UNARY_EXPR ::= "-" PRIMARY_EXPR
-             | PRIMARY_EXPR
-
-PRIMARY_EXPR ::=
-    | LITERAL
-    | FIELD_ACCESS
-    | FUNCTION_CALL
-    | LLM_EXPR
-    | EXTERNAL_API_EXPR
-    | LIST_REFERENCE
-    | VAR_EXPR
-    | "(" LOGICAL_EXPR ")"
-    | TERNARY_EXPR
-
-TERNARY_EXPR ::= LOGICAL_EXPR "?" EXPRESSION ":" EXPRESSION
-
-FIELD_ACCESS ::= IDENT { "." IDENT | "[" NUMBER "]" }
-
-FUNCTION_CALL ::= IDENT "(" [ EXPRESSION { "," EXPRESSION } ] ")"
-
-LLM_EXPR ::= 
-    | "LLM.reason(" EXPRESSION ")"
-    | "LLM.tags"
-    | "LLM.score"
-    | "LLM.confidence"
-    | "LLM.output." FIELD_ACCESS
-    | "LLM." IDENT "." FIELD_ACCESS
-
-EXTERNAL_API_EXPR ::= "external_api." IDENT "." FIELD_ACCESS
-
-LIST_REFERENCE ::= "list" "." IDENT
-
-VAR_EXPR ::=
-    | "vars." IDENT
-    | "context." FIELD_ACCESS
-    | "sys." IDENT
-
-LITERAL ::= NUMBER | STRING_LITERAL | BOOLEAN | NULL | ARRAY_LITERAL
-
-ARRAY_LITERAL ::= "[" [ LITERAL { "," LITERAL } ] "]"
-
-STRING_LITERAL ::= '"' CHAR* '"' | "'" CHAR* "'"
-
-BOOLEAN ::= "true" | "false"
-
-NULL ::= "null"
-
-NUMBER ::= DIGIT+ [ "." DIGIT+ ]
-
-IDENT ::= (ALPHA | "_") (ALPHA | DIGIT | "_")*
-
-LIST_OF_EXPR ::= "-" EXPRESSION { "-" EXPRESSION }
-```
-
----
-
-## 19. Error Handling in Expressions
-
-### 19.1 Null-Safe Navigation
-
-```yaml
-# Use ?. for null-safe access
-- user.profile?.age > 18          # Returns false if profile is null
-- transaction.metadata?.risk exists
-```
-
-### 19.2 Default Values
-
-```yaml
-# Use ?? for default values
-- (user.risk_score ?? 50) > 80
-- (device.trust_score ?? 0) >= 70
-```
-
-### 19.3 Try-Catch in Expressions
-
-```yaml
-# Graceful degradation for expression errors
-- try(external_api.SlowService.score, default=50) > 80
-```
-
----
-
-## 20. Best Practices
-
-### 20.1 Readability
+### 12.1 Readability
 
 ✅ **Good:**
 ```yaml
-conditions:
-  - all:
-      - user.age >= 18
-      - user.kyc_verified == true
-      - user.risk_score < 50
+when:
+  all:
+    - event.type == "transaction"
+    - event.amount > 1000
+    - features.risk_score < 50
 ```
 
 ❌ **Bad:**
 ```yaml
-conditions:
-  - user.age>=18&&user.kyc_verified==true&&user.risk_score<50
+when:
+  all:
+    - event.type=="transaction"&&event.amount>1000
 ```
 
-### 20.2 Performance
+### 12.2 Performance
 
-✅ **Good:** Put cheap checks first
+✅ **Good:** Put simple checks first
 ```yaml
-conditions:
-  - user.is_blocked == false        # Fast: simple field check
-  - device.is_new == true            # Fast: simple field check
-  - expensive_api_call() > 0.8       # Slow: only evaluated if above pass
+when:
+  all:
+    - event.type == "transaction"      # Fast: simple field check
+    - event.amount > 1000               # Fast: simple comparison
+    - features.complex_score > 80       # Slower: computed feature
 ```
 
 ❌ **Bad:** Expensive checks first
 ```yaml
-conditions:
-  - expensive_api_call() > 0.8       # Always evaluated
-  - user.is_blocked == false
+when:
+  all:
+    - features.complex_score > 80       # Always evaluated
+    - event.type == "transaction"
 ```
 
-### 20.3 Maintainability
+### 12.3 List Membership
 
-Use variables for complex expressions:
-
-✅ **Good:**
+✅ **Good:** Use configured lists
 ```yaml
-vars:
-  is_high_risk_country: geo.country in ["RU", "NG", "UA", "CN"]
-  is_large_transaction: transaction.amount > 10000
-  is_new_user: days_since(user.created_at) < 30
+when:
+  all:
+    - event.user_id in list.blocked_users
+```
 
-conditions:
-  - all:
-      - vars.is_high_risk_country
-      - vars.is_large_transaction
-      - vars.is_new_user
+❌ **Bad:** Hardcode large arrays
+```yaml
+when:
+  all:
+    - event.country in ["RU", "NG", "UA", "CN", "BR", ...]  # Hard to maintain
 ```
 
 ---
 
-## 21. Summary
+## 13. Error Handling
 
-The RDL Expression Language provides:
+### 13.1 Missing Fields
 
-- **Rich operator set** for flexible condition building
-- **Logical combinators** (AND/OR/NOT) for complex logic
-- **Built-in functions** for common operations
-- **Time-based aggregations** for behavioral analysis
-- **LLM and external API integration** for hybrid intelligence
-- **Type-safe evaluation** with null handling
-- **Performance optimizations** through short-circuit evaluation
+If a field is missing, it evaluates to `null`:
 
-This expression system enables sophisticated risk logic while maintaining readability and maintainability.
+```yaml
+# If event.verified doesn't exist, this returns false
+- event.verified == true
+```
 
+### 13.2 Type Mismatches
+
+Type mismatches result in `false`:
+
+```yaml
+# If event.amount is a string, this returns false
+- event.amount > 1000
+```
+
+### 13.3 Division by Zero
+
+In feature expressions, division by zero returns `null`:
+
+```yaml
+# If denominator is 0, result is null (treated as 0 in rules)
+expression: "numerator / denominator"
+```
+
+**Recommended workaround:**
+```yaml
+expression: "numerator / (denominator + 0.0001)"
+```
+
+---
+
+## 14. Summary
+
+### ✅ Currently Supported
+
+**In Rules/Pipelines:**
+- Field access (event, features, results)
+- Comparison operators (==, !=, <, >, <=, >=)
+- Logical operators (all/any/not)
+- Membership operators (in, not in, in list)
+- String operators (contains, starts_with, ends_with, regex)
+- Literals (numbers, strings, booleans, null, arrays)
+
+**In Feature Expressions:**
+- Basic arithmetic (+, -, *, /, parentheses)
+- Feature name substitution
+- Automatic dependency extraction
+
+### 📋 Planned for Future
+
+- Mathematical functions (abs, max, min, round, etc.)
+- String functions (lower, upper, length, trim)
+- Date/time functions
+- Array functions
+- Ternary expressions
+- Null-safe navigation
+- Default value operators
+
+---
+
+## 15. Related Documentation
+
+- [feature.md](feature.md) - Feature engineering and aggregations
+- [rule.md](rule.md) - Rule definitions
+- [pipeline.md](pipeline.md) - Pipeline configuration
+- [list.md](list.md) - Custom list configuration
+- [context.md](context.md) - Context and variable management

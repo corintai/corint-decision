@@ -8,7 +8,7 @@ Quick reference for writing feature definitions in CORINT. For detailed implemen
 
 | Feature Type | Status | Implemented Methods | Planned Methods |
 |--------------|--------|---------------------|-----------------|
-| **Aggregation** | 🟢 **Implemented** | count, sum, avg, min, max, distinct | stddev, percentile, median, mode, entropy |
+| **Aggregation** | 🟢 **Implemented** | count, sum, avg, min, max, distinct, stddev, median, percentile | variance, mode, entropy |
 | **State** | 🔴 **Planned** | - | z_score, deviation_from_baseline, percentile_rank, is_outlier, timezone_consistency |
 | **Sequence** | 🔴 **Planned** | - | consecutive_count, sequence_match, percent_change, streak, pattern_frequency, trend, rate_of_change, anomaly_score, moving_average |
 | **Graph** | 🔴 **Planned** | - | graph_centrality, community_size, shared_entity_count, network_distance |
@@ -58,7 +58,11 @@ Quick reference for writing feature definitions in CORINT. For detailed implemen
 
 ### 1.3 Field Reference Syntax in `when` Conditions
 
-When filtering database rows using the `when` field, you can reference two types of fields:
+> **Important:** The syntax differs between **Feature definitions** and **Rules/Pipelines**
+
+#### In Feature Definitions (for database filtering)
+
+When filtering database rows using the `when` field in feature definitions, you reference:
 
 **1. Database Fields (from the entity table being queried)**
 - No prefix needed - directly reference the column name
@@ -70,60 +74,97 @@ When filtering database rows using the `when` field, you can reference two types
 - Examples: `{event.user_id}`, `{event.min_amount}`, `{event.threshold}`
 - Used for dynamic filtering and template substitution
 
-**Examples:**
+#### In Rules/Pipelines (for runtime conditions)
+
+When defining conditions in rules and pipelines, use:
+
+**1. Event Fields**
+- Use `event.` prefix: `event.type`, `event.amount`, `event.user_id`
+- Example: `event.type == "transaction"`
+
+**2. Feature Values**
+- Use `features.` prefix: `features.txn_count_24h`, `features.risk_score`
+- Example: `features.txn_count_24h > 10`
+
+**Examples (Feature Definitions):**
 ```yaml
-# Database field filtering (no prefix)
-when: type == "transaction"
+# Feature definition - Database field filtering (no prefix)
+- name: transaction_count_24h
+  type: aggregation
+  method: count
+  when: type == "transaction"              # Database field
 
-# Database field with JSON nested access
-when: attributes.risk_level == "high"
+# Feature definition - Database field with JSON nested access
+- name: high_risk_events
+  type: aggregation
+  method: count
+  when: attributes.risk_level == "high"    # Database JSON field
 
-# Combining database and request fields
-when:
-  all:
-    - type == "payment"                      # Database field
-    - amount > {event.threshold}             # Request field (dynamic)
-    - metadata.country == "{event.country}"  # Database JSON field matches request
+# Feature definition - Combining database and request fields
+- name: filtered_transactions
+  type: aggregation
+  method: count
+  when:
+    all:
+      - type == "payment"                      # Database field
+      - amount > {event.threshold}             # Request value (dynamic)
+      - metadata.country == "{event.country}"  # Database JSON field matches request
 
-# Complex nested JSON field
-when: user.profile.verification_status == "verified"
+# Feature definition - Complex nested JSON field
+- name: verified_users
+  type: aggregation
+  method: count
+  when: user.profile.verification_status == "verified"
 ```
 
-**SQL Generation Example:**
+**SQL Generation Example (Feature Definition):**
 ```yaml
-when:
-  all:
-    - type == "transaction"
-    - amount > {event.min_amount}
-    - attributes.device_type == "mobile"
+# Feature definition
+- name: mobile_transactions_above_threshold
+  type: aggregation
+  method: count
+  datasource: postgresql_events
+  entity: events
+  dimension: user_id
+  dimension_value: "{event.user_id}"
+  window: 24h
+  when:
+    all:
+      - type == "transaction"                # Database field
+      - amount > {event.min_amount}          # Request value (template)
+      - attributes.device_type == "mobile"   # Database JSON field
 ```
 
 **Generated SQL:**
 ```sql
 SELECT COUNT(*)
 FROM events
-WHERE user_id = $1
+WHERE user_id = $1                                   -- From dimension_value template
   AND event_timestamp >= NOW() - INTERVAL '24 hours'
   AND type = 'transaction'                           -- Database field
   AND amount > $2                                     -- Request value substituted
   AND attributes->>'device_type' = 'mobile'          -- JSON field access
 ```
 
-### 1.4 Feature Access
+### 1.4 Feature Access in Rules
 
-**Direct feature access:**
+**In rules and pipelines, use prefixes for field access:**
 ```yaml
+# Rule definition (NOT feature definition)
 rule:
+  id: high_value_transaction
   when:
     all:
-      - features.transaction_sum_7d > 5000      # Registered features
-      - event.amount > 1000                      # Event fields
+      - event.type == "transaction"              # Event fields (event. prefix)
+      - event.amount > 1000                      # Event fields (event. prefix)
+      - features.transaction_sum_7d > 5000       # Feature values (features. prefix)
+  score: 80
 ```
 ---
 
 ## 2. Aggregation 🟢 Implemented
 
-**Implementation Status:** ✅ Core operators production-ready | 📋 Advanced statistics in development
+**Implementation Status:** ✅ Core operators and most statistics production-ready | 📋 Some advanced statistics (variance, mode, entropy) in development
 
 ### 2.1 Field Semantics
 
@@ -135,9 +176,10 @@ rule:
 
 **Field requirement:**
 - `count` - ❌ No field needed
-- `sum`, `avg`, `max`, `min`, `distinct`, `stddev` - ✅ Field required
+- `sum`, `avg`, `max`, `min`, `distinct`, `stddev`, `median`, `percentile` - ✅ Field required
+- `variance`, `mode`, `entropy` - 📋 Planned (not yet implemented)
 
-### 2.2 Implemented Operators
+### 2.2 Implemented Methods
 
 **✅ count** - Count events
 ```yaml
@@ -215,38 +257,85 @@ rule:
   window: 24h
 ```
 
-### 2.3 Planned Operators
-
-**📋 stddev / variance** - Standard deviation / Variance
+**✅ stddev** - Standard deviation
 ```yaml
 - name: stddev_userid_txn_amt_30d
+  description: "Standard deviation of transaction amounts (30 days)"
   type: aggregation
   method: stddev
   datasource: postgresql_events
   entity: events
   dimension: user_id
-  dimension_value: "{req.user_id}"
+  dimension_value: "{event.user_id}"
   field: amount
   window: 30d
   when: type == "transaction"         # Database field (no prefix)
 ```
 
-**📋 percentile** - Nth percentile
+> **Note:** SQL generation varies by database provider:
+> - PostgreSQL/MySQL: `STDDEV_POP(field)`
+> - SQLite: `STDEV(field)`
+> - ClickHouse: `stddevPop(field)`
+
+**✅ median** - Median value
+```yaml
+- name: median_userid_txn_amt_30d
+  description: "Median transaction amount (30 days)"
+  type: aggregation
+  method: median
+  datasource: postgresql_events
+  entity: events
+  dimension: user_id
+  dimension_value: "{event.user_id}"
+  field: amount
+  window: 30d
+  when: type == "transaction"         # Database field (no prefix)
+```
+
+> **Note:** SQL generation varies by database provider:
+> - PostgreSQL/MySQL: `PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY field)`
+> - SQLite: Uses subquery workaround
+> - ClickHouse: `median(field)`
+
+**✅ percentile** - Nth percentile
 ```yaml
 - name: p95_userid_txn_amt_30d
+  description: "95th percentile of transaction amounts (30 days)"
   type: aggregation
   method: percentile
   datasource: postgresql_events
   entity: events
   dimension: user_id
-  dimension_value: "{req.user_id}"
+  dimension_value: "{event.user_id}"
   field: amount
   percentile: 95
   window: 30d
   when: type == "transaction"         # Database field (no prefix)
 ```
 
-**📋 median / mode / entropy**
+> **Note:** SQL generation varies by database provider:
+> - PostgreSQL/MySQL: `PERCENTILE_CONT(p/100.0) WITHIN GROUP (ORDER BY field)`
+> - SQLite: Uses subquery workaround with LIMIT/OFFSET
+> - ClickHouse: `quantile(p/100.0)(field)`
+
+### 2.3 Planned Methods
+
+**📋 variance** - Variance (not yet implemented)
+```yaml
+# ⚠️ Not yet implemented - use stddev as workaround
+- name: variance_userid_txn_amt_30d
+  type: aggregation
+  method: variance
+  datasource: postgresql_events
+  entity: events
+  dimension: user_id
+  dimension_value: "{event.user_id}"
+  field: amount
+  window: 30d
+  when: type == "transaction"         # Database field (no prefix)
+```
+
+**📋 mode / entropy** - Most frequent value / Shannon entropy (not yet implemented)
 
 
 ---
@@ -309,7 +398,7 @@ rule:
   datasource: clickhouse_events
   entity: events
   dimension: user_id
-  dimension_value: "{req.user_id}"
+  dimension_value: "{event.user_id}"
   window: 1h
   when:
     all:
@@ -377,9 +466,6 @@ rule:
 - name: events_per_session_7d
   type: expression
   expression: "total_events_7d / distinct_sessions_7d"
-  depends_on:
-    - total_events_7d
-    - distinct_sessions_7d
 ```
 
 ---
@@ -462,15 +548,15 @@ rule:
 
 > **Note:** The `method` field is **optional** for expression type since it's always "expression". Omitting it makes the configuration more concise.
 
+> **Note:** The `depends_on` field is **no longer required**. Feature dependencies are automatically extracted from the expression string.
+
 ```yaml
 - name: rate_userid_login_failure
   description: "Login failure rate (failed/total logins)"
   type: expression
   # method: expression  # Optional - can be omitted for expression type
   expression: "failed_login_count_1h / login_count_1h"
-  depends_on:
-    - failed_login_count_1h
-    - login_count_1h
+  # Dependencies are automatically extracted from the expression
 ```
 
 ---
@@ -591,7 +677,7 @@ config:
 
 | Category | Abbreviations |
 |----------|---------------|
-| Aggregation | `cnt`, `sum`, `avg`, `max`, `min`, `distinct`, `stddev`, `percentile`, `median`, `mode`, `entropy` |
+| Aggregation | `cnt`, `sum`, `avg`, `max`, `min`, `distinct`, `stddev`, `p95` (percentile), `median` |
 | State | `zscore`, `deviation`, `percentile`, `outlier`, `timezone` |
 | Sequence | `consec`, `trend`, `pctchg`, `streak` |
 | Graph | `centrality`, `community`, `shared` |
@@ -658,7 +744,7 @@ features:
     dimension: user_id
     dimension_value: "{event.user_id}"
     window: 24h
-    when: event.type == "login"
+    when: type == "login"
 
   - name: cnt_userid_login_1h_failed
     description: "Failed login count in last 1 hour"
@@ -671,8 +757,8 @@ features:
     window: 1h
     when:
       all:
-        - event.type == "login"
-        - event.status == "failed"
+        - type == "login"
+        - status == "failed"
 
   - name: distinct_userid_device_24h
     description: "Number of distinct devices in last 24 hours"
@@ -689,10 +775,8 @@ features:
   - name: rate_userid_login_failure
     description: "Login failure rate calculation"
     type: expression
-    expression: "cnt_userid_login_1h_failed / max(cnt_userid_login_24h, 1)"
-    depends_on:
-      - cnt_userid_login_1h_failed
-      - cnt_userid_login_24h
+    expression: "cnt_userid_login_1h_failed / (cnt_userid_login_24h + 0.0001)"
+    # Dependencies are automatically extracted from the expression
 
   # Lookup
   - name: user_risk_score_90d
@@ -706,8 +790,8 @@ features:
 rule:
   id: high_risk_pattern
   when:
-    event.type: login
     all:
+      - event.type == "login"
       - features.cnt_userid_login_1h_failed > 5
       - features.rate_userid_login_failure > 0.5
       - features.distinct_userid_device_24h > 3
@@ -735,7 +819,6 @@ rule:
 | `window` | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ |
 | `when` | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ |
 | `expression` | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ |
-| `depends_on` | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ |
 | `key` | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ |
 | `fallback` | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ |
 

@@ -4,10 +4,10 @@
 A **Ruleset** is a named collection of rules that can be reused, grouped, and executed as a unit within CORINT's Cognitive Risk Intelligence framework.
 Rulesets enable modular design, separation of concerns, and cleaner pipeline logic.
 
-**Important:** Rulesets produce **conclusions** (signals), NOT final decisions. Final decisions are made at the **Pipeline level** in the `decision:` section. This separation allows:
-- **Reusability**: Same ruleset can be used with different decision thresholds
-- **Flexibility**: Pipeline can combine signals from multiple rulesets
-- **Clarity**: Clear separation between detection/conclusion and final action
+**Important:** Rulesets produce **decision signals** through their `conclusion` section. The available signals are: `approve`, `decline`, `review`, `hold`, and `pass`. This enables:
+- **Reusability**: Same ruleset can be used in different pipelines
+- **Flexibility**: Pipelines can use results from multiple rulesets
+- **Clarity**: Clear separation between detection (rules) and decision logic (conclusion)
 
 ---
 
@@ -18,12 +18,12 @@ ruleset:
   id: string
   name: string
   description: string
-  extends: string                    # ✨ Parent ruleset ID (Phase 3)
+  extends: string                    # ✅ Parent ruleset ID (Implemented)
   rules:
     - <rule-id-1>
     - <rule-id-2>
     - <rule-id-3>
-  conclusion:                        # Conclusion logic (produces signals, NOT final decisions)
+  conclusion:                        # Decision logic (produces approve/decline/review/hold/pass signals)
     - <conclusion-rules>
   metadata:                         # Optional metadata
     version: string
@@ -31,10 +31,10 @@ ruleset:
 ```
 
 **Key Terminology:**
-- `conclusion` - Ruleset's assessment logic that produces **signals** (not final decisions)
-- `signal` - The output type (e.g., `high_risk`, `suspicious`, `normal`)
-- `when` - Condition for each conclusion rule
-- Final `decision` (approve/decline/review/hold/pass) is made at **Pipeline level**
+- `conclusion` - Ruleset's decision logic that evaluates rule results and produces a signal
+- `signal` - The decision output: `approve`, `decline`, `review`, `hold`, or `pass`
+- `when` - Condition expression for each conclusion rule (uses comparison and logical operators)
+- `terminate` - When true, stops evaluating further conclusion rules
 
 ---
 
@@ -89,7 +89,7 @@ Rules are executed **in the given order**.
 
 ---
 
-## 5.5 Ruleset Inheritance (`extends`) **[Phase 3]**
+## 5.5 Ruleset Inheritance (`extends`) (✅ Implemented)
 
 **Ruleset inheritance allows child rulesets to extend parent rulesets, inheriting their rules and optionally overriding decision logic.**
 
@@ -166,23 +166,23 @@ ruleset:
     - new_account_risk
     - suspicious_email
 
-  # Conclusion produces signals, NOT final decisions
+  # Conclusion produces decision signals
   conclusion:
     - when: triggered_rules contains "card_testing"
-      signal: critical_risk
+      signal: decline
       reason: "Card testing detected"
       terminate: true
 
     - when: total_score >= 100
-      signal: high_risk
+      signal: decline
       reason: "High risk score"
 
     - when: total_score >= 60
-      signal: medium_risk
+      signal: review
       reason: "Medium risk - requires review"
 
     - default: true
-      signal: low_risk
+      signal: approve
 ```
 
 **Child Ruleset** (`payment_high_value.yaml`):
@@ -207,31 +207,30 @@ ruleset:
   rules:
     - amount_outlier
 
-  # Override with stricter conclusion logic (produces signals, not final decisions)
+  # Override with stricter conclusion logic
   conclusion:
     - when: triggered_rules contains "card_testing"
-      signal: critical_risk
+      signal: decline
       reason: "Card testing detected"
       terminate: true
 
     - when: total_score >= 60  # Stricter than parent (was 100)
-      signal: high_risk
+      signal: decline
       reason: "Risk score too high for large transaction"
 
     - when: triggered_count >= 2
-      signal: medium_risk
+      signal: review
       reason: "Multiple risk indicators"
 
     - default: true
-      signal: low_risk
+      signal: approve
 ```
 
 **Result After Inheritance Resolution**:
 - **Total rules**: 6 (5 from parent + 1 new)
 - **Conclusion logic**: Uses child's stricter thresholds
 - **Zero duplication**: Parent rules defined once, inherited automatically
-- **Signal output**: `critical_risk`, `high_risk`, `medium_risk`, or `low_risk`
-- **Final decision**: Made at Pipeline level based on signal
+- **Signal output**: `decline`, `review`, or `approve` based on evaluation
 
 ### 5.5.4 Multiple Inheritance Variants
 
@@ -244,7 +243,7 @@ ruleset:
   extends: payment_base
   conclusion:
     - when: total_score >= 100
-      signal: high_risk
+      signal: decline
 
 # payment_high_value.yaml - Strict thresholds
 ruleset:
@@ -254,7 +253,7 @@ ruleset:
     - amount_outlier  # Add extra rule
   conclusion:
     - when: total_score >= 60  # Stricter
-      signal: high_risk
+      signal: decline
 
 # payment_vip.yaml - Lenient thresholds
 ruleset:
@@ -262,7 +261,7 @@ ruleset:
   extends: payment_base
   conclusion:
     - when: total_score >= 150  # More lenient
-      signal: high_risk
+      signal: decline
 ```
 
 ### 5.5.5 Error Detection
@@ -345,10 +344,10 @@ ruleset:
     - account_takeover_pattern
     - suspicious_ip_pattern
 
-  # Conclusion produces signals, NOT final decisions
+  # Conclusion produces decision signals
   conclusion:
     - when: total_score >= 100
-      signal: high_risk
+      signal: decline
 ```
 
 ### 5.5.2 Complete Example with Imports
@@ -383,38 +382,38 @@ ruleset:
     - suspicious_geography_pattern  # 60 points
     - new_user_fraud_pattern    # 50 points
 
-  # Conclusion produces signals, NOT final decisions
+  # Conclusion produces decision signals
   conclusion:
-    # Critical patterns - emit critical_risk signal
+    # Critical patterns - decline immediately
     - when: triggered_rules contains "fraud_farm_pattern"
-      signal: critical_risk
+      signal: decline
       reason: "Critical: Fraud farm detected"
       terminate: true
 
     - when: triggered_rules contains "account_takeover_pattern"
-      signal: critical_risk
+      signal: decline
       reason: "Critical: Account takeover detected"
       terminate: true
 
     # High score threshold
     - when: total_score >= 150
-      signal: high_risk
+      signal: decline
       reason: "High risk score"
       terminate: true
 
     # Multiple suspicious indicators
     - when: total_score >= 100
-      signal: medium_risk
+      signal: review
       reason: "Multiple fraud indicators"
 
     # Single indicator or moderate score
     - when: total_score >= 50
-      signal: low_risk
+      signal: review
       reason: "Single fraud indicator detected"
 
     # Clean transaction
     - default: true
-      signal: normal
+      signal: approve
       reason: "No significant fraud indicators"
 
   metadata:
@@ -449,19 +448,19 @@ ruleset:
     - velocity_check
     - suspicious_ip
 
-  # Conclusion produces signals, NOT final decisions
+  # Conclusion produces decision signals
   conclusion:
     # Standard threshold: 100 points
     - when: total_score >= 100
-      signal: high_risk
+      signal: decline
       reason: "Risk score too high"
 
     - when: total_score >= 50
-      signal: medium_risk
+      signal: review
       reason: "Manual review required"
 
     - default: true
-      signal: low_risk
+      signal: approve
 ```
 
 **High-Value Transaction Ruleset** (stricter thresholds):
@@ -491,35 +490,37 @@ ruleset:
     - new_account_risk
     - suspicious_email
 
-  # Conclusion produces signals, NOT final decisions
+  # Conclusion produces decision signals
   conclusion:
-    # Critical patterns - emit critical_risk signal
-    - when: |
-        triggered_rules contains "card_testing" ||
-        triggered_rules contains "new_account_risk"
-      signal: critical_risk
+    # Critical patterns - decline immediately
+    - when:
+        all:
+          - any:
+              - triggered_rules contains "card_testing"
+              - triggered_rules contains "new_account_risk"
+      signal: decline
       reason: "Critical fraud pattern detected"
       terminate: true
 
     # Stricter threshold: 60 points (vs 100 in standard)
     - when: total_score >= 60
-      signal: high_risk
+      signal: decline
       reason: "Risk score too high for large transaction"
       terminate: true
 
     # Multiple risk indicators
     - when: triggered_count >= 2
-      signal: medium_risk
+      signal: review
       reason: "Multiple risk indicators detected"
 
     # Single risk indicator
     - when: triggered_count >= 1
-      signal: low_risk
+      signal: review
       reason: "Single risk indicator"
 
     # Clean high-value transaction
     - default: true
-      signal: normal
+      signal: approve
       reason: "Clean high-value transaction"
 ```
 
@@ -620,7 +621,7 @@ ruleset:
     - account_takeover_pattern
 
   conclusion:
-    # ... conclusion logic (produces signals) ...
+    # ... conclusion logic (produces decision signals) ...
 
   metadata:
     version: "1.0.0"
@@ -650,7 +651,7 @@ ruleset:
 
 ## 6. `conclusion` (Direct Definition)
 
-Conclusion logic evaluates the combined results of all rules and produces signals. **Final decisions are made at the Pipeline level.**
+Conclusion logic evaluates the combined results of all rules and produces a decision signal.
 
 ### 6.1 Basic Structure
 
@@ -676,17 +677,17 @@ Within conclusion conditions, you can access:
 - `triggered_rules` - Array of triggered rule IDs
 - `context.*` - Any pipeline context data
 
-### 6.3 Built-in Signals
+### 6.3 Available Signals (✅ Implemented)
 
 | Signal | Description | Use Case |
 |--------|-------------|----------|
-| `critical_risk` | Critical risk detected | Immediate blocking patterns |
-| `high_risk` | High risk level | Above threshold |
-| `medium_risk` | Medium risk level | Needs review |
-| `low_risk` | Low risk level | Minor concerns |
-| `normal` | No significant risk | Clean transaction |
+| `approve` | Approve the request | Transaction passes all checks |
+| `decline` | Decline/block the request | Critical risk detected, deny transaction |
+| `review` | Send for manual review | Needs human evaluation |
+| `hold` | Temporarily suspend | Waiting for additional verification (2FA, KYC, etc.) |
+| `pass` | Skip/no decision | Let downstream systems handle decision |
 
-**Note:** Final decisions (`approve`, `decline`, `review`, `hold`, `pass`) are made at **Pipeline level** based on signals.
+**Note:** These are the final decision signals from rulesets. Pipelines can route based on these signals using `results.<ruleset_id>.signal`.
 
 ---
 
@@ -694,55 +695,55 @@ Within conclusion conditions, you can access:
 
 ### 7.1 Score-Based Conclusions
 
-Signals based on total score:
+Decision signals based on total score:
 
 ```yaml
 conclusion:
-  # Critical risk
+  # Very high risk - decline
   - when: total_score >= 150
-    signal: critical_risk
+    signal: decline
     reason: "Critical risk score"
 
-  # High risk
+  # High risk - decline
   - when: total_score >= 100
-    signal: high_risk
-    reason: "High risk, needs analysis"
+    signal: decline
+    reason: "High risk, needs blocking"
 
-  # Medium risk
+  # Medium risk - review
   - when: total_score >= 50
-    signal: medium_risk
+    signal: review
     reason: "Medium risk, manual review"
 
-  # Low risk
+  # Low risk - approve
   - default: true
-    signal: low_risk
-    reason: "Low risk"
+    signal: approve
+    reason: "Low risk, approved"
 ```
 
 ### 7.2 Count-Based Conclusions
 
-Signals based on triggered rule count:
+Decision signals based on triggered rule count:
 
 ```yaml
 conclusion:
-  # Multiple indicators
+  # Multiple indicators - decline
   - when: triggered_count >= 3
-    signal: critical_risk
+    signal: decline
     reason: "Multiple risk indicators"
 
-  # Some indicators
+  # Some indicators - review
   - when: triggered_count >= 2
-    signal: high_risk
+    signal: review
     reason: "Multiple signals, needs analysis"
 
-  # Single indicator
+  # Single indicator - hold for verification
   - when: triggered_count == 1
-    signal: medium_risk
-    reason: "Single indicator detected"
+    signal: hold
+    reason: "Single indicator detected, needs verification"
 
-  # No indicators
+  # No indicators - approve
   - default: true
-    signal: normal
+    signal: approve
 ```
 
 ### 7.3 Short-Circuit (Early Termination)
@@ -751,157 +752,181 @@ Terminate immediately when specific rule triggers:
 
 ```yaml
 conclusion:
-  # Critical rule triggered - emit critical_risk and stop
+  # Critical rule triggered - decline and stop
   - when: triggered_rules contains "blocked_user"
-    signal: critical_risk
+    signal: decline
     reason: "User is blocked"
     terminate: true  # Stop here, don't evaluate further
 
-  # High-risk rule triggered
+  # High-risk rule triggered - decline and stop
   - when: triggered_rules contains "critical_security_breach"
-    signal: critical_risk
+    signal: decline
     reason: "Security breach detected"
     terminate: true
 
   # Otherwise continue with normal logic
   - when: total_score >= 80
-    signal: high_risk
+    signal: review
 
   - default: true
-    signal: normal
+    signal: approve
 ```
 
 ### 7.4 Specific Rule Combinations
 
-Signals based on specific rule combinations:
+Decision signals based on specific rule combinations:
 
 ```yaml
 conclusion:
   # Classic takeover pattern: device + location + behavior
-  - when: |
-      triggered_rules contains "new_device" &&
-      triggered_rules contains "unusual_location" &&
-      triggered_rules contains "behavior_anomaly"
-    signal: critical_risk
+  - when:
+      all:
+        - triggered_rules contains "new_device"
+        - triggered_rules contains "unusual_location"
+        - triggered_rules contains "behavior_anomaly"
+    signal: decline
     reason: "Classic account takeover pattern"
 
   # Device + location (suspicious but not definitive)
-  - when: |
-      triggered_rules contains "new_device" &&
-      triggered_rules contains "unusual_location"
-    signal: high_risk
+  - when:
+      all:
+        - triggered_rules contains "new_device"
+        - triggered_rules contains "unusual_location"
+    signal: review
     reason: "Device and location anomaly"
 
   # Single weak signal
-  - when: |
-      triggered_rules contains "new_device" &&
-      triggered_count == 1
-    signal: low_risk
-    reason: "Only new device, acceptable"
+  - when:
+      all:
+        - triggered_rules contains "new_device"
+        - triggered_count == 1
+    signal: hold
+    reason: "Only new device, needs verification"
 
   - default: true
-    signal: normal
+    signal: approve
 ```
 
-### 7.5 Weighted Scoring with Multipliers
+### 7.5 Weighted Scoring with Multipliers (📋 Planned - Requires set_var)
 
-Weighted scoring with synergy effects:
+Weighted scoring with synergy effects (currently use explicit conditions instead):
 
 ```yaml
+# 📋 PLANNED SYNTAX (not yet implemented):
 conclusion:
   # Calculate weighted score
-  - set_var: weighted_score
+  - set_var: weighted_score  # Not yet supported
     value: |
       base_score = total_score
-
-      # Synergy: if certain rules trigger together, multiply
       if (triggered_rules contains "new_device" &&
           triggered_rules contains "unusual_geo") {
         base_score = base_score * 1.5
       }
-
-      if (triggered_count >= 3) {
-        base_score = base_score * 1.3
-      }
-
       return base_score
 
-  # Signals based on weighted score
-  - when: vars.weighted_score >= 120
-    signal: critical_risk
+# ✅ CURRENT WORKAROUND (use explicit conditions):
+conclusion:
+  # Synergy patterns - higher threshold
+  - when:
+      all:
+        - triggered_rules contains "new_device"
+        - triggered_rules contains "unusual_geo"
+        - total_score >= 80  # Lower threshold due to synergy
+    signal: decline
 
-  - when: vars.weighted_score >= 80
-    signal: high_risk
+  # Multiple indicators - adjusted threshold
+  - when:
+      all:
+        - triggered_count >= 3
+        - total_score >= 90  # Lower threshold for multiple indicators
+    signal: decline
 
-  - when: vars.weighted_score >= 50
-    signal: medium_risk
+  # Standard thresholds
+  - when: total_score >= 120
+    signal: decline
+
+  - when: total_score >= 80
+    signal: review
+
+  - when: total_score >= 50
+    signal: hold
 
   - default: true
-    signal: normal
+    signal: approve
 ```
 
 ### 7.6 Context-Aware Conclusions
 
-Signals incorporating pipeline context data:
+Decision signals incorporating pipeline context data:
 
 ```yaml
 conclusion:
   # Consider LLM analysis confidence
-  - when: |
-      total_score >= 70 &&
-      context.llm_analysis.confidence > 0.8
-    signal: critical_risk
+  - when:
+      all:
+        - total_score >= 70
+        - context.llm_analysis.confidence > 0.8
+    signal: decline
     reason: "High score + high AI confidence"
 
-  # Consider user tier
-  - when: |
-      total_score >= 60 &&
-      event.user.tier == "basic"
-    signal: high_risk
+  # Consider user tier - stricter for basic users
+  - when:
+      all:
+        - total_score >= 60
+        - event.user.tier == "basic"
+    signal: decline
     reason: "Medium risk for basic user"
 
-  - when: |
-      total_score >= 60 &&
-      event.user.tier == "premium"
-    signal: medium_risk
+  # More lenient for premium users
+  - when:
+      all:
+        - total_score >= 60
+        - event.user.tier == "premium"
+    signal: review
     reason: "Medium risk acceptable for premium user"
 
   # Consider transaction amount
-  - when: |
-      total_score >= 50 &&
-      event.transaction.amount > 10000
-    signal: high_risk
+  - when:
+      all:
+        - total_score >= 50
+        - event.transaction.amount > 10000
+    signal: review
     reason: "Medium risk + high value"
 
   - default: true
-    signal: normal
+    signal: approve
 ```
 
-### 7.7 Time-Based Conclusions
+### 7.7 Time-Based Conclusions (📋 Requires hour() function - Planned)
 
 Time-based conclusion logic:
 
 ```yaml
 conclusion:
   # Off-hours + medium risk = higher signal
-  - when: |
-      total_score >= 40 &&
-      (hour(event.timestamp) < 6 || hour(event.timestamp) > 22)
-    signal: high_risk
+  - when:
+      all:
+        - total_score >= 40
+        - any:
+            - hour(event.timestamp) < 6
+            - hour(event.timestamp) > 22
+    signal: review
     reason: "Medium risk during off-hours"
 
   # Business hours + medium risk = moderate signal
-  - when: |
-      total_score >= 40 &&
-      hour(event.timestamp) >= 6 && hour(event.timestamp) <= 22
-    signal: medium_risk
+  - when:
+      all:
+        - total_score >= 40
+        - hour(event.timestamp) >= 6
+        - hour(event.timestamp) <= 22
+    signal: hold
     reason: "Medium risk during business hours"
 
   - when: total_score >= 80
-    signal: critical_risk
+    signal: decline
 
   - default: true
-    signal: normal
+    signal: approve
 ```
 
 ### 7.8 Hybrid: Rules + Score + Combination
@@ -912,38 +937,40 @@ Combining multiple conclusion approaches:
 conclusion:
   # Priority 1: Critical rules (short-circuit)
   - when: triggered_rules contains "blocked_user"
-    signal: critical_risk
+    signal: decline
     reason: "User blocked"
     terminate: true
 
   # Priority 2: Dangerous combinations
-  - when: |
-      triggered_rules contains "new_device" &&
-      triggered_rules contains "unusual_geo" &&
-      triggered_rules contains "high_value_transaction"
-    signal: critical_risk
+  - when:
+      all:
+        - triggered_rules contains "new_device"
+        - triggered_rules contains "unusual_geo"
+        - triggered_rules contains "high_value_transaction"
+    signal: decline
     reason: "High-risk combination"
 
   # Priority 3: High score threshold
   - when: total_score >= 120
-    signal: high_risk
+    signal: decline
     reason: "High risk score"
 
   # Priority 4: Multiple signals
-  - when: |
-      triggered_count >= 3 &&
-      context.llm_analysis.risk_score > 0.7
-    signal: high_risk
+  - when:
+      all:
+        - triggered_count >= 3
+        - context.llm_analysis.risk_score > 0.7
+    signal: decline
     reason: "Multiple signals + AI confirmation"
 
   # Priority 5: Moderate risk
   - when: total_score >= 50
-    signal: medium_risk
+    signal: review
     reason: "Moderate risk"
 
   # Default
   - default: true
-    signal: normal
+    signal: approve
 ```
 
 ---
@@ -967,38 +994,40 @@ ruleset:
     - behavior_anomaly        # score: 60
     - password_change_attempt # score: 70
 
-  # Conclusion produces signals, final decisions at Pipeline level
+  # Conclusion produces decision signals
   conclusion:
     # Critical: password change from new device in unusual location
-    - when: |
-        triggered_rules contains "password_change_attempt" &&
-        triggered_rules contains "new_device_login" &&
-        triggered_rules contains "unusual_location"
-      signal: critical_risk
+    - when:
+        all:
+          - triggered_rules contains "password_change_attempt"
+          - triggered_rules contains "new_device_login"
+          - triggered_rules contains "unusual_location"
+      signal: decline
       reason: "Critical takeover indicators"
       terminate: true
 
     # High risk: classic takeover pattern
-    - when: |
-        triggered_rules contains "new_device_login" &&
-        triggered_rules contains "unusual_location" &&
-        triggered_rules contains "behavior_anomaly"
-      signal: high_risk
+    - when:
+        all:
+          - triggered_rules contains "new_device_login"
+          - triggered_rules contains "unusual_location"
+          - triggered_rules contains "behavior_anomaly"
+      signal: decline
       reason: "Classic takeover pattern detected"
 
     # Medium risk: multiple signals
     - when: triggered_count >= 3
-      signal: medium_risk
+      signal: review
       reason: "Multiple suspicious indicators"
 
     # Moderate risk: high score
     - when: total_score >= 100
-      signal: medium_risk
+      signal: review
       reason: "High risk score"
 
     # Low risk
     - default: true
-      signal: normal
+      signal: approve
 ```
 
 ### 8.2 Transaction Fraud Detection
@@ -1020,28 +1049,30 @@ ruleset:
 
   conclusion:
     # Critical: high value + high risk beneficiary
-    - when: |
-        triggered_rules contains "high_value_transaction" &&
-        triggered_rules contains "beneficiary_risk" &&
-        event.transaction.amount > 50000
-      signal: critical_risk
+    - when:
+        all:
+          - triggered_rules contains "high_value_transaction"
+          - triggered_rules contains "beneficiary_risk"
+          - event.transaction.amount > 50000
+      signal: decline
       reason: "High-value transaction to risky beneficiary"
 
     # High risk: complex pattern
-    - when: |
-        total_score >= 100 ||
-        triggered_count >= 3
-      signal: high_risk
-      reason: "Complex fraud pattern needs analysis"
+    - when:
+        any:
+          - total_score >= 100
+          - triggered_count >= 3
+      signal: decline
+      reason: "Complex fraud pattern needs blocking"
 
     # Medium risk: moderate score
     - when: total_score >= 60
-      signal: medium_risk
+      signal: review
       reason: "Moderate risk transaction"
 
     # Low risk
     - default: true
-      signal: normal
+      signal: approve
 ```
 
 ### 8.3 Credit Application Risk
@@ -1064,30 +1095,31 @@ ruleset:
   conclusion:
     # Critical: previous default
     - when: triggered_rules contains "previous_default"
-      signal: critical_risk
+      signal: decline
       reason: "Previous loan default"
       terminate: true
 
     # High risk: low credit + high debt
-    - when: |
-        triggered_rules contains "low_credit_score" &&
-        triggered_rules contains "high_debt_ratio"
-      signal: high_risk
+    - when:
+        all:
+          - triggered_rules contains "low_credit_score"
+          - triggered_rules contains "high_debt_ratio"
+      signal: decline
       reason: "Poor credit profile"
 
     # Medium risk: score threshold
     - when: total_score >= 100
-      signal: medium_risk
+      signal: review
       reason: "Manual underwriting required"
 
     # Low risk: borderline
     - when: total_score >= 60
-      signal: low_risk
-      reason: "Borderline case"
+      signal: hold
+      reason: "Borderline case - needs verification"
 
     # Normal: good credit profile
     - default: true
-      signal: normal
+      signal: approve
 ```
 
 ### 8.4 Login Risk with Context
@@ -1108,35 +1140,40 @@ ruleset:
 
   conclusion:
     # VIP users: more lenient signal
-    - when: |
-        event.user.tier == "vip" &&
-        total_score < 100
-      signal: low_risk
+    - when:
+        all:
+          - event.user.tier == "vip"
+          - total_score < 100
+      signal: approve
       reason: "VIP user, acceptable risk"
 
-    # High risk: always critical
+    # High risk: always decline
     - when: total_score >= 120
-      signal: critical_risk
+      signal: decline
       reason: "High risk login"
 
-    # Business hours + moderate risk
-    - when: |
-        total_score >= 60 &&
-        hour(event.timestamp) >= 9 &&
-        hour(event.timestamp) <= 18
-      signal: medium_risk
+    # Business hours + moderate risk (requires hour() function - see expression.md)
+    - when:
+        all:
+          - total_score >= 60
+          - hour(event.timestamp) >= 9
+          - hour(event.timestamp) <= 18
+      signal: review
       reason: "Moderate risk during business hours"
 
-    # Off-hours + any risk: higher signal
-    - when: |
-        total_score >= 40 &&
-        (hour(event.timestamp) < 6 || hour(event.timestamp) > 22)
-      signal: high_risk
+    # Off-hours + any risk: higher signal (requires hour() function - see expression.md)
+    - when:
+        all:
+          - total_score >= 40
+          - any:
+              - hour(event.timestamp) < 6
+              - hour(event.timestamp) > 22
+      signal: review
       reason: "Risk detected during off-hours"
 
-    # Default: normal
+    # Default: approve
     - default: true
-      signal: normal
+      signal: approve
 ```
 
 ---
@@ -1232,20 +1269,19 @@ A CORINT Ruleset:
 
 - Groups multiple rules into a reusable logical unit
 - **Defines conclusion logic** through `conclusion` section
-- **Supports inheritance** via `extends` for code reuse **[Phase 3]**
+- **Supports inheritance** via `extends` for code reuse (✅ Implemented)
 - Evaluates rule combinations and context
-- **Produces signals** (`critical_risk`, `high_risk`, `medium_risk`, `low_risk`, `normal`)
-- **Does NOT make final decisions** - Final decisions (approve/decline/review/hold/pass) are made at **Pipeline level**
+- **Produces decision signals**: `approve`, `decline`, `review`, `hold`, or `pass`
 - Integrates cleanly with CORINT Pipelines
 - Improves modularity and maintainability
 - **Uses imports to declare rule dependencies explicitly**
 
 **Key Points (Three-Layer Model):**
 - **Rules** detect and score individual risk patterns
-- **Rulesets** produce signals/conclusions based on rule results
-- **Pipelines** make final decisions based on signals
+- **Rulesets** evaluate rule results and produce decision signals
+- **Pipelines** route events to rulesets and can use ruleset results
 
-**Phase 3 Features:**
+**Inheritance Features (✅ Implemented):**
 - **Inheritance (`extends`)** - Child rulesets inherit rules from parent, reducing duplication by 27%+
 - **Compile-time resolution** - Zero runtime overhead, all resolved during compilation
 
