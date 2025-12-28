@@ -358,6 +358,7 @@ mod tests {
             entry: entry.to_string(),
             when: None,
             steps,
+            decision: None,
             metadata: None,
         }
     }
@@ -384,6 +385,7 @@ mod tests {
             entry: String::new(), // Empty entry
             when: None,
             steps: vec![],
+            decision: None,
             metadata: None,
         };
 

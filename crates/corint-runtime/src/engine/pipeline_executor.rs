@@ -330,6 +330,18 @@ impl PipelineExecutor {
                     pc += 1;
                 }
 
+                Instruction::SetReason { reason } => {
+                    tracing::debug!("SetReason called with reason: {}", reason);
+                    ctx.set_reason(reason.clone());
+                    pc += 1;
+                }
+
+                Instruction::SetActions { actions } => {
+                    tracing::debug!("SetActions called with actions: {:?}", actions);
+                    ctx.set_actions(actions.clone());
+                    pc += 1;
+                }
+
                 Instruction::MarkRuleTriggered { rule_id } => {
                     ctx.mark_rule_triggered(rule_id.clone());
                     pc += 1;

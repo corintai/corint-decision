@@ -562,249 +562,132 @@ steps:
 
 ---
 
-## 7. Decision Logic (✅ Implemented)
+## 7. Decision Logic (⚠️ NOT IMPLEMENTED - Ignored by Parser)
 
-> **Note:** While the Pipeline AST structure (`crates/corint-core/src/ast/pipeline.rs`) does not show an explicit `decision` field, this feature is implemented and actively used in test files (e.g., `tests/e2e_repo/pipelines/transaction_test.yaml`). The implementation may be at the parser/runtime layer.
+> **⚠️ CRITICAL:** The `decision` field is **NOT IMPLEMENTED** in Pipeline. While you may see it in test files, it is **silently ignored** by the parser and has no effect.
 
-### 7.1 Basic Structure
+**Evidence:**
+1. Pipeline AST has no `decision` field (`crates/corint-core/src/ast/pipeline.rs` lines 18-44)
+2. Pipeline parser does not parse `decision` field (`crates/corint-parser/src/pipeline/parser.rs` lines 75-129)
+3. The `decision` block in YAML is silently ignored by serde (no `deny_unknown_fields`)
+
+**Current Implementation:**
+- **Rulesets** have `conclusion` blocks that produce decision signals (✅ Implemented)
+- **Pipelines** do NOT have decision logic - they only execute steps (✅ Implemented)
+- For decision-making, use **Ruleset conclusion** instead
+
+### 7.1 Why Test Files Have `decision` Blocks
+
+You may see `decision` blocks in test files like `tests/e2e_repo/pipelines/transaction_test.yaml`:
 
 ```yaml
 pipeline:
-  id: my_pipeline
-  entry: fraud_check
-
   steps:
     - step:
-        id: fraud_check
-        type: ruleset
-        ruleset: fraud_detection
-
-  # Final decision based on ruleset results
-  decision:
-    - when: results.fraud_detection.signal == "decline"
-      result: decline
-      actions: ["BLOCK_DEVICE", "NOTIFY_SECURITY"]
-      reason: "Critical risk detected"
-      terminate: true
-
-    - when: results.fraud_detection.signal == "review"
-      result: review
-      actions: ["KYC", "OTP"]
-      reason: "Requires manual review"
-
-    - default: true
-      result: approve
-      reason: "Transaction approved"
-```
-
-### 7.2 Decision Rule Fields
-
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `when` | WhenBlock | Yes* | Condition expression for this decision rule |
-| `result` | string | Yes | Decision result: `approve`, `decline`, `review`, `hold`, `pass` |
-| `actions` | array | No | List of actions to execute: `["KYC", "OTP", "2FA", "BLOCK_DEVICE"]` |
-| `reason` | string | No | Human-readable reason for the decision (supports variable interpolation) |
-| `terminate` | boolean | No | If true, stop processing further decision rules (default: false) |
-| `default` | boolean | No* | If true, this is the default fallback rule (no condition needed) |
-
-*Either `when` or `default` must be specified.
-
-### 7.3 Decision Results
-
-| Result | Description | Use Case |
-|--------|-------------|----------|
-| `approve` | Automatically approve the transaction | Low risk, clean transactions |
-| `decline` | Automatically reject the transaction | High risk, fraud detected |
-| `review` | Send to human review queue | Medium risk, needs judgment |
-| `hold` | Temporarily suspend, require additional verification | Suspicious but not definitive |
-| `pass` | Skip/no decision, let downstream handle | Rule not applicable, defer to next |
-
-### 7.4 Actions
-
-Actions are user-defined strings that trigger specific workflows in your system:
-
-| Action | Description |
-|--------|-------------|
-| `KYC` | Trigger Know Your Customer verification |
-| `OTP` | Send one-time password verification |
-| `2FA` | Require two-factor authentication |
-| `BLOCK_DEVICE` | Block the device from future transactions |
-| `NOTIFY_SECURITY` | Alert security team |
-| `FREEZE_ACCOUNT` | Temporarily freeze the account |
-| *custom* | Any custom action defined by your system |
-
-### 7.5 Available Context
-
-Within decision conditions, you can access:
-
-- `results.<ruleset_id>.signal` - Signal from a ruleset (`approve`, `decline`, `review`, `hold`, `pass`)
-- `results.<ruleset_id>.total_score` - Aggregate score from ruleset
-- `results.<ruleset_id>.triggered_count` - Number of triggered rules
-- `results.<ruleset_id>.triggered_rules` - Array of triggered rule IDs
-- `results.<ruleset_id>.reason` - Reason from ruleset conclusion
-- `event.*` - Original event data
-- `features.*` - Calculated features
-
-### 7.6 Complete Example
-
-```yaml
-version: "0.1"
-
-pipeline:
-  id: transaction_risk_pipeline
-  name: Transaction Risk Assessment
-  entry: fraud_check
-
-  when:
-    all:
-      - event.type == "transaction"
-
-  steps:
-    - step:
-        id: fraud_check
-        name: Fraud Detection
         type: ruleset
         ruleset: transaction_risk_ruleset
 
-  # Final decision based on ruleset signals
+  # This block is IGNORED by the parser!
   decision:
-    # Decline if ruleset signals decline
     - when: results.transaction_risk_ruleset.signal == "decline"
       result: decline
-      reason: "{results.transaction_risk_ruleset.reason}"
-      actions: ["BLOCK_DEVICE", "NOTIFY_SECURITY"]
-      terminate: true
-
-    # Review if ruleset signals review
-    - when: results.transaction_risk_ruleset.signal == "review"
-      result: review
-      reason: "{results.transaction_risk_ruleset.reason}"
-      actions: ["KYC", "MANUAL_REVIEW"]
-      terminate: true
-
-    # Hold for additional verification
-    - when: results.transaction_risk_ruleset.signal == "hold"
-      result: hold
-      reason: "Additional verification required"
-      actions: ["OTP", "2FA"]
-
-    # Default: approve
-    - default: true
-      result: approve
-      reason: "Transaction approved"
 ```
 
-### 7.7 Multi-Ruleset Decision Logic
+**These blocks are ignored and have no effect.** Tests pass because:
+1. The **Ruleset's `conclusion`** already produces the decision signal
+2. The Pipeline's `decision` block is silently ignored
+3. Tests verify the Ruleset output, not the Pipeline decision
 
-When using multiple rulesets, you can combine their results:
+### 7.2 Correct Approach: Use Ruleset Conclusion
+
+Since pipeline-level decisions are not implemented, use **Ruleset conclusion** instead:
 
 ```yaml
+# ✅ THIS WORKS - Decision logic in Ruleset
+ruleset:
+  id: transaction_risk_ruleset
+  name: Transaction Risk Ruleset
+  rules:
+    - high_risk_country
+    - velocity_abuse
+    - amount_outlier
+
+  # Conclusion provides the decision logic
+  conclusion:
+    # Critical risk - blocked user
+    - when: triggered_rules contains "user_blocked"
+      signal: decline
+      reason: "User is blocked"
+      terminate: true
+
+    # High risk - multiple indicators or high score
+    - when: total_score >= 150
+      signal: decline
+      reason: "High risk score threshold exceeded"
+      terminate: true
+
+    # Medium risk - review
+    - when: total_score >= 80
+      signal: review
+      reason: "Medium risk score - manual review required"
+      terminate: true
+
+    # Low risk - approve (default)
+    - default: true
+      signal: approve
+      reason: "No significant risk indicators"
+```
+
+Then reference this ruleset in your pipeline:
+
+```yaml
+# ✅ THIS WORKS - Pipeline executes ruleset
 pipeline:
-  id: comprehensive_risk_pipeline
-  entry: user_check
+  id: transaction_pipeline
+  name: Transaction Risk Pipeline
+  entry: fraud_check
 
   steps:
     - step:
-        id: user_check
-        type: ruleset
-        ruleset: user_risk_ruleset
-        next: transaction_check
-
-    - step:
-        id: transaction_check
+        id: fraud_check
+        name: Execute Fraud Detection
         type: ruleset
         ruleset: transaction_risk_ruleset
-
-  decision:
-    # Decline if either ruleset signals decline
-    - when:
-        any:
-          - results.user_risk_ruleset.signal == "decline"
-          - results.transaction_risk_ruleset.signal == "decline"
-      result: decline
-      reason: "High risk detected"
-      terminate: true
-
-    # Review if both signal review or one signals review and other approves
-    - when:
-        any:
-          - all:
-              - results.user_risk_ruleset.signal == "review"
-              - results.transaction_risk_ruleset.signal == "review"
-          - all:
-              - results.user_risk_ruleset.signal == "review"
-              - results.transaction_risk_ruleset.signal == "approve"
-          - all:
-              - results.user_risk_ruleset.signal == "approve"
-              - results.transaction_risk_ruleset.signal == "review"
-      result: review
-      reason: "Manual review required"
-
-    # Default: approve if both approve
-    - default: true
-      result: approve
-      reason: "All checks passed"
+        # The ruleset's conclusion produces the final decision
 ```
 
-### 7.8 Variable Interpolation in Reasons
+### 7.3 Architecture: Where Decisions Are Made
 
-Use `{variable}` syntax to interpolate values into reason strings:
-
-```yaml
-decision:
-  - when: results.fraud_check.total_score >= 100
-    result: decline
-    reason: "Risk score {results.fraud_check.total_score} exceeds threshold"
-
-  - when: results.fraud_check.triggered_count >= 3
-    result: review
-    reason: "Multiple risk indicators: {results.fraud_check.triggered_rules}"
+```
+┌─────────────────────────────────────────────────┐
+│ Pipeline (Orchestration Layer)                  │
+│ - Routes events to rulesets                     │
+│ - NO decision logic                             │
+│ - decision: field is IGNORED                    │
+└────────────────┬────────────────────────────────┘
+                 │
+                 ▼
+┌─────────────────────────────────────────────────┐
+│ Ruleset (Decision Layer)                        │
+│ - Evaluates rules                               │
+│ - conclusion: produces decision signals         │
+│ - Signals: approve/decline/review/hold/pass     │
+└─────────────────────────────────────────────────┘
 ```
 
-### 7.9 Best Practices
+**Key Point:** Decision logic belongs in **Rulesets**, not Pipelines.
 
-**1. Order from Most Specific to Most General:**
-```yaml
-decision:
-  # Most specific: critical conditions
-  - when: results.fraud_check.signal == "decline"
-    result: decline
-    terminate: true
+### 7.4 Why Pipeline Decisions Are Not Implemented
 
-  # Specific: review conditions
-  - when: results.fraud_check.signal == "review"
-    result: review
+1. **Sufficient:** Ruleset `conclusion` blocks already provide all decision logic needed
+2. **Simpler Architecture:** Having decision logic only in rulesets keeps the system simpler
+3. **Current Pattern:** Pipelines orchestrate execution, Rulesets make decisions
+4. **No Parser Support:** The pipeline parser does not parse or store decision blocks
 
-  # General: default fallback
-  - default: true
-    result: approve
-```
-
-**2. Use `terminate: true` for Critical Decisions:**
-```yaml
-decision:
-  # Stop immediately on decline
-  - when: results.fraud_check.signal == "decline"
-    result: decline
-    terminate: true  # Don't evaluate further rules
-```
-
-**3. Provide Clear Reasons:**
-```yaml
-decision:
-  - when: results.fraud_check.signal == "decline"
-    result: decline
-    reason: "Fraud detected: {results.fraud_check.reason}"  # Include context
-```
-
-**4. Use Actions for Workflow Integration:**
-```yaml
-decision:
-  - when: results.fraud_check.signal == "review"
-    result: review
-    actions: ["KYC", "MANUAL_REVIEW", "NOTIFY_ANALYST"]  # Trigger workflows
-```
+**Future Enhancement:** Pipeline-level decisions may be added later for multi-ruleset orchestration scenarios, but this would require:
+- Adding `decision` field to Pipeline AST
+- Implementing parser support
+- Implementing runtime execution logic
 
 ---
 

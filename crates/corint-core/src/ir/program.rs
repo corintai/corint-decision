@@ -14,6 +14,11 @@ pub struct Program {
 
     /// Program metadata
     pub metadata: ProgramMetadata,
+
+    /// Optional decision logic instructions (for pipelines)
+    /// These instructions are executed AFTER rulesets complete
+    #[serde(default)]
+    pub decision_instructions: Option<Vec<Instruction>>,
 }
 
 /// Metadata associated with a program
@@ -45,6 +50,20 @@ impl Program {
         Self {
             instructions,
             metadata,
+            decision_instructions: None,
+        }
+    }
+
+    /// Create a new program with decision logic
+    pub fn new_with_decision(
+        instructions: Vec<Instruction>,
+        metadata: ProgramMetadata,
+        decision_instructions: Vec<Instruction>,
+    ) -> Self {
+        Self {
+            instructions,
+            metadata,
+            decision_instructions: Some(decision_instructions),
         }
     }
 

@@ -147,6 +147,18 @@ pub enum Instruction {
         signal: Signal,
     },
 
+    /// Set the reason/explanation for the decision
+    SetReason {
+        /// Reason text (may contain variable references like {results.foo.reason})
+        reason: String,
+    },
+
+    /// Set user-defined actions
+    SetActions {
+        /// List of action identifiers (e.g., ["KYC", "OTP", "BLOCK_DEVICE"])
+        actions: Vec<String>,
+    },
+
     /// Mark a rule as triggered
     MarkRuleTriggered {
         /// Rule ID

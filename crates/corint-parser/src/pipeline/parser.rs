@@ -118,6 +118,18 @@ impl PipelineParser {
             .map(parse_new_step)
             .collect::<Result<Vec<_>>>()?;
 
+        // Parse optional decision rules
+        let decision = if let Some(decision_array) = pipeline_obj.get("decision").and_then(|v| v.as_sequence()) {
+            Some(
+                decision_array
+                    .iter()
+                    .map(Self::parse_decision_rule)
+                    .collect::<Result<Vec<_>>>()?
+            )
+        } else {
+            None
+        };
+
         Ok(Pipeline {
             id,
             name,
@@ -125,6 +137,7 @@ impl PipelineParser {
             entry,
             when,
             steps,
+            decision,
             metadata,
         })
     }
@@ -311,7 +324,62 @@ impl PipelineParser {
             entry,
             when,
             steps,
+            decision: None,
             metadata: None,
+        })
+    }
+
+    /// Parse a pipeline decision rule
+    fn parse_decision_rule(yaml: &YamlValue) -> Result<corint_core::ast::PipelineDecisionRule> {
+        // Check if this is a default rule
+        let is_default = yaml
+            .get("default")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+
+        // Parse when condition (optional if default is true)
+        let when = if !is_default {
+            if let Some(when_obj) = yaml.get("when") {
+                Some(parse_when_block(when_obj)?)
+            } else {
+                return Err(ParseError::MissingField {
+                    field: "when or default".to_string(),
+                });
+            }
+        } else {
+            None
+        };
+
+        // Parse result (required)
+        let result = YamlParser::get_string(yaml, "result")?;
+
+        // Parse optional actions
+        let actions = yaml
+            .get("actions")
+            .and_then(|v| v.as_sequence())
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        // Parse optional reason
+        let reason = YamlParser::get_optional_string(yaml, "reason");
+
+        // Parse optional terminate flag
+        let terminate = yaml
+            .get("terminate")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+
+        Ok(corint_core::ast::PipelineDecisionRule {
+            when,
+            default: is_default,
+            result,
+            actions,
+            reason,
+            terminate,
         })
     }
 }

@@ -356,6 +356,16 @@ impl ExecutionContext {
         self.result.signal = Some(signal);
     }
 
+    /// Set the explicit reason/explanation
+    pub fn set_reason(&mut self, reason: String) {
+        self.result.explicit_explanation = Some(reason);
+    }
+
+    /// Set user-defined actions
+    pub fn set_actions(&mut self, actions: Vec<String>) {
+        self.result.actions = actions;
+    }
+
     /// Add user-defined actions
     pub fn add_actions(&mut self, actions: Vec<String>) {
         self.result.actions.extend(actions);
@@ -365,7 +375,11 @@ impl ExecutionContext {
 
     /// Convert context into a DecisionResult
     pub fn into_decision_result(self) -> DecisionResult {
-        let explanation = Self::build_explanation(&self.result, &self.event);
+        // Use explicit explanation if set, otherwise build one
+        let explanation = match self.result.explicit_explanation {
+            Some(exp) => exp,
+            None => Self::build_explanation(&self.result, &self.event),
+        };
 
         // Merge all writable namespaces into context
         let mut context = HashMap::new();

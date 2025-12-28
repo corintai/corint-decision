@@ -43,6 +43,9 @@ pub struct ExecutionResult {
     /// User-defined actions
     pub actions: Vec<String>,
 
+    /// Explicit explanation/reason (overrides auto-generated explanation)
+    pub explicit_explanation: Option<String>,
+
     /// Variables stored during execution
     pub variables: HashMap<String, Value>,
 }
@@ -91,6 +94,7 @@ impl ExecutionResult {
             triggered_rules: Vec::new(),
             signal: None,
             actions: Vec::new(),
+            explicit_explanation: None,
             variables: HashMap::new(),
         }
     }

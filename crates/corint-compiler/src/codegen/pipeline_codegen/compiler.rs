@@ -106,7 +106,7 @@ impl PipelineCompiler {
             compile_step(step, &mut ctx)?;
         }
 
-        // Step 3: Add Return instruction at the end
+        // Step 3: Add Return instruction at the end of main program
         ctx.instructions.push(Instruction::Return);
 
         // Step 4: Resolve pipeline when guard jump (if present)
@@ -130,8 +130,125 @@ impl PipelineCompiler {
         let steps_json = build_steps_metadata(&sorted_steps);
         metadata = metadata.with_custom("steps_json".to_string(), steps_json);
 
-        Ok(Program::new(ctx.instructions, metadata))
+        // Step 8: Compile pipeline decision logic separately if present
+        // Decision logic runs AFTER rulesets have been executed
+        if let Some(ref decision_rules) = pipeline.decision {
+            let decision_instructions = compile_decision_logic(decision_rules)?;
+            // Add decision instructions info to metadata for debugging
+            metadata = metadata.with_custom("has_decision_logic".to_string(), "true".to_string());
+            metadata = metadata.with_custom("decision_instructions_count".to_string(), decision_instructions.len().to_string());
+            Ok(Program::new_with_decision(ctx.instructions, metadata, decision_instructions))
+        } else {
+            Ok(Program::new(ctx.instructions, metadata))
+        }
     }
+}
+
+/// Compile pipeline decision logic into IR instructions
+/// Decision rules are evaluated in order, and the first matching rule determines the final decision
+/// Returns a vector of instructions that should be executed AFTER rulesets complete
+fn compile_decision_logic(
+    decision_rules: &[corint_core::ast::pipeline::PipelineDecisionRule],
+) -> Result<Vec<Instruction>> {
+    use corint_core::ast::Signal;
+    use corint_core::ir::Instruction;
+
+    let mut instructions = Vec::new();
+    let mut pending_jumps: Vec<(usize, bool)> = Vec::new(); // (jump_pos, is_end_jump)
+
+    for (rule_index, rule) in decision_rules.iter().enumerate() {
+        // Skip this rule if it has a condition and we need to check it
+        let jump_to_next_rule_pos = if !rule.default {
+            // Compile the when condition if present
+            if let Some(ref when) = rule.when {
+                let condition_instructions = compile_when_block(when)?;
+                instructions.extend(condition_instructions);
+
+                // If condition is false, jump to next rule
+                let jump_pos = instructions.len();
+                instructions.push(Instruction::JumpIfFalse { offset: 0 });
+                Some(jump_pos)
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
+        // Rule matched - set the decision result
+        // Parse the result signal
+        let signal = match rule.result.as_str() {
+            "approve" => Signal::Approve,
+            "decline" => Signal::Decline,
+            "review" => Signal::Review,
+            "hold" => Signal::Hold,
+            "pass" => Signal::Pass,
+            _ => {
+                return Err(CompileError::InvalidExpression(format!(
+                    "Invalid decision result: '{}'. Expected one of: approve, decline, review, hold, pass",
+                    rule.result
+                )));
+            }
+        };
+
+        // Set signal
+        instructions.push(Instruction::SetSignal { signal });
+
+        // Set reason if present
+        if let Some(ref reason) = rule.reason {
+            instructions.push(Instruction::SetReason {
+                reason: reason.clone(),
+            });
+        }
+
+        // Set actions if present
+        if !rule.actions.is_empty() {
+            instructions.push(Instruction::SetActions {
+                actions: rule.actions.clone(),
+            });
+        }
+
+        // If terminate is true, jump to end (Return instruction)
+        if rule.terminate {
+            let jump_pos = instructions.len();
+            instructions.push(Instruction::Jump { offset: 0 });
+            pending_jumps.push((jump_pos, true)); // Mark as end jump
+        } else {
+            // Continue to check next rule - jump to end of decision block
+            let jump_pos = instructions.len();
+            instructions.push(Instruction::Jump { offset: 0 });
+            pending_jumps.push((jump_pos, false)); // Mark as end-decision jump
+        }
+
+        // Backfill the jump to next rule if we had a condition
+        if let Some(jump_pos) = jump_to_next_rule_pos {
+            let next_rule_pos = instructions.len();
+            let offset = (next_rule_pos as isize) - (jump_pos as isize);
+            if let Instruction::JumpIfFalse { offset: ref mut o } = instructions[jump_pos] {
+                *o = offset;
+            }
+        }
+
+        // If this is the last rule or default rule, we don't need to check more
+        if rule.default || rule_index == decision_rules.len() - 1 {
+            break;
+        }
+    }
+
+    // Add Return instruction at the end
+    let end_decision_pos = instructions.len();
+    instructions.push(Instruction::Return);
+
+    // Resolve all pending jumps
+    for (jump_pos, _is_end_jump) in pending_jumps {
+        let target_pos = end_decision_pos; // Both jump to Return
+        let offset = (target_pos as isize) - (jump_pos as isize);
+        if let Instruction::Jump { offset: ref mut o } = instructions[jump_pos] {
+            *o = offset;
+        }
+    }
+
+    Ok(instructions)
 }
 
 /// Resolve all pending jumps by calculating offsets
@@ -269,6 +386,7 @@ mod tests {
             entry: String::new(), // Empty entry indicates legacy format
             when: None,
             steps: vec![],
+            decision: None,
             metadata: None,
         };
 

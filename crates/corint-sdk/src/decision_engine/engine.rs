@@ -523,9 +523,60 @@ impl DecisionEngine {
                             }
                         }
 
-                        // Update state from pipeline execution
-                        if result.signal.is_some() {
-                            combined_result.signal = result.signal;
+                        // Execute pipeline decision logic AFTER rulesets (if present)
+                        tracing::info!(
+                            "📊 Pipeline '{}': decision_instructions = {}",
+                            entry.pipeline,
+                            if let Some(ref di) = pipeline_program.decision_instructions {
+                                format!("Some({} instructions)", di.len())
+                            } else {
+                                "None".to_string()
+                            }
+                        );
+                        if let Some(ref decision_instructions) = pipeline_program.decision_instructions {
+                            tracing::debug!(
+                                "Executing pipeline decision logic ({} instructions)",
+                                decision_instructions.len()
+                            );
+
+                            // Create a mini-program with just the decision instructions
+                            let decision_program = corint_core::ir::Program {
+                                instructions: decision_instructions.clone(),
+                                metadata: pipeline_program.metadata.clone(),
+                                decision_instructions: None,
+                            };
+
+                            // Execute decision logic with current execution_result (which now has ruleset results)
+                            let decision_result = self
+                                .executor
+                                .execute_with_result(
+                                    &decision_program,
+                                    request.to_context_input(),
+                                    execution_result.clone(),
+                                )
+                                .await?;
+
+                            tracing::debug!(
+                                "Decision logic completed: signal={:?}, explanation={:?}, actions={:?}",
+                                decision_result.signal,
+                                decision_result.explanation,
+                                decision_result.actions
+                            );
+
+                            // Update combined_result from decision execution
+                            if decision_result.signal.is_some() {
+                                combined_result.signal = decision_result.signal;
+                            }
+                            if !decision_result.explanation.is_empty() {
+                                combined_result.explanation = decision_result.explanation;
+                            }
+                            // Always update actions from decision result (even if empty, to override previous values)
+                            combined_result.actions = decision_result.actions;
+                        } else {
+                            // No decision logic - update state from pipeline execution
+                            if result.signal.is_some() {
+                                combined_result.signal = result.signal;
+                            }
                         }
 
                         // First match wins - stop evaluating registry
@@ -848,6 +899,44 @@ impl DecisionEngine {
                     // Update state from pipeline execution
                     if result.signal.is_some() {
                         combined_result.signal = result.signal;
+                    }
+
+                    // Execute pipeline decision logic (legacy routing) so actions/reasons are populated
+                    if pipeline_matched {
+                        if let Some(ref decision_instructions) =
+                            pipeline_program.decision_instructions
+                        {
+                            tracing::debug!(
+                                "Executing pipeline decision logic (legacy) ({} instructions)",
+                                decision_instructions.len()
+                            );
+
+                            // Build a mini program for the decision section
+                            let decision_program = corint_core::ir::Program {
+                                instructions: decision_instructions.clone(),
+                                metadata: pipeline_program.metadata.clone(),
+                                decision_instructions: None,
+                            };
+
+                            // Run decision logic with accumulated execution_result (scores, triggers, context)
+                            let decision_result = self
+                                .executor
+                                .execute_with_result(
+                                    &decision_program,
+                                    request.to_context_input(),
+                                    execution_result.clone(),
+                                )
+                                .await?;
+
+                            if decision_result.signal.is_some() {
+                                combined_result.signal = decision_result.signal;
+                            }
+                            if !decision_result.explanation.is_empty() {
+                                combined_result.explanation = decision_result.explanation;
+                            }
+                            // Always override actions with decision output
+                            combined_result.actions = decision_result.actions;
+                        }
                     }
                 }
             }

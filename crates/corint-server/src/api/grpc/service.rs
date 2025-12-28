@@ -4,8 +4,8 @@
 // DecisionEngine to handle gRPC requests.
 
 use crate::api::grpc::pb::{
-    decision_service_server::DecisionService, Cognition, Decision, DecideRequest, DecideResponse,
-    Evidence, HealthCheckRequest, HealthCheckResponse, ReloadRepositoryRequest,
+    decision_service_server::DecisionService, Action, Cognition, Decision, DecideRequest,
+    DecideResponse, Evidence, HealthCheckRequest, HealthCheckResponse, ReloadRepositoryRequest,
     ReloadRepositoryResponse, Scores, Value as ProtoValue,
 };
 use corint_core::Value;
@@ -91,7 +91,15 @@ impl DecisionService for DecisionGrpcService {
 
         let decision = Decision {
             result: result_str,
-            actions: vec![], // TODO: Extract actions
+            actions: response
+                .result
+                .actions
+                .iter()
+                .map(|a| Action {
+                    action_type: a.clone(),
+                    params: HashMap::new(),
+                })
+                .collect(),
             scores: Some(Scores {
                 canonical: ScoreNormalizer::default().normalize(response.result.score) as f64,
                 raw: response.result.score as f64,

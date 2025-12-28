@@ -26,7 +26,12 @@ impl DeadCodeEliminator {
             }
         }
 
-        Program::new(optimized_instructions, program.metadata.clone())
+        // Preserve decision_instructions when optimizing
+        if let Some(ref decision_instructions) = program.decision_instructions {
+            Program::new_with_decision(optimized_instructions, program.metadata.clone(), decision_instructions.clone())
+        } else {
+            Program::new(optimized_instructions, program.metadata.clone())
+        }
     }
 
     /// Compute which instructions are reachable via control flow analysis
@@ -115,7 +120,12 @@ impl DeadCodeEliminator {
             }
         }
 
-        Program::new(optimized_instructions, program.metadata.clone())
+        // Preserve decision_instructions when optimizing
+        if let Some(ref decision_instructions) = program.decision_instructions {
+            Program::new_with_decision(optimized_instructions, program.metadata.clone(), decision_instructions.clone())
+        } else {
+            Program::new(optimized_instructions, program.metadata.clone())
+        }
     }
 
     /// Remove no-op instructions
@@ -127,7 +137,12 @@ impl DeadCodeEliminator {
             .cloned()
             .collect();
 
-        Program::new(optimized_instructions, program.metadata.clone())
+        // Preserve decision_instructions when optimizing
+        if let Some(ref decision_instructions) = program.decision_instructions {
+            Program::new_with_decision(optimized_instructions, program.metadata.clone(), decision_instructions.clone())
+        } else {
+            Program::new(optimized_instructions, program.metadata.clone())
+        }
     }
 
     /// Check if an instruction is a no-op

@@ -176,6 +176,7 @@ impl PipelineParser {
             entry,
             when,
             steps,
+            decision: None,
             metadata,
         })
     }
@@ -362,6 +363,7 @@ impl PipelineParser {
             entry,
             when,
             steps,
+            decision: None,
             metadata: None,
         })
     }

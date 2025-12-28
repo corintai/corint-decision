@@ -188,13 +188,21 @@ impl ExpressionParser {
         }
 
         // Check for result access: result.field or result.ruleset_id.field
-        if input.starts_with("result.") {
-            let rest = &input[7..]; // Skip "result."
-            let parts: Vec<&str> = rest.split('.').collect();
+        // Support both "result." and "results." forms
+        let (is_result_access, rest_str) = if input.starts_with("results.") {
+            (true, &input[8..]) // Skip "results."
+        } else if input.starts_with("result.") {
+            (true, &input[7..]) // Skip "result."
+        } else {
+            (false, "")
+        };
+
+        if is_result_access {
+            let parts: Vec<&str> = rest_str.split('.').collect();
 
             if parts.is_empty() {
                 return Err(ParseError::InvalidExpression(
-                    "result. requires a field name".to_string(),
+                    "result/results requires a field name".to_string(),
                 ));
             }
 

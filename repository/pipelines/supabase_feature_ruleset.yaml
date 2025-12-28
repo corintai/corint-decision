@@ -16,10 +16,11 @@ pipeline:
   # Entry point for the pipeline
   entry: supabase_risk_step
 
-  # Mandatory when condition - only process transaction events with source="api"
+  # Mandatory when condition - only process transaction events with source="supabase"
   when:
     all:
-      - event.type == "transaction" 
+      - event.type == "transaction"
+      - event.source == "supabase" 
 
   steps:
     # Execute the transaction risk assessment ruleset
@@ -49,7 +50,7 @@ pipeline:
     # Review signal → review result
     - when: results.supabase_risk_assessment.signal == "review"
       result: review
-      actions: ["KYC"]
+      actions: ["KYC","2FA"]
       reason: "{results.supabase_risk_assessment.reason}"
       terminate: true
 
@@ -89,7 +90,7 @@ rule:
 
   when:
     all:
-      - features.max_transaction_14d > 400
+      - event.amount >= 500
 
   score: 35
 
@@ -146,7 +147,7 @@ ruleset:
   # Conclusion produces signals (initial decision: approve/decline/review/hold/pass)
   conclusion:
     # Critical risk - decline immediately
-    - when: triggered_rules contains "suspicious_device_pattern"
+    - when: triggered_rules contains "suspicious_device_pattern2"
       signal: decline
       reason: "Suspicious device pattern with high transaction volume detected"
       terminate: true

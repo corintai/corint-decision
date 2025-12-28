@@ -38,6 +38,10 @@ pub struct Pipeline {
     /// The processing steps (required, non-empty)
     pub steps: Vec<PipelineStep>,
 
+    /// Optional decision logic for final decision based on step results
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub decision: Option<Vec<PipelineDecisionRule>>,
+
     /// Metadata for documentation and versioning (stored as arbitrary key-value pairs)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub metadata: Option<HashMap<String, serde_json::Value>>,
@@ -93,6 +97,33 @@ pub struct Route {
 
     /// Condition for this route
     pub when: WhenBlock,
+}
+
+/// Pipeline decision rule for final decision logic
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct PipelineDecisionRule {
+    /// Condition to evaluate (e.g., results.fraud_detection.signal == "decline")
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub when: Option<WhenBlock>,
+
+    /// Whether this is the default rule (catch-all)
+    #[serde(default)]
+    pub default: bool,
+
+    /// Decision result: approve/decline/review/hold/pass
+    pub result: String,
+
+    /// User-defined actions to execute (e.g., ["KYC", "OTP", "BLOCK_DEVICE"])
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub actions: Vec<String>,
+
+    /// Optional reason for this decision
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
+
+    /// Whether to terminate decision flow after this rule
+    #[serde(default)]
+    pub terminate: bool,
 }
 
 /// Type-specific step details
@@ -405,6 +436,7 @@ impl Pipeline {
             entry,
             when: None,
             steps: Vec::new(),
+            decision: None,
             metadata: None,
         }
     }
@@ -436,6 +468,12 @@ impl Pipeline {
     /// Add multiple steps
     pub fn with_steps(mut self, steps: Vec<PipelineStep>) -> Self {
         self.steps = steps;
+        self
+    }
+
+    /// Set decision rules
+    pub fn with_decision(mut self, decision: Vec<PipelineDecisionRule>) -> Self {
+        self.decision = Some(decision);
         self
     }
 }

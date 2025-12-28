@@ -99,7 +99,7 @@ pub(super) async fn decide(
         pipeline_id: response.pipeline_id.unwrap_or_else(|| "default".to_string()),
         decision: DecisionPayload {
             result: result_str,
-            actions: Vec::new(), // TODO: Extract actions from context if available
+            actions: response.result.actions.clone(),
             scores: ScoresPayload {
                 canonical: normalize_score(response.result.score),
                 raw: response.result.score,
@@ -223,7 +223,7 @@ pub(super) async fn decide_with_metrics(
         pipeline_id: response.pipeline_id.unwrap_or_else(|| "default".to_string()),
         decision: DecisionPayload {
             result: result_str,
-            actions: Vec::new(),
+            actions: response.result.actions.clone(),
             scores: ScoresPayload {
                 canonical: normalize_score(response.result.score),
                 raw: response.result.score,
