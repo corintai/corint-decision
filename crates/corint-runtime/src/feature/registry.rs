@@ -4,6 +4,7 @@
 //! from YAML configuration files.
 
 use crate::feature::definition::{FeatureCollection, FeatureDefinition, FeatureType};
+use crate::feature::expression::ExpressionEvaluator;
 use anyhow::{Context, Result};
 use std::collections::HashMap;
 use std::path::Path;
@@ -63,9 +64,27 @@ impl FeatureRegistry {
         let mut feature_names = Vec::new();
 
         // Register each feature
-        for feature in collection.features {
+        for mut feature in collection.features {
             let name = feature.name.clone();
             feature_names.push(name.clone());
+
+            // Auto-populate dependencies for expression features
+            if feature.feature_type == FeatureType::Expression {
+                if let Some(ref expr_config) = feature.expression {
+                    if let Some(ref expr_str) = expr_config.expression {
+                        // Extract dependencies from expression string
+                        let extracted_deps = ExpressionEvaluator::extract_dependencies(expr_str);
+
+                        // Populate dependencies field with extracted feature names
+                        feature.dependencies = extracted_deps;
+
+                        debug!(
+                            "Auto-populated dependencies for expression feature '{}': {:?}",
+                            name, feature.dependencies
+                        );
+                    }
+                }
+            }
 
             // Index by type
             let feature_type = feature.feature_type.clone();

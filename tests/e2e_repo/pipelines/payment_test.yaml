@@ -107,6 +107,55 @@ rule:
 
 ---
 
+# Rule: High Payment Frequency
+rule:
+  id: high_payment_frequency
+  name: High Payment Frequency
+  description: Too many payments in 24 hours (tests payment_count_24h)
+  when:
+    all:
+      - features.payment_count_24h >= 5
+  score: 110
+
+---
+
+# Rule: Weekly Payment Limit
+rule:
+  id: weekly_payment_limit
+  name: Weekly Payment Limit
+  description: Weekly payment limit exceeded (tests payment_sum_7d)
+  when:
+    all:
+      - features.payment_sum_7d > 20000
+  score: 160
+
+---
+
+# Rule: Max Payment Exceeded
+rule:
+  id: max_payment_exceeded
+  name: Max Payment Exceeded
+  description: Payment exceeds historical maximum (tests max_payment_amount_30d)
+  when:
+    all:
+      - features.max_payment_amount_30d > 0
+      - event.amount > features.max_payment_amount_30d * 2
+  score: 170
+
+---
+
+# Rule: Payment Dominance
+rule:
+  id: payment_dominance
+  name: Payment Dominance
+  description: Payments dominate transactions (tests payment_to_txn_ratio expression)
+  when:
+    all:
+      - features.payment_to_txn_ratio > 0.8
+  score: 50
+
+---
+
 # ========================================
 # Ruleset
 # ========================================
@@ -122,6 +171,10 @@ ruleset:
     - very_high_amount
     - daily_limit_exceeded
     - crypto_payment_risk
+    - high_payment_frequency
+    - weekly_payment_limit
+    - max_payment_exceeded
+    - payment_dominance
 
   # Conclusion produces signals
   conclusion:

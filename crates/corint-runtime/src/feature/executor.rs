@@ -15,6 +15,7 @@ use crate::feature::operator::{CacheBackend, Operator};
 use anyhow::{Context as AnyhowContext, Result};
 use corint_core::condition::ConditionParser;
 use corint_core::Value;
+use futures::future;
 use std::collections::HashMap;
 use std::future::Future;
 use std::pin::Pin;
@@ -107,12 +108,36 @@ impl FeatureExecutor {
         // Build context map from ExecutionContext (use event namespace)
         let context_map = context.event.clone();
 
-        // Check dependencies first
-        let mut dep_values = HashMap::new();
-        for dep_name in &feature.dependencies {
-            let dep_value = Box::pin(self.execute_feature_impl(dep_name, context)).await?;
-            dep_values.insert(dep_name.clone(), dep_value);
-        }
+        // Check dependencies first - compute them in parallel
+        let dep_values = if !feature.dependencies.is_empty() {
+            debug!(
+                "Computing {} dependencies in parallel for feature '{}': {:?}",
+                feature.dependencies.len(),
+                feature_name,
+                feature.dependencies
+            );
+
+            // Create futures for all dependencies
+            let dep_futures: Vec<_> = feature
+                .dependencies
+                .iter()
+                .map(|dep_name| {
+                    let dep_name_clone = dep_name.clone();
+                    async move {
+                        let value = self.execute_feature_impl(&dep_name_clone, context).await?;
+                        Ok::<(String, Value), anyhow::Error>((dep_name_clone, value))
+                    }
+                })
+                .collect();
+
+            // Execute all dependency computations in parallel
+            let results = future::try_join_all(dep_futures).await?;
+
+            // Convert results to HashMap
+            results.into_iter().collect::<HashMap<String, Value>>()
+        } else {
+            HashMap::new()
+        };
 
         // Try to get from cache
         if let Some(cache_config) = self.cache_manager.get_cache_config(feature) {
@@ -206,11 +231,16 @@ impl FeatureExecutor {
         &self,
         feature: &FeatureDefinition,
         context: &HashMap<String, Value>,
-        _dependencies: &HashMap<String, Value>,
+        dependencies: &HashMap<String, Value>,
     ) -> Result<Value> {
         debug!("Computing feature '{}'", feature.name);
 
-        // Determine data source
+        // For expression features, pass dependencies directly
+        if feature.feature_type == crate::feature::definition::FeatureType::Expression {
+            return self.execute_expression(feature, context, dependencies).await;
+        }
+
+        // Determine data source for other feature types
         let datasource_name = self.get_datasource_name(feature);
         let datasource = self
             .datasources
@@ -245,7 +275,12 @@ impl FeatureExecutor {
                 self.execute_graph(feature, datasource, context).await
             }
             FeatureType::Expression => {
-                self.execute_expression(feature, context).await
+                // Expression features are handled directly in compute_feature
+                // This case should never be reached
+                Err(anyhow::anyhow!(
+                    "Expression feature '{}' should be handled in compute_feature, not execute_feature_by_type",
+                    feature.name
+                ))
             }
             FeatureType::Lookup => {
                 self.execute_lookup(feature, datasource, context).await
@@ -543,7 +578,8 @@ impl FeatureExecutor {
     async fn execute_expression(
         &self,
         feature: &FeatureDefinition,
-        context: &HashMap<String, Value>,
+        _context: &HashMap<String, Value>,
+        dependencies: &HashMap<String, Value>,
     ) -> Result<Value> {
         let config = feature.expression.as_ref()
             .ok_or_else(|| anyhow::anyhow!("Missing expression config for feature '{}'", feature.name))?;
@@ -553,27 +589,16 @@ impl FeatureExecutor {
 
         if let Some(expr_str) = &config.expression {
             // Evaluate mathematical expression using dependent features
-            // For now, assume dependencies are already in context under the feature namespace
-            // In a real implementation, the executor would ensure dependencies are computed first
+            // Dependencies have already been computed and passed in
 
-            // Build a map of feature values from dependencies
-            let mut feature_values = HashMap::new();
-            for dep_name in &config.depends_on {
-                // Try to get from context (event namespace for now)
-                if let Some(value) = context.get(dep_name) {
-                    feature_values.insert(dep_name.clone(), value.clone());
-                } else {
-                    // Dependency not available - return error for now
-                    // In production, this would trigger recursive feature computation
-                    return Err(anyhow::anyhow!(
-                        "Dependency '{}' not found for expression feature '{}'",
-                        dep_name, feature.name
-                    ));
-                }
-            }
+            // Use the pre-computed dependency values directly
+            debug!(
+                "Evaluating expression '{}' for feature '{}' with dependencies: {:?}",
+                expr_str, feature.name, dependencies.keys()
+            );
 
-            // Evaluate the expression
-            ExpressionEvaluator::evaluate_expression(expr_str, &feature_values)
+            // Evaluate the expression with the dependency values
+            ExpressionEvaluator::evaluate_expression(expr_str, dependencies)
         } else if config.model.is_some() {
             // ML model scoring (not yet implemented)
             Err(anyhow::anyhow!("ML model scoring not yet implemented for feature '{}'", feature.name))

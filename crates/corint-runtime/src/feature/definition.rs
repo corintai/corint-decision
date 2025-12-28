@@ -322,10 +322,6 @@ pub struct ExpressionConfig {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub expression: Option<String>,
 
-    /// Features this expression depends on
-    #[serde(default)]
-    pub depends_on: Vec<String>,
-
     /// ML model ID
     #[serde(skip_serializing_if = "Option::is_none")]
     pub model: Option<String>,
@@ -722,10 +718,6 @@ mod tests {
             graph: None,
             expression: Some(ExpressionConfig {
                 expression: Some("failed_login_count_1h / login_count_1h".to_string()),
-                depends_on: vec![
-                    "failed_login_count_1h".to_string(),
-                    "login_count_1h".to_string(),
-                ],
                 model: None,
                 inputs: None,
                 output: None,
@@ -756,10 +748,6 @@ mod tests {
             graph: None,
             expression: Some(ExpressionConfig {
                 expression: Some("txn_count_1h / max(txn_count_24h, 1)".to_string()),
-                depends_on: vec![
-                    "txn_count_1h".to_string(),
-                    "txn_count_24h".to_string(),
-                ],
                 model: None,
                 inputs: None,
                 output: None,

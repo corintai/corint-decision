@@ -119,6 +119,67 @@ rule:
 
 ---
 
+# Rule: Low Login History
+rule:
+  id: low_login_history
+  name: Low Login History
+  description: Low activity user from high-risk country (tests successful_login_count_7d)
+  when:
+    all:
+      - features.successful_login_count_7d < 2
+      - event.country in list.high_risk_countries
+  score: 80
+
+---
+
+# Rule: Multiple IPs 24h
+rule:
+  id: multiple_ips_24h
+  name: Multiple IPs 24h
+  description: Multiple IP addresses in 24 hours (tests unique_ips_24h)
+  when:
+    all:
+      - features.unique_ips_24h >= 5
+  score: 60
+
+---
+
+# Rule: High Failure Rate
+rule:
+  id: high_failure_rate
+  name: High Failure Rate
+  description: High failed login rate (tests rate_failed_login expression)
+  when:
+    all:
+      - features.rate_failed_login > 0.5
+  score: 100
+
+---
+
+# Rule: Device Velocity Anomaly
+rule:
+  id: device_velocity_anomaly
+  name: Device Velocity Anomaly
+  description: Abnormal device switching pattern (tests device_velocity_ratio expression)
+  when:
+    all:
+      - features.device_velocity_ratio > 0.7
+  score: 80
+
+---
+
+# Rule: Shared Device
+rule:
+  id: shared_device
+  name: Shared Device
+  description: Device used by multiple users (tests unique_users_by_device_7d)
+  when:
+    all:
+      - features.unique_users_by_device_7d >= 5
+  score: 90
+
+---
+
 # ========================================
 # Ruleset
 # ========================================
@@ -135,6 +196,11 @@ ruleset:
     - new_device_high_risk_country
     - unusual_device_count
     - location_hopping
+    - low_login_history
+    - multiple_ips_24h
+    - high_failure_rate
+    - device_velocity_anomaly
+    - shared_device
 
   # Conclusion produces signals
   conclusion:

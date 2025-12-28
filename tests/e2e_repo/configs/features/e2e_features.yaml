@@ -295,63 +295,40 @@ features:
   # =============================================================================
   - name: rate_failed_login
     type: expression
-    expression: "failed_login_count_24h / max(successful_login_count_7d, 1)"
-    depends_on:
-      - failed_login_count_24h
-      - successful_login_count_7d
+    expression: "failed_login_count_24h / (successful_login_count_7d + 0.0001)"
     description: Failed login rate (failed/successful)
 
   - name: ratio_txn_to_avg
     type: expression
-    expression: "event.amount / max(avg_transaction_amount, 1)"
-    depends_on:
-      - avg_transaction_amount
+    expression: "event.amount / (avg_transaction_amount + 0.0001)"
     description: Current transaction amount to average ratio
 
   - name: txn_velocity_1h_to_24h
     type: expression
-    expression: "txn_count_1h / max(txn_count_24h / 24, 1)"
-    depends_on:
-      - txn_count_1h
-      - txn_count_24h
+    expression: "txn_count_1h / (txn_count_24h / 24 + 0.0001)"
     description: Transaction velocity comparison (1h vs 24h hourly rate)
 
   - name: amount_concentration_24h
     type: expression
-    expression: "max_transaction_amount / max(txn_amount_24h, 1)"
-    depends_on:
-      - max_transaction_amount
-      - txn_amount_24h
+    expression: "max_transaction_amount / (txn_amount_24h + 0.0001)"
     description: Ratio of max transaction to total (concentration indicator)
 
   - name: txn_amount_range_30d
     type: expression
     expression: "max_transaction_amount - min_transaction_amount"
-    depends_on:
-      - max_transaction_amount
-      - min_transaction_amount
     description: Transaction amount range in last 30 days
 
   - name: device_velocity_ratio
     type: expression
-    expression: "unique_devices_24h / max(unique_devices_7d, 1)"
-    depends_on:
-      - unique_devices_24h
-      - unique_devices_7d
+    expression: "unique_devices_24h / (unique_devices_7d + 0.0001)"
     description: Device usage velocity (24h vs 7d)
 
   - name: avg_amount_acceleration
     type: expression
-    expression: "avg_transaction_amount_7d / max(avg_transaction_amount, 1)"
-    depends_on:
-      - avg_transaction_amount_7d
-      - avg_transaction_amount
+    expression: "avg_transaction_amount_7d / (avg_transaction_amount + 0.0001)"
     description: Recent average to historical average ratio
 
   - name: payment_to_txn_ratio
     type: expression
-    expression: "payment_count_24h / max(txn_count_24h, 1)"
-    depends_on:
-      - payment_count_24h
-      - txn_count_24h
+    expression: "payment_count_24h / (txn_count_24h + 0.0001)"
     description: Payment to transaction ratio

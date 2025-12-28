@@ -11,6 +11,54 @@ use std::collections::HashMap;
 pub(super) struct ExpressionEvaluator;
 
 impl ExpressionEvaluator {
+    /// Extract feature dependencies from an expression string
+    /// Parses the expression and returns a list of feature names referenced in it
+    ///
+    /// Example: "unique_devices_24h / max(unique_devices_7d, 1)"
+    /// Returns: ["unique_devices_24h", "unique_devices_7d"]
+    pub fn extract_dependencies(expr: &str) -> Vec<String> {
+        // Known function names that should not be treated as features
+        let functions = ["max", "min", "abs", "sqrt", "ceil", "floor", "round"];
+
+        // Context prefixes that should not be treated as features
+        let context_prefixes = ["event", "user", "context"];
+
+        // Regular expression-like parsing: extract identifiers (alphanumeric + underscore)
+        let mut dependencies = Vec::new();
+        let mut current_token = String::new();
+
+        for ch in expr.chars() {
+            if ch.is_alphanumeric() || ch == '_' {
+                current_token.push(ch);
+            } else {
+                if !current_token.is_empty() {
+                    // Check if it's not a function name, not a context prefix, and not a number
+                    if !functions.contains(&current_token.as_str())
+                        && !context_prefixes.contains(&current_token.as_str())
+                        && current_token.chars().next().unwrap().is_alphabetic() {
+                        if !dependencies.contains(&current_token) {
+                            dependencies.push(current_token.clone());
+                        }
+                    }
+                    current_token.clear();
+                }
+            }
+        }
+
+        // Don't forget the last token
+        if !current_token.is_empty() {
+            if !functions.contains(&current_token.as_str())
+                && !context_prefixes.contains(&current_token.as_str())
+                && current_token.chars().next().unwrap().is_alphabetic() {
+                if !dependencies.contains(&current_token) {
+                    dependencies.push(current_token);
+                }
+            }
+        }
+
+        dependencies
+    }
+
     /// Evaluate a mathematical expression with feature values
     /// Supports: +, -, *, /, feature names, numbers
     pub(super) fn evaluate_expression(
@@ -48,6 +96,11 @@ impl ExpressionEvaluator {
             return Ok(Value::Number(num));
         }
 
+        // Handle parentheses - evaluate inner expression first
+        if expr.starts_with('(') && expr.ends_with(')') {
+            return Self::eval_math_expr(&expr[1..expr.len()-1]);
+        }
+
         // Handle division by zero
         if expr.contains("/0") || expr.contains("/ 0") {
             return Ok(Value::Null);
@@ -57,40 +110,48 @@ impl ExpressionEvaluator {
         // For production, consider using a proper expression parser crate like `evalexpr`
 
         // Handle simple binary operations (a op b)
-        for op in &['/', '*', '+', '-'] {
-            if let Some(idx) = expr.rfind(*op) {
-                // Skip if it's a negative sign at the beginning
-                if *op == '-' && idx == 0 {
-                    continue;
-                }
-
-                let left = &expr[..idx];
-                let right = &expr[idx+1..];
-
-                let left_val = match Self::eval_math_expr(left)? {
-                    Value::Number(n) => n,
-                    _ => return Err(anyhow::anyhow!("Invalid expression: {}", expr)),
-                };
-
-                let right_val = match Self::eval_math_expr(right)? {
-                    Value::Number(n) => n,
-                    _ => return Err(anyhow::anyhow!("Invalid expression: {}", expr)),
-                };
-
-                let result = match op {
-                    '+' => left_val + right_val,
-                    '-' => left_val - right_val,
-                    '*' => left_val * right_val,
-                    '/' => {
-                        if right_val == 0.0 {
-                            return Ok(Value::Null);
-                        }
-                        left_val / right_val
+        // Process operators with correct precedence: +/- before */÷
+        for op in &['+', '-', '/', '*'] {
+            let mut depth = 0;
+            for (idx, ch) in expr.char_indices().rev() {
+                if ch == ')' {
+                    depth += 1;
+                } else if ch == '(' {
+                    depth -= 1;
+                } else if depth == 0 && ch == *op {
+                    // Skip if it's a negative sign at the beginning
+                    if *op == '-' && idx == 0 {
+                        continue;
                     }
-                    _ => unreachable!(),
-                };
 
-                return Ok(Value::Number(result));
+                    let left = &expr[..idx];
+                    let right = &expr[idx+1..];
+
+                    let left_val = match Self::eval_math_expr(left)? {
+                        Value::Number(n) => n,
+                        _ => return Err(anyhow::anyhow!("Invalid expression: {}", expr)),
+                    };
+
+                    let right_val = match Self::eval_math_expr(right)? {
+                        Value::Number(n) => n,
+                        _ => return Err(anyhow::anyhow!("Invalid expression: {}", expr)),
+                    };
+
+                    let result = match op {
+                        '+' => left_val + right_val,
+                        '-' => left_val - right_val,
+                        '*' => left_val * right_val,
+                        '/' => {
+                            if right_val == 0.0 {
+                                return Ok(Value::Null);
+                            }
+                            left_val / right_val
+                        }
+                        _ => unreachable!(),
+                    };
+
+                    return Ok(Value::Number(result));
+                }
             }
         }
 

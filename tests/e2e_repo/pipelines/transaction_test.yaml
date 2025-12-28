@@ -143,6 +143,156 @@ rule:
 
 ---
 
+# Rule: Low Weekly Activity
+rule:
+  id: low_weekly_activity
+  name: Low Weekly Activity
+  description: Low activity user with high value transaction (tests txn_count_7d)
+  when:
+    all:
+      - features.txn_count_7d < 3
+      - event.amount > 2000
+  score: 60
+
+---
+
+# Rule: Unusual Total Spending
+rule:
+  id: unusual_total_spending
+  name: Unusual Total Spending
+  description: High cumulative spending with large transaction (tests user_total_amount)
+  when:
+    all:
+      - features.user_total_amount > 50000
+      - event.amount > 5000
+  score: 80
+
+---
+
+# Rule: Large Transaction vs Average
+rule:
+  id: large_vs_average
+  name: Large Transaction vs Average
+  description: Transaction far exceeds average (tests avg_transaction_amount)
+  when:
+    all:
+      - features.avg_transaction_amount > 0
+      - event.amount > features.avg_transaction_amount * 5
+  score: 80
+
+---
+
+# Rule: Exceeds Max History
+rule:
+  id: exceeds_max_history
+  name: Exceeds Max History
+  description: Transaction exceeds historical maximum (tests max_transaction_amount)
+  when:
+    all:
+      - features.max_transaction_amount > 100
+      - event.amount > features.max_transaction_amount * 1.5
+  score: 90
+
+---
+
+# Rule: Micro Transaction Pattern
+rule:
+  id: micro_transaction_pattern
+  name: Micro Transaction Pattern
+  description: Jump from micro to large transactions (tests min_transaction_amount)
+  when:
+    all:
+      - features.min_transaction_amount < 10
+      - event.amount > 3000
+  score: 40
+
+---
+
+# Rule: Recent Spending Spike
+rule:
+  id: recent_spending_spike
+  name: Recent Spending Spike
+  description: Recent average exceeds historical average (tests avg_transaction_amount_7d)
+  when:
+    all:
+      - features.avg_transaction_amount > 0
+      - features.avg_transaction_amount_7d > features.avg_transaction_amount * 2
+  score: 80
+
+---
+
+# Rule: Velocity Spike
+rule:
+  id: velocity_spike
+  name: Velocity Spike
+  description: Transaction velocity anomaly (tests txn_velocity_1h_to_24h expression)
+  when:
+    all:
+      - features.txn_velocity_1h_to_24h > 10
+  score: 90
+
+---
+
+# Rule: Amount Concentration
+rule:
+  id: amount_concentration
+  name: Amount Concentration
+  description: High concentration of amount in single transaction (tests amount_concentration_24h expression)
+  when:
+    all:
+      - features.amount_concentration_24h > 0.8
+  score: 160
+
+---
+
+# Rule: Wide Amount Range
+rule:
+  id: wide_amount_range
+  name: Wide Amount Range
+  description: Large variance in transaction amounts (tests txn_amount_range_30d expression)
+  when:
+    all:
+      - features.txn_amount_range_30d > 5000
+  score: 45
+
+---
+
+# Rule: Spending Acceleration
+rule:
+  id: spending_acceleration
+  name: Spending Acceleration
+  description: Recent spending accelerating (tests avg_amount_acceleration expression)
+  when:
+    all:
+      - features.avg_amount_acceleration > 2.5
+  score: 80
+
+---
+
+# Rule: Multiple Devices 24h
+rule:
+  id: multiple_devices_24h
+  name: Multiple Devices 24h
+  description: Multiple devices in 24 hours (tests unique_devices_24h)
+  when:
+    all:
+      - features.unique_devices_24h >= 3
+  score: 80
+
+---
+
+# Rule: High Device Activity
+rule:
+  id: high_device_activity
+  name: High Device Activity
+  description: Device with many transactions (tests txn_count_by_device_24h)
+  when:
+    all:
+      - features.txn_count_by_device_24h >= 10
+  score: 75
+
+---
+
 # ========================================
 # Ruleset
 # ========================================
@@ -161,6 +311,18 @@ ruleset:
     - high_frequency_24h
     - high_risk_country
     - multiple_countries
+    - low_weekly_activity
+    - unusual_total_spending
+    - large_vs_average
+    - exceeds_max_history
+    - micro_transaction_pattern
+    - recent_spending_spike
+    - velocity_spike
+    - amount_concentration
+    - wide_amount_range
+    - spending_acceleration
+    - multiple_devices_24h
+    - high_device_activity
 
   # Conclusion produces signals
   conclusion:

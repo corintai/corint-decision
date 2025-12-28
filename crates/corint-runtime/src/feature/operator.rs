@@ -774,8 +774,6 @@ impl VelocityOperator {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ExpressionOperator {
     pub expression: String,
-    #[serde(default)]
-    pub depends_on: Vec<String>,
 }
 
 impl ExpressionOperator {

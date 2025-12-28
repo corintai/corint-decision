@@ -176,7 +176,7 @@ Clean separation of concerns:
 - **Audit Trails**: Complete decision history
 - **Explainability**: Rule-by-rule breakdown of decisions
 
-### 🔄 Modular Architecture (Phase 3)
+### 🔄 Modular Architecture
 
 Reusable components with powerful inheritance and parameterization:
 
@@ -224,7 +224,7 @@ ruleset:
 - **Parameterized Rules** (`params`) - Configure rules with compile-time parameters
 - **Import System** - Modular composition with automatic dependency resolution
 
-### 🗄️ Flexible Storage Backend (Phase 4)
+### 🗄️ Flexible Storage Backend
 
 Multiple repository backends for different deployment scenarios:
 
@@ -248,6 +248,51 @@ let (rule, _) = repo.load_rule("fraud_check").await?;
 - **Async API**: Non-blocking I/O with Tokio
 - **Version Tracking**: Automatic version incrementing on updates
 - **Audit Logging**: Optional PostgreSQL triggers for compliance
+
+### 📋 Custom Lists (Blocklists/Allowlists)
+
+Efficient membership checks against predefined sets:
+
+```yaml
+# Check if email is in blocklist
+rule:
+  id: blocked_email_check
+  when:
+    all:
+      - user.email in list.email_blocklist
+  score: 500
+
+# VIP user bypass
+rule:
+  id: vip_bypass
+  when:
+    all:
+      - user.id in list.vip_users
+  score: -100
+
+# Multiple list checks
+rule:
+  id: sanctions_check
+  when:
+    any:
+      - user.name in list.ofac_sanctions
+      - user.country in list.high_risk_countries
+  score: 200
+```
+
+**Supported Backends:**
+- **PostgreSQL** - Persistent storage with metadata and expiration
+- **Redis** - High-performance lookups for hot data
+- **File** - Static read-only lists (country codes, domains)
+- **Memory** - Small frequently-used lists
+- **SQLite** - Embedded database for local deployments
+
+**Features:**
+- Simple `in list.xxx` and `not in list.xxx` syntax
+- Multiple backend support for different use cases
+- Automatic caching for performance
+- Expiration support for temporary entries
+- REST API for list management
 
 ---
 
@@ -403,18 +448,18 @@ rule:
 
 ### More Examples
 
-See the [`examples/`](doc/dsl/examples/) directory for complete, real-world examples:
+See the [`examples/`](docs/dsl/examples/) directory for complete, real-world examples:
 
-- [Account Takeover Detection](doc/dsl/examples/account-takeover-complete.yml) - Comprehensive takeover prevention
-- [Statistical Analysis](doc/dsl/examples/statistical-analysis.yml) - Advanced feature engineering
-- [Intelligent Inference](doc/dsl/examples/intelligent-inference.yml) - LLM-powered decisions
-- [Loan Application](doc/dsl/examples/loan.yml) - Credit risk assessment
+- [Account Takeover Detection](docs/dsl/examples/account-takeover-complete.yml) - Comprehensive takeover prevention
+- [Statistical Analysis](docs/dsl/examples/statistical-analysis.yml) - Advanced feature engineering
+- [Intelligent Inference](docs/dsl/examples/intelligent-inference.yml) - LLM-powered decisions
+- [Loan Application](docs/dsl/examples/loan.yml) - Credit risk assessment
 
 ---
 
 ## 🌐 Server API
 
-CORINT Decision Engine includes a production-ready HTTP/REST API server (`corint-server`).
+CORINT Decision Engine includes a production-ready HTTP/REST and gRPC API server (`corint-server`).
 
 ### Quick Start
 
@@ -438,27 +483,17 @@ curl -X POST http://localhost:8080/v1/decide \
 
 ### API Endpoints
 
-#### Health Check
+#### REST API
 
-**GET** `/health`
+**GET** `/health` - Health check endpoint
 
-Returns server health status.
+**POST** `/v1/decide` - Execute decision rules
 
-**Response:**
-```json
-{
-  "status": "healthy",
-  "version": "0.1.0"
-}
-```
+**POST** `/v1/repo/reload` - Reload rules and configurations
 
-#### Make Decision
+**GET** `/metrics` - Prometheus metrics (if enabled)
 
-**POST** `/v1/decide`
-
-Execute decision rules with event data.
-
-**Request:**
+**Request Example:**
 ```json
 {
   "event_data": {
@@ -470,7 +505,7 @@ Execute decision rules with event data.
 }
 ```
 
-**Response:**
+**Response Example:**
 ```json
 {
   "action": "Approve",
@@ -481,15 +516,44 @@ Execute decision rules with event data.
 }
 ```
 
+#### gRPC API
+
+**Service:** `corint.decision.v1.DecisionService`
+
+**Methods:**
+- `Decide(DecideRequest) → DecideResponse` - Make a decision
+- `HealthCheck(HealthCheckRequest) → HealthCheckResponse` - Health check
+- `ReloadRepository(ReloadRepositoryRequest) → ReloadRepositoryResponse` - Reload rules
+
+**Example using grpcurl:**
+```bash
+# Health check
+grpcurl -plaintext localhost:50051 corint.decision.v1.DecisionService/HealthCheck
+
+# Make a decision
+grpcurl -plaintext -d '{
+  "event": {
+    "user_id": {"string_value": "user_001"},
+    "type": {"string_value": "transaction"},
+    "amount": {"double_value": 100.0}
+  }
+}' localhost:50051 corint.decision.v1.DecisionService/Decide
+```
+
+For detailed gRPC documentation, see [crates/corint-server/GRPC.md](crates/corint-server/GRPC.md).
+
 ### Server Features
 
 - ✅ **REST API**: Execute decision rules via HTTP endpoints
+- ✅ **gRPC API**: High-performance Protocol Buffers-based API
 - ✅ **Auto Rule Loading**: Automatically loads rules from configured directory
 - ✅ **Lazy Feature Calculation**: Features are calculated on-demand from data sources during rule execution
 - ✅ **Feature Caching**: Calculated feature values are cached for performance
+- ✅ **Decision Result Persistence**: Automatically saves decision results to PostgreSQL for audit and analysis
 - ✅ **Health Check**: Health check endpoint for monitoring
 - ✅ **CORS Support**: Cross-origin resource sharing enabled
 - ✅ **Request Tracing**: Built-in request/response tracing
+- ✅ **Hot Reload**: Reload rules and configurations without server restart
 
 ### Configuration
 
@@ -503,20 +567,24 @@ The server can be configured via:
 ```bash
 CORINT_HOST=127.0.0.1
 CORINT_PORT=8080
+CORINT_GRPC_PORT=50051
 CORINT_RULES_DIR=repository/pipelines
 CORINT_ENABLE_METRICS=true
 CORINT_ENABLE_TRACING=true
 CORINT_LOG_LEVEL=info
+DATABASE_URL=postgresql://user:password@localhost:5432/corint_risk
 ```
 
 **Config File Example** (`config/server.yaml`):
 ```yaml
 host: "127.0.0.1"
 port: 8080
+grpc_port: 50051
 rules_dir: "repository/pipelines"
 enable_metrics: true
 enable_tracing: true
 log_level: "info"
+database_url: "postgresql://user:password@localhost:5432/corint_risk"
 ```
 
 ### Integration with Supabase
@@ -612,37 +680,40 @@ See [Server Quick Start Guide](crates/corint-server/QUICKSTART.md).
 
 | Document | Description |
 |----------|-------------|
-| [**overall.md**](doc/dsl/overall.md) | High-level overview and architecture |
-| [**ARCHITECTURE.md**](doc/dsl/ARCHITECTURE.md) | Three-layer decision architecture |
-| [**rule.md**](doc/dsl/rule.md) | Rule specification and patterns |
-| [**ruleset.md**](doc/dsl/ruleset.md) | Ruleset and decision logic |
-| [**pipeline.md**](doc/dsl/pipeline.md) | Pipeline orchestration |
+| [**ARCHITECTURE.md**](docs/ARCHITECTURE.md) | Three-layer decision architecture |
+| [**rule.md**](docs/dsl/rule.md) | Rule specification and patterns |
+| [**ruleset.md**](docs/dsl/ruleset.md) | Ruleset and decision logic |
+| [**pipeline.md**](docs/dsl/pipeline.md) | Pipeline orchestration |
 
 ### Advanced Features
 
 | Document | Description |
 |----------|-------------|
-| [**expression.md**](doc/dsl/expression.md) | Expression language reference |
-| [**feature.md**](doc/dsl/feature.md) ⭐ | **Feature engineering and statistical analysis** |
-| [**context.md**](doc/dsl/context.md) | Context and variable management |
-| [**llm.md**](doc/dsl/llm.md) | LLM integration guide |
-| [**schema.md**](doc/dsl/schema.md) | Type system and data schemas |
+| [**expression.md**](docs/dsl/expression.md) | Expression language reference |
+| [**feature.md**](docs/FEATURE_ENGINEERING.md) ⭐ | **Feature engineering and statistical analysis** |
+| [**context.md**](docs/dsl/context.md) | Context and variable management |
+| [**llm.md**](docs/dsl/llm.md) | LLM integration guide |
+| [**schema.md**](docs/dsl/schema.md) | Type system and data schemas |
+| [**list.md**](docs/dsl/list.md) ⭐ | **Custom lists (blocklists/allowlists)** |
 
 ### Operations & Best Practices
 
 | Document | Description |
 |----------|-------------|
-| [**error-handling.md**](doc/dsl/error-handling.md) | Error handling strategies |
-| [**observability.md**](doc/dsl/observability.md) | Monitoring, logging, and tracing |
+| [**error-handling.md**](docs/dsl/error-handling.md) | Error handling strategies |
+| [**observability.md**](docs/dsl/observability.md) | Monitoring, logging, and tracing |
 | [**QUICK_START_OTEL.md**](docs/QUICK_START_OTEL.md) ⭐ | **OpenTelemetry quick start guide** |
-| [**test.md**](doc/dsl/test.md) | Testing framework and patterns |
-| [**performance.md**](doc/dsl/performance.md) | Performance optimization guide |
+| [**test.md**](docs/dsl/test.md) | Testing framework and patterns |
+| [**performance.md**](docs/dsl/performance.md) | Performance optimization guide |
+| [**CUSTOMLIST.md**](docs/CUSTOMLIST.md) | Custom list implementation details |
 
 ### Quick References
 
-- **Feature Engineering**: For statistical analysis like "login count in the past 7 days" or "number of device IDs associated with the same IP", see [**feature.md**](doc/dsl/feature.md)
-- **LLM Integration**: For adding AI reasoning to your rules, see [**llm.md**](doc/dsl/llm.md)
-- **Testing Your Rules**: See [**test.md**](doc/dsl/test.md) for comprehensive testing strategies
+- **Feature Engineering**: For statistical analysis like "login count in the past 7 days" or "number of device IDs associated with the same IP", see [**FEATURE_ENGINEERING.md**](docs/FEATURE_ENGINEERING.md)
+- **Custom Lists**: For blocklists, allowlists, and watchlists, see [**list.md**](docs/dsl/list.md)
+- **LLM Integration**: For adding AI reasoning to your rules, see [**llm.md**](docs/dsl/llm.md)
+- **Testing Your Rules**: See [**test.md**](docs/dsl/test.md) for comprehensive testing strategies
+- **gRPC API**: For high-performance gRPC integration, see [**GRPC.md**](crates/corint-server/GRPC.md)
 
 ---
 
@@ -875,25 +946,31 @@ Event → Pipeline → Extract Features → Evaluate Rules → Decision Logic �
 - ✅ LLM integration framework
 - ✅ Type system and schema validation
 - ✅ Error handling and retry strategies
-- ✅ Observability infrastructure
+- ✅ Observability infrastructure (OpenTelemetry)
 - ✅ Testing framework
 - ✅ Performance optimization (caching, parallelization)
 - ✅ Comprehensive documentation
+- ✅ HTTP/REST API server (`corint-server`)
+- ✅ gRPC API server
+- ✅ Supabase PostgreSQL integration
+- ✅ Lazy feature calculation
+- ✅ Decision result persistence
+- ✅ Custom lists (blocklists/allowlists/watchlists)
+- ✅ Multiple list backends (PostgreSQL, Redis, File, Memory, SQLite)
+- ✅ Hot reload (repository reload endpoint)
+- ✅ Modular architecture with inheritance
+- ✅ Flexible storage backend (File System, PostgreSQL)
+- ✅ FFI bindings for C/C++ integration
 
 ### In Progress 🚧
 
-- 🚧 Rust runtime implementation
-- 🚧 gRPC API
 - 🚧 Feature Store integration (Feast compatibility)
 - 🚧 Visual rule editor
-- 🚧 Real-time rule updates (hot reload)
-- ✅ HTTP/REST API server (`corint-server`)
-- ✅ Supabase PostgreSQL integration
-- ✅ Lazy feature calculation
+- 🚧 Advanced statistical features (z_score, percentile, outlier detection)
 
 ### Planned 📋
 
-- 📋 Python/TypeScript SDKs
+- 📋 Python/TypeScript/Go client SDKs
 - 📋 Web UI for rule management
 - 📋 A/B testing framework
 - 📋 Machine learning model integration
@@ -901,6 +978,9 @@ Event → Pipeline → Extract Features → Evaluate Rules → Decision Logic �
 - 📋 Compliance templates (PCI-DSS, GDPR)
 - 📋 Multi-region deployment support
 - 📋 GraphQL API
+- 📋 Kubernetes operator
+- 📋 Advanced caching strategies (distributed cache)
+- 📋 Streaming support (Kafka, Kinesis)
 
 ---
 
@@ -991,7 +1071,7 @@ Inspired by and learning from:
 
 ## 📞 Contact & Community
 
-- **Documentation**: [doc/dsl/](doc/dsl/)
+- **Documentation**: [docs/](docs/)
 - **Issues**: [GitHub Issues](https://github.com/corint/corint-decision/issues)
 - **Discussions**: [GitHub Discussions](https://github.com/corint/corint-decision/discussions)
 

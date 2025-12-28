@@ -1,4 +1,6 @@
 # CORINT Decision Engine Server Configuration
+# Note: If running in a real environment, please rename this file to server.yaml and modify the configuration items according to your actual production environment.
+
 
 # Server host (127.0.0.1 for localhost only, 0.0.0.0 for all interfaces)
 host: "127.0.0.1"
