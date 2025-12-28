@@ -26,12 +26,12 @@ This document outlines the feature types supported and planned for Corint's risk
 
 Feature engineering in risk management follows a structured approach based on **what you want to measure**:
 
-1. **Aggregation (数东西)** 🟢 - Counting and aggregating events/values
-2. **State (看最近状态)** 🔴 - Checking current state and statistical comparisons
-3. **Sequence (看过程)** 🔴 - Analyzing patterns and trends over time
-4. **Graph (看关系图)** 🔴 - Analyzing connections and networks between entities
-5. **Expression (算分数)** 🟢 - Computing scores and evaluations
-6. **Lookup (查预算值)** 🟢 - Retrieving pre-computed feature values
+1. **Aggregation (Counting/Aggregating)** 🟢 - Counting and aggregating events/values
+2. **State (Checking Current State)** 🔴 - Checking current state and statistical comparisons
+3. **Sequence (Analyzing Process)** 🔴 - Analyzing patterns and trends over time
+4. **Graph (Analyzing Relationships)** 🔴 - Analyzing connections and networks between entities
+5. **Expression (Computing Scores)** 🟢 - Computing scores and evaluations
+6. **Lookup (Looking up Pre-computed Values)** 🟢 - Retrieving pre-computed feature values
 
 > **Note:** List/Set operations (blacklist/whitelist checking, etc.) are implemented separately in Corint's list management system and are not covered in this feature engineering document.
 
@@ -48,22 +48,22 @@ Feature engineering in risk management follows a structured approach based on **
 
 **✅ Implemented (Production-Ready):**
 - `count` - Count events matching conditions within time window
-  - *Example: 用户过去24小时登录了5次*
-  - **实际应用场景**:
-    - 暴力破解检测：统计1小时内失败登录次数，超过10次触发账户锁定
-    - 交易频率监控：统计用户24小时内交易次数，异常高频可能是盗号
-    - API限流：统计IP地址1分钟内请求次数，超过100次拒绝服务
-  - **YAML示例**:
+  - *Example: User's past24hours logged in5times*
+  - **Real-world Use Cases**:
+    - Brute force detection: Count failed logins within 1 hour, trigger account lock after exceeding 10 attempts
+    - Transaction frequency monitoring: Count user transactions within 24 hours, abnormally high frequency may indicate account theft
+    - API rate limiting: Count IP address requests within 1 minute, reject service after exceeding 100 requests
+  - **YAML Example**:
     ```yaml
     - name: cnt_userid_login_1h_failed
       type: aggregation
       method: count
       datasource: postgresql_events
       entity: events
-      dimension: user_id              # 按用户分组 (GROUP BY user_id)
+      dimension: user_id              # Group by user (GROUP BY user_id)
       dimension_value: "{event.user_id}"
       window: 1h
-      # 注意：count操作不需要field字段，只计算符合条件的事件数量
+      # Note: count operation does not need field field, only counts events matching conditions
       when:
         all:
           - type == "login"               # Database field (no prefix)
@@ -71,112 +71,112 @@ Feature engineering in risk management follows a structured approach based on **
     ```
 
 - `sum` - Sum numeric field values
-  - *Example: 用户过去30天交易总额为 ¥15,000*
-  - **实际应用场景**:
-    - 洗钱检测：统计账户24小时内转账总金额，超过¥50万需人工审核
-    - 信用额度管理：统计用户30天消费总额，判断是否超过信用额度
-    - 积分欺诈：统计用户1小时内获取积分总数，异常高额可能是刷积分
-  - **YAML示例**:
+  - *Example: User's past30days total transaction amount is ¥15,000*
+  - **Real-world Use Cases**:
+    - Money laundering detection: Count account24hours total transfer amount, exceeding ¥500k requires manual review
+    - Credit limit management: Count user30days total spending, determine if credit limit exceeded
+    - Points fraud: Count user1hours total points earned, abnormally high may indicate points farming
+  - **YAML Example**:
     ```yaml
     - name: sum_userid_txn_amt_24h
       type: aggregation
       method: sum
       datasource: postgresql_events
       entity: events
-      dimension: user_id              # 按用户分组 (GROUP BY user_id)
+      dimension: user_id              # Group by user (GROUP BY user_id)
       dimension_value: "{event.user_id}"
-      field: amount                   # 计算金额的总和 (SUM(amount))
+      field: amount                   # Calculate sum of amount (SUM(amount))
       window: 24h
       when: type == "transaction"         # Database field (no prefix)
     ```
 
 - `avg` - Average of field values
-  - *Example: 用户过去7天平均每笔交易金额 ¥500*
-  - **实际应用场景**:
-    - 异常交易金额检测：用户平均交易¥500，突然出现¥50,000交易需验证
-    - 用户画像：计算用户平均订单金额，用于用户分层（高/中/低消费）
-    - 会话时长分析：统计用户平均会话时长，异常短可能是机器人
-  - **YAML示例**:
+  - *Example: User's past7days average transaction amount ¥500*
+  - **Real-world Use Cases**:
+    - Abnormal transaction amount detection: User average transaction ¥500, suddenly appears ¥50,000transaction requires verification
+    - User profiling: Calculate user average order amount for user segmentation (high/medium/low spending)
+    - Session duration analysis: Count user average session duration, abnormally short may indicate bot
+  - **YAML Example**:
     ```yaml
     - name: avg_userid_order_amt_30d
       type: aggregation
       method: avg
       datasource: postgresql_events
       entity: events
-      dimension: user_id              # 按用户分组 (GROUP BY user_id)
+      dimension: user_id              # Group by user (GROUP BY user_id)
       dimension_value: "{event.user_id}"
-      field: amount                   # 计算金额的平均值 (AVG(amount))
+      field: amount                   # Calculate average of amount (AVG(amount))
       window: 30d
       when: type == "order"               # Database field (no prefix)
     ```
 
 - `max` - Maximum value
-  - *Example: 用户过去24小时单笔最大交易 ¥2,000*
-  - **实际应用场景**:
-    - 大额交易监控：检测用户历史最大交易金额，当前交易超过3倍需验证
-    - 单笔限额检查：新注册用户24小时内最大交易不超过¥5,000
-    - 异常行为识别：IP地址关联的最大用户数超过50，可能是代理或公共WiFi
-  - **YAML示例**:
+  - *Example: User's past24hours maximum single transaction ¥2,000*
+  - **Real-world Use Cases**:
+    - Large transaction monitoring: Detect user historical maximum transaction amount, current transaction exceeds3times requires verification
+    - Single transaction limit check: Newly registered user24hours maximum transaction does not exceed ¥5,000
+    - Abnormal behavior identification: IP address associated maximum user count exceeds50, may be proxy or public WiFi
+  - **YAML Example**:
     ```yaml
     - name: max_userid_txn_amt_90d
       type: aggregation
       method: max
       datasource: postgresql_events
       entity: events
-      dimension: user_id              # 按用户分组 (GROUP BY user_id)
+      dimension: user_id              # Group by user (GROUP BY user_id)
       dimension_value: "{event.user_id}"
-      field: amount                   # 计算金额的最大值 (MAX(amount))
+      field: amount                   # Calculate maximum of amount (MAX(amount))
       window: 90d
       when: type == "transaction"         # Database field (no prefix)
     ```
 
 - `min` - Minimum value
-  - *Example: 用户过去7天单笔最小交易 ¥10*
-  - **实际应用场景**:
-    - 测试交易检测：大量¥0.01小额交易可能是盗卡测试
-    - 刷单识别：最小订单金额异常低（如¥0.1）配合高频次，疑似刷单
-    - 异常折扣监控：订单最小金额为¥1，可能存在优惠券漏洞
-  - **YAML示例**:
+  - *Example: User's past7days minimum single transaction ¥10*
+  - **Real-world Use Cases**:
+    - Test transaction detection: Large amount of ¥0.01small transactions may be stolen card testing
+    - Order brushing identification: Minimum order amount abnormally low (e.g. ¥0.1) combined with high frequency, suspected order brushing
+    - Abnormal discount monitoring: Order minimum amount is ¥1, may have coupon vulnerability
+  - **YAML Example**:
     ```yaml
     - name: min_userid_order_amt_7d
       type: aggregation
       method: min
       datasource: postgresql_events
       entity: events
-      dimension: user_id              # 按用户分组 (GROUP BY user_id)
+      dimension: user_id              # Group by user (GROUP BY user_id)
       dimension_value: "{event.user_id}"
-      field: amount                   # 计算金额的最小值 (MIN(amount))
+      field: amount                   # Calculate minimum of amount (MIN(amount))
       window: 7d
       when: type == "order"               # Database field (no prefix)
     ```
 
 - `distinct` - Count unique values
-  - *Example: 用户过去7天使用了3个不同设备*
-  - **实际应用场景**:
-    - 账号共享检测：用户24小时内使用超过5个不同设备，可能是账号被盗或共享
-    - IP跳跃检测：用户1小时内使用超过10个不同IP，可能使用代理池
-    - 多账户关联：同一设备24小时内登录超过20个不同账户，可能是批量操作
-  - **YAML示例**:
+  - *Example: User's past7days used3different devices*
+  - **Real-world Use Cases**:
+    - Account sharing detection: User uses more than 5 different devices within 24 hours, may indicate account theft or sharing
+    - IP hopping detection: User1hours uses more than10different IPs, may be using proxy pool
+    - Multi-account association: Same device24hours logs into more than20different accounts, may be batch operation
+  - **YAML Example**:
     ```yaml
     - name: distinct_userid_device_24h
       type: aggregation
       method: distinct
       datasource: postgresql_events
       entity: events
-      dimension: user_id              # 按用户分组 (GROUP BY user_id)
+      dimension: user_id              # Group by user (GROUP BY user_id)
       dimension_value: "{event.user_id}"
-      field: device_id                # 统计不同设备ID的数量 (COUNT(DISTINCT device_id))
+      field: device_id                # Count distinct device IDs (COUNT(DISTINCT device_id))
       window: 24h
     ```
 
 **Planned:**
 - `stddev` - Standard deviation
-  - *Example: 用户交易金额标准差 ¥350，波动较大*
-  - **实际应用场景**:
-    - 行为稳定性分析：交易金额标准差过大，行为不稳定，可能被盗号
-    - 异常波动检测：用户历史标准差¥50，近期标准差¥500，行为剧变
-    - 用户分群：低标准差用户（固定消费）vs 高标准差用户（消费随机）
-  - **YAML示例**:
+  - *Example: User transaction amount standard deviation ¥350, high volatility*
+  - **Real-world Use Cases**:
+    - Behavior stability analysis: Transaction amount standard deviation too large, unstable behavior, may be account theft
+    - Abnormal volatility detection: User historical standard deviation ¥50, recent standard deviation ¥500, behavior drastically changed
+    - User segmentation: Low standard deviation users (fixed spending) vs high standard deviation users (random spending)
+  - **YAML Example**:
     ```yaml
     - name: stddev_userid_txn_amt_30d
       type: aggregation
@@ -191,12 +191,12 @@ Feature engineering in risk management follows a structured approach based on **
     ```
 
 - `variance` - Variance
-  - *Example: 用户交易金额方差 122,500*
-  - **实际应用场景**:
-    - 风险评分：高方差用户风险更高，行为不可预测
-    - 机器人检测：机器人交易方差通常很小（固定金额）
-    - 信用评估：低方差用户还款行为更稳定，信用更好
-  - **YAML示例**:
+  - *Example: User transaction amount variance 122,500*
+  - **Real-world Use Cases**:
+    - Risk scoring: High variance users have higher risk, unpredictable behavior
+    - Bot detection: Bot transaction variance usually very small (fixed amount)
+    - Credit assessment: Low variance users have more stable repayment behavior, better credit
+  - **YAML Example**:
     ```yaml
     - name: variance_userid_txn_amt_30d
       type: aggregation
@@ -211,12 +211,12 @@ Feature engineering in risk management follows a structured approach based on **
     ```
 
 - `percentile` - Nth percentile value
-  - *Example: 用户交易金额P95为 ¥1,800*
-  - **实际应用场景**:
-    - 异常阈值设定：超过P95的交易需要额外验证
-    - 动态限额：根据用户P90交易金额设置每日限额
-    - 信用额度：用户P75消费金额作为信用额度参考
-  - **YAML示例**:
+  - *Example: User transaction amount P95 is ¥1,800*
+  - **Real-world Use Cases**:
+    - Abnormal threshold setting: Transactions exceeding P95 require additional verification
+    - Dynamic limits: Set daily limits based on user P90 transaction amount
+    - Credit limit: User P75 spending amount as credit limit reference
+  - **YAML Example**:
     ```yaml
     - name: p95_userid_txn_amt_30d
       type: aggregation
@@ -232,12 +232,12 @@ Feature engineering in risk management follows a structured approach based on **
     ```
 
 - `median` - Median value (50th percentile)
-  - *Example: 用户交易金额中位数 ¥450*
-  - **实际应用场景**:
-    - 抗异常值统计：中位数不受极端值影响，更准确反映用户典型行为
-    - 用户画像：中位数订单金额用于用户价值评估
-    - 异常检测：当前交易是中位数的10倍，需要验证
-  - **YAML示例**:
+  - *Example: User transaction amount median ¥450*
+  - **Real-world Use Cases**:
+    - Outlier-resistant statistics: Median is not affected by extreme values, more accurately reflects user typical behavior
+    - User profiling: Median order amount for user value assessment
+    - Abnormal detection: Current transaction is 10 times the median, requires verification
+  - **YAML Example**:
     ```yaml
     - name: median_userid_txn_amt_30d
       type: aggregation
@@ -252,12 +252,12 @@ Feature engineering in risk management follows a structured approach based on **
     ```
 
 - `mode` - Most frequent value
-  - *Example: 用户最常见的交易金额 ¥100*
-  - **实际应用场景**:
-    - 充值模式识别：用户最常充值¥100，异常充值¥10,000需验证
-    - 刷单检测：大量相同金额订单（众数占比>80%）疑似刷单
-    - 习惯识别：用户最常在晚上8点登录，凌晨3点登录异常
-  - **YAML示例**:
+  - *Example: User most frequent transaction amount ¥100*
+  - **Real-world Use Cases**:
+    - Recharge pattern recognition: User most frequently recharges ¥100, abnormal recharge of ¥10,000 requires verification
+    - Order brushing detection: Large number of same amount orders (mode ratio >80%) suspected order brushing
+    - Habit recognition: User most frequently logs in at night 8 o'clock, early morning 3 o'clock login is abnormal
+  - **YAML Example**:
     ```yaml
     - name: mode_userid_txn_amt_30d
       type: aggregation
@@ -272,12 +272,12 @@ Feature engineering in risk management follows a structured approach based on **
     ```
 
 - `entropy` - Shannon entropy (diversity measure)
-  - *Example: 用户交易类型熵值2.3，行为多样化*
-  - **实际应用场景**:
-    - 机器人检测：熵值过低（<0.5），行为模式单一，可能是机器人
-    - 账号活跃度：熵值高的用户行为丰富，更像真实用户
-    - 异常检测：用户历史熵值2.5，近期降至0.3，行为异常单一
-  - **YAML示例**:
+  - *Example: User transaction type entropy 2.3, diverse behavior*
+  - **Real-world Use Cases**:
+    - Bot detection: Entropy too low (<0.5), single behavior pattern, may be bot
+    - Account activity: High entropy users have rich behavior, more like real users
+    - Abnormal detection: User historical entropy 2.5, recently dropped to 0.3, behavior abnormally uniform
+  - **YAML Example**:
     ```yaml
     - name: entropy_userid_txn_type_30d
       type: aggregation
@@ -306,27 +306,27 @@ struct AggregationConfig {
     pub entity: String,
     pub dimension: String,
     pub dimension_value: String,
-    pub field: Option<String>,       // count不需要，其他需要
+    pub field: Option<String>,       // count doesn't need, others need
     pub window: Duration,
     pub when: Option<Condition>,
 }
 
-// ✅ 所有Aggregation操作符可以用统一的函数实现！
-// 共同逻辑:
-// - Time window filtering (window字段)
+// ✅ All Aggregation operators can be implemented with a unified function!
+// Common logic:
+// - Time window filtering (window field)
 // - Dimension grouping (dimension, dimension_value)
-// - Condition matching (when字段)
-// - One-pass aggregation (不同的operator)
+// - Condition matching (when field)
+// - One-pass aggregation (different operators)
 impl AggregationExecutor {
     fn execute(&self, op: AggregationType, config: &AggregationConfig) -> Result<Value> {
-        // 1. 构建查询
+        // 1. Build query
         let sql = self.build_query(op, config)?;
 
-        // 根据operator生成不同的SQL聚合函数:
+        // Generate different SQL aggregation functions based on operator:
         // COUNT(*), SUM(field), AVG(field), MAX(field), MIN(field),
         // COUNT(DISTINCT field), STDDEV(field), etc.
 
-        // 2. 执行查询
+        // 2. Execute query
         self.datasource.query(&sql)
     }
 
@@ -357,206 +357,206 @@ impl AggregationExecutor {
 
 ---
 
-## 所有Feature类型的DSL一致性分析
+## DSL Consistency Analysis Across All Feature Types
 
-### 跨类型字段对比表
+### Cross-Type Field Comparison Table
 
-| 字段 | Aggregation | State | Sequence | Graph | Expression | Lookup | 说明 |
-|------|-------------|-------|----------|-------|------------|--------|------|
-| `type` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | 所有类型都需要 |
-| `method` | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | Lookup不需要 |
-| `datasource` | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ | Expression不需要 |
-| `entity` | ✅ | ✅ | ✅ | ⚠️ | ❌ | ❌ | 指定表名/数据实体（见下方说明） |
-| `dimension` | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | 分组维度 |
-| `dimension_value` | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | 维度值 |
-| `dimension_value2` | ❌ | ❌ | ❌ | ⚠️ | ❌ | ❌ | 第二个维度值（仅双节点Graph方法） |
-| `dimension2` | ❌ | ❌ | ❌ | ✅ | ❌ | ❌ | 第二维度（Graph关联维度） |
-| `window` | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | 时间窗口 |
-| `when` | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | 条件过滤 |
-| `field` | ⚠️ | ✅ | ⚠️ | ❌ | ❌ | ❌ | 计算字段 |
+| Field | Aggregation | State | Sequence | Graph | Expression | Lookup | Description |
+|------|-------------|-------|----------|-------|------------|--------|-------------|
+| `type` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | All types need |
+| `method` | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | Lookup doesn't need |
+| `datasource` | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ | Expression doesn't need |
+| `entity` | ✅ | ✅ | ✅ | ⚠️ | ❌ | ❌ | Specifies table/data entity (see below) |
+| `dimension` | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | grouping dimension |
+| `dimension_value` | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | dimension value |
+| `dimension_value2` | ❌ | ❌ | ❌ | ⚠️ | ❌ | ❌ | Second dimension value (only for dual-node Graph methods) |
+| `dimension2` | ❌ | ❌ | ❌ | ✅ | ❌ | ❌ | Second dimension (Graph relationship dimension) |
+| `window` | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | time window |
+| `when` | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | condition filter |
+| `field` | ⚠️ | ✅ | ⚠️ | ❌ | ❌ | ❌ | calculation field |
 
-### `entity` 字段说明
+### `entity` Field Description
 
-**`entity` 的作用：指定从哪个表/数据实体中读取数据**
+**Purpose of `entity`: Specifies which table/data entity to read data from**
 
-| Datasource类型 | 需要entity? | entity的含义 | 示例 |
-|---------------|-----------|------------|------|
-| **PostgreSQL** | ✅ 需要 | 表名 | `entity: events` → 查询 `events` 表 |
-| **ClickHouse** | ✅ 需要 | 表名 | `entity: events` → 查询 `events` 表 |
-| **Neo4j** | ⚠️ 取决于设计 | 节点标签或关系类型 | `entity: events` 或不需要 |
-| **Redis** | ❌ 不需要 | N/A (key-value存储) | 直接通过key访问 |
-| **Expression** | ❌ 不需要 | N/A (不访问数据源) | 只使用其他特征的结果 |
+| Datasource Type | Needs entity? | Meaning of entity | Example |
+|-----------------|---------------|-------------------|---------|
+| **PostgreSQL** | ✅ Needs | Table name | `entity: events` → queries `events` table |
+| **ClickHouse** | ✅ Needs | Table name | `entity: events` → queries `events` table |
+| **Neo4j** | ⚠️ Depends on design | Node label or relationship type | `entity: events` or not needed |
+| **Redis** | ❌ Not needed | N/A (key-value storage) | Direct access via key |
+| **Expression** | ❌ Not needed | N/A (doesn't access data source) | Only uses results from other features |
 
-**SQL生成示例：**
+**SQL Generation Example:**
 
 ```yaml
 # PostgreSQL/ClickHouse
 - name: cnt_userid_login_24h
   datasource: postgresql_events
-  entity: events              # ← 指定表名
+  entity: events              # ← Specifies table name
   dimension: user_id
   window: 24h
 ```
 
-生成的SQL：
+Generated SQL:
 ```sql
 SELECT COUNT(*)
-FROM events                   -- ← entity 映射到 FROM 子句
+FROM events                   -- ← entity maps to FROM clause
 WHERE user_id = :current_user
   AND timestamp > now() - interval '24 hours'
 ```
 
-**不同数据源的entity映射：**
+**Entity Mapping for Different Data Sources:**
 
 ```yaml
-# 1. PostgreSQL - entity = 表名
+# 1. PostgreSQL - entity = table name
 datasource: postgresql_events
 entity: events                # SELECT * FROM events
 
-# 2. ClickHouse - entity = 表名
+# 2. ClickHouse - entity = table name
 datasource: clickhouse_events
 entity: events                # SELECT * FROM events
 
-# 3. Neo4j - entity可能表示节点标签（需要设计决定）
+# 3. Neo4j - entity may represent node label (needs design decision)
 datasource: neo4j_graph
-entity: events                # MATCH (e:events) 或 MATCH ()-[r:events]->()
-# 或者不使用entity，直接在查询逻辑中指定
+entity: events                # MATCH (e:events) or MATCH ()-[r:events]->()
+# Or specify directly in query logic without using entity
 
-# 4. Redis - 不需要entity
+# 4. Redis - doesn't need entity
 datasource: redis_features
-# 没有entity字段，直接通过key访问
+# No entity field, direct access via key
 
-# 5. Expression - 不需要entity
+# 5. Expression - doesn't need entity
 type: expression
-# 没有entity字段，不访问数据源
+# No entity field, doesn't access data source
 ```
 
-**设计建议：**
+**Design Recommendations:**
 
-对于Neo4j图数据库，可以考虑两种方案：
+For Neo4j graph database, two approaches can be considered:
 
-**方案1：使用 `entity` 表示节点标签**
+**Approach 1: Use `entity` to represent node label**
 ```yaml
 datasource: neo4j_graph
-entity: User                  # 节点标签
+entity: User                  # Node label
 dimension: user_id
 dimension2: device_id
 ```
 
-**方案2：不使用 `entity`，在datasource配置中指定**
+**Approach 2: Don't use `entity`, specify in datasource configuration**
 ```yaml
-datasource: neo4j_graph       # datasource配置中已指定要查询的节点/关系类型
+datasource: neo4j_graph       # Datasource config already specifies node/relationship type to query
 dimension: user_id
 dimension2: device_id
-# 不需要entity字段
+# Doesn't need entity field
 ```
 
-### 各类型特有字段
+### Type-Specific Fields
 
-**State 特有:**
-- `current_value` - 当前值（用于对比）
+**State Specific:**
+- `current_value` - Current value (for comparison)
 
-**Sequence 特有:**
-- `reset_when` - 重置条件
-- `order_by` - 排序字段
-- `baseline_window` - 基线窗口（仅用于 anomaly_score 等需要历史对比的方法）
-- `aggregation` - 窗口内的聚合方式
-- `pattern` - 事件模式匹配
-- `window_size` - 移动平均窗口大小
+**Sequence Specific:**
+- `reset_when` - Reset condition
+- `order_by` - Sort field
+- `baseline_window` - Baseline window (only for methods that need historical comparison like anomaly_score)
+- `aggregation` - Aggregation method within window
+- `pattern` - Event pattern matching
+- `window_size` - Moving average window size
 
-**Graph 特有:**
-- `dimension2` - 第二维度（关联维度，如device_id关联到user_id）
-- `dimension_value2` - 第二个维度值（仅用于需要两个节点的方法，如 shared_entity_count, network_distance）
+**Graph Specific:**
+- `dimension2` - Second dimension (relationship dimension, e.g. device_id related to user_id)
+- `dimension_value2` - Second dimension value (only for methods that need two nodes, such as shared_entity_count, network_distance)
 
-**Expression 特有:**
-- `expression` - 表达式字符串
-- `depends_on` - 依赖的特征列表
-- `model` / `inputs` / `output` - ML模型配置
+**Expression Specific:**
+- `expression` - Expression string
+- `depends_on` - List of dependent features
+- `model` / `inputs` / `output` - ML model configuration
 
-**Lookup 特有:**
-- `key` - Redis key模板
-- `fallback` - 默认值
+**Lookup Specific:**
+- `key` - Redis key template
+- `fallback` - Default value
 
-### 统一实现可行性分析
+### Unified Implementation Feasibility Analysis
 
-| 类型 | DSL一致性 | 可统一实现？ | 建议 |
-|------|-----------|-------------|------|
-| **Aggregation** | ✅ 高度一致 | ✅ 是 | 一个Executor处理所有method |
-| **State** | ✅ 较一致 | ✅ 是 | 一个Executor处理所有method |
-| **Sequence** | ⚠️ 中等 | ⚠️ 部分 | 简单的可统一，复杂的(pattern)需单独处理 |
-| **Graph** | ⚠️ 字段差异 | ✅ 是 | 一个Executor，但字段名不同 |
-| **Expression** | ✅ 简单一致 | ✅ 是 | 根据method分发：expression vs ml_model |
-| **Lookup** | ✅ 最简单 | ✅ 是 | 直接key-value查询 |
+| Type | DSL Consistency | Can be unified? | Recommendation |
+|------|-----------------|-----------------|----------------|
+| **Aggregation** | ✅ Highly consistent | ✅ Yes | One Executor handles all methods |
+| **State** | ✅ Relatively consistent | ✅ Yes | One Executor handles all methods |
+| **Sequence** | ⚠️ Moderate | ⚠️ Partially | Simple ones can be unified, complex ones (pattern) need separate handling |
+| **Graph** | ⚠️ Field differences | ✅ Yes | One Executor, but field names differ |
+| **Expression** | ✅ Simple and consistent | ✅ Yes | Dispatch based on method: expression vs ml_model |
+| **Lookup** | ✅ Simplest | ✅ Yes | Direct key-value query |
 
-### 实现建议
+### Implementation Recommendations
 
 ```rust
-// 1. Aggregation - 高度统一 ✅
+// 1. Aggregation - Highly unified ✅
 impl AggregationExecutor {
     fn execute(&self, method: AggregationType, config: AggregationConfig) -> Result<Value> {
-        // 所有method共享：时间窗口、维度分组、条件过滤
-        // 只有聚合函数不同：COUNT/SUM/AVG/MAX/MIN/DISTINCT...
+        // All methods share: time window, dimension grouping, condition filtering
+        // Only aggregation functions differ: COUNT/SUM/AVG/MAX/MIN/DISTINCT...
     }
 }
 
-// 2. State - 较统一 ✅
+// 2. State - Relatively unified ✅
 impl StateExecutor {
     fn execute(&self, method: StateQueryType, config: StateConfig) -> Result<Value> {
-        // 共享：维度、基线窗口
-        // 差异：z_score需要current_value，timezone_consistency需要expected_timezone
+        // Shared: dimension, baseline window
+        // Differences: z_score needs current_value, timezone_consistency needs expected_timezone
     }
 }
 
-// 3. Sequence - 部分统一 ⚠️
+// 3. Sequence - Partially unified ⚠️
 impl SequenceExecutor {
     fn execute(&self, method: SequenceAnalysisType, config: SequenceConfig) -> Result<Value> {
         match method {
-            ConsecutiveCount => { /* 简单，可统一 */ }
-            PercentChange => { /* 需要双窗口，可统一 */ }
-            MovingAverage => { /* 需要window_size，可统一 */ }
-            EventPatternMatch => { /* 复杂，需要pattern匹配引擎 */ }
+            ConsecutiveCount => { /* Simple, can be unified */ }
+            PercentChange => { /* Needs dual windows, can be unified */ }
+            MovingAverage => { /* Needs window_size, can be unified */ }
+            EventPatternMatch => { /* Complex, needs pattern matching engine */ }
         }
     }
 }
 
-// 4. Graph - 可统一 ✅
+// 4. Graph - Can be unified ✅
 impl GraphExecutor {
     fn execute(&self, method: GraphAnalysisType, config: GraphConfig) -> Result<Value> {
-        // 使用统一的dimension/dimension_value字段
-        // dimension2表示第二维度（关联维度）
+        // Uses unified dimension/dimension_value fields
+        // dimension2 represents second dimension (relationship dimension)
     }
 }
 
-// 5. Expression - 简单统一 ✅
+// 5. Expression - Simple and unified ✅
 impl ExpressionExecutor {
     fn execute(&self, method: ExpressionType, config: ExpressionConfig) -> Result<Value> {
         match method {
-            CustomExpression => { /* 表达式引擎 */ }
-            MLModelScore => { /* 模型推理 */ }
+            CustomExpression => { /* Expression engine */ }
+            MLModelScore => { /* Model inference */ }
         }
     }
 }
 
-// 6. Lookup - 最简单 ✅
+// 6. Lookup - Simplest ✅
 impl LookupExecutor {
     fn execute(&self, config: LookupConfig) -> Result<Value> {
-        // 直接Redis GET操作
+        // Direct Redis GET operation
         self.redis.get(&config.key).or(config.fallback)
     }
 }
 ```
 
-### 总结
+### Summary
 
-✅ **所有类型都可以用统一的Executor实现**
-- Aggregation, State, Expression, Lookup: 高度统一
-- Graph: 高度统一（已使用一致的字段命名）
-- Sequence: 简单method可统一，复杂的(pattern)需特殊处理
+✅ **All types can be implemented with unified Executor**
+- Aggregation, State, Expression, Lookup: Highly unified
+- Graph: Highly unified (already using consistent field naming)
+- Sequence: Simple methods can be unified, complex ones (pattern) need special handling
 
-✅ **DSL命名一致性**
-- 所有类型统一使用 `dimension` / `dimension_value` 作为主维度
-- Graph类型使用 `dimension2` 表示第二维度（关联维度）
-- 保持跨类型的字段命名一致性
+✅ **DSL Naming Consistency**
+- All types uniformly use `dimension` / `dimension_value` as primary dimension
+- Graph types use `dimension2` to represent second dimension (relationship dimension)
+- Maintain consistent field naming across types
 
 ---
 
@@ -573,12 +573,12 @@ impl LookupExecutor {
 
 **Planned:**
 - `z_score` - Statistical z-score compared to baseline
-  - *Example: 当前交易金额Z-score为2.8，异常偏高*
-  - **实际应用场景**:
-    - 异常交易检测：用户交易金额Z-score > 3，可能被盗刷
-    - 登录频率异常：登录频率Z-score > 2.5，可能是暴力破解
-    - 动态阈值：根据Z-score自动调整风控策略，而非固定阈值
-  - **YAML示例**:
+  - *Example: Current transaction amount Z-score is 2.8, abnormally high*
+  - **Real-world Use Cases**:
+    - Abnormal transaction detection: User transaction amount Z-score > 3, may be fraudulent
+    - Login frequency anomaly: Login frequency Z-score > 2.5, may be brute force
+    - Dynamic threshold: Automatically adjust risk control strategy based on Z-score, not fixed threshold
+  - **YAML Example**:
     ```yaml
     - name: zscore_userid_txn_amt
       type: state
@@ -594,12 +594,12 @@ impl LookupExecutor {
     ```
 
 - `deviation_from_baseline` - Compare to historical average
-  - *Example: 当前登录频率比历史平均高150%*
-  - **实际应用场景**:
-    - 行为突变检测：用户日均登录2次，今天登录20次，偏离900%
-    - 消费习惯变化：历史日均消费¥200，今天消费¥5000，偏离2400%
-    - 账号接管：行为模式突然偏离基线，可能被他人控制
-  - **YAML示例**:
+  - *Example: Current login frequency higher than historical average by150%*
+  - **Real-world Use Cases**:
+    - Behavior mutation detection: User daily average login 2 times, today logged in 20 times, deviated 900%
+    - Spending habit change: Historical daily average spending ¥200, today spending ¥5000, deviated 2400%
+    - Account takeover: Behavior pattern suddenly deviates from baseline, may be controlled by others
+  - **YAML Example**:
     ```yaml
     - name: deviation_userid_login_freq
       type: state
@@ -615,12 +615,12 @@ impl LookupExecutor {
     ```
 
 - `percentile_rank` - Rank compared to history
-  - *Example: 当前交易金额处于历史第92百分位*
-  - **实际应用场景**:
-    - 大额交易验证：当前交易金额超过历史P95，需要二次验证
-    - 异常活跃度：当前登录频率超过历史P99，可能异常
-    - 风险分级：P0-P50低风险，P50-P90中风险，P90+高风险
-  - **YAML示例**:
+  - *Example: Current transaction amount at historical92percentile*
+  - **Real-world Use Cases**:
+    - Large transaction verification: Current transaction amount exceeds historical P95, requires two-factor verification
+    - Abnormal activity: Current login frequency exceeds historical P99, may be abnormal
+    - Risk classification: P0-P50 low risk, P50-P90 medium risk, P90+ high risk
+  - **YAML Example**:
     ```yaml
     - name: pctrank_userid_txn_amt
       type: state
@@ -636,12 +636,12 @@ impl LookupExecutor {
     ```
 
 - `is_outlier` - Statistical outlier detection
-  - *Example: 当前行为判定为统计异常值（true）*
-  - **实际应用场景**:
-    - 自动异常标记：统计学判断为异常值，直接触发人工审核
-    - 欺诈检测：交易金额/频率/地点等多维度异常值检测
-    - 机器学习特征：异常值标记作为ML模型输入特征
-  - **YAML示例**:
+  - *Example: Current behavior determined as statistical outlier (true)*
+  - **Real-world Use Cases**:
+    - Automatic outlier tagging: Statistically determined as outlier, directly triggers manual review
+    - Fraud detection: Multi-dimensional outlier detection for transaction amount/frequency/location etc.
+    - Machine learning features: Outlier tags as ML model input features
+  - **YAML Example**:
     ```yaml
     - name: outlier_userid_txn_amt
       type: state
@@ -684,12 +684,12 @@ impl StateExecutor {
 
 **Planned:**
 - `consecutive_count` - Count consecutive occurrences
-  - *Example: 用户连续失败登录3次*
-  - **实际应用场景**:
-    - 暴力破解：连续失败登录≥5次，锁定账户15分钟
-    - 支付失败：连续3次支付失败，可能卡被冻结或余额不足
-    - 异常操作：连续10次快速点击，可能是脚本攻击
-  - **YAML示例**:
+  - *Example: User consecutively failed login 3 times*
+  - **Real-world Use Cases**:
+    - Brute force attack: Consecutive failed logins ≥5 times, lock account for 15 minutes
+    - Payment failure: Consecutive 3 payment failures, card may be frozen or insufficient balance
+    - Abnormal operation: Consecutive 10 rapid clicks, may be script attack
+  - **YAML Example**:
     ```yaml
     - name: consec_userid_login_1h_failed
       type: sequence
@@ -707,12 +707,12 @@ impl StateExecutor {
     ```
 
 - `streak` - Longest streak of condition
-  - *Example: 用户连续7天每天都有交易（活跃度高）*
-  - **实际应用场景**:
-    - 用户活跃度：连续活跃7天的用户，流失风险低
-    - 刷单检测：连续30天每天都有订单，且金额相似，疑似刷单
-    - 习惯养成：连续3天使用某功能，推荐相关服务
-  - **YAML示例**:
+  - *Example: User consecutive7days with daily transactions (high activity)*
+  - **Real-world Use Cases**:
+    - User activity: Consecutive active7days users, low churn risk
+    - Order brushing detection: Consecutive 30 days with daily orders, similar amounts, suspected order brushing
+    - Habit formation: Consecutive3days using a feature, recommend related services
+  - **YAML Example**:
     ```yaml
     - name: streak_userid_daily_txn_30d
       type: sequence
@@ -728,12 +728,12 @@ impl StateExecutor {
     ```
 
 - `sequence_match` - Match event sequences
-  - *Example: 检测到"修改密码→登录→大额转账"可疑序列*
-  - **实际应用场景**:
-    - 账户接管：密码重置→修改邮箱→大额转账（15分钟内），高风险
-    - 欺诈模式：注册→实名认证→申请贷款→提现（1小时内），疑似欺诈
-    - 正常流程：浏览商品→加入购物车→结算→支付，转化漏斗分析
-  - **YAML示例**:
+  - *Example: Detected "password reset → login → large transfer" suspicious sequence*
+  - **Real-world Use Cases**:
+    - Account takeover: Password reset → email change → large transfer (within 15 minutes), high risk
+    - Fraud pattern: Registration → identity verification → loan application → withdrawal (within 1 hour), suspected fraud
+    - Normal flow: Browse products → add to cart → checkout → payment, conversion funnel analysis
+  - **YAML Example**:
     ```yaml
     - name: seq_userid_account_takeover_pattern
       type: sequence
@@ -751,12 +751,12 @@ impl StateExecutor {
     ```
 
 - `pattern_frequency` - Frequency of specific patterns
-  - *Example: "登录→浏览→加购→支付"完整路径出现5次*
-  - **实际应用场景**:
-    - 刷单检测：相同操作序列重复出现>10次，疑似刷单
-    - 用户行为分析：高价值用户的典型路径频率
-    - 异常模式：异常操作序列频繁出现，可能是攻击
-  - **YAML示例**:
+  - *Example: "Login → browse → add to cart → payment" complete path appears5times*
+  - **Real-world Use Cases**:
+    - Order brushing detection: Same operation sequence repeatedly appears >10 times, suspected order brushing
+    - User behavior analysis: Typical path frequency of high-value users
+    - Abnormal pattern: Abnormal operation sequences frequently appear, may be attack
+  - **YAML Example**:
     ```yaml
     - name: freq_userid_purchase_pattern_7d
       type: sequence
@@ -775,12 +775,12 @@ impl StateExecutor {
     ```
 
 - `trend` - Calculate trend (increasing/decreasing/stable)
-  - *Example: 用户交易金额呈上升趋势（+15%/周）*
-  - **实际应用场景**:
-    - 消费趋势：交易金额持续上升，用户价值增长
-    - 风险趋势：失败交易比例上升趋势，可能卡出问题
-    - 异常检测：登录频率突然上升趋势（斜率陡增），可能被盗号
-  - **YAML示例**:
+  - *Example: User transaction amount shows upward trend (+15%/week)*
+  - **Real-world Use Cases**:
+    - Spending trend: Transaction amount continues to rise, user value grows
+    - Risk trend: Failed transaction ratio shows upward trend, card may have issues
+    - Abnormal detection: Login frequency suddenly shows upward trend (steep slope increase), account may be stolen
+  - **YAML Example**:
     ```yaml
     - name: trend_userid_txn_amt_30d
       type: sequence
@@ -796,12 +796,12 @@ impl StateExecutor {
     ```
 
 - `percent_change` - Percentage change between windows
-  - *Example: 本周交易次数比上周增加120%*
-  - **实际应用场景**:
-    - 行为突变：本周交易比上周增加500%，异常活跃
-    - 促销效果：活动期间交易量增加200%，效果显著
-    - 休眠唤醒：本周交易比上周增长从0到10，账户被重新激活
-  - **YAML示例**:
+  - *Example: This week transaction count increased by 120% compared to last week*
+  - **Real-world Use Cases**:
+    - Behavior mutation: This week transactions increased by 500%, abnormally active
+    - Promotion effect: Transaction volume increased by200%, significant effect
+    - Dormant awakening: This week transactions increased from 0 to10, account reactivated
+  - **YAML Example**:
     ```yaml
     - name: pctchg_userid_txn_cnt_week
       type: sequence
@@ -814,18 +814,18 @@ impl StateExecutor {
       when: type == "transaction"         # Database field (no prefix)
       aggregation: count
     ```
-  - **计算逻辑**:
-    - 当前窗口：[now - 7d, now]
-    - 基线窗口：[now - 14d, now - 7d]
-    - 百分比变化 = (当前窗口值 - 基线窗口值) / 基线窗口值 × 100%
+  - **Calculation Logic**:
+    - Current window: [now - 7d, now]
+    - Baseline window: [now - 14d, now - 7d]
+    - Percentage change = (current window value - baseline window value) / baseline window value × 100%
 
 - `rate_of_change` - Rate of change over time
-  - *Example: 用户登录频率增长率为+5次/天*
-  - **实际应用场景**:
-    - 加速度检测：交易频率增长率从1次/天加速到10次/天，异常
-    - 渐进式攻击：失败登录率每小时增加2次，逐步升级攻击
-    - 趋势预警：订单量下降率-3单/天，可能流失
-  - **YAML示例**:
+  - *Example: User login frequency growth rate is +5times/day*
+  - **Real-world Use Cases**:
+    - Acceleration detection: Transaction frequency growth rate accelerates from 1 times/day to 10 times/day, abnormal
+    - Progressive attack: Failed login rate increases by 2 times per hour, gradually escalating attack
+    - Trend warning: Order volume decline rate -3orders/day, may churn
+  - **YAML Example**:
     ```yaml
     - name: roc_userid_login_freq_7d
       type: sequence
@@ -841,12 +841,12 @@ impl StateExecutor {
     ```
 
 - `anomaly_score` - Statistical anomaly detection
-  - *Example: 序列异常评分8.5/10，高度可疑*
-  - **实际应用场景**:
-    - 综合异常检测：基于时序模型计算异常分数，>7分触发审核
-    - 账户行为画像：行为序列与历史模式差异度评分
-    - 欺诈概率：序列异常分数作为欺诈模型输入特征
-  - **YAML示例**:
+  - *Example: Sequence anomaly score 8.5/10, highly suspicious*
+  - **Real-world Use Cases**:
+    - Comprehensive anomaly detection: Calculate anomaly score based on time-series model, >7 points triggers review
+    - Account behavior profile: Behavior sequence difference score from historical pattern
+    - Fraud probability: Sequence anomaly score as fraud model input feature
+  - **YAML Example**:
     ```yaml
     - name: anomaly_userid_behavior_score_7d
       type: sequence
@@ -862,12 +862,12 @@ impl StateExecutor {
     ```
 
 - `moving_average` - Moving average over window
-  - *Example: 用户7天移动平均交易额 ¥800/天*
-  - **实际应用场景**:
-    - 平滑趋势分析：7日移动平均消除日常波动，观察真实趋势
-    - 异常检测：当前交易额超过7日移动平均3倍，异常
-    - 动态基线：使用移动平均作为动态基线，自适应用户行为变化
-  - **YAML示例**:
+  - *Example: User7day moving average transaction amount ¥800/day*
+  - **Real-world Use Cases**:
+    - Smooth trend analysis: 7day moving average eliminates daily fluctuations, observe real trend
+    - Abnormal detection: Current transaction amount exceeds 7-day moving average by 3 times, abnormal
+    - Dynamic baseline: Use moving average as dynamic baseline, adapts to user behavior changes
+  - **YAML Example**:
     ```yaml
     - name: ma7_userid_txn_amt
       type: sequence
@@ -914,30 +914,30 @@ impl SequenceAnalyzer {
 >
 > **Design Pattern:** Graph-based analyzer with lazy graph construction
 
-**字段语义说明：**
+**Field Semantics Description:**
 
-Graph类型分析二部图（Bipartite Graph）结构，其中：
-- `dimension` - 主实体类型（如 user_id）
-- `dimension2` - 关联实体类型（如 device_id）
-- 形成图结构：User <--> Device <--> User <--> Device
+Graph type analyzes bipartite graph structure, where:
+- `dimension` - Primary entity type (e.g. user_id)
+- `dimension2` - Related entity type (e.g. device_id)
+- Forms graph structure: User <--> Device <--> User <--> Device
 
-**单节点方法**（如 graph_centrality, community_size）：
-- `dimension_value` - 要分析的节点
-- `dimension2` - 该节点如何与其他节点关联
+**Single-node methods** (e.g. graph_centrality, community_size):
+- `dimension_value` - Node to analyze
+- `dimension2` - How this node relates to other nodes
 
-**双节点方法**（如 shared_entity_count, network_distance）：
-- `dimension_value` - 起点/源节点
-- `dimension_value2` - 终点/目标节点（同一类型）
-- `dimension2` - 两个节点通过什么建立连接（中间节点类型）
+**Dual-node methods** (e.g. shared_entity_count, network_distance):
+- `dimension_value` - Start/source node
+- `dimension_value2` - End/target node (same type)
+- `dimension2` - What connects the two nodes (intermediate node type)
 
 **Planned:**
 - `graph_centrality` - Network centrality score
-  - *Example: 设备在用户网络中心度0.65，可能是共享设备*
-  - **实际应用场景**:
-    - 核心节点识别：中心度>0.8的设备，可能是欺诈团伙核心设备
-    - 风险源定位：高中心度账户被标记欺诈，关联账户需审查
-    - 黑产识别：中心度异常高的IP，可能是黑产操作节点
-  - **YAML示例**:
+  - *Example: Device centrality in user network 0.65, may be shared device*
+  - **Real-world Use Cases**:
+    - Core node identification: Centrality >0.8devices, may be core devices of fraud gang
+    - Risk source location: High centrality accounts marked as fraud, associated accounts need review
+    - Black market identification: IPs with abnormally high centrality may be black market operation nodes
+  - **YAML Example**:
     ```yaml
     - name: centrality_device_in_user_network
       type: graph
@@ -950,12 +950,12 @@ Graph类型分析二部图（Bipartite Graph）结构，其中：
     ```
 
 - `community_size` - Size of connected component
-  - *Example: 该用户所在欺诈团伙社区规模23人*
-  - **实际应用场景**:
-    - 团伙欺诈：社区规模>20人且交易模式相似，疑似欺诈团伙
-    - 洗钱网络：资金在大社区内循环流转，可能洗钱
-    - 正常社交：小社区(<5人)且行为正常，可能是家庭/朋友
-  - **YAML示例**:
+  - *Example: Fraud gang community size for this user is 23 people*
+  - **Real-world Use Cases**:
+    - Gang fraud: Community size >20 people with similar transaction patterns, suspected fraud gang
+    - Money laundering network: Funds circulate within large community, may be money laundering
+    - Normal social: Small community (<5 people) with normal behavior, may be family/friends
+  - **YAML Example**:
     ```yaml
     - name: community_size_userid_device_network
       type: graph
@@ -968,75 +968,75 @@ Graph类型分析二部图（Bipartite Graph）结构，其中：
     ```
 
 - `shared_entity_count` - Count shared connections
-  - *Example: 两个用户共享5个相同设备*
-  - **实际应用场景**:
-    - 虚假账户：两个账户共享>3个设备，可能是同一人多账户
-    - 关联欺诈：多个高风险账户共享设备/IP，协同欺诈
-    - 家庭识别：共享2个设备(手机+电脑)，可能是家庭成员
-  - **YAML示例**:
+  - *Example: Two users share 5 same devices*
+  - **Real-world Use Cases**:
+    - Fake accounts: Two accounts share >3 devices, may be multiple accounts by same person
+    - Associated fraud: Multiple high-risk accounts share devices/IPs, coordinated fraud
+    - Family identification: Share2devices (phone + computer), may be family members
+  - **YAML Example**:
     ```yaml
     - name: shared_devices_between_users
       type: graph
       method: shared_entity_count
       datasource: neo4j_graph
-      dimension: user_id                      # 节点类型
-      dimension_value: "{event.user_id}"      # 节点1（源）
-      dimension_value2: "{event.target_user_id}"  # 节点2（目标）
-      dimension2: device_id                   # 共享实体类型
+      dimension: user_id                      # Node type
+      dimension_value: "{event.user_id}"      # Node 1 (source)
+      dimension_value2: "{event.target_user_id}"  # Node 2 (target)
+      dimension2: device_id                   # Shared entity type
       window: 30d
     ```
-  - **字段说明**:
-    - `dimension: user_id` - 主实体类型（两个节点都是User）
+  - **Field Description**:
+    - `dimension: user_id` - Main entity type (both nodes are User)
     - `dimension_value` - User1
     - `dimension_value2` - User2
-    - `dimension2: device_id` - **共享的中间节点类型**
-    - 计算结果：User1和User2共享多少个Device
-  - **图结构示例**:
+    - `dimension2: device_id` - **Shared intermediate node type**
+    - Calculation result: How many Devices do User1 and User2 share
+  - **Graph Structure Example**:
     ```
-    User1 --使用--> Device1 <--使用-- User2
-          --使用--> Device2 <--使用--
-          --使用--> Device3 <--使用--
+    User1 --uses--> Device1 <--uses-- User2
+          --uses--> Device2 <--uses--
+          --uses--> Device3 <--uses--
 
-    结果 = 3（共享3个设备）
+    Result = 3 (share 3 devices)
     ```
-    - User1和User2都是 `user_id` 类型（dimension）
-    - Device1/2/3是 `device_id` 类型（dimension2，共享节点）
-    - 查找：有多少个Device同时连接到User1和User2
+    - User1 and User2 are both `user_id` type (dimension)
+    - Device1/2/3 are `device_id` type (dimension2, shared nodes)
+    - Find: How many Devices connect to both User1 and User2
 
 - `network_distance` - Distance between entities in graph
-  - *Example: 两个账户的网络距离为3跳（间接关联）*
-  - **实际应用场景**:
-    - 风险传播：距离已知欺诈账户≤2跳，需要审查
-    - 关联分析：虽无直接关联，但网络距离≤3跳，间接关联
-    - 社交推荐：网络距离2-3跳的用户，可能有共同兴趣
-  - **YAML示例**:
+  - *Example: Network distance between two accounts is3hops (indirect association)*
+  - **Real-world Use Cases**:
+    - Risk propagation: Distance to known fraud account ≤2hops, needs review
+    - Association analysis: Although no direct association, network distance ≤3hops, indirect association
+    - Social recommendation: Users with network distance 2-3 hops may have common interests
+  - **YAML Example**:
     ```yaml
     - name: network_dist_to_fraud_account
       type: graph
       method: network_distance
       datasource: neo4j_graph
-      dimension: user_id                      # 节点类型
-      dimension_value: "{event.user_id}"      # 起点节点
-      dimension_value2: "{known_fraud_user_id}"   # 终点节点
-      dimension2: device_id                   # 连接路径
+      dimension: user_id                      # Node type
+      dimension_value: "{event.user_id}"      # Start node
+      dimension_value2: "{known_fraud_user_id}"   # End node
+      dimension2: device_id                   # Connection path
       window: 90d
     ```
-  - **字段说明**:
-    - `dimension: user_id` - 主实体类型（起点和终点都是User）
-    - `dimension_value` - 起点User
-    - `dimension_value2` - 终点User
-    - `dimension2: device_id` - **中间连接节点类型**（不是终点类型！）
-    - 计算结果：从起点到终点的最短跳数
-  - **图结构示例**:
+  - **Field Description**:
+    - `dimension: user_id` - Primary entity type (Start and End are both User)
+    - `dimension_value` - Start User
+    - `dimension_value2` - End User
+    - `dimension2: device_id` - **Intermediate connection node type** (not End type!)
+    - Calculation result: Shortest hop count from start to end
+  - **Graph Structure Example**:
     ```
-    UserA --使用--> Device1 <--使用-- UserC --使用--> Device2 <--使用-- UserB
-    起点                                                              终点
+    UserA --uses--> Device1 <--uses-- UserC --uses--> Device2 <--uses-- UserB
+    Start                                                              End
 
-    跳数 = 2跳（UserA -> Device1 -> UserC -> Device2 -> UserB）
+    Hop count = 2 hops (UserA -> Device1 -> UserC -> Device2 -> UserB)
     ```
-    - UserA和UserB都是 `user_id` 类型（dimension）
-    - Device1和Device2是 `device_id` 类型（dimension2，中间连接）
-    - 图遍历：User -> Device -> User -> Device -> User
+    - UserA and UserB are both `user_id` type (dimension)
+    - Device1 and Device2 are `device_id` type (dimension2, intermediate connections)
+    - Graph traversal: User -> Device -> User -> Device -> User
 
 ```rust
 enum GraphAnalysisType {
@@ -1067,13 +1067,13 @@ impl GraphAnalyzer {
 
 **Implemented:**
 - `expression` - Evaluate custom expressions using other features
-  - *Example: 计算登录失败率 = failed_count / total_count*
-  - **实际应用场景**:
-    - 失败率计算：login_failure_rate = failed_login_count_1h / login_count_1h
-    - 复合评分：risk_score = 0.4 * transaction_anomaly + 0.3 * device_risk + 0.3 * location_risk
-    - 比率分析：large_transaction_ratio = transactions_above_1000 / total_transactions
-    - 转化率：conversion_rate = purchase_count / view_count
-  - **YAML示例**:
+  - *Example: Calculate login failure rate = failed_count / total_count*
+  - **Real-world Use Cases**:
+    - Failure rate calculation: login_failure_rate = failed_login_count_1h / login_count_1h
+    - Composite score: risk_score = 0.4 * transaction_anomaly + 0.3 * device_risk + 0.3 * location_risk
+    - Ratio analysis: large_transaction_ratio = transactions_above_1000 / total_transactions
+    - Conversion rate: conversion_rate = purchase_count / view_count
+  - **YAML Example**:
     ```yaml
     - name: rate_userid_login_failure
       type: expression
@@ -1116,13 +1116,13 @@ impl ExpressionEngine {
 
 **Implemented:**
 - Direct key-value lookup from datasource
-  - *Example: 从Redis查询用户90天风险评分*
-  - **实际应用场景**:
-    - 批量计算的风险评分：每天凌晨批量计算用户风险分数，存储在Redis
-    - 用户细分标签：数据分析团队生成的用户分群标签，缓存在Redis
-    - 设备指纹：安全团队维护的设备信誉库，存储在Redis
-    - 缓存的聚合特征：定时任务预计算的聚合指标，加速实时查询
-  - **YAML示例**:
+  - *Example: Query user 90-day risk score from Redis*
+  - **Real-world Use Cases**:
+    - Batch-computed risk scores: Batch compute user risk scores every morning, stored in Redis
+    - User segmentation labels: User clustering labels generated by data analysis team, cached in Redis
+    - Device fingerprint: Device reputation database maintained by security team, stored in Redis
+    - Cached aggregation features: Aggregation metrics pre-calculated by scheduled tasks, accelerate real-time queries
+  - **YAML Example**:
     ```yaml
     # Redis lookup
     - name: user_risk_score_90d
@@ -1384,18 +1384,18 @@ impl FeatureExecutor {
 ## Table of Contents
 
 - [Data Source Configuration](#data-source-configuration)
-- [1. Aggregation (数东西)](#1-aggregation-数东西)
-- [2. State (看最近状态)](#2-state-看最近状态)
-- [3. Sequence (看过程)](#3-sequence-看过程)
-- [4. Graph (看关系图)](#4-graph-看关系图)
-- [5. Expression (算分数)](#5-expression-算分数)
-- [6. Lookup (查预算值)](#6-lookup-查预算值)
+- [1. Aggregation (Counting/Aggregating)](#1-aggregation-Counting/Aggregating)
+- [2. State (Checking Current State)](#2-state-Checking Current State)
+- [3. Sequence (Analyzing Process)](#3-sequence-Analyzing Process)
+- [4. Graph (Analyzing Relationships)](#4-graph-Analyzing Relationships)
+- [5. Expression (Computing Scores)](#5-expression-Computing Scores)
+- [6. Lookup (Looking up Pre-computed Values)](#6-lookup-Looking up Pre-computed Values)
 - [Implementation Roadmap](#implementation-roadmap)
 - [By Risk Domain](#by-risk-domain)
 
 ---
 
-## 1. Aggregation (数东西)
+## 1. Aggregation (Counting/Aggregating)
 
 **Purpose:** Count events, aggregate values, and compute statistical measures.
 
@@ -1403,23 +1403,23 @@ impl FeatureExecutor {
 
 **Understanding `dimension` vs `field`:**
 
-- **`dimension`** - 聚合的**分组维度**（GROUP BY）
-  - 表示"按什么来分组"
-  - 例如: `dimension: user_id` 表示按用户分组
-  - 相当于SQL中的 `GROUP BY user_id`
+- **`dimension`** - **grouping dimension**（GROUP BY）
+  - Represents "group by what"
+  - For example: `dimension: user_id` means Group by user
+  - Equivalent to SQL `GROUP BY user_id`
 
-- **`field`** - 聚合的**计算字段**（聚合函数作用的字段）
-  - 表示"对哪个字段进行计算"
-  - 例如: `field: amount` 表示对金额字段进行聚合
-  - 相当于SQL中的 `AVG(amount)`, `SUM(amount)` 等
+- **`field`** - **calculation field** (field on which aggregation function operates)
+  - Represents "which field to calculate"
+  - For example: `field: amount` means aggregate on amount field
+  - Equivalent to SQL `AVG(amount)`, `SUM(amount)` etc.
 
-**示例理解:**
+**Example Understanding:**
 ```yaml
 - name: avg_userid_order_amt_30d
-  dimension: user_id    # 按用户分组
-  field: amount         # 计算金额的平均值
+  dimension: user_id    # Group by user
+  field: amount         # Calculate average of amount
 ```
-相当于SQL:
+Equivalent to SQL:
 ```sql
 SELECT user_id, AVG(amount)
 FROM events
@@ -1427,48 +1427,48 @@ WHERE type='order' AND timestamp > now() - 30d
 GROUP BY user_id
 ```
 
-**什么时候需要`field`:**
-- `count` - ❌ 不需要（只计数，不关心具体字段值）
-- `sum`, `avg`, `max`, `min`, `stddev` - ✅ 需要（必须指定对哪个字段进行计算）
-- `distinct` - ✅ 需要（统计某字段的不同值数量）
+**When is `field` needed:**
+- `count` - ❌ Not needed (only counts, doesn't care about specific field values)
+- `sum`, `avg`, `max`, `min`, `stddev` - ✅ Needed (must specify which field to calculate)
+- `distinct` - ✅ Needed (counts distinct values of a field)
 
-### `when` 条件中的字段引用语法
+### Field Reference Syntax in `when` Conditions
 
-在 `when` 条件中过滤数据库行时，可以引用两种类型的字段：
+When filtering database rows in `when` conditions, you can reference two types of fields:
 
-**1. 数据库字段（来自 entity 指定的数据表）**
-- 不需要前缀，直接引用列名
-- 示例：`type`, `status`, `amount`, `country`
-- 支持 JSON 嵌套字段：`attributes.device.fingerprint`, `metadata.user.tier`
+**1. Database fields (from the data table specified by entity)**
+- No prefix needed, directly reference column names
+- Examples: `type`, `status`, `amount`, `country`
+- Supports JSON nested fields: `attributes.device.fingerprint`, `metadata.user.tier`
 
-**2. 请求字段（来自 API 请求的 context.event）**
-- 使用模板语法加花括号：`{event.field_name}`
-- 示例：`{event.user_id}`, `{event.min_amount}`, `{event.threshold}`
-- 用于动态过滤和模板替换
+**2. Request fields (from API request's context.event)**
+- Use template syntax with curly braces: `{event.field_name}`
+- Examples: `{event.user_id}`, `{event.min_amount}`, `{event.threshold}`
+- Used for dynamic filtering and template substitution
 
-**示例：**
+**Examples:**
 
 ```yaml
-# 数据库字段过滤（无需前缀）
+# Database field filtering (no prefix needed)
 when: type == "transaction"
 
-# 数据库 JSON 嵌套字段访问
+# Database JSON nested field access
 when: attributes.risk_level == "high"
 
-# 组合数据库字段和请求字段
+# Combining database fields and request fields
 when:
   all:
-    - type == "payment"                      # 数据库字段
-    - amount > {event.threshold}             # 请求字段（动态值）
-    - metadata.country == "{event.country}"  # 数据库 JSON 字段匹配请求值
+    - type == "payment"                      # Database field
+    - amount > {event.threshold}             # Request field (dynamic value)
+    - metadata.country == "{event.country}"  # Database JSON field matches request value
 
-# 复杂的 JSON 嵌套字段
+# Complex JSON nested fields
 when: user.profile.verification_status == "verified"
 ```
 
-**SQL 生成示例：**
+**SQL Generation Example:**
 
-配置：
+Configuration:
 ```yaml
 when:
   all:
@@ -1477,286 +1477,286 @@ when:
     - attributes.device_type == "mobile"
 ```
 
-生成的 SQL：
+Generated SQL:
 ```sql
 SELECT COUNT(*)
 FROM events
 WHERE user_id = $1
   AND event_timestamp >= NOW() - INTERVAL '24 hours'
-  AND type = 'transaction'                           -- 数据库字段
-  AND amount > $2                                     -- 请求值替换
-  AND attributes->>'device_type' = 'mobile'          -- JSON 字段访问
+  AND type = 'transaction'                           -- Database field
+  AND amount > $2                                     -- Request value substitution
+  AND attributes->>'device_type' = 'mobile'          -- JSON field access
 ```
 
-### `dimension` vs `when` - 不能互相替代
+### `dimension` vs `when` - Cannot replace each other
 
-**重要概念区分:**
+**Important conceptual distinction:**
 
-| 字段 | 作用 | SQL等价 | 目的 |
-|------|------|---------|------|
-| `dimension` | 分组维度 | `GROUP BY` | 决定"**为谁**计算"（分组） |
-| `when` | 过滤条件 | `WHERE` | 决定"**计算什么**"（过滤事件） |
-| `field` | 计算字段 | `SUM(field)` | 决定"**计算哪个字段**" |
+| Field | Role | SQL Equivalent | Purpose |
+|-------|------|----------------|---------|
+| `dimension` | grouping dimension | `GROUP BY` | Determines "**for whom** to calculate" (grouping) |
+| `when` | filter condition | `WHERE` | Determines "**what** to calculate" (filtering events) |
+| `field` | calculation field | `SUM(field)` | Determines "**which field** to calculate" |
 
-**示例对比:**
+**Example comparison:**
 
 ```yaml
-# 正确：使用dimension进行分组
+# Correct: Use dimension for grouping
 - name: cnt_userid_login_24h
-  dimension: user_id              # 为每个用户分别计算
-  when: type == "login"           # 只统计登录事件（数据库字段，无需前缀）
+  dimension: user_id              # Calculate separately for each user
+  when: type == "login"           # Only count login events (database field, no prefix needed)
 ```
 
-SQL等价:
+SQL equivalent:
 ```sql
 SELECT user_id, COUNT(*)
 FROM events
 WHERE type = 'login' AND timestamp > now() - 24h
-GROUP BY user_id               -- dimension的作用
--- 结果：每个用户都有自己的登录次数
+GROUP BY user_id               -- role of dimension
+-- Result: Each user has their own login count
 ```
 
-**如果去掉dimension会怎样？**
+**What happens if dimension is removed?**
 
 ```yaml
-# 错误：缺少dimension，没有分组
+# Wrong: Missing dimension, no grouping
 - name: cnt_all_login_24h
-  when: type == "login"           # 数据库字段，无需前缀
-  # 没有dimension = 没有分组
+  when: type == "login"           # Database field, no prefix needed
+  # No dimension = no grouping
 ```
 
-SQL等价:
+SQL equivalent:
 ```sql
 SELECT COUNT(*)
 FROM events
 WHERE type = 'login' AND timestamp > now() - 24h
--- 没有 GROUP BY
--- 结果：所有用户的登录次数加在一起，只有一个总数！
+-- No GROUP BY
+-- Result: All users' login counts added together, only one total count!
 ```
 
-**dimension 和 when 的配合使用:**
+**Using dimension and when together:**
 
 ```yaml
 - name: cnt_userid_txn_24h_large
-  dimension: user_id              # 按用户分组
+  dimension: user_id              # Group by user
   when:
     all:
-      - type == "transaction"        # 过滤：只要交易事件（数据库字段，无需前缀）
-      - amount > 1000                # 过滤：金额大于1000（数据库字段，无需前缀）
+      - type == "transaction"        # Filter: only transaction events (database field, no prefix needed)
+      - amount > 1000                # Filter: amount greater than 1000 (database field, no prefix needed)
 ```
 
-SQL等价:
+SQL equivalent:
 ```sql
 SELECT user_id, COUNT(*)
 FROM events
-WHERE type = 'transaction'          -- when条件1（数据库字段）
-  AND amount > 1000                 -- when条件2（数据库字段）
+WHERE type = 'transaction'          -- when condition 1 (database field)
+  AND amount > 1000                 -- when condition 2 (database field)
   AND timestamp > now() - 24h
 GROUP BY user_id                    -- dimension
--- 结果：每个用户的大额交易（>1000）次数
+-- Result: Each user's large transactions (>1000) count
 ```
 
-**总结:**
-- ✅ `dimension` 创建分组，每组一个结果值
-- ✅ `when` 过滤事件，只有符合条件的事件参与计算
-- ❌ **不能**用 `when` 替代 `dimension`，它们的作用完全不同！
+**Summary:**
+- ✅ `dimension` creates groups, one result value per group
+- ✅ `when` filters events, only events matching conditions participate in calculation
+- ❌ **Cannot** use `when` to replace `dimension`, they have completely different roles!
 
-### 为什么 `dimension_value` 不能用 `when` 替代？
+### Why can't `dimension_value` be replaced with `when`?
 
-**常见误解:** "既然 `dimension_value: "{event.user_id}"` 也是从请求事件中取值，为什么不能用 `when: user_id == ...` 替代？"
+**Common misunderstanding:** "Since `dimension_value: "{event.user_id}"` also extracts values from request events, why can't we use `when: user_id == ...` to replace it?"
 
-**关键区别:**
+**Key differences:**
 
-| 方式 | 性质 | 结果数量 | 适用场景 |
-|------|------|---------|---------|
-| `dimension + dimension_value` | **动态分组** | 为数据中**每个不同的值**都计算一个结果 | 为所有用户计算 |
-| `when` 条件 | **静态过滤** | 只能针对**一个写死的值**计算 | 只为特定用户计算 |
+| Approach | Nature | Number of Results | Use Case |
+|----------|--------|-------------------|----------|
+| `dimension + dimension_value` | **Dynamic grouping** | Calculate one result for **each different value** in data | Calculate for all users |
+| `when` condition | **Static filtering** | Can only calculate for **one hardcoded value** | Calculate only for specific user |
 
-**示例对比:**
+**Example comparison:**
 
 ```yaml
-# 方式1: 使用 dimension（正确） - 动态分组
+# Approach 1: Using dimension (correct) - dynamic grouping
 - name: cnt_userid_login_24h
   dimension: user_id
-  dimension_value: "{event.user_id}"    # 动态提取每个事件的user_id
+  dimension_value: "{event.user_id}"    # Dynamically extract user_id from each event
   when: type == "login"               # Database field (no prefix)
 ```
 
-**执行逻辑:**
+**Execution logic:**
 ```
-事件流:
-  event1: {user_id: "user_A", type: "login"}  → 归入 user_A 组
-  event2: {user_id: "user_B", type: "login"}  → 归入 user_B 组
-  event3: {user_id: "user_A", type: "login"}  → 归入 user_A 组
-  event4: {user_id: "user_C", type: "login"}  → 归入 user_C 组
+Event stream:
+  event1: {user_id: "user_A", type: "login"}  → Grouped into user_A group
+  event2: {user_id: "user_B", type: "login"}  → Grouped into user_B group
+  event3: {user_id: "user_A", type: "login"}  → Grouped into user_A group
+  event4: {user_id: "user_C", type: "login"}  → Grouped into user_C group
 
-结果（为每个用户计算）:
-  user_A: 2次
-  user_B: 1次
-  user_C: 1次
-  ... （系统中所有有登录的用户）
+Results (calculated for each user):
+  user_A: 2 times
+  user_B: 1 times
+  user_C: 1 times
+  ... (all users with logins in the system)
 ```
 
 ```yaml
-# 方式2: 用 when 条件（错误） - 静态过滤
+# Approach 2: Using when condition (wrong) - static filtering
 - name: cnt_login_24h_for_userA
   when:
     all:
-      - type == "login"              # 数据库字段
-      - user_id == "user_A"          # 写死了只看user_A！
+      - type == "login"              # Database field
+      - user_id == "user_A"          # Hardcoded to only look at user_A!
 ```
 
-**执行逻辑:**
+**Execution logic:**
 ```
-事件流:
-  event1: {user_id: "user_A", type: "login"}  → ✅ 计入
-  event2: {user_id: "user_B", type: "login"}  → ❌ 过滤掉
-  event3: {user_id: "user_A", type: "login"}  → ✅ 计入
-  event4: {user_id: "user_C", type: "login"}  → ❌ 过滤掉
+Event stream:
+  event1: {user_id: "user_A", type: "login"}  → ✅ Included
+  event2: {user_id: "user_B", type: "login"}  → ❌ Filtered out
+  event3: {user_id: "user_A", type: "login"}  → ✅ Included
+  event4: {user_id: "user_C", type: "login"}  → ❌ Filtered out
 
-结果（只有一个值）:
-  总计: 2次  （只有user_A的登录次数，其他用户全部丢失！）
+Results (only one value):
+  Total: 2 times  (Only user_A's login count, all other users are lost!)
 ```
 
-**实际运行时的区别:**
+**Difference at runtime:**
 
-当风控引擎评估一个用户（比如 user_B）的交易时：
+When the risk engine evaluates a user's (e.g., user_B) transaction:
 
 ```yaml
-# 使用 dimension（正确）
+# Using dimension (correct)
 dimension: user_id
-dimension_value: "{event.user_id}"  # 运行时自动替换为 "user_B"
+dimension_value: "{event.user_id}"  # Automatically replaced at runtime with "user_B"
 
-→ 查询: SELECT COUNT(*) WHERE user_id = 'user_B' AND ...
-→ 返回: user_B 的登录次数
+→ Query: SELECT COUNT(*) WHERE user_id = 'user_B' AND ...
+→ Returns: user_B's login count
 ```
 
 ```yaml
-# 使用 when（错误）
-when: user_id == "user_A"           # 写死了！
+# Using when (wrong)
+when: user_id == "user_A"           # Hardcoded!
 
-→ 查询: SELECT COUNT(*) WHERE user_id = 'user_A' AND ...
-→ 返回: user_A 的登录次数（错误！我们要的是 user_B 的数据）
+→ Query: SELECT COUNT(*) WHERE user_id = 'user_A' AND ...
+→ Returns: user_A's login count (wrong! What we want is user_B's data)
 ```
 
-**`dimension_value` 的真正作用:**
+**True role of `dimension_value`:**
 
-`dimension_value` 是一个**模板表达式**，在运行时会被替换：
-- 配置时写: `dimension_value: "{event.user_id}"`
-- 运行时评估当前事件，自动变成: `dimension_value: "user_123"` (当前用户)
-- 然后去查询这个用户的历史数据，按 user_id 分组聚合
+`dimension_value` is a **template expression** that will be replaced at runtime:
+- When configuring, write: `dimension_value: "{event.user_id}"`
+- At runtime, evaluate current event, automatically becomes: `dimension_value: "user_123"` (current user)
+- Then query this user's historical data, group and aggregate by user_id
 
-**关键理解:**
-- ✅ `dimension_value` 是**分组依据**，告诉系统"从当前事件中提取哪个值作为分组key"
-- ❌ `when` 是**固定的过滤条件**，只能写死一个具体值，无法动态适应不同用户
-- 💡 你需要为**每个用户**都计算独立的统计值，必须用 `dimension`，不能用 `when`！
+**Key Understanding:**
+- ✅ `dimension_value` is the **grouping basis**, tells the system "which value to extract from current event as grouping key"
+- ❌ `when` is a **fixed filter condition**, can only hardcode one specific value, cannot dynamically adapt to different users
+- 💡 If you need to calculate independent statistics for **each user**, you must use `dimension`, cannot use `when`!
 
-### 实时风控场景下 `dimension` 的真正作用
+### True role of `dimension` in real-time risk control scenarios
 
-**你的疑问可能是：** "在实时决策时，只针对当前用户计算，为什么不能直接用 `when` 条件过滤 `user_id`？"
+**Your question might be:** "In real-time decision making, only calculating for current user, why can't we directly use `when` condition to filter `user_id`?"
 
-**答案：技术上可以，但设计上不应该。** 原因如下：
+**Answer: Technically possible, but should not be done in design.** Reasons are as follows:
 
-#### 1. **实时计算时的实际查询**
+#### 1. **Actual query during real-time calculation**
 
-当评估 user_B 的交易时，实际的 SQL 查询：
+When evaluating user_B's transaction, the actual SQL query:
 
 ```sql
--- 使用 dimension 的方式
+-- Using dimension approach
 SELECT COUNT(*)
 FROM events
-WHERE user_id = 'user_B'      -- 来自 dimension_value
-  AND type = 'login'          -- 来自 when 条件
+WHERE user_id = 'user_B'      -- From dimension_value
+  AND type = 'login'          -- From when condition
   AND timestamp > now() - 24h
 ```
 
-你说得对！在这个场景下，`user_id = 'user_B'` 确实是一个 WHERE 条件，**理论上可以放在 `when` 中**。
+You're right! In this scenario, `user_id = 'user_B'` is indeed a WHERE condition, **can theoretically be placed in `when`**.
 
-#### 2. **为什么还要用 `dimension` 而不是 `when`？**
+#### 2. **Why still use `dimension` instead of `when`?**
 
-**原因一：语义清晰**
+**Reason 1: Clear semantics**
 
 ```yaml
-# 方式1: 使用 dimension（推荐） - 语义明确
-dimension: user_id              # 明确：这是"为谁"计算的维度
+# Approach 1: Using dimension (recommended) - clear semantics
+dimension: user_id              # Clear: This is the dimension for "whom" to calculate
 dimension_value: "{event.user_id}"
-when: type == "login"           # 明确：这是过滤条件（数据库字段，无需前缀）
+when: type == "login"           # Clear: This is filter condition (database field, no prefix needed)
 
-# 方式2: 全部放在 when（不推荐） - 语义混乱
+# Approach 2: All placed in when (not recommended) - semantic confusion
 when:
   all:
-    - user_id == "{event.user_id}"     # 这不是过滤，是指定查询主体
-    - type == "login"                  # 这才是过滤（数据库字段）
+    - user_id == "{event.user_id}"     # This is not filtering, this is specifying query subject
+    - type == "login"                  # This is the filtering (database field)
 ```
 
-**原因二：支持多种计算模式**
+**Reason 2: Support multiple calculation modes**
 
-系统需要支持两种模式：
+System needs to support two modes:
 
-| 模式 | 场景 | SQL | 需要 GROUP BY？ |
-|------|------|-----|----------------|
-| **在线模式** | 实时决策单个事件 | `WHERE user_id = :current_user` | ❌ 不需要 |
-| **离线模式** | 批量预计算特征 | `GROUP BY user_id` | ✅ 需要 |
+| Mode | Scenario | SQL | Needs GROUP BY? |
+|------|----------|-----|-----------------|
+| **Online mode** | Real-time decision for single event | `WHERE user_id = :current_user` | ❌ Not needed |
+| **Offline mode** | Batch pre-compute features | `GROUP BY user_id` | ✅ Needed |
 
-使用 `dimension` 的好处：**同一个配置可以用于两种模式**
+Benefit of using `dimension`: **Same configuration can be used for both modes**
 
 ```yaml
-# 同一份配置
+# Same configuration
 dimension: user_id
 dimension_value: "{event.user_id}"
-when: type == "login"              # 数据库字段，无需前缀
+when: type == "login"              # Database field, no prefix needed
 
-# 在线模式执行时:
+# When executing in online mode:
 SELECT COUNT(*) WHERE user_id = 'user_B' AND type = 'login'
 
-# 离线批量计算时:
+# When batch calculating offline:
 SELECT user_id, COUNT(*) WHERE type = 'login' GROUP BY user_id
 ```
 
-**原因三：查询优化**
+**Reason 3: Query optimization**
 
-系统可以识别 `dimension` 是分组维度，做针对性优化：
-- 自动选择合适的索引
-- 识别分区键（如果数据库按 user_id 分区）
-- 并行计算优化
+System can recognize `dimension` as grouping dimension and do targeted optimization:
+- Automatically select appropriate index
+- Identify partition key (if database is partitioned by user_id)
+- Parallel computation optimization
 
-如果全部放在 `when` 中，系统无法区分哪个条件是"分组维度"，哪个是"过滤条件"。
+If all placed in `when`, system cannot distinguish which condition is "grouping dimension" and which is "filter condition".
 
-**原因四：配置复用**
+**Reason 4: Configuration reuse**
 
 ```yaml
-# 使用 dimension - 可以轻松改变维度
-dimension: user_id       # 按用户
-# dimension: device_id   # 改成按设备，只改一行
-# dimension: ip_address  # 改成按IP，只改一行
+# Using dimension - can easily change dimension
+dimension: user_id       # By user
+# dimension: device_id   # Change to by device, only change one line
+# dimension: ip_address  # Change to by IP, only change one line
 
-# 使用 when - 要改多处
+# Using when - need to change multiple places
 when:
   all:
-    - user_id == "{event.user_id}"        # 要改这里
-    - type == "login"                     # 数据库字段
+    - user_id == "{event.user_id}"        # Need to change here
+    - type == "login"                     # Database field
 ```
 
-#### 总结：设计原则
+#### Summary: Design Principles
 
-| 字段 | 语义 | 作用 |
-|------|------|------|
-| `dimension` | "**为谁**计算"（查询主体） | 指定聚合维度，支持在线/离线两种模式 |
-| `when` | "**什么样的**事件参与计算"（业务过滤） | 过滤符合业务条件的事件 |
+| Field | Semantics | Role |
+|-------|-----------|------|
+| `dimension` | "**For whom** to calculate" (query subject) | Specify aggregation dimension, support both online/offline modes |
+| `when` | "**What kind of** events participate in calculation" (business filtering) | Filter events matching business conditions |
 
-**虽然在纯在线场景下，技术上可以把 dimension_value 放进 when，但为了：**
-- ✅ 语义清晰（明确区分"为谁"和"什么"）
-- ✅ 支持离线批量计算
-- ✅ 便于系统优化
-- ✅ 配置更容易维护和复用
+**Although in pure online scenarios, technically can put dimension_value into when, but for:**
+- ✅ Clear semantics (clearly distinguish "for whom" and "what")
+- ✅ Support offline batch calculation
+- ✅ Facilitate system optimization
+- ✅ Configuration easier to maintain and reuse
 
-**我们仍然建议使用 `dimension` 字段。**
+**We still recommend using `dimension` field.**
 
-### DSL一致性分析 ✅
+### DSL Consistency Analysis ✅
 
-**结论：所有Aggregation操作符的DSL结构高度一致，可以用统一的Rust函数实现！**
+**Conclusion: All Aggregation operators' DSL structure is highly consistent, can be implemented with unified Rust function!**
 
-| 字段 | count | sum | avg | max | min | distinct | stddev | 一致性 |
+| Field | count | sum | avg | max | min | distinct | stddev | Consistency |
 |------|-------|-----|-----|-----|-----|----------|--------|--------|
 | `type` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ 100% |
 | `operator` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ 100% |
@@ -1766,27 +1766,27 @@ when:
 | `dimension_value` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ 100% |
 | `window` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ 100% |
 | `when` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ 100% |
-| `field` | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ⚠️ 仅count不需要 |
+| `field` | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ⚠️ Only count doesn't need |
 
-**实现建议：**
+**Implementation recommendations:**
 
 ```rust
-// ✅ 统一的配置结构
+// ✅ Unified configuration structure
 struct AggregationConfig {
     datasource: String,
     entity: String,
     dimension: String,
     dimension_value: String,
-    field: Option<String>,      // count时为None，其他为Some(field_name)
+    field: Option<String>,      // None for count, Some(field_name) for others
     window: Duration,
     when: Option<Condition>,
 }
 
-// ✅ 统一的执行器
+// ✅ Unified executor
 impl AggregationExecutor {
-    // 一个函数处理所有operator！
+    // One function handles all operators!
     fn execute(&self, op: AggregationType, config: &AggregationConfig) -> Result<Value> {
-        // 唯一的区别是生成的SQL聚合函数不同：
+        // Only difference is the SQL aggregation function generated:
         // COUNT(*) vs SUM(field) vs AVG(field) vs MAX(field) ...
         let sql = self.build_query(op, config)?;
         self.datasource.query(&sql)
@@ -1794,11 +1794,11 @@ impl AggregationExecutor {
 }
 ```
 
-**优势：**
-- ✅ 代码复用率高（共享时间窗口、维度分组、条件过滤逻辑）
-- ✅ 易于扩展（添加新operator只需在enum中增加variant）
-- ✅ 统一测试（一套测试框架覆盖所有operator）
-- ✅ 配置一致（用户学习一次就能使用所有operator）
+**Advantages:**
+- ✅ High Code Reuse rate (share time window, dimension grouping, condition filtering logic)
+- ✅ Easy to extend (adding new operator only requires adding variant in enum)
+- ✅ Unified testing (one test framework covers all operators)
+- ✅ Consistent configuration (users learn once and can use all operators)
 
 ### ✅ 1.1 Basic Counting
 **Status:** Implemented
@@ -1901,7 +1901,7 @@ Advanced statistical measures for distribution analysis.
 
 ---
 
-## 2. State (看最近状态)
+## 2. State (Checking Current State)
 
 **Purpose:** Statistical comparison and baseline analysis for anomaly detection.
 
@@ -1975,7 +1975,7 @@ Compare current behavior to historical baselines.
 
 ---
 
-## 3. Sequence (看过程)
+## 3. Sequence (Analyzing Process)
 
 **Purpose:** Analyze patterns, trends, and sequences of events over time.
 
@@ -2192,7 +2192,7 @@ Stateful event pattern matching and correlation.
 
 ---
 
-## 4. Graph (看关系图)
+## 4. Graph (Analyzing Relationships)
 
 **Purpose:** Analyze connections, networks, and relationship patterns between entities using graph theory.
 
@@ -2249,7 +2249,7 @@ Analyze entity relationships and network patterns using graph algorithms.
 
 ---
 
-## 5. Expression (算分数)
+## 5. Expression (Computing Scores)
 
 **Purpose:** Compute custom scores, evaluate expressions, and integrate models.
 
@@ -2316,7 +2316,7 @@ Integration with ML models and embeddings.
 
 ---
 
-## 6. Lookup (查预算值)
+## 6. Lookup (Looking up Pre-computed Values)
 
 **Purpose:** Retrieve pre-computed feature values from Redis cache.
 
@@ -2532,14 +2532,14 @@ To keep feature names concise, use these standard abbreviations:
 **Important:** Configuration fields use full words, not abbreviations:
 ```yaml
 # ✅ Correct - abbreviation only in name
-- name: sum_userid_txn_amt_24h     # name 使用缩写
-  field: amount                    # field 使用完整词
-  when: type == "transaction"      # when 使用完整词（数据库字段，无需前缀）
+- name: sum_userid_txn_amt_24h     # name uses abbreviation
+  field: amount                    # field uses full word
+  when: type == "transaction"      # when uses full word (database field, no prefix needed)
 
 # ❌ Wrong - don't use abbreviations in config
 - name: sum_userid_txn_amt_24h
-  field: amt                       # ❌ 错误（不要使用缩写）
-  when: type == "txn"              # ❌ 错误（不要使用缩写）
+  field: amt                       # ❌ Wrong (don't use abbreviation)
+  when: type == "txn"              # ❌ Wrong (don't use abbreviation)
 ```
 
 ### Examples
@@ -2548,33 +2548,33 @@ To keep feature names concise, use these standard abbreviations:
 
 ```yaml
 # Basic counting
-cnt_userid_login_24h               # 用户24小时登录次数
-cnt_userid_txn_7d                  # 用户7天交易次数
-cnt_deviceid_login_1h              # 设备1小时登录次数
+cnt_userid_login_24h               # User login count in 24 hours
+cnt_userid_txn_7d                  # User transaction count in 7 days
+cnt_deviceid_login_1h              # Device login count in 1 hour
 
 # Sum/Avg with field
-sum_userid_txn_amt_30d             # 用户30天交易金额总和
-avg_userid_pay_amt_7d              # 用户7天支付平均金额
-max_userid_txn_amt_24h             # 用户24小时最大交易金额
+sum_userid_txn_amt_30d             # User total transaction amount in 30 days
+avg_userid_pay_amt_7d              # User average payment amount in 7 days
+max_userid_txn_amt_24h             # User maximum transaction amount in 24 hours
 
 # Distinct counting
-distinct_userid_device_7d          # 用户7天内不同设备数
-distinct_userid_ip_24h             # 用户24小时内不同IP数
-distinct_ip_userid_1h              # IP 1小时内不同用户数
+distinct_userid_device_7d          # User distinct device count in 7 days
+distinct_userid_ip_24h             # User distinct IP count in 24 hours
+distinct_ip_userid_1h              # IP distinct user count in 1 hour
 
 # With modifier for conditions
-cnt_userid_login_1h_failed         # 用户1小时失败登录次数
-cnt_userid_pay_24h_success         # 用户24小时成功支付次数
+cnt_userid_login_1h_failed         # User failed login count in 1 hour
+cnt_userid_pay_24h_success         # User successful payment count in 24 hours
 ```
 
 **State Features:**
 
 ```yaml
 # Statistical comparison (planned)
-zscore_userid_txn_amt              # 用户交易金额Z-score
-deviation_userid_login_freq        # 用户登录频率偏离度
-percentile_userid_txn_amt          # 用户交易金额百分位
-timezone_userid_login_7d           # 用户时区一致性检测
+zscore_userid_txn_amt              # User transaction amount Z-score
+deviation_userid_login_freq        # User login frequency deviation
+percentile_userid_txn_amt          # User transaction amount percentile
+timezone_userid_login_7d           # User timezone consistency check
 
 # Note: Use Lookup features for pre-computed values:
 - name: user_risk_score_90d
@@ -2596,50 +2596,50 @@ timezone_userid_login_7d           # 用户时区一致性检测
 
 ```yaml
 # Pattern sequences
-consec_userid_login_1h_failed      # 用户1小时连续失败登录次数
-streak_userid_txn_7d               # 用户7天交易连续性
+consec_userid_login_1h_failed      # User consecutive failed login count in 1 hour
+streak_userid_txn_7d               # User transaction streak in 7 days
 
 # Trend detection
-pctchg_userid_txn_amt              # 用户交易金额变化百分比
-trend_userid_login_7d              # 用户7天登录趋势
+pctchg_userid_txn_amt              # User transaction amount percentage change
+trend_userid_login_7d              # User login trend in 7 days
 
 # Session analysis
-avg_userid_sess_dur_7d             # 用户7天平均会话时长
+avg_userid_sess_dur_7d             # User average session duration in 7 days
 ```
 
 **Graph Features:**
 
 ```yaml
 # Entity linking - use distinct (not Graph operators)
-distinct_ip_device_24h             # IP 24小时关联设备数（用 distinct）
-distinct_deviceid_userid_7d        # 设备7天关联用户数（用 distinct）
+distinct_ip_device_24h             # IP associated device count in 24 hours (use distinct)
+distinct_deviceid_userid_7d        # Device associated user count in 7 days (use distinct)
 
 # Network analysis (planned)
-centrality_userid_device_30d       # 用户30天设备网络中心度
-community_userid_network_30d       # 用户30天所在社区大小
-shared_userid_device_30d           # 用户间共享设备数
+centrality_userid_device_30d       # User device network centrality in 30 days
+community_userid_network_30d       # User community size in network in 30 days
+shared_userid_device_30d           # Shared device count between users
 ```
 
 **Expression Features:**
 
 ```yaml
 # Computed scores
-score_userid_fraud                     # 用户欺诈评分
-score_userid_risk                      # 用户风险评分
+score_userid_fraud                     # User fraud score
+score_userid_risk                      # User risk score
 
 # Ratio/Rate (complex expressions)
-rate_userid_login_1h_failure           # 用户1小时登录失败率
-ratio_userid_txn_7d_change             # 用户7天交易比率变化
+rate_userid_login_1h_failure           # User login failure rate in 1 hour
+ratio_userid_txn_7d_change             # User transaction ratio change in 7 days
 ```
 
 **Lookup Features:**
 
 ```yaml
 # Pre-computed values (no operator, descriptive names)
-user_risk_score_90d                    # 用户90天风险评分（预计算）
-user_segment                           # 用户细分标签
-device_reputation_score                # 设备信誉评分
-ip_risk_level                          # IP风险等级
+user_risk_score_90d                    # User 90-day risk score (pre-computed)
+user_segment                           # User segmentation label
+device_reputation_score                # Device reputation score
+ip_risk_level                          # IP risk level
 
 # Note: Lookup features don't follow the operator pattern
 # Use descriptive names that indicate what is being looked up
