@@ -170,7 +170,7 @@ Operators:
 **Actions are not defined in Rules.**  
 Rules only detect risk factors and provide scores.
 
-Actions are defined in Ruleset's `decision_logic`:
+Signals are produced in Ruleset's `conclusion`:
 
 ```yaml
 ruleset:
@@ -178,25 +178,28 @@ ruleset:
   rules:
     - rule_1  # Just scores
     - rule_2  # Just scores
-    
-  decision_logic:
-    - condition: total_score >= 100
-      action: deny  # Actions defined here
-      
-    - condition: total_score >= 50
-      action: infer
-      infer:
-        data_snapshot: [event.*, context.*]
-        
+
+  conclusion:
+    - when: total_score >= 100
+      signal: decline  # Signals defined here
+      reason: "High risk detected"
+      terminate: true
+
+    - when: total_score >= 50
+      signal: review
+      reason: "Medium risk - needs review"
+
     - default: true
-      action: approve
+      signal: approve
+      reason: "No significant risk"
 ```
 
-**Built-in Actions:**
-- `approve` - Automatically approve  
-- `deny` - Automatically reject
+**Built-in Signals:**
+- `approve` - Approve the request
+- `decline` - Decline/block the request
 - `review` - Send to human review
-- `infer` - Send to AI analysis (async)  
+- `hold` - Temporarily suspend (waiting for verification)
+- `pass` - Skip/no decision  
 
 ---
 
@@ -210,14 +213,17 @@ ruleset:
     - rule_id_1
     - rule_id_2
     - rule_id_3
-  decision_logic:
-    - condition: <expression>
-      action: <action-type>
+  conclusion:
+    - when: <expression>
+      signal: <signal-type>
+      reason: <string>
+      terminate: true
     - default: true
-      action: <action-type>
+      signal: <signal-type>
+      reason: <string>
 ```
 
-Rulesets group rules and define decision logic based on rule combinations.
+Rulesets group rules and produce decision signals via conclusion logic based on rule combinations.
 
 ---
 
@@ -612,25 +618,26 @@ MATCH_OP ::= "contains" | "not_contains"
 EXTERNAL_EXPR ::=
       "external_api." IDENT "." FIELD OP VALUE
 
-ACTION ::= "approve" | "deny" | "review" | "infer" | OBJECT
+SIGNAL ::= "approve" | "decline" | "review" | "hold" | "pass"
 
 RULESET ::= "ruleset:"
               "id:" STRING
               [ "name:" STRING ]
               [ "description:" STRING ]
               "rules:" RULE_ID_LIST
-              [ "decision_logic:" DECISION_LIST ]
+              [ "conclusion:" CONCLUSION_LIST ]
               [ "metadata:" METADATA_MAP ]
 
-DECISION_LIST ::= "-" DECISION { "-" DECISION }
+CONCLUSION_LIST ::= "-" CONCLUSION_RULE { "-" CONCLUSION_RULE }
 
-DECISION ::= 
-      "condition:" EXPRESSION
-      "action:" ACTION
+CONCLUSION_RULE ::=
+      "when:" EXPRESSION
+      "signal:" SIGNAL
       [ "reason:" STRING ]
       [ "terminate:" BOOLEAN ]
     | "default:" BOOLEAN
-      "action:" ACTION
+      "signal:" SIGNAL
+      [ "reason:" STRING ]
 
 PIPELINE ::= defined in pipeline.md
 

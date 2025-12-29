@@ -12,7 +12,7 @@ Pipelines orchestrate how events move through feature extraction, rule execution
 - **Rules** detect and score individual risk patterns (✅ Implemented)
 - **Rulesets** produce **signals** (`approve`, `decline`, `review`, `hold`, `pass`) based on rule results (✅ Implemented)
 - **Pipelines** execute rulesets and route events through processing steps (✅ Implemented)
-- **Pipeline-level decision logic** is documented below but **📋 NOT YET IMPLEMENTED**
+- **Pipeline-level decision logic** can map ruleset signals to final results (✅ Implemented)
 
 ---
 
@@ -38,18 +38,22 @@ pipeline:
     <key>: <value>
 ```
 
-### 1.2 Planned Fields (📋 Not Yet Implemented)
+### 1.2 Optional Decision Field (✅ Implemented)
 
 ```yaml
 pipeline:
-  decision:                     # 📋 NOT IMPLEMENTED: Pipeline-level decision logic
-    - <decision-rules>          # Currently: Only rulesets have decision logic via 'conclusion'
+  decision:                     # ✅ Optional: Pipeline-level decision logic
+    - when: <condition>         # Maps ruleset signals to final results
+      result: <result>          # Final decision: approve/decline/review/hold
+      actions: [...]            # Optional actions to execute
+      reason: <reason>          # Optional reason
+      terminate: true           # Optional: stop evaluating further rules
 ```
 
 **Important:**
 - The `entry` field is **required** and specifies which step to start with
-- The `decision` field is documented in Section 7 but **NOT implemented** in the Pipeline AST
-- For decision logic, use **Ruleset conclusion** instead (see [ruleset.md](ruleset.md))
+- The `decision` field is **optional** and allows pipelines to map ruleset signals to final results
+- Rulesets produce signals via `conclusion`, pipelines can then map these to results via `decision`
 
 ### 1.3 Execution Flow
 
@@ -562,132 +566,161 @@ steps:
 
 ---
 
-## 7. Decision Logic (⚠️ NOT IMPLEMENTED - Ignored by Parser)
+## 7. Decision Logic (✅ Implemented)
 
-> **⚠️ CRITICAL:** The `decision` field is **NOT IMPLEMENTED** in Pipeline. While you may see it in test files, it is **silently ignored** by the parser and has no effect.
+Pipelines support optional `decision` blocks to map ruleset signals to final results. This enables pipelines to orchestrate decisions from multiple rulesets.
 
-**Evidence:**
-1. Pipeline AST has no `decision` field (`crates/corint-core/src/ast/pipeline.rs` lines 18-44)
-2. Pipeline parser does not parse `decision` field (`crates/corint-parser/src/pipeline/parser.rs` lines 75-129)
-3. The `decision` block in YAML is silently ignored by serde (no `deny_unknown_fields`)
+### 7.1 Two-Level Decision Architecture
 
-**Current Implementation:**
-- **Rulesets** have `conclusion` blocks that produce decision signals (✅ Implemented)
-- **Pipelines** do NOT have decision logic - they only execute steps (✅ Implemented)
-- For decision-making, use **Ruleset conclusion** instead
+CORINT uses a two-level decision architecture:
 
-### 7.1 Why Test Files Have `decision` Blocks
+```
+┌─────────────────────────────────────────────────┐
+│ Layer 2: Ruleset (Decision Suggestions)        │
+│ - Evaluates rules                               │
+│ - conclusion: produces signals                  │
+│ - Signals: approve/decline/review/hold/pass     │
+└────────────────┬────────────────────────────────┘
+                 │ signals
+                 ▼
+┌─────────────────────────────────────────────────┐
+│ Layer 3: Pipeline (Final Decision Maker)       │
+│ - Maps signals to final results                │
+│ - decision: produces final decision             │
+│ - Results: approve/decline/review/hold          │
+│ - Can add actions and routing                   │
+└─────────────────────────────────────────────────┘
+```
 
-You may see `decision` blocks in test files like `tests/e2e_repo/pipelines/transaction_test.yaml`:
+**Key Concepts:**
+- **Rulesets** produce **signals** (suggestions) via `conclusion`
+- **Pipelines** make **final decisions** via `decision` by mapping signals to results
+- Rulesets are reusable across pipelines with different decision mappings
+
+### 7.2 Decision Rule Structure
+
+```yaml
+decision:
+  - when: <condition>          # When to apply this decision
+    result: <result>           # Final result: approve/decline/review/hold
+    actions: [...]             # Optional: actions to execute
+    reason: <reason>           # Optional: reason for decision
+    terminate: true            # Optional: stop evaluating further rules
+
+  - default: true              # Default/catch-all rule
+    result: approve
+    reason: "No risk detected"
+```
+
+**Fields:**
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `when` | WhenBlock | No (if default) | Condition to evaluate (e.g., `results.fraud_check.signal == "decline"`) |
+| `default` | bool | No | If true, this is the catch-all rule (no `when` needed) |
+| `result` | string | Yes | Final decision: `approve`, `decline`, `review`, `hold` |
+| `actions` | array | No | Actions to execute (e.g., `["KYC", "2FA"]`) |
+| `reason` | string | No | Human-readable reason (supports templates like `"{results.fraud_check.reason}"`) |
+| `terminate` | bool | No | If true, stop evaluating further decision rules |
+
+### 7.3 Complete Example
 
 ```yaml
 pipeline:
-  steps:
-    - step:
-        type: ruleset
-        ruleset: transaction_risk_ruleset
-
-  # This block is IGNORED by the parser!
-  decision:
-    - when: results.transaction_risk_ruleset.signal == "decline"
-      result: decline
-```
-
-**These blocks are ignored and have no effect.** Tests pass because:
-1. The **Ruleset's `conclusion`** already produces the decision signal
-2. The Pipeline's `decision` block is silently ignored
-3. Tests verify the Ruleset output, not the Pipeline decision
-
-### 7.2 Correct Approach: Use Ruleset Conclusion
-
-Since pipeline-level decisions are not implemented, use **Ruleset conclusion** instead:
-
-```yaml
-# ✅ THIS WORKS - Decision logic in Ruleset
-ruleset:
-  id: transaction_risk_ruleset
-  name: Transaction Risk Ruleset
-  rules:
-    - high_risk_country
-    - velocity_abuse
-    - amount_outlier
-
-  # Conclusion provides the decision logic
-  conclusion:
-    # Critical risk - blocked user
-    - when: triggered_rules contains "user_blocked"
-      signal: decline
-      reason: "User is blocked"
-      terminate: true
-
-    # High risk - multiple indicators or high score
-    - when: total_score >= 150
-      signal: decline
-      reason: "High risk score threshold exceeded"
-      terminate: true
-
-    # Medium risk - review
-    - when: total_score >= 80
-      signal: review
-      reason: "Medium risk score - manual review required"
-      terminate: true
-
-    # Low risk - approve (default)
-    - default: true
-      signal: approve
-      reason: "No significant risk indicators"
-```
-
-Then reference this ruleset in your pipeline:
-
-```yaml
-# ✅ THIS WORKS - Pipeline executes ruleset
-pipeline:
-  id: transaction_pipeline
-  name: Transaction Risk Pipeline
+  id: login_risk_pipeline
+  name: Login Risk Pipeline
   entry: fraud_check
+
+  when:
+    all:
+      - event.type == "login"
 
   steps:
     - step:
         id: fraud_check
-        name: Execute Fraud Detection
+        name: Fraud Detection
         type: ruleset
-        ruleset: transaction_risk_ruleset
-        # The ruleset's conclusion produces the final decision
+        ruleset: login_risk_assessment
+        # Ruleset produces signal via conclusion
+
+  # Pipeline decision maps signals to final results
+  decision:
+    # Decline signal → decline result
+    - when: results.login_risk_assessment.signal == "decline"
+      result: decline
+      reason: "{results.login_risk_assessment.reason}"
+      terminate: true
+
+    # Review signal → review result with actions
+    - when: results.login_risk_assessment.signal == "review"
+      result: review
+      actions: ["manual_review", "2FA"]
+      reason: "{results.login_risk_assessment.reason}"
+      terminate: true
+
+    # Default: approve
+    - default: true
+      result: approve
+      reason: "Login approved"
 ```
 
-### 7.3 Architecture: Where Decisions Are Made
+### 7.4 When to Use Pipeline Decision
 
+**Use Pipeline `decision` when:**
+- Orchestrating multiple rulesets with different signals
+- Mapping ruleset signals to different final results
+- Adding pipeline-specific actions or routing
+- Overriding or transforming ruleset suggestions
+
+**Use Ruleset `conclusion` when:**
+- Single ruleset producing the final decision
+- Decision logic is tightly coupled to the rules
+- Want maximum reusability of rulesets
+
+**Example - Multiple Rulesets:**
+
+```yaml
+pipeline:
+  id: comprehensive_risk
+  entry: step1
+
+  steps:
+    - step:
+        id: step1
+        type: ruleset
+        ruleset: fraud_detection
+        next: step2
+
+    - step:
+        id: step2
+        type: ruleset
+        ruleset: compliance_check
+
+  # Combine signals from both rulesets
+  decision:
+    # If either signals decline, decline
+    - when:
+        any:
+          - results.fraud_detection.signal == "decline"
+          - results.compliance_check.signal == "decline"
+      result: decline
+      reason: "Failed risk or compliance check"
+      terminate: true
+
+    # If both approve, approve
+    - when:
+        all:
+          - results.fraud_detection.signal == "approve"
+          - results.compliance_check.signal == "approve"
+      result: approve
+      reason: "Passed all checks"
+      terminate: true
+
+    # Otherwise, review
+    - default: true
+      result: review
+      actions: ["manual_review"]
+      reason: "Mixed signals from risk engines"
 ```
-┌─────────────────────────────────────────────────┐
-│ Pipeline (Orchestration Layer)                  │
-│ - Routes events to rulesets                     │
-│ - NO decision logic                             │
-│ - decision: field is IGNORED                    │
-└────────────────┬────────────────────────────────┘
-                 │
-                 ▼
-┌─────────────────────────────────────────────────┐
-│ Ruleset (Decision Layer)                        │
-│ - Evaluates rules                               │
-│ - conclusion: produces decision signals         │
-│ - Signals: approve/decline/review/hold/pass     │
-└─────────────────────────────────────────────────┘
-```
-
-**Key Point:** Decision logic belongs in **Rulesets**, not Pipelines.
-
-### 7.4 Why Pipeline Decisions Are Not Implemented
-
-1. **Sufficient:** Ruleset `conclusion` blocks already provide all decision logic needed
-2. **Simpler Architecture:** Having decision logic only in rulesets keeps the system simpler
-3. **Current Pattern:** Pipelines orchestrate execution, Rulesets make decisions
-4. **No Parser Support:** The pipeline parser does not parse or store decision blocks
-
-**Future Enhancement:** Pipeline-level decisions may be added later for multi-ruleset orchestration scenarios, but this would require:
-- Adding `decision` field to Pipeline AST
-- Implementing parser support
-- Implementing runtime execution logic
 
 ---
 

@@ -176,9 +176,10 @@ ruleset:
   rules:
     - rule1
     - rule2
-  decision_logic:
-    - condition: total_score >= 100
-      action: deny
+  conclusion:
+    - when: total_score >= 100
+      signal: decline
+      reason: "High risk score"
 
   metadata:
     # Required

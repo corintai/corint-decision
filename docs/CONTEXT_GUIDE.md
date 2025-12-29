@@ -21,545 +21,713 @@ Solve current data organization issues:
    - Overall concept called `context`, no nested `context` sub-namespace
 
 3. **Clear distinction between read-only and writable**
-   - Read-only: event, sys, env
-   - Writable: features, api, service, llm, vars
+   - Read-only: event, sys, env, results
+   - Writable: features, api, service, vars
 
 ---
 
-## Namespace Definitions
+## Overview
 
-### 1. event - User Request Raw Data
+### Flattened Namespace Architecture
+
+CORINT uses a **flattened namespace architecture** where all data sources are organized at the same level. This design classifies data by **processing method** rather than data source.
+
+| Namespace | Mutability | Description | Implementation Status |
+|-----------|------------|-------------|----------------------|
+| `event` | Read-only | User request raw data | ✅ Fully implemented |
+| `features` | Writable | Complex feature computations | ✅ Fully implemented |
+| `api` | Writable | External API call results | ✅ Fully implemented |
+| `service` | Writable | Internal service call results | ✅ Fully implemented |
+| `vars` | Writable | Simple variables and calculations | ✅ Fully implemented |
+| `sys` | Read-only | System injected metadata | ✅ Fully implemented |
+| `env` | Read-only | Environment configuration | ✅ Fully implemented |
+| `results` | Read-only | Ruleset execution results | ⚠️ Pipeline execution layer |
+
+**Core Principles**:
+1. **Classify by processing method**, not data source
+2. **All namespaces at same level** - no nesting confusion
+3. **Clear read-only vs writable distinction**
+4. **No `ctx.` prefix needed** - namespace names are sufficient
+
+---
+
+## 1. event - User Request Raw Data
+
+### Description
+
+The `event` namespace contains **raw business data** from API requests, **unprocessed** and as submitted by users.
+
 ```yaml
-Description: Raw business data from API requests (unprocessed)
-Source: User API requests
 Mutability: Read-only
-Examples:
-  event.user.id: "user123"
-  event.transaction.amount: 5000
-  event.device.ip: "203.0.113.1"
+Source: User API requests
+Validation: Schema validated, reserved fields prohibited
 ```
 
-**Contents**:
-- All business data submitted by users
-- Validated by schema to ensure no reserved fields
-- Does not include system metadata (request_id, timestamp go in sys)
+### Event Structure
 
-**Validation Rules**:
-```rust
-// Reserved fields, forbidden for user submission
-const RESERVED_FIELDS: &[&str] = &[
-    "total_score",
-    "triggered_rules",
-    "sys_*",
-    "features_*",
-    "api_*",
-    "service_*",
-    "llm_*"
-];
+```yaml
+event:
+  # Common fields
+  type: string                  # Event type: login, transaction, etc.
+  timestamp: datetime           # User-submitted timestamp (if any)
+
+  # User data
+  user:
+    id: string
+    email: string
+    account_age_days: number
+    profile: object
+
+  # Transaction data
+  transaction:
+    id: string
+    amount: number
+    currency: string
+    merchant: string
+
+  # Device data
+  device:
+    id: string
+    type: string
+    ip: string
+    user_agent: string
+
+  # Geolocation data
+  geo:
+    country: string
+    city: string
+    coordinates: object
+```
+
+### Reserved Fields
+
+These fields cannot be submitted by users in the event data:
+
+- `total_score`
+- `triggered_rules`
+- `sys_*`
+- `features_*`
+- `api_*`
+- `service_*`
+
+### Accessing Event Data
+
+```yaml
+# In rule when conditions
+rule:
+  id: high_value_transaction
+  name: High-Value Transaction
+  when:
+    all:
+      - event.type == "transaction"
+      - event.amount >= 500
+      - event.device_id != ""
+  score: 35
+
+# In pipeline when conditions
+pipeline:
+  id: transaction_pipeline
+  when:
+    all:
+      - event.type == "transaction"
+      - event.source == "supabase"
+
+# Accessing nested event fields
+rule:
+  id: specific_user_check
+  when:
+    all:
+      - event.user_id == "user_001"
+      - event.amount > 1000
+  score: 50
 ```
 
 ---
 
-### 2. features - Complex Feature Computation Results
+## 2. features - Complex Feature Computations
+
+### Description
+
+The `features` namespace contains results from **complex feature calculations** that require historical data queries or database aggregations.
+
 ```yaml
-Description: Complex features computed through feature steps
-Source: Pipeline feature steps
 Mutability: Writable (by feature steps only)
-Examples:
-  features.user_transaction_count_7d: 15
-  features.avg_transaction_amount_30d: 3200.5
-  features.device_first_seen_days: 45
+Source: Pipeline feature steps
+Processing: Database queries, time-window statistics, ML models
 ```
 
-**Storage Method**:
-```rust
-ctx.store_feature("user_transaction_count_7d", Value::Number(15.0));
-```
+### Use Cases
 
-**Use Cases**:
-- Database aggregation queries (sum, avg, count)
+- Database aggregation queries (SUM, AVG, COUNT)
 - Time window statistics (7 days, 30 days, 90 days)
 - Historical behavior analysis
 - Complex scoring models
+- User behavioral patterns
+
+### Example Features
+
+```yaml
+features:
+  # Transaction patterns
+  user_transaction_count_7d: 15
+  avg_transaction_amount_30d: 3200.5
+  max_transaction_amount_90d: 15000.0
+
+  # Device history
+  device_first_seen_days: 45
+  device_transaction_count: 127
+
+  # Behavioral scores
+  velocity_score: 0.75
+  anomaly_score: 0.42
+```
+
+### Accessing Features
+
+```yaml
+# In rule conditions
+rule:
+  id: feature_based_check
+  when:
+    all:
+      - features.user_transaction_count_7d > 20
+      - features.avg_transaction_amount_30d < 1000
+      - features.velocity_score > 0.8
+  score: 75
+```
 
 ---
 
-### 3. api - External API Call Results
+## 3. api - External API Call Results
+
+### Description
+
+The `api` namespace contains results from calling **external third-party APIs**.
+
 ```yaml
-Description: Results from calling external third-party APIs
-Source: Pipeline api steps
 Mutability: Writable (by api steps only)
-Examples:
-  api.device_fingerprint.risk_score: 0.75
-  api.ip_geolocation.country: "US"
-  api.email_verification.is_valid: true
+Source: Pipeline api steps
+Examples: Device fingerprinting, IP geolocation, credit checks
 ```
 
-**Storage Method**:
-```rust
-ctx.store_api_result("device_fingerprint", api_response_value);
-```
+### Use Cases
 
-**Use Cases**:
 - Device fingerprinting (FingerprintJS, Seon)
 - IP geolocation queries
 - Email/phone verification
 - Credit score queries
 - KYC/AML checks
+- Blockchain analysis
+
+### Example API Results
+
+```yaml
+api:
+  device_fingerprint:
+    risk_score: 0.75
+    is_vpn: true
+    is_proxy: false
+    confidence: 0.92
+
+  ip_geolocation:
+    country: "US"
+    city: "New York"
+    is_datacenter: false
+
+  email_verification:
+    is_valid: true
+    is_disposable: false
+    mx_records_valid: true
+```
+
+### Accessing API Results
+
+```yaml
+# In rule conditions
+rule:
+  id: api_based_check
+  when:
+    all:
+      - api.device_fingerprint.risk_score > 0.7
+      - api.ip_geolocation.country != event.user.registered_country
+      - api.email_verification.is_disposable == true
+  score: 80
+```
 
 ---
 
-### 4. service - Internal Service Call Results
+## 4. service - Internal Service Call Results
+
+### Description
+
+The `service` namespace contains results from calling **internal microservices**.
+
 ```yaml
-Description: Results from calling internal microservices
-Source: Pipeline service steps
 Mutability: Writable (by service steps only)
-Examples:
-  service.user_profile.vip_level: "gold"
-  service.risk_history.blacklist_hit: false
-  service.inventory.stock_available: 100
+Source: Pipeline service steps
+Examples: User profiles, risk history, inventory
 ```
 
-**Storage Method**:
-```rust
-ctx.store_service_result("user_profile", service_response);
-```
+### Use Cases
 
-**Use Cases**:
 - User profile service
 - Risk history records
 - Inventory query service
 - Order management service
 - Points/membership system
+- Internal fraud database
 
----
-
-### 5. llm - LLM Analysis Results
-```yaml
-Description: Results from large language model analysis
-Source: Pipeline llm steps
-Mutability: Writable (by llm steps only)
-Examples:
-  llm.address_verification.is_suspicious: true
-  llm.content_moderation.category: "spam"
-  llm.fraud_analysis.risk_reason: "Address information contradictory"
-```
-
-**Storage Method**:
-```rust
-ctx.store_llm_result("address_verification", llm_analysis);
-```
-
-**Use Cases**:
-- Address authenticity verification
-- Content moderation
-- Fraud reason analysis
-- Anomaly behavior explanation
-- Intelligent Q&A/dialogue
-
----
-
-### 6. vars - Simple Variables and Intermediate Calculations
-```yaml
-Description: Pipeline variables, simple calculations, temporary values
-Source: Pipeline vars config + rule calculations
-Mutability: Writable
-Examples:
-  vars.high_risk_threshold: 80
-  vars.min_transaction_amount: 100
-  vars.risk_multiplier: 1.5
-  vars.total_fee: 15.5  # Calculated: amount * 0.031
-```
-
-**Storage Method**:
-```rust
-ctx.store_var("total_fee", calculated_value);
-```
-
-**Use Cases**:
-- Pipeline configuration parameters
-- Rule thresholds
-- Simple math calculations (+, -, ×, ÷)
-- String concatenation
-- Boolean judgment results
-
-**Difference from features**:
-- vars: Simple calculations, no external data needed
-- features: Complex calculations, requires historical data queries
-
----
-
-### 7. sys - System Injected Metadata
-```yaml
-Description: Metadata and context information automatically injected by system
-Source: System auto-generated
-Mutability: Read-only
-Examples:
-  sys.request_id: "550e8400-e29b-41d4-a716-446655440000"
-  sys.timestamp: "2024-01-15T10:30:00Z"
-  sys.environment: "production"
-  sys.region: "us-west-1"
-```
-
-**Core Field Categories**:
-
-1. **Request Identification**
-   - sys.request_id
-   - sys.correlation_id
-
-2. **Time Information**
-   - sys.timestamp (ISO 8601)
-   - sys.timestamp_ms (Unix milliseconds)
-   - sys.date (YYYY-MM-DD)
-   - sys.time (HH:MM:SS)
-   - sys.hour (0-23)
-   - sys.day_of_week (monday-sunday)
-   - sys.is_weekend (boolean)
-
-3. **Environment Information**
-   - sys.environment (development/staging/production)
-   - sys.region (deployment region)
-   - sys.tenant_id (multi-tenant ID)
-
-4. **Execution Context**
-   - sys.pipeline_id
-   - sys.pipeline_version
-   - sys.ruleset_id
-   - sys.rule_id
-
-5. **Performance Metrics**
-   - sys.execution_time_ms
-   - sys.execution_step
-   - sys.timeout_ms
-
-6. **Version Information**
-   - sys.corint_version
-   - sys.api_version
-
-7. **Client Information**
-   - sys.client_id
-   - sys.client_ip
-   - sys.user_agent
-
-8. **Debug Information**
-   - sys.debug_mode
-   - sys.trace_enabled
-
----
-
-### 8. env - Environment Configuration
-```yaml
-Description: Configuration loaded from environment variables and config files
-Source: Environment variables, config files
-Mutability: Read-only
-Examples:
-  env.database_url: "postgresql://..."
-  env.api_timeout_ms: 3000
-  env.feature_flags.new_ml_model: true
-```
-
-**Use Cases**:
-- Database connection configuration
-- API keys
-- Timeout settings
-- Feature flags
-- Environment-specific configuration
-
----
-
-## Complete Architecture Code
-
-### ExecutionContext Structure
-
-```rust
-use std::collections::HashMap;
-use serde_json::Value;
-
-pub struct ExecutionContext {
-    // ========== 8 Namespaces ==========
-
-    /// User request raw data (read-only)
-    pub event: HashMap<String, Value>,
-
-    /// Complex feature computation results (writable)
-    pub features: HashMap<String, Value>,
-
-    /// External API call results (writable)
-    pub api: HashMap<String, Value>,
-
-    /// Internal service call results (writable)
-    pub service: HashMap<String, Value>,
-
-    /// LLM analysis results (writable)
-    pub llm: HashMap<String, Value>,
-
-    /// Simple variables and intermediate calculations (writable)
-    pub vars: HashMap<String, Value>,
-
-    /// System injected metadata (read-only)
-    pub sys: HashMap<String, Value>,
-
-    /// Environment configuration (read-only)
-    pub env: HashMap<String, Value>,
-
-    // ========== Internal Fields ==========
-
-    /// Expression evaluation stack
-    pub(crate) stack: Vec<Value>,
-
-    /// Execution result
-    pub(crate) result: ExecutionResult,
-}
-
-impl ExecutionContext {
-    pub fn new(event: HashMap<String, Value>) -> Self {
-        Self {
-            event,
-            features: HashMap::new(),
-            api: HashMap::new(),
-            service: HashMap::new(),
-            llm: HashMap::new(),
-            vars: HashMap::new(),
-            sys: Self::build_system_vars(),
-            env: Self::load_environment_vars(),
-            stack: Vec::new(),
-            result: ExecutionResult::default(),
-        }
-    }
-
-    // ========== Data Storage Methods ==========
-
-    /// Store feature computation result
-    pub fn store_feature(&mut self, name: &str, value: Value) {
-        self.features.insert(name.to_string(), value);
-    }
-
-    /// Store API call result
-    pub fn store_api_result(&mut self, api_name: &str, result: Value) {
-        self.api.insert(api_name.to_string(), result);
-    }
-
-    /// Store service call result
-    pub fn store_service_result(&mut self, service_name: &str, result: Value) {
-        self.service.insert(service_name.to_string(), result);
-    }
-
-    /// Store LLM analysis result
-    pub fn store_llm_result(&mut self, step_id: &str, analysis: Value) {
-        self.llm.insert(step_id.to_string(), analysis);
-    }
-
-    /// Store variable
-    pub fn store_var(&mut self, name: &str, value: Value) {
-        self.vars.insert(name.to_string(), value);
-    }
-
-    // ========== Field Lookup (supports dot notation) ==========
-
-    pub fn get_field(&self, field_path: &str) -> Option<Value> {
-        // Parse namespace and field path
-        let parts: Vec<&str> = field_path.split('.').collect();
-        if parts.is_empty() {
-            return None;
-        }
-
-        let namespace = parts[0];
-        let remaining_path = &parts[1..];
-
-        // Lookup by namespace
-        let namespace_data = match namespace {
-            "event" => &self.event,
-            "features" => &self.features,
-            "api" => &self.api,
-            "service" => &self.service,
-            "llm" => &self.llm,
-            "vars" => &self.vars,
-            "sys" => &self.sys,
-            "env" => &self.env,
-            _ => return None,
-        };
-
-        // If only namespace, return entire namespace
-        if remaining_path.is_empty() {
-            return Some(Value::Object(
-                namespace_data.iter()
-                    .map(|(k, v)| (k.clone(), v.clone()))
-                    .collect()
-            ));
-        }
-
-        // Recursively find nested fields
-        Self::get_nested_value(namespace_data, remaining_path)
-    }
-
-    fn get_nested_value(data: &HashMap<String, Value>, path: &[&str]) -> Option<Value> {
-        if path.is_empty() {
-            return None;
-        }
-
-        let key = path[0];
-        let value = data.get(key)?;
-
-        if path.len() == 1 {
-            return Some(value.clone());
-        }
-
-        // Continue searching down
-        match value {
-            Value::Object(map) => {
-                let remaining = &path[1..];
-                let mut hash_map = HashMap::new();
-                for (k, v) in map.iter() {
-                    hash_map.insert(k.clone(), v.clone());
-                }
-                Self::get_nested_value(&hash_map, remaining)
-            }
-            _ => None,
-        }
-    }
-
-    // ========== System Variables Builder ==========
-
-    fn build_system_vars() -> HashMap<String, Value> {
-        let mut sys = HashMap::new();
-        let now = chrono::Utc::now();
-
-        // Request identification
-        sys.insert(
-            "request_id".to_string(),
-            Value::String(uuid::Uuid::new_v4().to_string())
-        );
-
-        // Time information
-        sys.insert("timestamp".to_string(), Value::String(now.to_rfc3339()));
-        sys.insert("timestamp_ms".to_string(), Value::Number(now.timestamp_millis().into()));
-        sys.insert("date".to_string(), Value::String(now.format("%Y-%m-%d").to_string()));
-        sys.insert("time".to_string(), Value::String(now.format("%H:%M:%S").to_string()));
-        sys.insert("hour".to_string(), Value::Number(now.hour().into()));
-
-        let day_of_week = match now.weekday() {
-            chrono::Weekday::Mon => "monday",
-            chrono::Weekday::Tue => "tuesday",
-            chrono::Weekday::Wed => "wednesday",
-            chrono::Weekday::Thu => "thursday",
-            chrono::Weekday::Fri => "friday",
-            chrono::Weekday::Sat => "saturday",
-            chrono::Weekday::Sun => "sunday",
-        };
-        sys.insert("day_of_week".to_string(), Value::String(day_of_week.to_string()));
-
-        let is_weekend = matches!(now.weekday(), chrono::Weekday::Sat | chrono::Weekday::Sun);
-        sys.insert("is_weekend".to_string(), Value::Bool(is_weekend));
-
-        // Environment information
-        sys.insert(
-            "environment".to_string(),
-            Value::String(std::env::var("ENVIRONMENT").unwrap_or_else(|_| "development".to_string()))
-        );
-
-        // Version information
-        sys.insert("corint_version".to_string(), Value::String(env!("CARGO_PKG_VERSION").to_string()));
-
-        sys
-    }
-
-    fn load_environment_vars() -> HashMap<String, Value> {
-        HashMap::new() // TODO: Load from config file
-    }
-}
-```
-
----
-
-## Usage Examples
-
-### Accessing Different Namespaces in Rules
+### Example Service Results
 
 ```yaml
+service:
+  user_profile:
+    vip_level: "gold"
+    account_status: "active"
+    lifetime_value: 15000.0
+
+  risk_history:
+    blacklist_hit: false
+    previous_fraud_count: 0
+    last_suspicious_activity: null
+
+  inventory:
+    stock_available: 100
+    reserved_count: 5
+```
+
+### Accessing Service Results
+
+```yaml
+# In rule conditions
 rule:
-  id: comprehensive_fraud_check
-  name: Comprehensive Fraud Detection
-
+  id: service_based_check
   when:
-    conditions:
-      # 1. event - Raw request data
-      - event.transaction.amount > 10000
-      - event.user.account_age_days < 30
-
-      # 2. features - Historical features
-      - features.user_transaction_count_7d > 20
-      - features.avg_transaction_amount_30d < 1000
-
-      # 3. api - External validation
-      - api.device_fingerprint.risk_score > 0.7
-      - api.ip_geolocation.country != event.user.registered_country
-
-      # 4. service - Internal services
-      - service.user_profile.vip_level == "normal"
+    all:
+      - service.user_profile.vip_level == "gold"
       - service.risk_history.previous_fraud_count > 0
-
-      # 5. llm - AI analysis
-      - llm.behavior_analysis.is_suspicious == true
-
-      # 6. vars - Configuration and calculations
-      - event.transaction.amount > vars.high_risk_threshold
-
-      # 7. sys - System information
-      - sys.hour >= 22 || sys.hour <= 6  # Late night transactions
-      - sys.environment == "production"
-
-  score: 90
+      - service.inventory.stock_available >= event.amount
+  score: 65
 ```
 
-### Populating Namespaces in Pipeline
+---
+
+## 5. vars - Simple Variables and Calculations
+
+### Description
+
+The `vars` namespace contains **pipeline variables**, **configuration parameters**, and **simple calculations** that don't require external data.
+
+```yaml
+Mutability: Writable
+Source: Pipeline vars config + rule calculations
+Processing: Arithmetic, string operations, boolean logic
+```
+
+### Difference from features
+
+| Aspect | vars | features |
+|--------|------|----------|
+| **Complexity** | Simple | Complex |
+| **Data needs** | No external data | Requires historical data |
+| **Examples** | amount × rate | SUM(transactions, 7d) |
+| **Performance** | Instant | May require DB query |
+
+### Example Variables
+
+```yaml
+vars:
+  # Configuration
+  high_risk_threshold: 80
+  min_transaction_amount: 100
+  max_daily_limit: 50000
+
+  # Simple calculations
+  risk_multiplier: 1.5
+  total_fee: 15.5              # Calculated: amount * 0.031
+  is_high_value: true          # Calculated: amount > 10000
+
+  # String operations
+  user_display_name: "John D." # Calculated: first_name + " " + last_initial
+```
+
+### Using Variables
+
+```yaml
+# Defining variables
+pipeline:
+  steps:
+    - step_type: vars
+      config:
+        high_risk_threshold: 80
+        processing_fee_rate: 0.031
+
+# Accessing in rule conditions
+rule:
+  id: vars_based_check
+  when:
+    all:
+      - event.amount > vars.high_risk_threshold
+      - vars.is_high_value == true
+  score: 70
+
+# Using in calculations
+score: event.transaction.amount * vars.risk_multiplier
+```
+
+---
+
+## 6. results - Execution Results
+
+### Description
+
+The `results` namespace provides access to **ruleset execution results** within a pipeline. This enables pipeline routing decisions based on previous ruleset outcomes.
+
+**⚠️ Note:** The `results` namespace is not part of the base ExecutionContext. Availability depends on pipeline execution layer implementation.
+
+```yaml
+Mutability: Read-only
+Source: Ruleset execution within pipeline
+Lifecycle: Updated after each ruleset step completes
+```
+
+### Access Patterns
+
+The `results` namespace supports multiple access patterns:
+
+#### Specific Ruleset by ID
+```yaml
+# Access a specific ruleset's result by ID
+results.fraud_detection.signal        # Ruleset signal: "approve", "decline", etc.
+results.fraud_detection.total_score   # Cumulative risk score
+results.fraud_detection.triggered_rules
+```
+
+#### Final Pipeline Decision
+```yaml
+# Access the final pipeline decision output
+results.decision          # Final decision: "approve", "decline", "review", "hold", "pass"
+results.actions           # List of actions: ["KYC", "2FA", "BLOCK_DEVICE"]
+results.reason            # Decision reason text
+```
+
+### Available Fields
+
+```yaml
+results:
+  # Per-ruleset results (accessed via results.<ruleset_id>.*)
+  <ruleset_id>:
+    signal: string              # "approve", "decline", "review", "hold", "pass"
+    total_score: number         # Cumulative risk score (0-1000)
+    reason: string              # Human-readable decision reason
+    triggered_rules: array      # List of triggered rule IDs
+    triggered_count: number     # Number of triggered rules
+
+  # Final pipeline decision output
+  decision: string              # Final decision: "approve", "decline", "review", "hold", "pass"
+  actions: array                # List of actions to execute: ["KYC", "OTP", "2FA"]
+  reason: string                # Final decision reason
+  score: number                 # Final aggregated score
+```
+
+### Pipeline Router Usage
+
+The primary use case for `results` is in pipeline routers to make branching decisions:
 
 ```yaml
 pipeline:
-  id: fraud_detection
-  name: Fraud Detection Pipeline
+  id: fraud_detection_pipeline
+  entry: blacklist_check
 
   steps:
-    # 1. Configure variables
-    - step_type: vars
-      config:
-        high_risk_threshold: 50000
-        api_timeout_ms: 3000
+    - id: blacklist_check
+      type: ruleset
+      ruleset: blacklist_ruleset
+      next: fraud_router
 
-    # 2. Compute features
-    - step_type: feature
-      config:
-        - name: user_transaction_count_7d
-          query: "SELECT COUNT(*) FROM transactions WHERE user_id = $1 AND created_at > NOW() - INTERVAL '7 days'"
+    - id: fraud_router
+      type: router
+      routes:
+        # Route based on ruleset signal
+        - when: results.blacklist_ruleset.signal == "decline"
+          next: block_transaction
 
-    # 3. Call external API
+        # Route based on score threshold
+        - when: results.blacklist_ruleset.total_score > 80
+          next: manual_review
+
+      default: allow_transaction
+```
+
+### Multiple Ruleset Example
+
+When multiple rulesets are executed in a pipeline:
+
+```yaml
+pipeline:
+  steps:
+    - id: fraud_detection_step
+      type: ruleset
+      ruleset: fraud_detection
+      next: behavior_step
+
+    - id: behavior_step
+      type: ruleset
+      ruleset: user_behavior
+      next: final_router
+
+    - id: final_router
+      type: router
+      routes:
+        # Access specific ruleset by ID
+        - when: results.fraud_detection.signal == "decline"
+          next: deny_step
+
+        - when: results.user_behavior.total_score > 50
+          next: review_step
+
+        # Combine multiple ruleset results
+        - when:
+            all:
+              - results.fraud_detection.signal == "review"
+              - results.user_behavior.signal == "review"
+          next: enhanced_review
+
+      default: allow_step
+
+  # Final decision based on signals
+  decision:
+    - when: results.fraud_detection.signal == "decline"
+      result: decline
+      actions: ["BLOCK_DEVICE"]
+      reason: "Fraud detected"
+      terminate: true
+
+    - default: true
+      result: approve
+```
+
+### Final Decision Output
+
+After pipeline execution completes, the `results` namespace contains the final decision:
+
+```yaml
+# Example results after pipeline execution
+results:
+  # First ruleset result
+  fraud_detection:
+    signal: "review"
+    total_score: 75
+    triggered_rules: ["velocity_check", "new_device"]
+    reason: "Medium risk detected"
+
+  # Second ruleset result
+  user_behavior:
+    signal: "approve"
+    total_score: 20
+    triggered_rules: []
+
+  # Final pipeline decision
+  decision: "review"
+  actions: ["KYC"]
+  reason: "Medium risk - requires review"
+  score: 75
+```
+
+### Best Practices
+
+✅ **Good:**
+```yaml
+# Clear, specific field access
+- when: results.fraud_detection.signal == "decline"
+- when: results.fraud_detection.total_score > 80
+
+# Combine with other conditions
+- when: results.fraud_detection.signal != "decline" && event.amount > 10000
+```
+
+❌ **Bad:**
+```yaml
+# Don't use results in rule conditions
+rule:
+  id: bad_example
+  when:
+    all:
+      - results.fraud_detection.signal == "decline"  # ❌ Not available in rule conditions
+  score: 50
+
+# Don't assume results exists before any ruleset executes
+- when: results.fraud_detection.signal == "approve"  # May be undefined
+```
+
+---
+
+## 7. sys - System Injected Metadata
+
+### Description
+
+The `sys` namespace contains **system auto-generated metadata** and context information.
+
+```yaml
+Mutability: Read-only
+Source: System auto-generated
+Lifecycle: Generated per request
+```
+
+### System Variable Categories
+
+#### Request Identification
+```yaml
+sys.request_id: "550e8400-e29b-41d4-a716-446655440000"
+sys.correlation_id: "parent-request-12345"  # Optional
+```
+
+#### Time Information
+```yaml
+sys.timestamp: "2024-01-15T10:30:00Z"       # ISO 8601
+sys.timestamp_ms: 1705315800000              # Unix milliseconds
+sys.date: "2024-01-15"                       # YYYY-MM-DD
+sys.time: "10:30:00"                         # HH:MM:SS
+sys.hour: 10                                 # 0-23
+sys.day_of_week: "monday"                    # monday-sunday
+sys.is_weekend: false                        # boolean
+```
+
+#### Environment Information
+```yaml
+sys.environment: "production"                # development/staging/production
+sys.region: "us-west-1"                      # Deployment region
+sys.tenant_id: "tenant_abc123"               # Multi-tenant ID (optional)
+```
+
+#### Execution Context
+```yaml
+sys.pipeline_id: "fraud_detection_pipeline"
+sys.pipeline_version: "2.1.0"
+sys.ruleset_id: "account_takeover_rules"
+sys.rule_id: "impossible_travel_detection"  # Available within rule
+```
+
+#### Performance Metrics
+```yaml
+sys.execution_time_ms: 245                   # Current execution time
+sys.execution_step: 5                        # Current step number
+sys.timeout_ms: 5000                         # Execution timeout limit
+```
+
+#### Version Information
+```yaml
+sys.corint_version: "1.2.3"                  # CORINT engine version
+sys.api_version: "v1"                        # API version
+```
+
+#### Client Information
+```yaml
+sys.client_id: "mobile_app_ios_v2.1"
+sys.client_ip: "203.0.113.42"                # Client IP (if different from event)
+sys.user_agent: "Mozilla/5.0 ..."
+```
+
+#### Debug Information
+```yaml
+sys.debug_mode: false
+sys.trace_enabled: true
+```
+
+### Using System Variables
+
+```yaml
+# In rule conditions
+rule:
+  id: time_based_check
+  when:
+    all:
+      # Time-based rules
+      - sys.hour >= 22 || sys.hour <= 6          # Late night
+      - sys.is_weekend == true                    # Weekend
+      - sys.day_of_week in ["monday", "friday"]  # Specific days
+
+      # Environment-specific rules
+      - sys.environment == "production"
+      - sys.region in ["us-east-1", "eu-west-1"]
+
+      # Performance monitoring
+      - sys.execution_time_ms < sys.timeout_ms - 1000  # Buffer check
+  score: 40
+```
+
+---
+
+## 8. env - Environment Configuration
+
+### Description
+
+The `env` namespace contains **configuration** loaded from environment variables and config files.
+
+```yaml
+Mutability: Read-only
+Source: Environment variables, config files
+Lifecycle: Loaded at startup
+```
+
+### Use Cases
+
+- Database connection configuration
+- API keys and secrets
+- Timeout settings
+- Feature flags
+- Environment-specific configuration
+- External service endpoints
+
+### Example Configuration
+
+```yaml
+env:
+  # Database
+  database_url: "postgresql://..."
+  db_pool_size: 20
+
+  # API Configuration
+  api_timeout_ms: 3000
+  max_retries: 3
+
+  # Feature Flags
+  feature_flags:
+    new_ml_model: true
+    advanced_analytics: false
+
+  # External Services
+  seon_api_key: "***"
+  openai_api_key: "***"
+```
+
+### Using Environment Variables
+
+```yaml
+# In rule conditions
+rule:
+  id: env_based_check
+  when:
+    all:
+      - env.feature_flags.new_ml_model == true
+      - event.risk_score > env.custom_threshold
+  score: 55
+
+# In API configuration
+pipeline:
+  steps:
     - step_type: api
       config:
-        name: device_fingerprint
-        endpoint: "https://api.seon.io/device"
-        timeout_ms: 3000
-
-    # 4. Call internal service
-    - step_type: service
-      config:
-        name: user_profile
-        endpoint: "http://user-service/profile"
-
-    # 5. LLM analysis
-    - step_type: llm
-      config:
-        prompt: "Analyze if the following transaction is anomalous: {event}"
-        model: "gpt-4"
-
-    # 6. Execute rules
-    - step_type: ruleset
-      config:
-        rules:
-          - comprehensive_fraud_check
+        endpoint: env.seon_endpoint
+        api_key: env.seon_api_key
+        timeout_ms: env.api_timeout_ms
 ```
 
 ---
 
 ## Data Classification Decision Tree
+
+When receiving or computing data, use this tree to determine the correct namespace:
 
 ```
 Received a piece of data, where should it go?
@@ -573,6 +741,9 @@ Received a piece of data, where should it go?
 ├─ Is it loaded from environment variables/config files?
 │  └─ Yes → env
 │
+├─ Is it the output of a ruleset/pipeline execution (signal, decision, etc.)?
+│  └─ Yes → results
+│
 ├─ Is it computed result based on existing data?
 │  │
 │  ├─ Simple calculation (arithmetic, string concat)?
@@ -584,62 +755,154 @@ Received a piece of data, where should it go?
 │  ├─ Obtained by calling external third-party API?
 │  │  └─ Yes → api
 │  │
-│  ├─ Obtained by calling internal microservice?
-│  │  └─ Yes → service
-│  │
-│  └─ Obtained through LLM analysis?
-│     └─ Yes → llm
+│  └─ Obtained by calling internal microservice?
+│     └─ Yes → service
 ```
 
 ---
 
-## Migration Plan
+## Complete Usage Examples
 
-### Current Problems
+### Comprehensive Rule
 
-```rust
-// ❌ Current implementation issues
-pub struct ExecutionContext {
-    pub event_data: HashMap<String, Value>,  // All data mixed here
-    pub result: ExecutionResult,
-}
+```yaml
+rule:
+  id: comprehensive_fraud_check
+  name: Comprehensive Fraud Detection
 
-// features wrongly stored in event_data
-ctx.event_data.insert(feature_name.clone(), feature_value.clone());
+  when:
+    all:
+      # 1. event - Raw request data
+      - event.transaction.amount > 10000
+      - event.user.account_age_days < 30
+      - event.device.ip != ""
+
+      # 2. features - Historical features
+      - features.user_transaction_count_7d > 20
+      - features.avg_transaction_amount_30d < 1000
+      - features.velocity_score > 0.8
+
+      # 3. api - External validation
+      - api.device_fingerprint.risk_score > 0.7
+      - api.ip_geolocation.country != event.user.registered_country
+
+      # 4. service - Internal services
+      - service.user_profile.vip_level == "normal"
+      - service.risk_history.previous_fraud_count > 0
+
+      # 5. vars - Configuration and calculations
+      - event.transaction.amount > vars.high_risk_threshold
+
+      # 6. sys - System information
+      - sys.hour >= 22 || sys.hour <= 6        # Late night
+      - sys.environment == "production"
+
+      # 7. env - Environment config
+      - env.feature_flags.strict_mode == true
+
+  score: 90
 ```
 
-### Migration Steps
+### Pipeline Example
 
-1. **Phase 1: Add new fields, maintain compatibility**
-   ```rust
-   pub struct ExecutionContext {
-       // Add 8 new namespaces
-       pub event: HashMap<String, Value>,
-       pub features: HashMap<String, Value>,
-       // ... other 6
+```yaml
+pipeline:
+  id: fraud_detection_pipeline
+  name: Fraud Detection Pipeline
+  entry: fraud_check
 
-       // Keep old field temporarily (mark as deprecated)
-       #[deprecated]
-       pub event_data: HashMap<String, Value>,
-   }
-   ```
+  when:
+    all:
+      - event.type == "transaction"
 
-2. **Phase 2: Update storage logic**
-   - pipeline_executor.rs: Modify feature storage location
-   - api_executor.rs: Modify API result storage location
-   - service_executor.rs: Modify service result storage location
+  steps:
+    - step:
+        id: fraud_check
+        name: Fraud Risk Assessment
+        type: ruleset
+        ruleset: comprehensive_fraud_ruleset
 
-3. **Phase 3: Update field lookup logic**
-   - context.rs: Implement new get_field() with namespace support
-   - Maintain backward compatibility for old field access
+  decision:
+    - when: results.comprehensive_fraud_ruleset.signal == "decline"
+      result: decline
+      reason: "{results.comprehensive_fraud_ruleset.reason}"
+      terminate: true
 
-4. **Phase 4: Add input validation**
-   - Validate event doesn't contain reserved fields
-   - Schema validation
+    - when: results.comprehensive_fraud_ruleset.signal == "review"
+      result: review
+      actions: ["manual_review"]
+      reason: "{results.comprehensive_fraud_ruleset.reason}"
+      terminate: true
 
-5. **Phase 5: Remove old fields**
-   - Remove event_data
-   - Clean up compatibility code
+    - default: true
+      result: approve
+      reason: "No significant risk detected"
+```
+
+---
+
+## Best Practices
+
+### Naming Conventions
+
+✅ **Good:**
+```yaml
+vars:
+  risk_threshold_high: 80
+  is_new_user: true
+  user_account_age_days: 30
+
+features:
+  user_transaction_count_7d: 15
+  avg_transaction_amount_30d: 3200.5
+```
+
+❌ **Bad:**
+```yaml
+vars:
+  t: 80                        # Unclear
+  flag: true                   # Ambiguous
+  x: 30                        # Meaningless
+```
+
+### Namespace Selection
+
+✅ **Correct:**
+```yaml
+# Simple math → vars
+vars.total_fee: event.amount * 0.031
+
+# Database query → features
+features.transaction_count_7d: COUNT(...)
+
+# External API → api
+api.device_fingerprint.score: 0.75
+```
+
+❌ **Incorrect:**
+```yaml
+# Don't mix namespaces
+features.simple_addition: 1 + 1     # Should be vars
+vars.historical_count: COUNT(...)   # Should be features
+```
+
+### Avoid Namespace Pollution
+
+✅ **Good:** Clean, minimal data
+```yaml
+api.ip_check:
+  score: 0.75
+  risk_level: "high"
+  country: "US"
+```
+
+❌ **Bad:** Storing unnecessary data
+```yaml
+api.ip_check:
+  raw_response: { ... }       # Large, unused
+  debug_info: { ... }         # Not needed
+  internal_state: { ... }     # Implementation detail
+```
 
 ---
 
@@ -678,16 +941,29 @@ ctx.event_data.insert(feature_name.clone(), feature_value.clone());
 
 ---
 
-## Documentation Index
+## Summary
 
-For detailed documentation, refer to:
+CORINT's flattened namespace architecture provides:
 
-- [SYS_NAMESPACE_SPEC.md](../repository/test_data/SYS_NAMESPACE_SPEC.md) - sys namespace detailed specification
-- [DERIVED_DATA_PLACEMENT.md](../repository/test_data/DERIVED_DATA_PLACEMENT.md) - Derived data placement guide
-- [EVENT_DESIGN_CONSIDERATIONS.md](../repository/test_data/EVENT_DESIGN_CONSIDERATIONS.md) - event object design considerations
-- [UNIFIED_CONTEXT_PROPOSAL_V3.md](../repository/test_data/UNIFIED_CONTEXT_PROPOSAL_V3.md) - Complete proposal and implementation details
+- **Clear data separation** - 8 namespaces (7 core + results pipeline-level)
+- **Simple access** - No `ctx.` prefix needed, direct namespace access
+- **Type safety** - Read-only vs writable enforcement
+- **Extensibility** - Easy to add new data sources
+- **Observability** - Clear tracking of data origin and processing
+
+**The 7 Core Namespaces (✅ Implemented):**
+1. `event` - User request raw data (read-only)
+2. `features` - Complex computations (writable)
+3. `api` - External API results (writable)
+4. `service` - Internal service results (writable)
+5. `vars` - Simple variables (writable)
+6. `sys` - System metadata (read-only)
+7. `env` - Environment config (read-only)
+
+**Pipeline-Level Namespace (⚠️ Partially Implemented):**
+8. `results` - Ruleset execution results (read-only, pipeline execution layer)
 
 ---
 
 **Last Updated**: 2024-12-14
-**Status**: Design complete, pending implementation
+**Status**: Design complete, implementation in progress
