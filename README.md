@@ -936,7 +936,6 @@ See [Server Quick Start Guide](crates/corint-server/QUICKSTART.md).
 | Document | Description |
 |----------|-------------|
 | [**error-handling.md**](docs/dsl/error-handling.md) | Error handling strategies |
-| [**observability.md**](docs/dsl/observability.md) | Monitoring, logging, and tracing |
 | [**QUICK_START_OTEL.md**](docs/QUICK_START_OTEL.md) ⭐ | **OpenTelemetry quick start guide** |
 | [**CUSTOMLIST.md**](docs/CUSTOMLIST.md) | Custom list implementation details |
 
