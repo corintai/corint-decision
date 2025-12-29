@@ -391,11 +391,9 @@ Comprehensive observability for monitoring and debugging.
 Features:
 - Metrics collection (Counter, Histogram) - implemented at runtime level
 - Distributed tracing (Span, Tracer) - implemented at runtime level
-- OpenTelemetry integration - available via `otel` feature
-- Prometheus metrics endpoint - `/metrics` endpoint available
 - Health check endpoint - `/health` endpoint available
 
-Note: Observability features are implemented at the runtime level rather than through DSL configuration. See `QUICK_START_OTEL.md` for OpenTelemetry setup.
+Note: Observability features are implemented at the runtime level rather than through DSL configuration.
 
 ---
 

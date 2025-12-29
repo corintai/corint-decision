@@ -378,7 +378,6 @@ async fn test_feature_calculation() {
 
 - **default**: Basic runtime without datasource integrations
 - **sqlx**: Enable PostgreSQL/SQL datasource support
-- **otel**: Enable OpenTelemetry observability (metrics, tracing)
 
 ## Dependencies
 
@@ -386,156 +385,17 @@ async fn test_feature_calculation() {
 - `tokio`: Async runtime
 - `sqlx` (optional): PostgreSQL client
 - `async-trait`: Async trait support
-- `opentelemetry` (optional): Observability framework
 
-## Observability with OpenTelemetry
+## Observability
 
-The `otel` feature provides comprehensive observability through OpenTelemetry integration.
+Basic observability is provided through the `observability` module:
+- **Metrics**: Counter and Histogram types for basic metrics collection
+- **Tracing**: Span and Tracer types for distributed tracing
 
-### Features
-- **Prometheus Metrics**: Export metrics via `/metrics` endpoint
-- **Distributed Tracing**: OTLP-based tracing support
-- **Multiple Exporters**: Support for Prometheus, Jaeger, Zipkin, etc.
-- **Standard Instrumentation**: Unified API for metrics and traces
-
-### Quick Start
-
-Enable the `otel` feature:
-```toml
-[dependencies]
-corint-runtime = { version = "0.1.0", features = ["otel"] }
-```
-
-Initialize OpenTelemetry:
-```rust
-use corint_runtime::observability::otel::{init_opentelemetry, OtelConfig};
-
-// Create configuration
-let config = OtelConfig::new("my-service")
-    .with_version("1.0.0")
-    .with_metrics(true)
-    .with_tracing(true);
-
-// Initialize (call once at startup)
-let otel_ctx = init_opentelemetry(config)?;
-
-// Shutdown (call on exit)
-otel_ctx.shutdown()?;
-```
-
-### Recording Metrics
-
-```rust
-use corint_runtime::observability::otel::meter;
-use opentelemetry::KeyValue;
-
-// Get a meter
-let meter = meter("my-metrics");
-
-// Create metrics
-let counter = meter.u64_counter("requests_total")
-    .with_description("Total HTTP requests")
-    .build();
-
-let histogram = meter.f64_histogram("request_duration_seconds")
-    .with_description("Request duration")
-    .build();
-
-// Record data
-counter.add(1, &[
-    KeyValue::new("method", "GET"),
-    KeyValue::new("status", "200"),
-]);
-
-histogram.record(0.123, &[
-    KeyValue::new("endpoint", "/api/data"),
-]);
-```
-
-### Metric Types
-
-| Type | Use Case | Example |
-|------|----------|---------|
-| **Counter** | Monotonically increasing values | Request count, errors |
-| **Histogram** | Value distributions | Latency, response size |
-| **UpDownCounter** | Values that go up and down | Active connections, queue size |
-
-### Environment Variables
-
-```bash
-# OTLP endpoint for traces (optional)
-export OTEL_EXPORTER_OTLP_ENDPOINT="http://localhost:4317"
-
-# Service name (overrides code configuration)
-export OTEL_SERVICE_NAME="my-service"
-```
-
-### Prometheus Integration
-
-Configure Prometheus to scrape metrics:
-```yaml
-scrape_configs:
-  - job_name: 'corint-decision'
-    scrape_interval: 15s
-    static_configs:
-      - targets: ['localhost:8080']
-```
-
-### Distributed Tracing
-
-Enable tracing with OTLP endpoint:
-```rust
-let config = OtelConfig::new("my-service")
-    .with_tracing(true)
-    .with_otlp_endpoint("http://localhost:4317");
-
-let otel_ctx = init_opentelemetry(config)?;
-```
-
-Create spans:
-```rust
-use corint_runtime::observability::otel::tracer;
-use opentelemetry::trace::Tracer;
-
-let tracer = tracer("my-tracer");
-let span = tracer.start("operation_name");
-
-// Your code here...
-
-span.end();
-```
-
-### Examples
-
-Run the OpenTelemetry metrics example:
-```bash
-cargo run --example opentelemetry_metrics --features otel
-```
-
-### Best Practices
-
-1. **Meaningful Metric Names**: Follow Prometheus conventions
-   - Use `_total` suffix for counters
-   - Use `_seconds` for time measurements
-   - Use underscores to separate words
-
-2. **Useful Labels**: Add context but don't overuse
-   ```rust
-   counter.add(1, &[
-       KeyValue::new("method", "GET"),
-       KeyValue::new("endpoint", "/api"),
-       KeyValue::new("status_code", "200"),
-   ]);
-   ```
-
-3. **Monitor Key Metrics**:
-   - Request rate and error rate
-   - Response time (P50, P95, P99)
-   - Resource utilization
+Note: Advanced observability features (Prometheus export, OTLP tracing) are not currently implemented.
 
 ## Related Documentation
 
 - [Feature Engineering](../../docs/dsl/feature.md)
 - [Datasource Configuration](../../docs/dsl/feature.md#datasources)
 - [Expression Evaluation](../../docs/dsl/expression.md)
-- [OpenTelemetry Documentation](https://opentelemetry.io/docs/)

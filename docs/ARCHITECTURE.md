@@ -485,7 +485,7 @@ list_lookups_total{list_id}
 errors_total{component, error_type}
 ```
 
-**Tracing** (OpenTelemetry):
+**Tracing** (Basic implementation):
 ```rust
 // Span hierarchy
 span: decide

@@ -217,8 +217,8 @@ Clean separation of concerns:
 ### 🔍 Full Observability
 
 - **Structured Logging**: With sampling and filtering
-- **Metrics**: Counters, gauges, histograms (Prometheus compatible)
-- **Distributed Tracing**: OpenTelemetry support
+- **Metrics**: Counters and histograms (basic implementation)
+- **Distributed Tracing**: Basic span and tracer support
 - **Audit Trails**: Complete decision history
 - **Explainability**: Rule-by-rule breakdown of decisions
 
@@ -935,7 +935,6 @@ See [Server Quick Start Guide](crates/corint-server/QUICKSTART.md).
 
 | Document | Description |
 |----------|-------------|
-| [**QUICK_START_OTEL.md**](docs/QUICK_START_OTEL.md) ⭐ | **OpenTelemetry quick start guide** |
 | [**CUSTOMLIST.md**](docs/CUSTOMLIST.md) | Custom list implementation details |
 
 ### Quick References
@@ -1109,7 +1108,7 @@ Event → Pipeline → Extract Features → Evaluate Rules → Decision Logic �
 - ✅ LLM integration framework
 - ✅ Type system and schema validation
 - ✅ Basic error handling (advanced retry strategies planned)
-- ✅ Observability infrastructure (OpenTelemetry)
+- ✅ Basic observability (metrics and tracing)
 - ✅ Testing framework
 - ✅ Performance optimization (caching, parallelization)
 - ✅ Comprehensive documentation

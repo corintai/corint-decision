@@ -17,9 +17,9 @@ pub mod types;
 
 // Re-export public API
 pub use extractors::JsonExtractor;
-pub use router::{create_router, create_router_with_metrics};
+pub use router::create_router;
 pub use types::{
-    AppState, AppStateWithMetrics, CognitionPayload, DecideRequestPayload, DecideResponsePayload,
+    AppState, CognitionPayload, DecideRequestPayload, DecideResponsePayload,
     DecisionPayload, EvidencePayload, HealthResponse, ReloadResponse, RequestOptions,
     ScoresPayload,
 };

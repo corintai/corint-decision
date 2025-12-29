@@ -15,13 +15,6 @@ pub struct AppState {
     pub engine: Arc<RwLock<DecisionEngine>>,
 }
 
-/// Application state with metrics
-#[derive(Clone)]
-pub struct AppStateWithMetrics {
-    pub engine: Arc<RwLock<DecisionEngine>>,
-    pub otel_ctx: Arc<corint_runtime::observability::otel::OtelContext>,
-}
-
 /// Health check response
 #[derive(Debug, Serialize)]
 pub struct HealthResponse {

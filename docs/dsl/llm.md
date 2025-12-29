@@ -728,7 +728,7 @@ observability:
 observability:
   tracing:
     enabled: true
-    provider: opentelemetry     # opentelemetry | datadog | jaeger
+    # Basic tracing support (no external provider integration)
     
     capture:
       - prompt_template

@@ -11,7 +11,6 @@ use crate::api::grpc::pb::decision_service_server::DecisionServiceServer;
 use crate::api::grpc::DecisionGrpcService;
 use crate::config::ServerConfig;
 use anyhow::Result;
-use corint_runtime::observability::otel::{init_opentelemetry, OtelConfig, OtelContext};
 use std::sync::Arc;
 use tokio::net::TcpListener;
 use tokio::sync::RwLock;
@@ -28,16 +27,12 @@ async fn main() -> Result<()> {
     let config = ServerConfig::load()?;
     info!("Loaded configuration: {:?}", config);
 
-    // Initialize OpenTelemetry
-    let otel_ctx = init_otel(&config)?;
-    info!("OpenTelemetry initialized");
-
     // Initialize decision engine
     let engine = engine::init_engine(&config).await?;
     info!("Decision engine initialized");
 
-    // Create router with OTel context
-    let app = api::create_router_with_metrics(Arc::new(engine), Arc::new(otel_ctx));
+    // Create router
+    let app = api::create_router(Arc::new(engine));
 
     // Start HTTP server
     let http_addr = format!("{}:{}", config.host, config.port);
@@ -47,7 +42,6 @@ async fn main() -> Result<()> {
     info!("✓ HTTP Server listening on http://{}", http_addr);
     info!("  Health check: http://{}/health", http_addr);
     info!("  Decision API: http://{}/v1/decide", http_addr);
-    info!("  Metrics: http://{}/metrics", http_addr);
     info!("  Reload repository: POST http://{}/v1/repo/reload", http_addr);
 
     // Start gRPC server if configured
@@ -102,23 +96,5 @@ fn init_tracing() -> Result<()> {
         .map_err(|e| anyhow::anyhow!("Failed to initialize tracing: {}", e))?;
 
     Ok(())
-}
-
-/// Initialize OpenTelemetry
-fn init_otel(config: &ServerConfig) -> Result<OtelContext> {
-    let otel_config = OtelConfig::new("corint-server")
-        .with_version(env!("CARGO_PKG_VERSION"))
-        .with_metrics(config.enable_metrics)
-        .with_tracing(config.enable_tracing);
-
-    // Configure OTLP endpoint if available
-    let otel_config = if let Ok(endpoint) = std::env::var("OTEL_EXPORTER_OTLP_ENDPOINT") {
-        info!("Using OTLP endpoint: {}", endpoint);
-        otel_config.with_otlp_endpoint(endpoint)
-    } else {
-        otel_config
-    };
-
-    init_opentelemetry(otel_config)
 }
 
