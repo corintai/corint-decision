@@ -102,7 +102,7 @@ Parameters can come from:
 2. **Event data fields**: Access event data using dot notation
    ```yaml
    params:
-     ip: event.ip_address     # Loads from event_data["ip_address"]
+     ip: event.ip_address     # Loads from event["ip_address"]
    ```
 
 3. **Context variables**: Access stored context data

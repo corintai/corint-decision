@@ -493,7 +493,7 @@ regression_tests:
     
     # Each historical case becomes a test
     test_template:
-      input: { event: $row.event_data }
+      input: { event: $row.event }
       expect:
         action: $row.outcome
         score: 

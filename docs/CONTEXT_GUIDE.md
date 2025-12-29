@@ -312,9 +312,9 @@ pub struct ExecutionContext {
 }
 
 impl ExecutionContext {
-    pub fn new(event_data: HashMap<String, Value>) -> Self {
+    pub fn new(event: HashMap<String, Value>) -> Self {
         Self {
-            event: event_data,
+            event,
             features: HashMap::new(),
             api: HashMap::new(),
             service: HashMap::new(),

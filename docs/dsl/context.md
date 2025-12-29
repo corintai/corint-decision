@@ -403,6 +403,13 @@ results.fraud_detection.total_score   # Cumulative risk score
 results.fraud_detection.triggered_rules
 ```
 
+#### 8.2.2 Final Pipeline Decision
+```yaml
+# Access the final pipeline decision output
+results.decision          # Final decision: "approve", "decline", "review", "hold", "pass"
+results.actions           # List of actions: ["KYC", "2FA", "BLOCK_DEVICE"]
+results.reason            # Decision reason text
+```
 
 ### 8.3 Available Fields
 
@@ -415,6 +422,12 @@ results:
     reason: string              # Human-readable decision reason
     triggered_rules: array      # List of triggered rule IDs
     triggered_count: number     # Number of triggered rules
+
+  # Final pipeline decision output
+  decision: string              # Final decision: "approve", "decline", "review", "hold", "pass"
+  actions: array                # List of actions to execute: ["KYC", "OTP", "2FA"]
+  reason: string                # Final decision reason
+  score: number                 # Final aggregated score
 ```
 
 ### 8.4 Pipeline Router Usage
@@ -481,11 +494,22 @@ pipeline:
           next: enhanced_review
 
       default: allow_step
+
+  # Final decision based on signals
+  decision:
+    - when: results.fraud_detection.signal == "decline"
+      decision: decline
+      actions: ["BLOCK_DEVICE"]
+      reason: "Fraud detected"
+      terminate: true
+
+    - default: true
+      decision: approve
 ```
 
-### 8.6 Ruleset Results Example
+### 8.6 Final Decision Output
 
-After multiple rulesets execute, the `results` namespace contains their outputs:
+After pipeline execution completes, the `results` namespace contains the final decision:
 
 ```yaml
 # Example results after pipeline execution
@@ -502,7 +526,12 @@ results:
     signal: "approve"
     total_score: 20
     triggered_rules: []
-    reason: "Normal behavior"
+
+  # Final pipeline decision
+  decision: "review"
+  actions: ["KYC"]
+  reason: "Medium risk - requires review"
+  score: 75
 ```
 
 ### 8.7 Best Practices

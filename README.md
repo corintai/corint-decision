@@ -23,34 +23,68 @@
 
 **CORINT Decision** is a modern, real-time risk decision engine that uniquely combines:
 
-- 🎯 **Unified DSL** - Define features, rules, and decision logic in a single, expressive YAML-based language
+- 🎯 **Unified DSL** - Define features, rules, and decision logic in a single, expressive YAML-based language designed for LLM comprehension, enabling AI-powered rule generation, modification, and autonomous agent integration
 - 🤖 **AI-Augmented** - Native LLM integration for cognitive reasoning alongside traditional rules
 - ⚡ **Real-time Performance** - Millisecond-level latency for high-throughput decision-making
+- 🦀 **Minimal Resource Footprint** - Built with Rust for low memory and CPU usage, enabling cost-effective deployment at scale
 - 📊 **Feature Engineering** - Built-in statistical analysis with time-window aggregations and association metrics
 - 🔍 **Full Observability** - Complete audit trails, distributed tracing, and explainable decisions
 
 ### What Makes CORINT Different?
 
-Unlike traditional rule engines or feature stores that require stitching together multiple systems, CORINT provides an **end-to-end solution** for modern risk control with a single, coherent DSL.
+Unlike traditional rule engines (Drools, Easy Rules) that are just frameworks requiring extensive integration work, CORINT is a **production-ready, complete system** that you can deploy and use immediately—no custom development needed.
+
+**Key Differentiators:**
+
+- 🚀 **Ready-to-Deploy System** - Not a framework, but a complete decision engine with HTTP/gRPC APIs, database integration, and observability built-in. Deploy and start making decisions in minutes.
+
+- 🎯 **Unified DSL for Everything** - Single declarative language for features, rules, decisions, and orchestration. No need to learn multiple DSLs or stitch together different systems.
+
+- 🔌 **Powerful Extensibility** - Modular architecture with ruleset inheritance, parameterized rules, decision templates, and plugin system. Extend without modifying core code.
+
+- 🤖 **LLM-Native Design** - DSL specifically designed for AI comprehension. LLMs can generate, modify, and optimize rules autonomously—perfect for AI agent workflows and automated risk management.
 
 ```yaml
 # One unified DSL for everything
+
+# Define rules that reference features
+rule:
+  id: high_velocity
+  when:
+    all:
+      - transaction_velocity > 10
+  score: 75
+
+---
+
+# Ruleset produces signals based on rules
+ruleset:
+  id: fraud_detection
+  rules:
+    - high_velocity
+  conclusion:
+    - when: total_score >= 100
+      signal: decline
+      reason: "High risk detected"
+
+---
+
+# Pipeline orchestrates the flow
 pipeline:
-  # Feature engineering
-  - type: extract
-    features:
-      - name: devices_per_ip_5h
-        value: count_distinct(device.id, {ip == event.ip}, last_5h)
-  
-  # LLM reasoning
-  - type: reason
-    provider: openai
-    model: gpt-4-turbo
-    prompt: "Analyze this login pattern..."
-  
-  # Rules evaluation
-  - include:
-      ruleset: fraud_detection
+  id: fraud_pipeline
+  entry: fraud_check
+  when:
+    all:
+      - event.type == "transaction"
+  steps:
+    - step:
+        id: fraud_check
+        type: ruleset
+        ruleset: fraud_detection
+  decision:
+    - when: results.fraud_detection.signal == "decline"
+      result: decline
+      reason: "{results.fraud_detection.reason}"
 ```
 
 ---
@@ -85,53 +119,64 @@ Built-in support for risk control analytics:
 ```yaml
 features:
   # ✅ Implemented: Behavioral patterns
-  - login_count_7d: count(user.logins, last_7d)
+  - name: login_count_24h
+    description: "Number of login events in last 24 hours"
+    type: aggregation
+    method: count
+    datasource: supabase_events
+    entity: events
+    dimension: user_id
+    dimension_value: "{event.user_id}"
+    window: 24h
+    timestamp_field: event_timestamp
+    when: event.event_type == "login"
 
   # ✅ Implemented: Association analysis (unique counts)
-  - devices_per_ip_5h: count_distinct(device.id, {ip == event.ip}, last_5h)
-  - users_per_device_24h: count_distinct(user.id, {device.id == event.device.id}, last_24h)
+  - name: unique_devices_7d
+    description: "Number of distinct devices used in last 7 days"
+    type: aggregation
+    method: distinct
+    datasource: supabase_events
+    entity: events
+    dimension: user_id
+    dimension_value: "{event.user_id}"
+    field: device_id
+    window: 7d
+    timestamp_field: event_timestamp
+
+  # ✅ Implemented: Aggregation features
+  - name: transaction_sum_7d
+    description: "Total transaction amount in last 7 days"
+    type: aggregation
+    method: sum
+    datasource: supabase_events
+    entity: events
+    dimension: user_id
+    dimension_value: "{event.user_id}"
+    field: amount
+    window: 7d
+    timestamp_field: event_timestamp
+    when: event.event_type == "transaction"
+
+  # ✅ Implemented: Lookup features
+  - name: user_risk_score
+    description: "Pre-computed user risk score from feature store"
+    type: lookup
+    datasource: redis_features
+    key: "user_features:{event.user_id}:risk_score"
+    fallback: 0.0
+
+  # 📋 Planned: Expression features for complex calculations
+  # - name: amount_zscore
+  #   type: expression
+  #   value: (amount - avg(amounts, last_30d)) / stddev(amounts, last_30d)
 
   # 📋 Planned: Statistical anomaly detection
-  - amount_zscore: (amount - avg(amounts, last_30d)) / stddev(amounts, last_30d)
-  - is_outlier: amount > percentile(amounts, last_90d, p=95)
-
-  # ✅ Implemented: Velocity tracking (using expression features)
-  - login_velocity: count(logins, last_24h) / count(logins, last_7d) * 7
+  # - name: is_outlier
+  #   type: expression
+  #   value: amount > percentile(amounts, last_90d, p=95)
 ```
-
-### 🤖 Native LLM Integration
-
-Seamlessly combine deterministic rules with AI reasoning:
-
-- Multiple LLM providers (OpenAI, Anthropic, custom)
-- Structured output schemas
-- Automatic caching and cost optimization
-- Fallback strategies
-- Integration with rule conditions
-
-```yaml
-- type: reason
-  id: behavior_analysis
-  provider: openai
-  model: gpt-4-turbo
-  prompt:
-    template: |
-      Analyze login pattern for user {user.id}:
-      - Current device: {device.type} from {geo.country}
-      - Failed attempts: {failed_count}
-      - Time: {timestamp}
-  output_schema:
-    risk_level: string
-    confidence: float
-    reason: string
-
-# Use LLM output in rules
-rule:
-  conditions:
-    - context.behavior_analysis.risk_level == "high"
-    - context.behavior_analysis.confidence > 0.8
-  score: 90
-```
+ 
 
 ### 🔄 Three-Layer Decision Architecture
 
@@ -146,17 +191,19 @@ Clean separation of concerns:
 └─────────────────────────────────────┘
               ↓ scores
 ┌─────────────────────────────────────┐
-│ Layer 2: Rulesets (Decision Makers)│
+│ Layer 2: Rulesets                  │
+│         (Decision Suggestions)     │
 │ - Evaluate rule combinations       │
-│ - Define decision logic            │
-│ - Produce actions (approve/deny)   │
+│ - Analyze risk levels              │
+│ - Produce signals (suggestions)    │
+│   (approve/decline/review/hold)    │
 └─────────────────────────────────────┘
-              ↓ action
+              ↓ signals
 ┌─────────────────────────────────────┐
 │ Layer 3: Pipeline (Orchestrator)   │
 │ - Orchestrate execution flow       │
-│ - Manage data flow                 │
-│ - Control parallelism              │
+│ - Make final decisions             │
+│ - Control actions and routing      │
 └─────────────────────────────────────┘
 ```
 
@@ -178,76 +225,205 @@ Clean separation of concerns:
 
 ### 🔄 Modular Architecture
 
-Reusable components with powerful inheritance and parameterization:
+CORINT provides modularity at two levels: system architecture and DSL composition.
+
+#### System Architecture Modularity
+
+Clean separation of concerns with independent, reusable crates:
+
+```
+┌─────────────────────────────────────────────────────────┐
+│ corint-server (HTTP/gRPC API Server)                   │
+│   ├─ REST API endpoints                                │
+│   └─ gRPC service implementation                       │
+└────────────────────┬────────────────────────────────────┘
+                     │
+┌────────────────────▼────────────────────────────────────┐
+│ corint-sdk (High-level Decision API)                   │
+│   ├─ Decision engine interface                         │
+│   ├─ Feature calculation                               │
+│   └─ FFI bindings (C/C++/Python/Node.js)              │
+└────────────────────┬────────────────────────────────────┘
+                     │
+        ┌────────────┼────────────┐
+        │            │            │
+┌───────▼──────┐ ┌──▼────────┐ ┌─▼──────────┐
+│ corint-      │ │ corint-   │ │ corint-    │
+│ compiler     │ │ runtime   │ │ repository │
+│              │ │           │ │            │
+│ - Parse DSL  │ │ - Execute │ │ - Load     │
+│ - Compile IR │ │ - VM      │ │ - Save     │
+└──────┬───────┘ └───────────┘ └────────────┘
+       │
+┌──────▼───────┐
+│ corint-      │
+│ parser       │
+│ - Tokenize   │
+│ - Parse AST  │
+└──────┬───────┘
+       │
+┌──────▼───────┐
+│ corint-core  │
+│ - Types      │
+│ - IR         │
+└──────────────┘
+```
+
+**Multi-Language Support via FFI:**
+- **Rust SDK**: Native performance with zero-cost abstractions
+- **C/C++ Bindings**: Direct FFI integration for system-level applications
+- **Python/Node.js**: Language bindings for web and data science workflows
+- **Any Language**: Standard C FFI interface for custom integrations
+
+#### DSL Composition Modularity
+
+Reusable rule definitions with inheritance and import system:
 
 ```yaml
-# Base ruleset with core fraud checks
-ruleset:
-  id: fraud_detection_base
-  rules:
-    - velocity_check
-    - geo_mismatch
-  decision_logic:
-    - condition: total_score >= 100
-      action: deny
-
-# Specialized ruleset extending base
-ruleset:
-  id: payment_fraud_detection
-  extends: fraud_detection_base  # Inherits all rules and logic
-  rules:
-    - high_amount_check          # Additional rules
-
-# Parameterized rules for flexibility
+# Define reusable rules in separate files
+# File: repository/library/rules/velocity_check.yaml
 rule:
   id: velocity_check
-  params:
-    time_window: 3600           # Configurable at compile time
-    max_count: 10
+  name: High Velocity Detection
   when:
-    conditions:
-      - transaction_count(last_n_seconds: params.time_window) > params.max_count
+    all:
+      - features.transaction_count_1h > 10
   score: 75
 
-# Decision logic templates
+---
+
+# File: repository/library/rules/geo_mismatch.yaml
+rule:
+  id: geo_mismatch
+  name: Geographic Mismatch
+  when:
+    all:
+      - features.country_change_detected == true
+  score: 60
+
+---
+
+# Base ruleset with core fraud checks
+# File: repository/library/rulesets/fraud_detection_base.yaml
 ruleset:
-  id: my_ruleset
-  decision_template: score_based_decision  # Reuse common patterns
-  template_params:
-    deny_threshold: 150
-    review_threshold: 75
+  id: fraud_detection_base
+  name: Base Fraud Detection
+  rules:
+    - velocity_check      # References imported rule
+    - geo_mismatch        # References imported rule
+  conclusion:
+    - when: total_score >= 100
+      signal: decline
+      reason: "High risk detected"
+
+---
+
+# Specialized ruleset extending base
+# File: repository/library/rulesets/payment_fraud.yaml
+ruleset:
+  id: payment_fraud_detection
+  extends: fraud_detection_base    # Inherits all rules and conclusion logic
+  rules:
+    - high_amount_check            # Additional payment-specific rule
 ```
 
 **Key Features:**
 - **Ruleset Inheritance** (`extends`) - Build hierarchies of specialized rulesets
-- **Decision Templates** (`decision_template`) - Reuse common decision patterns
-- **Parameterized Rules** (`params`) - Configure rules with compile-time parameters
-- **Import System** - Modular composition with automatic dependency resolution
+- **Import System** - Reference rules/rulesets from separate files, automatic dependency resolution
+- **Single Responsibility** - Each file defines one rule or ruleset for clarity
+- **Version Control Friendly** - Modular files enable better collaboration and change tracking
 
 ### 🗄️ Flexible Storage Backend
 
-Multiple repository backends for different deployment scenarios:
+CORINT supports multiple repository backends, enabling flexible deployment strategies from local development to distributed cloud environments:
+
+```
+┌────────────────────────────────────────┐
+│      Repository Interface (Trait)      │
+│   - load_rule / save_rule              │
+│   - load_ruleset / save_ruleset        │
+│   - load_pipeline / save_pipeline      │
+└──────────────┬─────────────────────────┘
+               │
+       ┌───────┼────────┐
+       │       │        │
+┌──────▼──┐ ┌─▼──────┐ ┌▼────────────┐
+│ File    │ │Database│ │Remote API   │
+│ System  │ │        │ │             │
+│         │ │        │ │             │
+│ YAML    │ │Postgres│ │HTTP/gRPC    │
+│ files   │ │        │ │endpoints    │
+└─────────┘ └────────┘ └─────────────┘
+```
+
+#### 1. Filesystem Repository
+
+**Use Case:** Local development, version control, GitOps workflows
 
 ```rust
-// File system (development)
+// Load rules from local YAML files
 let repo = FileSystemRepository::new("repository")?;
-
-// PostgreSQL (production with versioning)
-let mut repo = PostgresRepository::new(database_url).await?;
-repo.save_rule(&rule).await?;        // Auto-versioning
-repo.save_ruleset(&ruleset).await?;  // Audit logging
-
-// Load from any backend
 let (rule, _) = repo.load_rule("fraud_check").await?;
 ```
 
+**Benefits:**
+- **Version Control Friendly**: Track rule changes in Git
+- **Human Readable**: Direct YAML editing
+- **Fast Local Development**: No database required
+- **GitOps Ready**: Deploy rules via CI/CD pipelines
+
+#### 2. Database Repository
+
+**Use Case:** Production environments requiring versioning, audit trails, and dynamic updates
+
+```rust
+// PostgreSQL with automatic versioning
+let mut repo = PostgresRepository::new(database_url).await?;
+
+// Save with auto-versioning
+repo.save_rule(&rule).await?;        // Version auto-incremented
+repo.save_ruleset(&ruleset).await?;  // Audit logged
+
+// Load latest version
+let (rule, version) = repo.load_rule("fraud_check").await?;
+```
+
 **Features:**
-- **File System Repository**: YAML files for development and read-only deployments
-- **PostgreSQL Repository**: Full CRUD with automatic versioning and audit trails
-- **Caching Layer**: Built-in TTL-based caching for performance
-- **Async API**: Non-blocking I/O with Tokio
-- **Version Tracking**: Automatic version incrementing on updates
-- **Audit Logging**: Optional PostgreSQL triggers for compliance
+- **Automatic Versioning**: Every update creates a new version
+- **Audit Trail**: Full history of rule changes with timestamps
+- **Transaction Support**: ACID guarantees for rule updates
+- **Multi-tenancy**: Isolate rules by organization/tenant
+- **Hot Reload**: Update rules without server restart
+
+#### 3. Remote API Repository 📋 *Planned*
+
+**Use Case:** WASM edge-side risk control, distributed systems, microservices, centralized rule management
+
+```rust
+// Load rules from remote API (planned)
+let repo = HttpRepository::new("https://rule-api.example.com")?;
+let (rule, _) = repo.load_rule("fraud_check").await?;
+```
+
+**Primary Use Case - WASM Edge-Side Risk Control:**
+- **Browser/Mobile WASM**: Load rules from server to run risk checks client-side
+- **Edge Computing**: Deploy lightweight WASM modules that fetch rules from central API
+- **Offline Capability**: Cache rules locally for offline decision-making
+- **Dynamic Updates**: Update client-side rules without app redistribution
+
+**Additional Benefits:**
+- **Centralized Management**: Single source of truth for multiple services
+- **Dynamic Loading**: Fetch rules on-demand from remote endpoints
+- **API Gateway Integration**: Load rules via existing API infrastructure
+- **Cloud-Native**: Integrate with managed rule services
+- **Smart Caching**: Built-in HTTP cache to reduce API calls
+
+**Common Features Across All Backends:**
+- ✅ **Unified Interface**: Same API regardless of backend
+- ✅ **Async I/O**: Non-blocking operations with Tokio
+- ✅ **Caching Layer**: Built-in TTL-based caching for performance
+- ✅ **Error Handling**: Graceful fallbacks and retry logic
+- ✅ **Hot Reload**: Reload rules without restarting the server
 
 ### 📋 Custom Lists (Blocklists/Allowlists)
 
@@ -340,31 +516,19 @@ For detailed server documentation, see [Server Quick Start Guide](crates/corint-
 ```yaml
 version: "0.1"
 
-# Extract features
-pipeline:
-  - type: extract
-    id: features
-    features:
-      - name: failed_logins_1h
-        value: count(user.failed_logins, last_1h)
-      
-      - name: devices_per_ip_5h
-        value: count_distinct(device.id, {ip == event.ip}, last_5h)
-  
-  # Evaluate rules
-  - include:
-      ruleset: login_risk
+# ========================================
+# STAGE 1: DEFINE RULES
+# ========================================
+# Rules detect risk patterns and produce scores
 
----
-
-# Define rules
 rule:
   id: too_many_failures
   name: Too Many Failed Login Attempts
+  description: Detect excessive failed login attempts
   when:
-    event.type: login
-    conditions:
-      - context.features.failed_logins_1h > 5
+    all:
+      # Features are calculated on-demand when referenced
+      - features.failed_logins_1h > 5
   score: 60
 
 ---
@@ -372,32 +536,82 @@ rule:
 rule:
   id: suspicious_ip
   name: Suspicious IP Association
+  description: Detect IP addresses associated with multiple devices
   when:
-    event.type: login
-    conditions:
-      - context.features.devices_per_ip_5h > 10
+    all:
+      # count_distinct feature calculated from data source
+      - features.devices_per_ip_5h > 10
   score: 80
 
 ---
 
-# Decision logic
+# ========================================
+# STAGE 2: DEFINE RULESET
+# ========================================
+# Ruleset evaluates rules and produces signals
+
 ruleset:
-  id: login_risk
+  id: login_risk_assessment
+  name: Login Risk Assessment
   rules:
     - too_many_failures
     - suspicious_ip
-  
-  decision_logic:
-    - condition: total_score >= 100
-      action: deny
-      reason: "High risk score"
-    
-    - condition: total_score >= 60
-      action: review
-      reason: "Medium risk"
-    
+
+  # Conclusion produces signals based on rule scores
+  conclusion:
+    - when: total_score >= 100
+      signal: decline
+      reason: "High risk score detected"
+      terminate: true
+
+    - when: total_score >= 60
+      signal: review
+      reason: "Medium risk detected"
+      terminate: true
+
     - default: true
-      action: approve
+      signal: approve
+      reason: "No significant risk"
+
+---
+
+# ========================================
+# STAGE 3: DEFINE PIPELINE
+# ========================================
+# Pipeline orchestrates execution and makes final decisions
+
+pipeline:
+  id: login_risk_pipeline
+  name: Login Risk Pipeline
+  entry: risk_check
+
+  # Pipeline-level when condition
+  when:
+    all:
+      - event.type == "login"
+
+  steps:
+    - step:
+        id: risk_check
+        type: ruleset
+        ruleset: login_risk_assessment
+
+  # Final decision based on ruleset signals
+  decision:
+    - when: results.login_risk_assessment.signal == "decline"
+      result: decline
+      reason: "{results.login_risk_assessment.reason}"
+      terminate: true
+
+    - when: results.login_risk_assessment.signal == "review"
+      result: review
+      actions: ["manual_review", "2FA"]
+      reason: "{results.login_risk_assessment.reason}"
+      terminate: true
+
+    - default: true
+      result: approve
+      reason: "Login approved"
 ```
 
 ### Modular Rules with Inheritance (Phase 3)
@@ -448,12 +662,42 @@ rule:
 
 ### More Examples
 
-See the [`examples/`](docs/dsl/examples/) directory for complete, real-world examples:
+See the [`repository/`](repository/) directory for complete, production-ready examples:
 
-- [Account Takeover Detection](docs/dsl/examples/account-takeover-complete.yml) - Comprehensive takeover prevention
-- [Statistical Analysis](docs/dsl/examples/statistical-analysis.yml) - Advanced feature engineering
-- [Intelligent Inference](docs/dsl/examples/intelligent-inference.yml) - LLM-powered decisions
-- [Loan Application](docs/dsl/examples/loan.yml) - Credit risk assessment
+#### Complete Pipelines
+
+- [**Supabase Feature Pipeline**](repository/pipelines/supabase_feature_ruleset.yaml) - Full-featured risk assessment with database-backed feature calculation
+- [**Login Risk Pipeline**](repository/pipelines/login_risk_pipeline.yaml) - Account security and login anomaly detection
+- [**Payment Pipeline**](repository/pipelines/payment_pipeline.yaml) - Payment fraud prevention with velocity checks
+- [**Fraud Detection**](repository/pipelines/fraud_detection.yaml) - Comprehensive fraud detection ruleset
+
+#### Rule Library
+
+**Fraud Detection Rules** ([`repository/library/rules/fraud/`](repository/library/rules/fraud/)):
+- [Account Takeover](repository/library/rules/fraud/account_takeover.yaml) - Detect compromised accounts
+- [Velocity Abuse](repository/library/rules/fraud/velocity_abuse.yaml) - High-frequency transaction patterns
+- [Amount Outlier](repository/library/rules/fraud/amount_outlier.yaml) - Unusual transaction amounts
+- [Fraud Farm](repository/library/rules/fraud/fraud_farm.yaml) - Coordinated fraud operations
+
+**Payment Risk Rules** ([`repository/library/rules/payment/`](repository/library/rules/payment/)):
+- [Card Testing](repository/library/rules/payment/card_testing.yaml) - Detect stolen card validation attempts
+- [Velocity Check](repository/library/rules/payment/velocity_check.yaml) - Payment frequency analysis
+
+**Account Security Rules** ([`repository/library/rules/account/`](repository/library/rules/account/)):
+- [Impossible Travel](repository/library/rules/account/impossible_travel.yaml) - Detect physically impossible location changes
+- [Off-Hours Activity](repository/library/rules/account/off_hours_activity.yaml) - Unusual time-based patterns
+
+#### Reusable Rulesets
+
+- [**Fraud Detection Core**](repository/library/rulesets/fraud_detection_core.yaml) - Base fraud detection ruleset
+- [**Login Risk**](repository/library/rulesets/login_risk.yaml) - Login security checks
+- [**Payment Standard**](repository/library/rulesets/payment_standard.yaml) - Standard payment verification
+
+#### Feature Definitions
+
+- [**User Features**](repository/configs/features/user_features.yaml) - User behavior aggregations
+- [**Device Features**](repository/configs/features/device_features.yaml) - Device fingerprinting features
+- [**IP Features**](repository/configs/features/ip_features.yaml) - IP reputation and geolocation
 
 ---
 
@@ -474,9 +718,9 @@ curl http://localhost:8080/health
 curl -X POST http://localhost:8080/v1/decide \
   -H "Content-Type: application/json" \
   -d '{
-    "event_data": {
+    "event": {
       "user_id": "user_001",
-      "event.type": "transaction"
+      "type": "transaction"
     }
   }'
 ```
@@ -496,11 +740,11 @@ curl -X POST http://localhost:8080/v1/decide \
 **Request Example:**
 ```json
 {
-  "event_data": {
+  "event": {
     "user_id": "user_001",
     "device_id": "device_001",
-    "event.type": "transaction",
-    "event.user_id": "user_001"
+    "type": "transaction",
+    "source": "supabase" 
   }
 }
 ```
@@ -508,11 +752,30 @@ curl -X POST http://localhost:8080/v1/decide \
 **Response Example:**
 ```json
 {
-  "action": "Approve",
-  "score": 35,
-  "triggered_rules": ["high_value_transaction"],
-  "explanation": "Transaction approved with moderate risk",
-  "processing_time_ms": 125
+  "request_id": "req_20251229060953_f4fabb",
+  "status": 200,
+  "process_time_ms": 1162,
+  "pipeline_id": "supabase_transaction_pipeline",
+  "decision": {
+    "result": "REVIEW",
+    "actions": [
+      "KYC",
+      "2FA"
+    ],
+    "scores": {
+      "canonical": 12,
+      "raw": 60
+    },
+    "evidence": {
+      "triggered_rules": [
+        "suspicious_device_pattern"
+      ]
+    },
+    "cognition": {
+      "summary": "{results.supabase_risk_assessment.reason}",
+      "reason_codes": []
+    }
+  }
 }
 ```
 
@@ -557,70 +820,47 @@ For detailed gRPC documentation, see [crates/corint-server/GRPC.md](crates/corin
 
 ### Configuration
 
-The server can be configured via:
+The server is primarily configured via the `config/server.yaml` file, with environment variables for sensitive credentials.
 
-1. **Environment Variables** (prefix: `CORINT_`)
-2. **Config File** (`config/server.yaml`)
-3. **Default Values**
-
-**Environment Variables:**
-```bash
-CORINT_HOST=127.0.0.1
-CORINT_PORT=8080
-CORINT_GRPC_PORT=50051
-CORINT_RULES_DIR=repository/pipelines
-CORINT_ENABLE_METRICS=true
-CORINT_ENABLE_TRACING=true
-CORINT_LOG_LEVEL=info
-DATABASE_URL=postgresql://user:password@localhost:5432/corint_risk
-```
-
-**Config File Example** (`config/server.yaml`):
+**Config File Example** (`config/server-example.yaml`):
 ```yaml
+# Server configuration
 host: "127.0.0.1"
 port: 8080
 grpc_port: 50051
-rules_dir: "repository/pipelines"
+
+# Repository configuration
+repository:
+  type: filesystem
+  path: "repository"
+
+# Data sources (for repository storage, not feature calculation)
+datasources:
+  postgres_rules:
+    type: sql
+    provider: postgresql
+    connection_string: "postgresql://user:password@localhost:5432/corint_rules"
+    database: "corint_rules"
+
+# Observability
 enable_metrics: true
 enable_tracing: true
 log_level: "info"
-database_url: "postgresql://user:password@localhost:5432/corint_risk"
+
+# LLM configuration
+llm:
+  default_provider: deepseek
+  enable_cache: true
+  openai:
+    api_key: "${OPENAI_API_KEY}"
+    default_model: "gpt-4o-mini"
+  anthropic:
+    api_key: "${ANTHROPIC_API_KEY}"
+    default_model: "claude-3-5-sonnet-20241022"
 ```
 
-### Integration with Supabase
+**Note:** Feature calculation datasources (for runtime feature computation) are configured separately in `repository/configs/datasources/`.
 
-The server supports on-demand feature calculation from Supabase PostgreSQL:
-
-1. **Prerequisites:**
-   - Supabase database configured with test data (see `docs/schema/postgres-examples.sql`)
-   - Data source configured (`repository/configs/datasources/supabase_events.yaml`)
-   - Rules reference features (e.g., `repository/pipelines/supabase_feature_ruleset.yaml`)
-
-2. **Workflow:**
-   - Start the server: `cargo run -p corint-server`
-   - Send decision requests via `/v1/decide`
-   - When rules reference features (e.g., `transaction_sum_7d > 5000`), the server automatically queries Supabase to calculate features
-   - Feature values are cached for subsequent rule evaluations
-   - Decision result is returned
-
-3. **Feature Calculation Logs:**
-```
-INFO corint_runtime::datasource::client: Executing PostgreSQL query: 
-  SELECT SUM((attributes->>'amount')::numeric) AS sum 
-  FROM events 
-  WHERE user_id = 'user_003' AND event_type = 'transaction' 
-  AND event_timestamp >= NOW() - INTERVAL '604800 seconds'
-
-DEBUG corint_runtime::engine::pipeline_executor: 
-  Feature 'transaction_sum_7d' calculated: Number(8000.0)
-```
-
-### Performance Optimization
-
-- **Lazy Feature Calculation**: Features are only calculated when referenced by rules, avoiding unnecessary database queries
-- **Feature Caching**: Calculated feature values are cached in `event_data` for subsequent rule accesses within the same request
-- **Async I/O**: All database queries and external API calls are non-blocking, supporting high concurrency
-- **Connection Pooling**: Database connections are managed via connection pools to reduce connection overhead
 
 ### Logging
 
@@ -653,7 +893,7 @@ See [Server Quick Start Guide](crates/corint-server/QUICKSTART.md).
 
 **Server won't start:**
 - Check if port is in use: `lsof -i :8080`
-- Verify rules directory exists: `ls -la repository/pipelines`
+- Verify rules directory exists: `ls -la repository`
 - View detailed logs: `RUST_LOG=debug cargo run -p corint-server`
 
 **Rules not loading:**
@@ -670,7 +910,7 @@ See [Server Quick Start Guide](crates/corint-server/QUICKSTART.md).
 **API returns 500 error:**
 - Check server logs for error stack traces
 - Verify request body format is correct
-- Ensure `event_data` contains all required fields
+- Ensure `event` object contains all required fields
 
 ---
 
@@ -717,65 +957,7 @@ See [Server Quick Start Guide](crates/corint-server/QUICKSTART.md).
 
 ---
 
-## 💡 Why CORINT?
 
-### The Problem with Traditional Approaches
-
-Building a modern risk control system typically requires stitching together multiple tools:
-
-```
-┌─────────────┐     ┌──────────────┐     ┌─────────────┐
-│   Feast     │ →   │   Drools     │ →   │ LangChain   │
-│ (Features)  │     │ (Rules)      │     │ (LLM)       │
-└─────────────┘     └──────────────┘     └─────────────┘
-       ↓                    ↓                    ↓
-  Different DSL      Different DSL       Different API
-  
-  Result: Complex integration, maintenance burden, poor observability
-```
-
-### The CORINT Approach
-
-One unified DSL for everything:
-
-```yaml
-# Everything in one place, one language
-version: "0.1"
-
-pipeline:
-  # Features
-  - type: extract
-    features: [...]
-  
-  # LLM reasoning
-  - type: reason
-    model: gpt-4-turbo
-    prompt: "..."
-  
-  # Rules
-  - include:
-      ruleset: fraud_detection
-  
-  # Decision
-  decision_logic:
-    - condition: total_score >= 100
-      action: deny
-```
-
-### Key Advantages
-
-| Aspect | Traditional Stack | CORINT |
-|--------|------------------|---------|
-| **Languages** | Multiple (SQL, Drools DRL, Python, etc.) | Single YAML-based DSL |
-| **LLM Integration** | Manual API calls, custom code | Native, first-class support |
-| **Feature Store** | Separate system (Feast, Tecton) | Built-in with time-window aggregations |
-| **Rules Engine** | Separate (Drools, Easy Rules) | Integrated with features and LLM |
-| **Observability** | Fragmented across systems | Unified tracing and logging |
-| **Testing** | Multiple frameworks | Single testing framework |
-| **Deployment** | Multiple services to coordinate | Single decision engine |
-| **Learning Curve** | Steep (multiple systems) | Gentle (one DSL) |
-
----
 
 ## 🔄 Comparison with Alternatives
 
@@ -803,16 +985,7 @@ pipeline:
 | LLM Integration | ❌ No | ✅ Native |
 | Real-time Decisions | ❌ Separate service needed | ✅ End-to-end |
 
-### vs. LLM Orchestration (LangChain, Semantic Kernel)
 
-| Feature | LangChain | CORINT |
-|---------|-----------|---------|
-| LLM Integration | ✅ Excellent | ✅ Native |
-| Prompt Engineering | ✅ Yes | ✅ Yes with templates |
-| Rules Engine | ❌ No | ✅ Built-in |
-| Feature Engineering | ❌ No | ✅ Built-in |
-| Decision Logic | ❌ Code-based | ✅ Declarative DSL |
-| Production-ready | ⚠️ Requires work | ✅ Yes (caching, monitoring) |
 
 ### vs. Cloud Services (AWS Fraud Detector, Stripe Radar)
 
@@ -870,7 +1043,7 @@ The HTTP server (`corint-server`) architecture:
 ┌─────────────────────────────────────────┐
 │         HTTP Request                     │
 │  POST /v1/decide                         │
-│  { "event_data": {...} }                │
+│  { "event": {...} }                     │
 └─────────────────┬───────────────────────┘
                   │
                   ▼
@@ -898,7 +1071,7 @@ The HTTP server (`corint-server`) architecture:
 ┌─────────────────────────────────────────┐
 │    Pipeline Executor (Runtime)          │
 │    - Execute IR instructions            │
-│    - LoadField: check event_data        │
+│    - LoadField: check event context     │
 └─────────────────┬───────────────────────┘
                   │
                   ▼ (field not found)
@@ -908,7 +1081,7 @@ The HTTP server (`corint-server`) architecture:
 │    - Build SQL query                    │
 │    - Query Supabase                     │
 │    - Calculate feature value            │
-│    - Cache in event_data                │
+│    - Cache in event context             │
 └─────────────────┬───────────────────────┘
                   │
                   ▼
@@ -928,8 +1101,8 @@ Event → Pipeline → Extract Features → Evaluate Rules → Decision Logic �
            ↓              ↓                  ↓                ↓
         Validate      [Cache Check]     [Parallel]      [Action]
            ↓              ↓                  ↓                ↓
-        Context       Aggregations       Scoring         approve/deny/
-                      count_distinct                     review/infer
+        Context       Aggregations       Scoring         approve/decline/
+                      count_distinct                     review
                       percentile
                       velocity
 ```
@@ -983,36 +1156,7 @@ Event → Pipeline → Extract Features → Evaluate Rules → Decision Logic �
 - 📋 Streaming support (Kafka, Kinesis)
 
 ---
-
-## 🧪 Testing
-
-CORINT includes a comprehensive testing framework:
-
-```yaml
-# Rule unit test
-test:
-  rule: high_risk_transaction
-  cases:
-    - name: "High amount triggers rule"
-      input:
-        event:
-          type: transaction
-          amount: 15000
-      expect:
-        triggered: true
-        score: 80
-    
-    - name: "Low amount does not trigger"
-      input:
-        event:
-          amount: 100
-      expect:
-        triggered: false
-```
-
-See [test.md](doc/dsl/test.md) for complete testing guide.
-
----
+ 
 
 ## 🔒 Security
 
@@ -1056,16 +1200,7 @@ cargo doc --no-deps --open
 
 This project is licensed under the **Elastic License 2.0**.
 
----
 
-## 🙏 Acknowledgments
-
-Inspired by and learning from:
-
-- **Feast** - Feature Store architecture
-- **Drools** - Rule engine design patterns
-- **LangChain** - LLM orchestration patterns
-- **OpenTelemetry** - Observability standards
 
 ---
 

@@ -324,14 +324,14 @@ impl CorintEngine {
     #[wasm_bindgen]
     pub async fn decide(&self, event_json: &str) -> Result<JsValue, JsValue> {
         // Execute decision using existing runtime
-        let event_data: HashMap<String, Value> = serde_json::from_str(event_json)
+        let event: HashMap<String, Value> = serde_json::from_str(event_json)
             .map_err(|e| JsValue::from_str(&format!("Invalid JSON: {}", e)))?;
-        
+
         // Find matching pipeline (simplified)
         let program = self.programs.values().next()
             .ok_or_else(|| JsValue::from_str("No rules loaded"))?;
-        
-        let result = self.executor.execute(program, event_data).await
+
+        let result = self.executor.execute(program, event).await
             .map_err(|e| JsValue::from_str(&format!("Execution error: {}", e)))?;
         
         Ok(JsValue::from_serde(&result)
@@ -396,7 +396,7 @@ packages/
 ```typescript
 // src/index.ts
 export interface DecisionRequest {
-  event_data: Record<string, any>;
+  event: Record<string, any>;
   metadata?: Record<string, string>;
 }
 
@@ -524,7 +524,7 @@ engine.loadRegistry(registry);
 
 // Make decision
 const response = engine.decide({
-  event_data: {
+  event: {
     event_type: 'payment',
     amount: 1500,
     user_id: 'user123',
@@ -646,7 +646,7 @@ export class CorintEngine {
         body: JSON.stringify({
           decisions: batch.map(({ request, response }) => ({
             decision_id: response.decision_id || this.generateDecisionId(),
-            event_data: request.event_data,
+            event: request.event,
             action: response.action,
             score: response.score,
             triggered_rules: response.triggered_rules,
@@ -710,7 +710,7 @@ export class CorintEngine {
         },
         body: JSON.stringify({
           decision_id: clientResponse.decision_id,
-          event_data: request.event_data,
+          event: request.event,
           client_result: {
             action: clientResponse.action,
             score: clientResponse.score,
@@ -754,7 +754,7 @@ export class CorintEngine {
 #[derive(Debug, Deserialize)]
 pub struct VerifyRequest {
     pub decision_id: String,
-    pub event_data: HashMap<String, serde_json::Value>,
+    pub event: HashMap<String, serde_json::Value>,
     pub client_result: ClientResult,
     pub rule_version: Option<String>,
 }
@@ -771,8 +771,8 @@ async fn verify_decision(
     Json(payload): Json<VerifyRequest>,
 ) -> Result<Json<VerificationResponse>, ServerError> {
     // Re-execute decision on server
-    let event_data = convert_to_corint_values(payload.event_data);
-    let request = DecisionRequest::new(event_data);
+    let event = convert_to_corint_values(payload.event);
+    let request = DecisionRequest::new(event);
     let server_response = state.engine.decide(request).await?;
 
     // Compare client and server results
@@ -837,7 +837,7 @@ export class CorintEngine {
         },
         body: JSON.stringify({
           decision_id: response.decision_id,
-          event_data: request.event_data,
+          event: request.event,
           action: response.action,
           score: response.score,
           triggered_rules: response.triggered_rules,
@@ -877,7 +877,7 @@ interface DecisionServerAPI {
     Body: {
       decisions: Array<{
         decision_id: string;
-        event_data: Record<string, any>;
+        event: Record<string, any>;
         action?: string;
         score: number;
         triggered_rules: string[];
@@ -897,7 +897,7 @@ interface DecisionServerAPI {
   POST /v1/decisions/verify
     Body: {
       decision_id: string;
-      event_data: Record<string, any>;
+      event: Record<string, any>;
       client_result: {
         action?: string;
         score: number;
@@ -917,7 +917,7 @@ interface DecisionServerAPI {
   POST /v1/decisions/sync
     Body: {
       decision_id: string;
-      event_data: Record<string, any>;
+      event: Record<string, any>;
       action?: string;
       score: number;
       triggered_rules: string[];
@@ -1111,7 +1111,7 @@ await engine.loadRulesFromServer('fraud_detection_v2');
 
 // Make decision
 const response = engine.decide({
-  event_data: { event_type: 'payment', amount: 1500 }
+  event: { event_type: 'payment', amount: 1500 }
 });
 
 // Check if rules need refresh
@@ -1816,7 +1816,7 @@ test('decision execution', async ({ page }) => {
 
   const result = await page.evaluate(() => {
     const engine = new CorintEngine();
-    return engine.decide({ event_data: { ... } });
+    return engine.decide({ event: { ... } });
   });
 
   expect(result.action).toBe('approve');

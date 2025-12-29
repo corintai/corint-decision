@@ -369,7 +369,7 @@ prompt:
         
   prompt:
     template: |
-      {current_event_data}
+      {current_event}
 ```
 
 ---

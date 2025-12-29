@@ -33,7 +33,7 @@ cargo run -p corint-server
 curl -X POST http://localhost:8080/v1/decide \
   -H "Content-Type: application/json" \
   -d '{
-    "event_data": {
+    "event": {
       "user_id": "test_user",
       "amount": 1500,
       "transaction_type": "purchase"
