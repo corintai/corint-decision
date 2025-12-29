@@ -538,5 +538,4 @@ cargo run --example opentelemetry_metrics --features otel
 - [Feature Engineering](../../docs/dsl/feature.md)
 - [Datasource Configuration](../../docs/dsl/feature.md#datasources)
 - [Expression Evaluation](../../docs/dsl/expression.md)
-- [Performance Optimization](../../docs/dsl/performance.md)
 - [OpenTelemetry Documentation](https://opentelemetry.io/docs/)

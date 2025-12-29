@@ -390,15 +390,13 @@ Strategies:
 Comprehensive observability for monitoring and debugging.
 
 Features:
-- Structured logging with sampling
-- Metrics (counters, gauges, histograms)
-- Distributed tracing
-- Audit trails
-- Alerting
-- Performance profiling
-- Explainability
+- Metrics collection (Counter, Histogram) - implemented at runtime level
+- Distributed tracing (Span, Tracer) - implemented at runtime level
+- OpenTelemetry integration - available via `otel` feature
+- Prometheus metrics endpoint - `/metrics` endpoint available
+- Health check endpoint - `/health` endpoint available
 
-(See `observability.md` for complete guide.)
+Note: Observability features are implemented at the runtime level rather than through DSL configuration. See `QUICK_START_OTEL.md` for OpenTelemetry setup.
 
 ---
 
@@ -420,15 +418,12 @@ Test types:
 High-performance execution for real-time decisioning.
 
 Optimizations:
-- Multi-level caching
-- Parallelization
-- Lazy loading
-- Early termination
-- Connection pooling
-- LLM optimization
-- Resource management
+- Multi-level caching (feature-level caching implemented)
+- Parallelization (feature dependencies executed in parallel)
+- Connection pooling (at datasource level)
+- LLM optimization (basic caching implemented)
 
-(See `performance.md` for optimization strategies.)
+Note: Advanced performance optimizations are implemented at the runtime level rather than through DSL configuration.
 
 ---
 
@@ -510,8 +505,6 @@ RDL documentation is organized as follows:
 
 ### Operational
 - **error-handling.md** - Error handling strategies
-- **observability.md** - Monitoring, logging, and alerting
-- **performance.md** - Performance optimization
 
 ### Examples
 - **examples/** - Real-world pipeline examples

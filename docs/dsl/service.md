@@ -1247,5 +1247,3 @@ This enables efficient integration with internal infrastructure while maintainin
 - `context.md` - Context and variable management
 - `pipeline.md` - Service integration in pipelines
 - `error-handling.md` - Error handling strategies
-- `performance.md` - Performance optimization
-- `observability.md` - Monitoring and logging

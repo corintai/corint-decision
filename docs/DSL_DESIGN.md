@@ -399,9 +399,7 @@ CORINT RDL documentation is organized into five categories for clarity and ease 
 │  └─ external.md        External API integration for third-party risk intelligence
 │
 ├─ ⚙️ Operational (Production deployment and monitoring)
-│  ├─ error-handling.md  Error handling strategies, fallbacks, retries, and circuit breakers
-│  ├─ observability.md   Monitoring, logging, metrics, tracing, and alerting
-│  └─ performance.md    Performance optimization, caching, parallelization, and tuning
+│  └─ error-handling.md  Error handling strategies, fallbacks, retries, and circuit breakers
 │
 └─ 📝 Examples
    └─ examples/          Real-world pipeline examples and best practice patterns

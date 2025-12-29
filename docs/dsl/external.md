@@ -1074,5 +1074,3 @@ This enables reliable integration with third-party risk intelligence services wh
 - `rule.md` - Using external API results in rules
 - `pipeline.md` - API steps in pipelines
 - `error-handling.md` - Error handling strategies
-- `performance.md` - Performance optimization
-- `observability.md` - Monitoring and logging
