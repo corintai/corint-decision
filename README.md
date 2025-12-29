@@ -11,8 +11,7 @@
 
 [Features](#-key-features) •
 [Quick Start](#-quick-start) •
-[Documentation](#-documentation) •
-[Why CORINT](#-why-corint) •
+[Documentation](#-documentation) • 
 [Comparison](#-comparison-with-alternatives)
 
 </div>
@@ -943,7 +942,6 @@ See [Server Quick Start Guide](crates/corint-server/QUICKSTART.md).
 | [**error-handling.md**](docs/dsl/error-handling.md) | Error handling strategies |
 | [**observability.md**](docs/dsl/observability.md) | Monitoring, logging, and tracing |
 | [**QUICK_START_OTEL.md**](docs/QUICK_START_OTEL.md) ⭐ | **OpenTelemetry quick start guide** |
-| [**test.md**](docs/dsl/test.md) | Testing framework and patterns |
 | [**performance.md**](docs/dsl/performance.md) | Performance optimization guide |
 | [**CUSTOMLIST.md**](docs/CUSTOMLIST.md) | Custom list implementation details |
 
@@ -952,7 +950,6 @@ See [Server Quick Start Guide](crates/corint-server/QUICKSTART.md).
 - **Feature Engineering**: For statistical analysis like "login count in the past 7 days" or "number of device IDs associated with the same IP", see [**FEATURE_ENGINEERING.md**](docs/FEATURE_ENGINEERING.md)
 - **Custom Lists**: For blocklists, allowlists, and watchlists, see [**list.md**](docs/dsl/list.md)
 - **LLM Integration**: For adding AI reasoning to your rules, see [**llm.md**](docs/dsl/llm.md)
-- **Testing Your Rules**: See [**test.md**](docs/dsl/test.md) for comprehensive testing strategies
 - **gRPC API**: For high-performance gRPC integration, see [**GRPC.md**](crates/corint-server/GRPC.md)
 
 ---

@@ -409,8 +409,6 @@ Test types:
 - Regression tests (historical cases)
 - Performance tests (load and stress)
 
-(See `test.md` for testing specification.)
-
 ---
 
 ## 11. Performance Optimization
@@ -509,7 +507,6 @@ RDL documentation is organized as follows:
 ### Operational
 - **error-handling.md** - Error handling strategies
 - **observability.md** - Monitoring, logging, and alerting
-- **test.md** - Testing framework (including backtesting)
 - **performance.md** - Performance optimization
 
 ### Examples

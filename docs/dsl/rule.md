@@ -1224,5 +1224,4 @@ tests:
 - `expression.md` - Expression language for conditions
 - `feature.md` - Feature engineering for rule conditions
 - `versioning.md` - Rule versioning and deployment
-- `test.md` - Testing rules
 - `../repository/README.md` - Rule library usage guide

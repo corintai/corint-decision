@@ -368,8 +368,7 @@ pipeline:
 
 - `rule.md` - Detailed Rule specification
 - `ruleset.md` - Ruleset and decision_logic specification
-- `pipeline.md` - Pipeline orchestration specification
-- `examples/account-takeover-complete.yml` - Complete example
+- `pipeline.md` - Pipeline orchestration specification 
 
 ---
 
@@ -382,7 +381,7 @@ CORINT RDL documentation is organized into five categories for clarity and ease 
 
 ├─ 📖 Overview & Architecture
 │  ├─ overall.md          High-level overview of RDL, goals, components, and features
-│  └─ ARCHITECTURE.md     Three-layer decision architecture design philosophy
+│  
 │
 ├─ 🔧 Core Components (Fundamental building blocks)
 │  ├─ expression.md       Expression language syntax, operators, and functions (foundational)
@@ -404,7 +403,6 @@ CORINT RDL documentation is organized into five categories for clarity and ease 
 ├─ ⚙️ Operational (Production deployment and monitoring)
 │  ├─ error-handling.md  Error handling strategies, fallbacks, retries, and circuit breakers
 │  ├─ observability.md   Monitoring, logging, metrics, tracing, and alerting
-│  ├─ test.md           Testing framework for rules, rulesets, pipelines, and backtesting
 │  └─ performance.md    Performance optimization, caching, parallelization, and tuning
 │
 └─ 📝 Examples
