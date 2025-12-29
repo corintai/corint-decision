@@ -1246,4 +1246,3 @@ This enables efficient integration with internal infrastructure while maintainin
 - `feature.md` - Feature engineering and statistical analysis
 - `context.md` - Context and variable management
 - `pipeline.md` - Service integration in pipelines
-- `error-handling.md` - Error handling strategies

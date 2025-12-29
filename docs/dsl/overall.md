@@ -374,14 +374,13 @@ Capabilities:
 
 Production-grade error handling ensures reliability and graceful degradation.
 
-Strategies:
-- **fail** - Stop execution on critical errors
-- **skip** - Continue without failed step
-- **fallback** - Use default values
-- **retry** - Retry with exponential backoff
-- **circuit breaker** - Protect external services
+Current implementation:
+- **Basic error types** - RuntimeError and ServerError definitions
+- **Simple fallback** - Fallback values for external API calls (implemented at runtime level)
+- **Timeout support** - Timeout configuration for API calls and datasources
+- **Error action types** - ErrorAction enum (Fallback, Skip, Fail, Retry) defined in AST
 
-(See `error-handling.md` for full specification.)
+Note: Advanced error handling features (retry logic, circuit breaker, fallback chains) are planned but not yet implemented.
 
 ---
 
@@ -504,7 +503,7 @@ RDL documentation is organized as follows:
 - **external.md** - External API integration (third-party services)
 
 ### Operational
-- **error-handling.md** - Error handling strategies
+- (Error handling implemented at runtime level)
 
 ### Examples
 - **examples/** - Real-world pipeline examples

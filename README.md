@@ -421,7 +421,7 @@ let (rule, _) = repo.load_rule("fraud_check").await?;
 - ✅ **Unified Interface**: Same API regardless of backend
 - ✅ **Async I/O**: Non-blocking operations with Tokio
 - ✅ **Caching Layer**: Built-in TTL-based caching for performance
-- ✅ **Error Handling**: Graceful fallbacks and retry logic
+- ✅ **Error Handling**: Basic error types and fallback support (advanced features planned)
 - ✅ **Hot Reload**: Reload rules without restarting the server
 
 ### 📋 Custom Lists (Blocklists/Allowlists)
@@ -935,7 +935,6 @@ See [Server Quick Start Guide](crates/corint-server/QUICKSTART.md).
 
 | Document | Description |
 |----------|-------------|
-| [**error-handling.md**](docs/dsl/error-handling.md) | Error handling strategies |
 | [**QUICK_START_OTEL.md**](docs/QUICK_START_OTEL.md) ⭐ | **OpenTelemetry quick start guide** |
 | [**CUSTOMLIST.md**](docs/CUSTOMLIST.md) | Custom list implementation details |
 
@@ -1109,7 +1108,7 @@ Event → Pipeline → Extract Features → Evaluate Rules → Decision Logic �
 - ✅ Feature engineering with statistical functions
 - ✅ LLM integration framework
 - ✅ Type system and schema validation
-- ✅ Error handling and retry strategies
+- ✅ Basic error handling (advanced retry strategies planned)
 - ✅ Observability infrastructure (OpenTelemetry)
 - ✅ Testing framework
 - ✅ Performance optimization (caching, parallelization)
