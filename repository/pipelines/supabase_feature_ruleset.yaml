@@ -38,21 +38,18 @@ pipeline:
     - when: results.supabase_risk_assessment.signal == "decline"
       result: decline
       reason: "{results.supabase_risk_assessment.reason}"
-      terminate: true
 
     # Hold signal → hold result
     - when: results.supabase_risk_assessment.signal == "hold"
       result: hold
       actions: ["2FA"]
       reason: "{results.supabase_risk_assessment.reason}"
-      terminate: true
 
     # Review signal → review result
     - when: results.supabase_risk_assessment.signal == "review"
       result: review
       actions: ["KYC","2FA"]
       reason: "{results.supabase_risk_assessment.reason}"
-      terminate: true
 
     # Approve (default)
     - default: true
@@ -150,31 +147,26 @@ ruleset:
     - when: triggered_rules contains "suspicious_device_pattern2"
       signal: decline
       reason: "Suspicious device pattern with high transaction volume detected"
-      terminate: true
 
     # High risk - decline
     - when: total_score >= 100
       signal: decline
       reason: "High risk score threshold exceeded"
-      terminate: true
 
     # High risk - multiple indicators
     - when: triggered_count >= 3
       signal: decline
       reason: "Multiple risk indicators detected"
-      terminate: true
 
     # Medium risk - hold for verification
     - when: total_score >= 80
       signal: hold
       reason: "Medium-high risk score"
-      terminate: true
 
     # Low risk - review
     - when: total_score >= 35
       signal: review
       reason: "Low risk score"
-      terminate: true
 
     # Normal - approve (default)
     - default: true

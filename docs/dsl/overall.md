@@ -183,7 +183,6 @@ ruleset:
     - when: total_score >= 100
       signal: decline  # Signals defined here
       reason: "High risk detected"
-      terminate: true
 
     - when: total_score >= 50
       signal: review
@@ -217,7 +216,6 @@ ruleset:
     - when: <expression>
       signal: <signal-type>
       reason: <string>
-      terminate: true
     - default: true
       signal: <signal-type>
       reason: <string>
@@ -634,7 +632,6 @@ CONCLUSION_RULE ::=
       "when:" EXPRESSION
       "signal:" SIGNAL
       [ "reason:" STRING ]
-      [ "terminate:" BOOLEAN ]
     | "default:" BOOLEAN
       "signal:" SIGNAL
       [ "reason:" STRING ]

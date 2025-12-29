@@ -30,25 +30,21 @@ ruleset:
         triggered_rules contains "amount_outlier"
       signal: decline
       reason: "Critical fraud pattern detected for high-value transaction"
-      terminate: true
 
     # High score threshold (stricter than standard: 60 vs 100)
     - when: total_score >= 60
       signal: decline
       reason: "Risk score too high for large transaction"
-      terminate: true
 
     # Multiple risk indicators (stricter)
     - when: triggered_count >= 2
       signal: review
       reason: "Multiple risk indicators detected"
-      terminate: true
 
     # Single risk indicator requires challenge
     - when: triggered_count >= 1
       signal: hold
       reason: "Require 3DS authentication for high-value transaction"
-      terminate: true
 
     # Clean high-value transaction
     - default: true

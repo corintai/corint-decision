@@ -561,12 +561,10 @@ ruleset:
     - when: total_score >= 100
       signal: decline
       reason: "High risk score detected"
-      terminate: true
 
     - when: total_score >= 60
       signal: review
       reason: "Medium risk detected"
-      terminate: true
 
     - default: true
       signal: approve
@@ -600,13 +598,11 @@ pipeline:
     - when: results.login_risk_assessment.signal == "decline"
       result: decline
       reason: "{results.login_risk_assessment.reason}"
-      terminate: true
 
     - when: results.login_risk_assessment.signal == "review"
       result: review
       actions: ["manual_review", "2FA"]
       reason: "{results.login_risk_assessment.reason}"
-      terminate: true
 
     - default: true
       result: approve

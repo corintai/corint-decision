@@ -31,31 +31,26 @@ ruleset:
     - when: triggered_rules contains "card_testing"
       signal: decline
       reason: "Card testing detected"
-      terminate: true
 
     # Very high score
     - when: total_score >= 100
       signal: decline
       reason: "High fraud risk"
-      terminate: true
 
     # Medium-high score
     - when: total_score >= 60
       signal: hold
       reason: "Require verification"
-      terminate: true
 
     # Medium score
     - when: total_score >= 40
       signal: review
       reason: "Manual review needed"
-      terminate: true
 
     # Multiple low-risk indicators
     - when: triggered_count >= 3
       signal: review
       reason: "Multiple risk signals"
-      terminate: true
 
     # Low risk
     - default: true

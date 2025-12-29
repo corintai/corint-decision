@@ -367,19 +367,12 @@ impl PipelineParser {
         // Parse optional reason
         let reason = YamlParser::get_optional_string(yaml, "reason");
 
-        // Parse optional terminate flag
-        let terminate = yaml
-            .get("terminate")
-            .and_then(|v| v.as_bool())
-            .unwrap_or(false);
-
         Ok(corint_core::ast::PipelineDecisionRule {
             when,
             default: is_default,
             result,
             actions,
             reason,
-            terminate,
         })
     }
 }

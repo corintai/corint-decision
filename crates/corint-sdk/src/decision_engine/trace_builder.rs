@@ -926,14 +926,6 @@ pub(super) fn build_decision_logic_traces(
         }
 
         traces.push(trace);
-
-        // If this rule matched and has terminate, stop processing
-        if matched {
-            let terminate = rule.get("terminate").and_then(|v| v.as_bool()).unwrap_or(false);
-            if terminate {
-                break;
-            }
-        }
     }
 
     traces

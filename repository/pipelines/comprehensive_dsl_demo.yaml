@@ -310,7 +310,6 @@ ruleset:
     - when: total_score >= 90
       signal: decline
       reason: "Critical fraud risk detected"
-      terminate: true
 
     # High fraud risk
     - when: total_score >= 70

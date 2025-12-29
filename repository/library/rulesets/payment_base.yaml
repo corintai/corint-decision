@@ -31,7 +31,6 @@ ruleset:
     - when: triggered_rules contains "card_testing"
       signal: decline
       reason: "Card testing detected"
-      terminate: true
 
     # Default action
     - default: true

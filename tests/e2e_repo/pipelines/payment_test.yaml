@@ -29,12 +29,10 @@ pipeline:
     - when: results.payment_risk_ruleset.signal == "decline"
       result: decline
       reason: "{results.payment_risk_ruleset.reason}"
-      terminate: true
 
     - when: results.payment_risk_ruleset.signal == "review"
       result: review
       reason: "{results.payment_risk_ruleset.reason}"
-      terminate: true
 
     - default: true
       result: approve
@@ -182,24 +180,20 @@ ruleset:
     - when: triggered_rules contains "user_in_blocklist"
       signal: decline
       reason: "User is in blocklist"
-      terminate: true
 
     - when: triggered_rules contains "daily_limit_exceeded"
       signal: decline
       reason: "Daily payment limit exceeded"
-      terminate: true
 
     # High risk
     - when: total_score >= 150
       signal: decline
       reason: "High risk score threshold exceeded"
-      terminate: true
 
     # Medium risk - review
     - when: total_score >= 100
       signal: review
       reason: "Medium risk - manual review required"
-      terminate: true
 
     # Low risk - approve (default)
     - default: true

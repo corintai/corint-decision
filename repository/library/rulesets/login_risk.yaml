@@ -48,13 +48,11 @@ ruleset:
     - when: triggered_rules contains "device_emulator_detection"
       signal: decline
       reason: "Critical: Emulator or virtual device detected"
-      terminate: true
 
     # Device spoofing - immediate deny
     - when: triggered_rules contains "device_spoofing_detection"
       signal: decline
       reason: "Critical: Device fingerprint spoofing detected"
-      terminate: true
 
     # ==========================================
     # Priority 2: Account Takeover Patterns
@@ -68,7 +66,6 @@ ruleset:
          triggered_rules contains "account_takeover_geo_change")
       signal: decline
       reason: "Critical: Impossible travel with account takeover pattern"
-      terminate: true
 
     # Account takeover with password change
     - when: |
@@ -78,7 +75,6 @@ ruleset:
         triggered_rules contains "password_change_risk"
       signal: decline
       reason: "Critical: Account takeover with password change attempt"
-      terminate: true
 
     # ==========================================
     # Priority 3: Score-Based Thresholds
@@ -88,25 +84,21 @@ ruleset:
     - when: total_score >= 150
       signal: decline
       reason: "Critical risk - multiple security threats (score: {total_score})"
-      terminate: true
 
     # Very High Risk >= 100
     - when: total_score >= 100
       signal: decline
       reason: "Very high risk - clear security threat (score: {total_score})"
-      terminate: true
 
     # High Risk >= 70 - Requires additional verification
     - when: total_score >= 70
       signal: review
       reason: "High risk login - requires MFA or manual review (score: {total_score})"
-      terminate: false
 
     # Medium Risk >= 50 - Enhanced monitoring
     - when: total_score >= 50
       signal: review
       reason: "Medium risk - enhanced monitoring required (score: {total_score})"
-      terminate: false
 
     # ==========================================
     # Priority 4: Multiple Indicators

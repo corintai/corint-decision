@@ -49,7 +49,6 @@ ruleset:
     - when: triggered_rules contains "fraud_farm_pattern"
       signal: decline
       reason: "Critical: Fraud farm detected (organized fraud network)"
-      terminate: true
 
     # Multiple high-severity patterns combined
     - when: |
@@ -57,7 +56,6 @@ ruleset:
         triggered_rules contains "amount_outlier_pattern"
       signal: decline
       reason: "Critical: Account takeover with abnormal transaction amount"
-      terminate: true
 
     # ==========================================
     # Priority 2: Score-Based Thresholds
@@ -67,31 +65,26 @@ ruleset:
     - when: total_score >= 200
       signal: decline
       reason: "Critical risk - multiple fraud indicators (score: {total_score})"
-      terminate: true
 
     # Very High Risk >= 150
     - when: total_score >= 150
       signal: decline
       reason: "Very high risk - strong fraud pattern (score: {total_score})"
-      terminate: true
 
     # High Risk >= 100
     - when: total_score >= 100
       signal: decline
       reason: "High risk - clear fraud signals (score: {total_score})"
-      terminate: true
 
     # Medium-High Risk >= 60
     - when: total_score >= 60
       signal: review
       reason: "Medium-high risk - manual review required (score: {total_score})"
-      terminate: false
 
     # Medium Risk >= 30
     - when: total_score >= 30
       signal: review
       reason: "Medium risk - enhanced monitoring (score: {total_score})"
-      terminate: false
 
     # ==========================================
     # Priority 3: Count-Based Decisions

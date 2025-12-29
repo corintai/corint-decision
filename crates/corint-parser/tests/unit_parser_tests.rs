@@ -368,27 +368,6 @@ ruleset:
     assert_eq!(ruleset.conclusion.len(), 4);
 }
 
-#[test]
-fn test_parse_ruleset_with_terminate() {
-    let yaml = r#"
-version: "0.1"
-
-ruleset:
-  id: terminate_ruleset
-  rules: []
-  conclusion:
-    - when: critical_error == true
-      signal: decline
-      terminate: true
-      reason: Critical condition met
-"#;
-
-    let result = RulesetParser::parse(yaml);
-    assert!(result.is_ok());
-
-    let ruleset = result.unwrap();
-    assert!(ruleset.conclusion[0].terminate);
-}
 
 #[test]
 fn test_parse_ruleset_missing_id() {

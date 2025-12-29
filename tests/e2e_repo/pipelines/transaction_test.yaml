@@ -29,12 +29,10 @@ pipeline:
     - when: results.transaction_risk_ruleset.signal == "decline"
       result: decline
       reason: "{results.transaction_risk_ruleset.reason}"
-      terminate: true
 
     - when: results.transaction_risk_ruleset.signal == "review"
       result: review
       reason: "{results.transaction_risk_ruleset.reason}"
-      terminate: true
 
     - default: true
       result: approve
@@ -330,30 +328,25 @@ ruleset:
     - when: triggered_rules contains "user_blocked"
       signal: decline
       reason: "User is blocked"
-      terminate: true
 
     # Critical risk - blocked email (file backend list)
     - when: triggered_rules contains "email_blocked"
       signal: decline
       reason: "Email is in blocked list"
-      terminate: true
 
     # High risk - multiple indicators or high score
     - when: total_score >= 150
       signal: decline
       reason: "High risk score threshold exceeded"
-      terminate: true
 
     - when: triggered_count >= 3
       signal: decline
       reason: "Multiple risk indicators detected"
-      terminate: true
 
     # Medium risk - review
     - when: total_score >= 80
       signal: review
       reason: "Medium risk score - manual review required"
-      terminate: true
 
     # Low risk - approve (default)
     - default: true

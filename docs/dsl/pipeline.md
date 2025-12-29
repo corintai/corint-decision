@@ -47,7 +47,6 @@ pipeline:
       result: <result>          # Final decision: approve/decline/review/hold
       actions: [...]            # Optional actions to execute
       reason: <reason>          # Optional reason
-      terminate: true           # Optional: stop evaluating further rules
 ```
 
 **Important:**
@@ -605,7 +604,6 @@ decision:
     result: <result>           # Final result: approve/decline/review/hold
     actions: [...]             # Optional: actions to execute
     reason: <reason>           # Optional: reason for decision
-    terminate: true            # Optional: stop evaluating further rules
 
   - default: true              # Default/catch-all rule
     result: approve
@@ -620,7 +618,6 @@ decision:
 | `result` | string | Yes | Final decision: `approve`, `decline`, `review`, `hold` |
 | `actions` | array | No | Actions to execute (e.g., `["KYC", "2FA"]`) |
 | `reason` | string | No | Human-readable reason (supports templates like `"{results.fraud_check.reason}"`) |
-| `terminate` | bool | No | If true, stop evaluating further decision rules |
 
 ### 7.3 Complete Example
 
@@ -648,14 +645,12 @@ pipeline:
     - when: results.login_risk_assessment.signal == "decline"
       result: decline
       reason: "{results.login_risk_assessment.reason}"
-      terminate: true
 
     # Review signal → review result with actions
     - when: results.login_risk_assessment.signal == "review"
       result: review
       actions: ["manual_review", "2FA"]
       reason: "{results.login_risk_assessment.reason}"
-      terminate: true
 
     # Default: approve
     - default: true
@@ -704,7 +699,6 @@ pipeline:
           - results.compliance_check.signal == "decline"
       result: decline
       reason: "Failed risk or compliance check"
-      terminate: true
 
     # If both approve, approve
     - when:
@@ -713,7 +707,6 @@ pipeline:
           - results.compliance_check.signal == "approve"
       result: approve
       reason: "Passed all checks"
-      terminate: true
 
     # Otherwise, review
     - default: true
@@ -803,7 +796,6 @@ pipeline:
       result: decline
       actions: ["BLOCK_DEVICE"]
       reason: "High risk"
-      terminate: true
 ```
 
 ---

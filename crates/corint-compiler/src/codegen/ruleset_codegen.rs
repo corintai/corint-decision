@@ -55,10 +55,6 @@ impl RulesetCompiler {
             if decision_rule.default {
                 // Execute signal directly
                 instructions.extend(Self::compile_signal(&decision_rule.signal)?);
-
-                if decision_rule.terminate {
-                    instructions.push(Instruction::Return);
-                }
                 continue;
             }
 
@@ -70,17 +66,12 @@ impl RulesetCompiler {
                 // Calculate the jump offset if condition is false
                 // We need to count the instructions that will be executed if true
                 let mut signal_instructions = Self::compile_signal(&decision_rule.signal)?;
-                if decision_rule.terminate {
-                    signal_instructions.push(Instruction::Return);
-                } else {
-                    // If not terminating, jump to the end after executing this signal
-                    // We need to calculate how many instructions remain after this branch
-                    let remaining_rules = ruleset.conclusion.len() - idx - 1;
-                    if remaining_rules > 0 {
-                        // Add a jump to skip the remaining decision logic
-                        signal_instructions.push(Instruction::Jump { offset: 999 });
-                        // Placeholder, will be fixed in second pass
-                    }
+                // Jump to the end after executing this signal if there are remaining rules
+                let remaining_rules = ruleset.conclusion.len() - idx - 1;
+                if remaining_rules > 0 {
+                    // Add a jump to skip the remaining decision logic
+                    signal_instructions.push(Instruction::Jump { offset: 999 });
+                    // Placeholder, will be fixed in second pass
                 }
 
                 // Jump past the signal instructions if condition is false
@@ -207,12 +198,6 @@ impl RulesetCompiler {
                         serde_json::Value::String(reason.clone()),
                     );
                 }
-
-                // Add terminate flag
-                obj.insert(
-                    "terminate".to_string(),
-                    serde_json::Value::Bool(rule.terminate),
-                );
 
                 serde_json::Value::Object(obj)
             })
@@ -421,7 +406,6 @@ mod tests {
                 signal: Signal::Approve,
                 actions: vec![],
                 reason: Some("Default signal".to_string()),
-                terminate: true,
             }],
             description: None,
             metadata: None,
@@ -453,7 +437,6 @@ mod tests {
                     signal: Signal::Review,
                     actions: vec!["KYC_AUTH".to_string()],
                     reason: Some("High amount".to_string()),
-                    terminate: false,
                 },
                 DecisionRule {
                     condition: None,
@@ -461,7 +444,6 @@ mod tests {
                     signal: Signal::Approve,
                     actions: vec![],
                     reason: None,
-                    terminate: false,
                 },
             ],
             description: None,
@@ -503,7 +485,6 @@ mod tests {
                     signal: Signal::Decline,
                     actions: vec!["BLOCK_CARD".to_string()],
                     reason: Some("Extremely high value".to_string()),
-                    terminate: true,
                 },
                 DecisionRule {
                     condition: Some(Expression::Binary {
@@ -517,7 +498,6 @@ mod tests {
                     signal: Signal::Review,
                     actions: vec!["KYC_AUTH".to_string()],
                     reason: Some("High value".to_string()),
-                    terminate: false,
                 },
                 DecisionRule {
                     condition: Some(Expression::Binary {
@@ -531,7 +511,6 @@ mod tests {
                     signal: Signal::Review,
                     actions: vec![],
                     reason: Some("Elevated amount".to_string()),
-                    terminate: false,
                 },
                 DecisionRule {
                     condition: None,
@@ -539,7 +518,6 @@ mod tests {
                     signal: Signal::Approve,
                     actions: vec![],
                     reason: None,
-                    terminate: false,
                 },
             ],
             description: None,
@@ -579,7 +557,6 @@ fn test_compile_simple_ruleset_outside() {
                 signal: Signal::Decline,
                 actions: vec![],
                 reason: None,
-                terminate: false,
             },
             DecisionRule {
                 condition: None,
@@ -587,7 +564,6 @@ fn test_compile_simple_ruleset_outside() {
                 signal: Signal::Approve,
                 actions: vec![],
                 reason: None,
-                terminate: false,
             },
         ],
         description: None,

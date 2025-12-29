@@ -29,12 +29,10 @@ pipeline:
     - when: results.db_list_test_ruleset.signal == "decline"
       result: decline
       reason: "{results.db_list_test_ruleset.reason}"
-      terminate: true
 
     - when: results.db_list_test_ruleset.signal == "review"
       result: review
       reason: "{results.db_list_test_ruleset.reason}"
-      terminate: true
 
     - default: true
       result: approve
@@ -115,24 +113,20 @@ ruleset:
     - when: triggered_rules contains "user_in_db_blocklist"
       signal: decline
       reason: "User is in blocklist"
-      terminate: true
 
     # Critical risk - blocked user (db list with expiration)
     - when: triggered_rules contains "user_in_db_blocklist_expiration"
       signal: decline
       reason: "User is in database blocklist (with expiration check)"
-      terminate: true
 
     - when: triggered_rules contains "ip_in_db_blocklist"
       signal: decline
       reason: "IP is in blocklist"
-      terminate: true
 
     # High risk country
     - when: triggered_rules contains "country_in_db_high_risk"
       signal: review
       reason: "Country is in high risk list"
-      terminate: true
 
     # No match - approve
     - default: true

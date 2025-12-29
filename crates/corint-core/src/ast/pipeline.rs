@@ -120,10 +120,6 @@ pub struct PipelineDecisionRule {
     /// Optional reason for this decision
     #[serde(skip_serializing_if = "Option::is_none")]
     pub reason: Option<String>,
-
-    /// Whether to terminate decision flow after this rule
-    #[serde(default)]
-    pub terminate: bool,
 }
 
 /// Type-specific step details

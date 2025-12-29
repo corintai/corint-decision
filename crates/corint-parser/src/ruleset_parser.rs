@@ -126,16 +126,12 @@ impl RulesetParser {
         // Parse reason (optional)
         let reason = YamlParser::get_optional_string(yaml, "reason");
 
-        // Parse terminate flag
-        let terminate = YamlParser::get_optional_bool(yaml, "terminate").unwrap_or(false);
-
         Ok(DecisionRule {
             condition,
             default,
             signal,
             actions,
             reason,
-            terminate,
         })
     }
 
@@ -195,7 +191,6 @@ ruleset:
     - when: total_score > 200
       action: decline
       reason: High risk score
-      terminate: true
     - when: total_score > 100
       action: review
       reason: Medium risk score
@@ -279,28 +274,6 @@ ruleset:
         assert!(matches!(ruleset.conclusion[1].signal, Signal::Approve));
     }
 
-    #[test]
-    fn test_parse_ruleset_with_terminate() {
-        let yaml = r#"
-ruleset:
-  id: test_terminate
-  rules: []
-  conclusion:
-    - when: critical == true
-      action: decline
-      terminate: true
-      reason: Critical condition met
-"#;
-
-        let ruleset = RulesetParser::parse(yaml).unwrap();
-
-        assert_eq!(ruleset.conclusion.len(), 1);
-        assert!(ruleset.conclusion[0].terminate);
-        assert_eq!(
-            ruleset.conclusion[0].reason,
-            Some("Critical condition met".to_string())
-        );
-    }
 
     #[test]
     fn test_parse_ruleset_default_rule() {

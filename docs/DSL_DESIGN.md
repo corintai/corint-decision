@@ -181,7 +181,6 @@ decision_logic:
   - condition: triggered_rules contains "critical_breach"
     action: deny
     reason: "Critical security breach"
-    terminate: true  # Immediate termination, skip further evaluation
     
   - condition: total_score >= 80
     action: review
@@ -232,7 +231,6 @@ decision_logic:
   # Priority 1: Short-circuit - critical rules
   - condition: triggered_rules contains "blocked_user"
     action: deny
-    terminate: true
     
   # Priority 2: Specific combinations
   - condition: |

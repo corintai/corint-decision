@@ -737,7 +737,6 @@ ruleset:
         triggered_rules contains "unusual_location"
       signal: critical_risk
       reason: "Account takeover pattern detected"
-      terminate: true
 
     # High score → high risk signal
     - when: total_score >= 100
@@ -811,7 +810,6 @@ pipeline:
     - when: context.takeover_detection.signal == "critical_risk"
       action: deny
       reason: "Critical security risk detected"
-      terminate: true
 
     # High risk for VIP → review (lenient)
     - when: |
@@ -824,7 +822,6 @@ pipeline:
     - when: context.takeover_detection.signal == "high_risk"
       action: deny
       reason: "High security risk detected"
-      terminate: true
 
     # Medium risk → challenge
     - when: context.takeover_detection.signal == "medium_risk"

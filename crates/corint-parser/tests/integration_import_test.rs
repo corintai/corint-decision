@@ -132,7 +132,6 @@ ruleset:
     - when: triggered_rules contains "fraud_farm_pattern"
       signal: decline
       reason: "Critical: Fraud farm detected"
-      terminate: true
 
     - when: total_score >= 150
       signal: decline

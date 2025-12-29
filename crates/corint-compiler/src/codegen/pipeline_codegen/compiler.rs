@@ -208,17 +208,10 @@ fn compile_decision_logic(
             });
         }
 
-        // If terminate is true, jump to end (Return instruction)
-        if rule.terminate {
-            let jump_pos = instructions.len();
-            instructions.push(Instruction::Jump { offset: 0 });
-            pending_jumps.push((jump_pos, true)); // Mark as end jump
-        } else {
-            // Continue to check next rule - jump to end of decision block
-            let jump_pos = instructions.len();
-            instructions.push(Instruction::Jump { offset: 0 });
-            pending_jumps.push((jump_pos, false)); // Mark as end-decision jump
-        }
+        // Jump to end of decision block (Return instruction)
+        let jump_pos = instructions.len();
+        instructions.push(Instruction::Jump { offset: 0 });
+        pending_jumps.push((jump_pos, false)); // Mark as end-decision jump
 
         // Backfill the jump to next rule if we had a condition
         if let Some(jump_pos) = jump_to_next_rule_pos {

@@ -53,10 +53,6 @@ pub struct DecisionRule {
 
     /// Optional reason for this decision
     pub reason: Option<String>,
-
-    /// Whether to terminate decision flow after this rule
-    #[serde(default)]
-    pub terminate: bool,
 }
 
 /// Decision signal (the decision result)
@@ -146,7 +142,6 @@ impl DecisionRule {
             signal,
             actions: Vec::new(),
             reason: None,
-            terminate: false,
         }
     }
 
@@ -158,7 +153,6 @@ impl DecisionRule {
             signal,
             actions: Vec::new(),
             reason: None,
-            terminate: false,
         }
     }
 
@@ -174,11 +168,6 @@ impl DecisionRule {
         self
     }
 
-    /// Set terminate flag
-    pub fn with_terminate(mut self, terminate: bool) -> Self {
-        self.terminate = terminate;
-        self
-    }
 }
 
 #[cfg(test)]
@@ -211,14 +200,12 @@ mod tests {
 
         let decision = DecisionRule::new(condition.clone(), Signal::Decline)
             .with_actions(vec!["BLOCK_CARD".to_string()])
-            .with_reason("Score too high".to_string())
-            .with_terminate(true);
+            .with_reason("Score too high".to_string());
 
         assert!(decision.condition.is_some());
         assert_eq!(decision.signal, Signal::Decline);
         assert_eq!(decision.actions, vec!["BLOCK_CARD".to_string()]);
         assert_eq!(decision.reason, Some("Score too high".to_string()));
-        assert!(decision.terminate);
         assert!(!decision.default);
     }
 
@@ -230,7 +217,6 @@ mod tests {
         assert!(decision.default);
         assert_eq!(decision.signal, Signal::Approve);
         assert!(decision.actions.is_empty());
-        assert!(!decision.terminate);
     }
 
     #[test]
@@ -268,8 +254,7 @@ mod tests {
                     Signal::Decline,
                 )
                 .with_actions(vec!["BLOCK_CARD".to_string(), "NOTIFY_USER".to_string()])
-                .with_reason("High risk score".to_string())
-                .with_terminate(true),
+                .with_reason("High risk score".to_string()),
             )
             .add_decision_rule(
                 DecisionRule::new(
@@ -291,12 +276,10 @@ mod tests {
         // First rule: Decline if score > 200
         assert_eq!(ruleset.conclusion[0].signal, Signal::Decline);
         assert_eq!(ruleset.conclusion[0].actions, vec!["BLOCK_CARD", "NOTIFY_USER"]);
-        assert!(ruleset.conclusion[0].terminate);
 
         // Second rule: Review if score > 100
         assert_eq!(ruleset.conclusion[1].signal, Signal::Review);
         assert_eq!(ruleset.conclusion[1].actions, vec!["KYC_AUTH"]);
-        assert!(!ruleset.conclusion[1].terminate);
 
         // Third rule: Default to Approve
         assert_eq!(ruleset.conclusion[2].signal, Signal::Approve);

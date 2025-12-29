@@ -105,7 +105,6 @@ ruleset:
   - when: transaction_amount > 10000
     signal: decline
     reason: Extremely high value transaction
-    terminate: true
   - when: transaction_amount > 1000
     signal: review
     reason: High value transaction

@@ -501,7 +501,6 @@ pipeline:
       result: decline
       actions: ["BLOCK_DEVICE"]
       reason: "Fraud detected"
-      terminate: true
 
     - default: true
       result: approve
@@ -826,13 +825,11 @@ pipeline:
     - when: results.comprehensive_fraud_ruleset.signal == "decline"
       result: decline
       reason: "{results.comprehensive_fraud_ruleset.reason}"
-      terminate: true
 
     - when: results.comprehensive_fraud_ruleset.signal == "review"
       result: review
       actions: ["manual_review"]
       reason: "{results.comprehensive_fraud_ruleset.reason}"
-      terminate: true
 
     - default: true
       result: approve

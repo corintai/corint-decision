@@ -34,7 +34,6 @@ ruleset:
 - `conclusion` - Ruleset's decision logic that evaluates rule results and produces a signal
 - `signal` - The decision output: `approve`, `decline`, `review`, `hold`, or `pass`
 - `when` - Condition expression for each conclusion rule (uses comparison and logical operators)
-- `terminate` - When true, stops evaluating further conclusion rules
 
 ---
 
@@ -171,7 +170,6 @@ ruleset:
     - when: triggered_rules contains "card_testing"
       signal: decline
       reason: "Card testing detected"
-      terminate: true
 
     - when: total_score >= 100
       signal: decline
@@ -212,7 +210,6 @@ ruleset:
     - when: triggered_rules contains "card_testing"
       signal: decline
       reason: "Card testing detected"
-      terminate: true
 
     - when: total_score >= 60  # Stricter than parent (was 100)
       signal: decline
@@ -388,18 +385,15 @@ ruleset:
     - when: triggered_rules contains "fraud_farm_pattern"
       signal: decline
       reason: "Critical: Fraud farm detected"
-      terminate: true
 
     - when: triggered_rules contains "account_takeover_pattern"
       signal: decline
       reason: "Critical: Account takeover detected"
-      terminate: true
 
     # High score threshold
     - when: total_score >= 150
       signal: decline
       reason: "High risk score"
-      terminate: true
 
     # Multiple suspicious indicators
     - when: total_score >= 100
@@ -500,13 +494,11 @@ ruleset:
               - triggered_rules contains "new_account_risk"
       signal: decline
       reason: "Critical fraud pattern detected"
-      terminate: true
 
     # Stricter threshold: 60 points (vs 100 in standard)
     - when: total_score >= 60
       signal: decline
       reason: "Risk score too high for large transaction"
-      terminate: true
 
     # Multiple risk indicators
     - when: triggered_count >= 2
@@ -748,21 +740,19 @@ conclusion:
 
 ### 7.3 Short-Circuit (Early Termination)
 
-Terminate immediately when specific rule triggers:
+Critical rules that trigger immediate decline:
 
 ```yaml
 conclusion:
-  # Critical rule triggered - decline and stop
+  # Critical rule triggered - decline
   - when: triggered_rules contains "blocked_user"
     signal: decline
     reason: "User is blocked"
-    terminate: true  # Stop here, don't evaluate further
 
-  # High-risk rule triggered - decline and stop
+  # High-risk rule triggered - decline
   - when: triggered_rules contains "critical_security_breach"
     signal: decline
     reason: "Security breach detected"
-    terminate: true
 
   # Otherwise continue with normal logic
   - when: total_score >= 80
@@ -939,7 +929,6 @@ conclusion:
   - when: triggered_rules contains "blocked_user"
     signal: decline
     reason: "User blocked"
-    terminate: true
 
   # Priority 2: Dangerous combinations
   - when:
@@ -1004,7 +993,6 @@ ruleset:
           - triggered_rules contains "unusual_location"
       signal: decline
       reason: "Critical takeover indicators"
-      terminate: true
 
     # High risk: classic takeover pattern
     - when:
@@ -1097,7 +1085,6 @@ ruleset:
     - when: triggered_rules contains "previous_default"
       signal: decline
       reason: "Previous loan default"
-      terminate: true
 
     # High risk: low credit + high debt
     - when:
@@ -1189,7 +1176,6 @@ conclusion:
   # 1. Critical rules (short-circuit)
   - when: critical_condition
     signal: critical_risk
-    terminate: true
 
   # 2. Specific combinations
   - when: specific_pattern

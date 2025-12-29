@@ -441,18 +441,15 @@ ruleset:
     - when: triggered_rules contains "fraud_farm_pattern"
       signal: decline
       reason: "Critical: Fraud farm detected"
-      terminate: true
 
     # Score thresholds
     - when: total_score >= 200
       signal: decline
       reason: "Critical risk (score: {total_score})"
-      terminate: true
 
     - when: total_score >= 100
       signal: decline
       reason: "High risk (score: {total_score})"
-      terminate: true
 
     - when: total_score >= 60
       signal: review
