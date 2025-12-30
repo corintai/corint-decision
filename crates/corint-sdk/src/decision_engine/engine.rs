@@ -178,20 +178,34 @@ impl DecisionEngine {
 
         // Load API configs from repository/configs/apis directory
         let api_config_dir = Path::new("repository/configs/apis");
+        tracing::debug!("Checking for API configs in: {:?}", api_config_dir);
         if api_config_dir.exists() {
             if let Ok(entries) = std::fs::read_dir(api_config_dir) {
                 for entry in entries.flatten() {
                     let path = entry.path();
+                    tracing::debug!("Found file: {:?}", path);
                     if path.extension().and_then(|s| s.to_str()) == Some("yaml") {
-                        if let Ok(content) = std::fs::read_to_string(&path) {
-                            if let Ok(api_config) = serde_yaml::from_str::<ApiConfig>(&content) {
-                                tracing::info!("Loaded API config: {}", api_config.name);
-                                api_client.register_api(api_config);
+                        match std::fs::read_to_string(&path) {
+                            Ok(content) => {
+                                match serde_yaml::from_str::<ApiConfig>(&content) {
+                                    Ok(api_config) => {
+                                        tracing::info!("✓ Loaded API config: {}", api_config.name);
+                                        api_client.register_api(api_config);
+                                    }
+                                    Err(e) => {
+                                        tracing::warn!("Failed to parse API config from {:?}: {}", path, e);
+                                    }
+                                }
+                            }
+                            Err(e) => {
+                                tracing::warn!("Failed to read API config file {:?}: {}", path, e);
                             }
                         }
                     }
                 }
             }
+        } else {
+            tracing::warn!("API config directory does not exist: {:?}", api_config_dir);
         }
 
         // Create executor with API client

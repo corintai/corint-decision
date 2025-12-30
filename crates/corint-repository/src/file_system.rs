@@ -359,6 +359,8 @@ impl FileSystemRepository {
         self.collect_yaml_files(&dir_path, &self.root_path, &mut files)
             .await?;
 
+        eprintln!("[DEBUG] Found {} YAML files in {}: {:?}", files.len(), relative_dir, files);
+
         Ok(files)
     }
 

@@ -765,8 +765,8 @@ rule:
   
   # Schema aware - IDE can auto-complete
   when:
-    event.type: login             # Type: string, enum
-    conditions:
+    all:
+      - event.type == "login"     # Type: string, enum
       - event.user.age > 18       # Type: integer
       - event.device.is_new == true  # Type: boolean
       - event.geo.country in ["US", "UK"]  # Type: string
@@ -782,17 +782,17 @@ rule:
   type_check: true
   
   when:
-    event.type: payment
-    conditions:
+    all:
+      - event.type == "payment"
       # ✓ Valid: comparing numbers
       - event.transaction.amount > 1000
-      
+
       # ✗ Error: comparing number to string
       # - event.transaction.amount > "1000"
-      
+
       # ✓ Valid: string in array
       - event.geo.country in ["US", "UK"]
-      
+
       # ✗ Error: number in string array
       # - 123 in ["US", "UK"]
 ```

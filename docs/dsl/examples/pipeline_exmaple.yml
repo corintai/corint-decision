@@ -365,7 +365,7 @@ pipeline:
 #       - ip2location_api     # fallback 2
 #     params:
 #       ip: event.ip_address
-#     output: context.ip_info
+#     # Result automatically stored in: api.{api_name}.{endpoint}
 #     next: next_step
 #
 # all mode - aggregation (execute in parallel, wait for all to complete)
@@ -380,7 +380,7 @@ pipeline:
 #     timeout: 5s              # total timeout
 #     on_error: partial        # partial | fail_fast
 #     min_success: 2           # minimum success count (valid when on_error: partial)
-#     output: context.external_data
+#     # Result automatically stored in: api.{api_name}.{endpoint}
 #     next: scoring
 #
 # =============================================================================

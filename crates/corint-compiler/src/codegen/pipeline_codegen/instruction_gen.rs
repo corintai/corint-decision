@@ -225,7 +225,14 @@ fn compile_api_step(step: &PipelineStep, ctx: &mut CompileContext) -> Result<()>
         });
 
         // Store result
-        let output_var = output.clone().unwrap_or_else(|| format!("api.{}", api_name));
+        let endpoint_name = endpoint.clone().unwrap_or_default();
+        let output_var = output.clone().unwrap_or_else(|| {
+            if !endpoint_name.is_empty() {
+                format!("api.{}.{}", api_name, endpoint_name)
+            } else {
+                format!("api.{}", api_name)
+            }
+        });
         ctx.instructions.push(Instruction::Store { name: output_var });
     }
 

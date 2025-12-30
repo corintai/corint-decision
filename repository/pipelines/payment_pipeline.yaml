@@ -29,10 +29,11 @@ pipeline:
         id: ip_reputation_check
         name: IP Reputation Check
         type: api
-        api: ipinfo 
+        api: ipinfo
+        endpoint: ip_lookup
         params:
-          ip_address: event.ip_address
-          token: "a63066c9a63590" 
+          ip: ${event.ip_address}      # Expression: read from event data
+          token: "a63066c9a63590"       # Literal: API token
         next: amount_router
 
     # Step 2: Router based on payment amount

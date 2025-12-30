@@ -282,8 +282,8 @@ rule:
     severity: "medium"
 
   when:
-    event.type: transaction
     all:
+      - event.type == "transaction"
       # Reference params in conditions (future support)
       - transaction_count_last_hour > 10
       - total_amount_last_hour > 5000
@@ -580,8 +580,8 @@ rule:
   description: Detect unusual transaction amounts based on user history
 
   when:
-    event.type: transaction
     all:
+      - event.type == "transaction"
       # Amount exceeds user's dynamic threshold
       - event.transaction.amount > dynamic_threshold.high_amount.value
 
@@ -729,8 +729,8 @@ rule:
       reason: "Approved user should not be on blocklist"
 
   when:
-    event.type: transaction
     all:
+      - event.type == "transaction"
       - event.transaction.amount > 10000
       - user.status == "approved"
 
@@ -869,8 +869,8 @@ rule:
   group_priority: 3
 
   when:
-    event.type: transaction
     all:
+      - event.type == "transaction"
       # Use dependency results
       - all:
           - context.rules.device_risk_check.triggered == true

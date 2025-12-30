@@ -1,16 +1,45 @@
 # IPInfo API Configuration
 # https://ipinfo.io/
+#
+# Provides IP geolocation and reputation data
 
 name: ipinfo
 base_url: "https://ipinfo.io"
 
+# Optional: Authentication (if using paid plan)
+# auth:
+#   type: header
+#   name: "Authorization"
+#   value: "Bearer ${IPINFO_API_KEY}"
+
+# Optional: Default timeout for all endpoints
+timeout_ms: 3000
+
 endpoints:
   # IP Lookup endpoint
-  # Usage: GET https://ipinfo.io/{ip}?token={token}
+  # Returns geolocation and metadata for an IP address
   ip_lookup:
     method: GET
     path: "/{ip}"
-    path_params:
-      ip: "ip_address"  # Maps {ip} to the ip_address parameter/field
-    query_params:
-      token: "token"    # Maps ?token= to the token parameter
+    params:
+      ip: event.ip_address
+    response:
+      mapping:
+        country_code: country
+        city_name: city
+        region_name: region
+      fallback:
+        country_code: "Unknown"
+        city_name: "Unknown"
+        region_name: "Unknown"
+        error: true
+
+  # Batch IP lookup (if supported)
+  # batch_lookup:
+  #   method: POST
+  #   path: "/batch"
+  #   body_template: |
+  #     {
+  #       "ips": ${ips},
+  #       "token": "${token}"
+  #     }

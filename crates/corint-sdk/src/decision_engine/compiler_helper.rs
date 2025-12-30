@@ -119,16 +119,6 @@ pub(super) async fn compile_rules_from_content(
         has_pipeline = true;
         pipeline_count += 1;
 
-        // Validate: Pipeline must have when condition
-        if document.definition.when.is_none() {
-            return Err(SdkError::InvalidRuleFile(format!(
-                "Pipeline '{}' from '{}' is missing mandatory 'when' condition. \
-                 All pipelines must specify when conditions to filter events.",
-                &document.definition.id,
-                id
-            )));
-        }
-
         tracing::debug!(
             "Parsed pipeline with imports: when={:?}, steps={}, imports={:?}",
             document.definition.when,

@@ -1,1075 +1,489 @@
-# CORINT Risk Definition Language (RDL)
-## External Integration Specification (v0.1)
+# External API Integration DSL
 
-This document defines how external APIs and third-party services are configured, invoked, and managed within CORINT's Risk Definition Language.
+## Overview
 
-External APIs enable integration with third-party risk intelligence services such as:
-- Blockchain analytics (Chainalysis, Elliptic)
-- Device fingerprinting (FingerprintJS, DeviceAtlas)
-- IP reputation (MaxMind, IPQualityScore)
-- Email validation (EmailRep, Hunter)
-- Identity verification (Jumio, Onfido)
+External API integration allows CORINT pipelines to call third-party HTTP APIs with automatic parameter resolution, error handling, and response parsing.
 
 ---
 
-## 1. API Definition Structure
+## 1. Basic Structure
 
-### 1.1 Basic Structure
-
-```yaml
-external_apis:
-  - id: string                    # Unique identifier
-    name: string                  # Human-readable name
-    description: string           # Purpose description
-    base_url: string              # Base URL
-    version: string               # API version
-    auth: <auth-config>           # Authentication
-    endpoints: [<endpoint>]       # Available endpoints
-    rate_limit: <rate-config>     # Rate limiting
-    timeout: <timeout-config>     # Timeout settings
-    retry: <retry-config>         # Retry policy
-    cache: <cache-config>         # Caching strategy
-    on_error: <error-config>      # Error handling
-```
-
-### 1.2 Complete Example
+### API Configuration
 
 ```yaml
-external_apis:
-  - id: chainalysis
-    name: Chainalysis Risk API
-    description: Blockchain transaction and wallet risk analysis
-    base_url: https://api.chainalysis.com/v2
-    version: "2.0"
+name: <string>                      # Required: Unique API identifier
+base_url: <string>                  # Required: Base URL for all endpoints
 
-    auth:
-      type: api_key
-      header: X-API-Key
-      key: ${CHAINALYSIS_API_KEY}
-
-    endpoints:
-      - name: wallet_risk
-        path: /risk/wallet/{address}
-        method: GET
-        description: Get wallet risk score
-
-        params:
-          - name: address
-            type: string
-            required: true
-            source: event.wallet.address
-
-        response_schema:
-          risk_score:
-            type: number
-            min: 0
-            max: 100
-          risk_level:
-            type: string
-            enum: [low, medium, high, severe]
-          categories:
-            type: array
-            items: string
-          last_updated:
-            type: datetime
-
-        mapping:
-          risk_score: response.riskScore
-          risk_level: response.riskLevel
-          categories: response.categories
-
-      - name: transaction_risk
-        path: /risk/transaction/{hash}
-        method: GET
-        description: Analyze transaction risk
-
-    rate_limit:
-      requests_per_second: 100
-      requests_per_minute: 5000
-      burst: 200
-
-    timeout:
-      connect: 2000              # ms
-      read: 5000                 # ms
-      total: 10000               # ms
-
-    retry:
-      max_attempts: 3
-      backoff: exponential
-      initial_delay: 1000        # ms
-      max_delay: 10000           # ms
-      retry_on:
-        - timeout
-        - 429                    # Rate limited
-        - 500                    # Server error
-        - 502                    # Bad gateway
-        - 503                    # Service unavailable
-
-    cache:
-      enabled: true
-      ttl: 3600                  # seconds
-      key_template: "chainalysis:{endpoint}:{address}"
-      backend: redis
-
-    on_error:
-      action: fallback
-      fallback:
-        risk_score: 50
-        risk_level: medium
-        categories: []
-      log_level: warn
-```
-
----
-
-## 2. Authentication
-
-### 2.1 API Key Authentication
-
-```yaml
+# Optional: Authentication
 auth:
-  type: api_key
-  header: X-API-Key              # Or: query, cookie
-  key: ${API_KEY_ENV_VAR}
-```
+  type: header                      # Only 'header' supported in MVP
+  name: <string>                    # Header name (e.g., "Authorization")
+  value: <string>                   # Header value, supports ${env.x.y.z}
 
-### 2.2 Bearer Token
+# Optional: Default timeout for all endpoints
+timeout_ms: <integer>               # Milliseconds, default: 10000
 
-```yaml
-auth:
-  type: bearer
-  token: ${BEARER_TOKEN}
-
-  # Optional: Token refresh
-  refresh:
-    enabled: true
-    endpoint: /oauth/token
-    method: POST
-    body:
-      grant_type: client_credentials
-      client_id: ${CLIENT_ID}
-      client_secret: ${CLIENT_SECRET}
-    expires_in_field: expires_in
-    token_field: access_token
-```
-
-### 2.3 OAuth 2.0
-
-```yaml
-auth:
-  type: oauth2
-  flow: client_credentials       # or: authorization_code, password
-
-  client_id: ${OAUTH_CLIENT_ID}
-  client_secret: ${OAUTH_CLIENT_SECRET}
-  token_url: https://auth.provider.com/oauth/token
-
-  scopes:
-    - read:risk
-    - read:wallet
-
-  # Token caching
-  cache_token: true
-  refresh_before_expiry: 300     # seconds
-```
-
-### 2.4 Basic Auth
-
-```yaml
-auth:
-  type: basic
-  username: ${API_USERNAME}
-  password: ${API_PASSWORD}
-```
-
-### 2.5 HMAC Signature
-
-```yaml
-auth:
-  type: hmac
-  algorithm: sha256
-  secret: ${HMAC_SECRET}
-
-  signature:
-    include:
-      - timestamp
-      - request_body
-      - path
-    header: X-Signature
-    timestamp_header: X-Timestamp
-```
-
-### 2.6 mTLS (Mutual TLS)
-
-```yaml
-auth:
-  type: mtls
-  cert: ${CLIENT_CERT_PATH}
-  key: ${CLIENT_KEY_PATH}
-  ca: ${CA_CERT_PATH}
-```
-
----
-
-## 3. Endpoint Definition
-
-### 3.1 Basic Endpoint
-
-```yaml
+# Required: Endpoint definitions
 endpoints:
-  - name: get_risk_score
-    path: /risk/{entity_type}/{entity_id}
-    method: GET
-    description: Get risk score for an entity
+  <endpoint_name>:                  # Unique endpoint identifier
+    method: <http_method>           # GET | POST | PUT | PATCH | DELETE
+    path: <string>                  # URL path, can include {placeholders}
+    timeout_ms: <integer>           # Optional: Timeout for this endpoint (overrides API default)
+    params:                         # Optional: Parameter mapping from context
+      <param_name>: <context_path>  # e.g., transaction_id: event.transaction_id
+      <param_name>: <literal>       # e.g., api_version: "v2"
+    query_params:                   # Optional: Query parameter names
+      - <param_name>
+    request_body: <string>          # Optional: JSON template for POST/PUT/PATCH
+                                    # Use ${param_name} for substitution
+    response:                       # Optional: Response handling
+      mapping:                      # Optional: Field mapping/renaming
+        <output_field>: <response_field>
+      fallback:                     # Optional: Default value on error
+        <field>: <value>
 ```
 
-### 3.2 Path Parameters
+### Pipeline API Step
 
 ```yaml
-endpoints:
-  - name: wallet_lookup
-    path: /wallets/{chain}/{address}
-    method: GET
+- step:
+    type: api
+    id: <identifier>                # Required: Step identifier
+    api: <identifier>                # Required: API name from config
+    endpoint: <identifier>           # Required: Endpoint name
+    params:                         # Optional: Override default params
+      <param_name>: <context_path>
+ 
+    next: <identifier>              # Optional: Next step ID
+```
 
+---
+
+## 2. BNF Grammar
+
+### 2.1 API Configuration
+
+```bnf
+<api_config>       ::= <api_metadata> <auth_config>? <timeout_config>? <endpoints>
+
+<api_metadata>     ::= "name:" <identifier>
+                       "base_url:" <url>
+
+<auth_config>      ::= "auth:"
+                         "type: header"
+                         "name:" <string>
+                         "value:" <env_var_or_string>
+
+<timeout_config>   ::= "timeout_ms:" <integer>
+
+<endpoints>        ::= "endpoints:" <endpoint>+
+
+<endpoint>         ::= <endpoint_name> ":"
+                         "method:" <http_method>
+                         "path:" <url_path>
+                         ( "timeout_ms:" <integer> )?
+                         ( "params:" <param_mapping> )?
+                         ( "query_params:" <param_list> )?
+                         ( "request_body:" <json_template> )?
+                         ( "response:" <response_config> )?
+
+<param_mapping>    ::= ( <param_name> ":" <context_path_or_literal> )+
+
+<context_path_or_literal> ::= <context_path>     // e.g., event.user.id (no ${} in API config)
+                            | <literal>           // e.g., "v2" or 123 or true
+
+<context_path>     ::= <identifier> ( "." <identifier> )*
+
+<literal>          ::= <string_literal> | <number_literal> | <boolean_literal>
+<string_literal>   ::= "\"" <chars> "\""
+<number_literal>   ::= <integer> | <float>
+<boolean_literal>  ::= "true" | "false"
+
+<response_config>  ::= ( "mapping:" <field_mapping> )?
+                         ( "fallback:" <fallback_value> )?
+
+<field_mapping>    ::= ( <output_field> ":" <response_field> )+
+
+<fallback_value>   ::= ( <field> ":" <value> )+
+
+<http_method>      ::= "GET" | "POST" | "PUT" | "PATCH" | "DELETE"
+
+<url_path>         ::= <string>  // Can contain {placeholder}
+
+<param_list>       ::= "- " <identifier> ( "\n- " <identifier> )*
+
+<json_template>    ::= <string>  // JSON with ${param_name} for substitution
+                                  // Placeholders refer to keys in `params`, not context paths
+                                  // String values: "${param_name}" (with quotes)
+                                  // Number/boolean values: ${param_name} (without quotes)
+
+<env_var_or_string> ::= "${" <env_path> "}"  // env.x.y.z format
+                      | <string>              // Literal string
+
+<env_path>         ::= "env." <identifier> ( "." <identifier> )*
+```
+
+### 2.2 Pipeline API Step
+
+```bnf
+<api_step>         ::= "type: api"
+                       "id:" <identifier>
+                       "api:" <identifier>
+                       "endpoint:" <identifier>
+                       ( "params:" <param_override> )?     // Optional: override default
+                       ( "output:" <variable_path> )?      // Optional: default api.{api}.{endpoint}
+                       ( "timeout:" <integer> )?
+                       ( "on_error:" <error_handler> )?
+                       ( "next:" <identifier> )?
+
+<param_override>   ::= ( <param_entry> )+
+
+<param_entry>      ::= <identifier> ":" <param_value>
+
+<param_value>      ::= <expression> | <literal>
+<expression>       ::= "${" <context_path> "}"  // e.g., ${event.user.id} (with ${} in pipeline)
+<context_path>     ::= <identifier> ( "." <identifier> )*
+
+<variable_path>    ::= <identifier> ( "." <identifier> )*
+
+<error_handler>    ::= "fallback:" <value_object>
+
+<value_object>     ::= ( <key> ":" <value> )+
+```
+
+---
+
+## 3. Core Concepts
+
+### Overview: Expression Resolution Timing
+
+CORINT external API integration resolves values at different times:
+
+**1. Compile Time** (when loading configurations):
+- Environment variables (`${env.x.y.z}`) are resolved from `config/server.yaml`
+- API config `params` mappings are registered (not resolved, just recorded)
+
+**2. Runtime** (when executing API call):
+- Pipeline step `params` override API config defaults (if provided)
+- Context paths are resolved to actual values from execution context
+- Request body template placeholders are substituted with param values
+
+**Example**:
+```yaml
+# API config (compile time)
+auth:
+  value: "Bearer ${env.llm.openai.api_key}"    # ← Resolved at compile time
+params:
+  user_id: event.user.id                       # ← Mapping recorded at compile time
+
+# Runtime execution
+request_body: |
+  {"user_id": "${user_id}"}                    # ← Substituted at runtime
+```
+
+### 3.1 Parameter Resolution
+
+Parameters can be defined in two places with different syntax rules:
+
+#### API Configuration `params` (Default Mapping)
+
+Defines default parameter mappings without `${}` syntax:
+
+```yaml
+# In API config file
+endpoints:
+  get_user:
     params:
-      - name: chain
-        type: string
-        required: true
-        source: event.transaction.chain
-        enum: [ethereum, bitcoin, polygon]
-
-      - name: address
-        type: string
-        required: true
-        source: event.wallet.address
-        validation:
-          pattern: "^0x[a-fA-F0-9]{40}$"
+      user_id: event.user.id        # Context path (no ${})
+      api_version: "v2"              # String literal (no ${})
+      limit: 100                     # Number literal
+      include_details: true          # Boolean literal
 ```
 
-### 3.3 Query Parameters
+**Rules**:
+- Context paths are written directly: `event.user.id` (no `${}`)
+- Literals are written as-is: `"string"`, `123`, `true`
+- These define the default mapping relationship at compile time
+
+#### Pipeline Step `params` (Override)
+
+Overrides default mappings using expression syntax:
 
 ```yaml
+# In pipeline step
+- step:
+    type: api
+    params:
+      user_id: ${event.user.id}     # Context path (with ${})
+      api_version: "v3"              # String literal (no ${})
+      limit: 200                     # Number literal
+      include_details: false         # Boolean literal
+```
+
+**Rules**:
+- Context paths must use `${}`: `${event.user.id}`
+- Literals are written as-is: `"string"`, `123`, `true`
+- These override API config params at runtime
+
+#### Resolution Process
+
+1. **Compile time**: API config `params` define default mappings
+2. **Runtime**: Pipeline step `params` override defaults (if provided)
+3. **Runtime**: Values are resolved from execution context
+4. **Priority**: Pipeline step `params` > API config `params`
+
+**Example**:
+```yaml
+# API config defines defaults
+params:
+  user_id: event.user.id
+  limit: 100
+
+# Pipeline overrides only user_id
+params:
+  user_id: ${event.different_user}
+  # limit still uses default (100)
+```
+
+### 3.2 URL Construction
+
+```
+{base_url} + {path with {placeholders} replaced} + {query string from query_params}
+```
+
+- Path placeholders: `{param_name}` replaced with param value
+- Query params: Only params listed in `query_params` appended as `?key=value`
+
+### 3.3 Request Body Template
+
+For POST/PUT/PATCH requests, `request_body` uses template substitution with `${param_name}`:
+
+**Important**: Placeholders refer to **keys in `params`**, not context paths.
+
+#### Type-Sensitive Substitution
+
+```yaml
+# API config
+params:
+  transaction_id: event.transaction_id    # Context path (value: "tx_12345")
+  amount: event.amount                    # Context path (value: 1500.00)
+  currency: "USD"                         # Literal string
+  verified: true                          # Literal boolean
+
+request_body: |
+  {
+    "transaction_id": "${transaction_id}",    // String: use "${}" with quotes
+    "amount": ${amount},                      // Number: use ${} WITHOUT quotes
+    "currency": "${currency}",                // String: use "${}" with quotes
+    "verified": ${verified}                   // Boolean: use ${} WITHOUT quotes
+  }
+```
+
+**Result** (when resolved at runtime):
+```json
+{
+  "transaction_id": "tx_12345",
+  "amount": 1500.00,
+  "currency": "USD",
+  "verified": true
+}
+```
+
+**Rules**:
+1. Placeholders use `${param_name}` where `param_name` is a key in `params`
+2. String values: `"${param_name}"` (include JSON quotes)
+3. Number values: `${param_name}` (no JSON quotes)
+4. Boolean values: `${param_name}` (no JSON quotes)
+5. Substitution happens at runtime after resolving param values
+
+### 3.4 Timeout Configuration
+
+Timeouts can be configured at three levels with clear priority:
+
+**Priority** (highest to lowest):
+1. **Pipeline step `timeout`** - Overrides everything
+2. **Endpoint `timeout_ms`** - Overrides API default
+3. **API config `timeout_ms`** - Overrides system default
+4. **System default**: 10000ms (10 seconds)
+
+**Example**:
+```yaml
+# API config
+name: fraud_api
+timeout_ms: 5000           # Level 3: API-wide default (5 seconds)
+
 endpoints:
-  - name: transaction_history
-    path: /transactions
+  quick_check:
     method: GET
+    # Uses API default: 5000ms
 
-    query:
-      - name: wallet
-        type: string
-        required: true
-        source: event.wallet.address
-
-      - name: limit
-        type: integer
-        required: false
-        default: 100
-        max: 1000
-
-      - name: start_date
-        type: datetime
-        required: false
-        source: context.query_start_date
-```
-
-### 3.4 Request Body (POST/PUT)
-
-```yaml
-endpoints:
-  - name: batch_risk_check
-    path: /risk/batch
+  deep_analysis:
     method: POST
+    timeout_ms: 30000      # Level 2: Endpoint-specific (30 seconds)
 
-    headers:
-      Content-Type: application/json
-
-    body:
-      type: json
-      schema:
-        addresses:
-          type: array
-          source: event.addresses
-          max_items: 100
-        options:
-          type: object
-          properties:
-            include_history: true
-            risk_threshold: 70
+# Pipeline step
+- step:
+    type: api
+    api: fraud_api
+    endpoint: deep_analysis
+    timeout: 60000         # Level 1: Step-specific (60 seconds) - highest priority
 ```
 
-### 3.5 Response Mapping
+**Use cases**:
+- **API level**: Set reasonable default for all endpoints
+- **Endpoint level**: Different timeouts for quick vs complex operations
+- **Pipeline level**: Override for specific high-priority calls
 
+### 3.5 Output Storage
+
+Results are automatically stored at `api.{api_name}.{endpoint_name}` unless `output` is specified.
+
+**Example**:
 ```yaml
+# API config
+name: ipinfo
 endpoints:
-  - name: ip_reputation
-    path: /ip/{ip_address}
+  ip_lookup:
+    # ...
+
+# Pipeline step
+- step:
+    type: api
+    api: ipinfo
+    endpoint: ip_lookup
+    # Result automatically stored at: api.ipinfo.ip_lookup
+
+# Access in rules
+rule:
+  when:
+    - api.ipinfo.ip_lookup.country == "US"
+```
+
+**Custom output location**:
+```yaml
+- step:
+    type: api
+    api: ipinfo
+    endpoint: ip_lookup
+    output: custom.location
+    # Result stored at: custom.location instead
+```
+
+### 3.6 Error Handling
+
+Fallback priority (highest to lowest):
+1. Pipeline step `on_error.fallback`
+2. API config endpoint `response.fallback`
+3. `null` if no fallback defined
+
+---
+
+## 4. Minimal Example
+
+### API Configuration
+
+```yaml
+name: ipinfo
+base_url: "https://ipinfo.io"
+
+endpoints:
+  ip_lookup:
     method: GET
-
-    response_schema:
-      score:
-        type: number
-        min: 0
-        max: 100
-      is_proxy:
-        type: boolean
-      is_vpn:
-        type: boolean
-      is_tor:
-        type: boolean
-      country:
-        type: string
-      isp:
-        type: string
-
-    # Map API response to internal fields
-    mapping:
-      risk_score: response.fraud_score
-      is_anonymous: response.is_proxy || response.is_vpn || response.is_tor
-      geo_country: response.country_code
-      provider: response.ISP
-
-    # Transform values
-    transform:
-      risk_score: |
-        # Normalize to 0-100 scale
-        min(max(response.fraud_score * 100, 0), 100)
-```
-
----
-
-## 4. Rate Limiting
-
-### 4.1 Basic Rate Limits
-
-```yaml
-rate_limit:
-  requests_per_second: 100
-  requests_per_minute: 5000
-  requests_per_hour: 100000
-  burst: 200                     # Allow burst up to this limit
-```
-
-### 4.2 Endpoint-Specific Limits
-
-```yaml
-rate_limit:
-  global:
-    requests_per_second: 100
-
-  endpoints:
-    wallet_risk:
-      requests_per_second: 50
-    batch_check:
-      requests_per_second: 10
-```
-
-### 4.3 Rate Limit Handling
-
-```yaml
-rate_limit:
-  requests_per_second: 100
-
-  on_limit:
-    action: queue               # queue | reject | fallback
-    queue_timeout: 5000         # ms
-
-  # Respect API rate limit headers
-  headers:
-    remaining: X-RateLimit-Remaining
-    reset: X-RateLimit-Reset
-    limit: X-RateLimit-Limit
-```
-
----
-
-## 5. Timeout Configuration
-
-### 5.1 Timeout Settings
-
-```yaml
-timeout:
-  connect: 2000                  # Connection timeout (ms)
-  read: 5000                     # Read timeout (ms)
-  write: 3000                    # Write timeout (ms)
-  total: 10000                   # Total request timeout (ms)
-```
-
-### 5.2 Endpoint-Specific Timeouts
-
-```yaml
-timeout:
-  default:
-    total: 5000
-
-  endpoints:
-    batch_check:
-      total: 30000               # Longer timeout for batch
-    quick_lookup:
-      total: 2000                # Faster timeout for quick checks
-```
-
----
-
-## 6. Retry Policy
-
-### 6.1 Basic Retry
-
-```yaml
-retry:
-  max_attempts: 3
-  backoff: exponential           # exponential | linear | fixed
-  initial_delay: 1000            # ms
-  max_delay: 10000               # ms
-  multiplier: 2                  # For exponential backoff
-```
-
-### 6.2 Conditional Retry
-
-```yaml
-retry:
-  max_attempts: 3
-  backoff: exponential
-
-  # Retry on these conditions
-  retry_on:
-    status_codes:
-      - 429                      # Rate limited
-      - 500                      # Server error
-      - 502                      # Bad gateway
-      - 503                      # Service unavailable
-      - 504                      # Gateway timeout
-    exceptions:
-      - timeout
-      - connection_reset
-      - dns_failure
-
-  # Do not retry on these
-  no_retry_on:
-    status_codes:
-      - 400                      # Bad request
-      - 401                      # Unauthorized
-      - 403                      # Forbidden
-      - 404                      # Not found
-```
-
-### 6.3 Circuit Breaker
-
-```yaml
-circuit_breaker:
-  enabled: true
-
-  # Open circuit after N failures
-  failure_threshold: 5
-  failure_window: 60000          # ms
-
-  # Keep circuit open for this duration
-  open_duration: 30000           # ms
-
-  # Test with N calls before fully closing
-  half_open_max_calls: 3
-
-  # What counts as failure
-  failure_conditions:
-    - timeout
-    - status_code >= 500
-```
-
----
-
-## 7. Caching
-
-### 7.1 Basic Caching
-
-```yaml
-cache:
-  enabled: true
-  ttl: 3600                      # seconds
-  backend: redis                 # redis | memcached | memory
-```
-
-### 7.2 Advanced Caching
-
-```yaml
-cache:
-  enabled: true
-
-  # Cache key generation
-  key:
-    template: "{api_id}:{endpoint}:{hash(params)}"
-    # Or specify fields
-    include:
-      - endpoint
-      - params.address
-      - params.chain
-    exclude:
-      - params.timestamp
-
-  # TTL by endpoint
-  ttl:
-    default: 3600
-    endpoints:
-      wallet_risk: 1800          # 30 minutes for risk data
-      static_info: 86400         # 24 hours for static data
-
-  # Cache backend
-  backend:
-    type: redis
-    host: ${REDIS_HOST}
-    port: 6379
-    db: 2
-    password: ${REDIS_PASSWORD}
-
-  # Conditional caching
-  cache_if:
-    - response.status_code == 200
-    - response.risk_score is_not_null
-
-  # Cache warming
-  warm_on_startup:
-    enabled: true
-    endpoints:
-      - high_risk_wallets
-      - blocked_addresses
-```
-
----
-
-## 8. Error Handling
-
-### 8.1 Error Handling Strategies
-
-```yaml
-on_error:
-  # Strategy: fail | skip | fallback | retry
-  action: fallback
-
-  # Fallback values
-  fallback:
-    risk_score: 50
-    risk_level: medium
-    error: true
-
-  # Logging
-  log_level: warn                # debug | info | warn | error
-
-  # Include error details in context
-  expose_error: true
-  error_field: context.api_errors.{api_id}
-```
-
-### 8.2 Error-Specific Handling
-
-```yaml
-on_error:
-  default:
-    action: fallback
-    fallback:
-      risk_score: 50
-
-  by_status:
-    401:
-      action: fail
-      message: "API authentication failed"
-      alert: critical
-
-    429:
-      action: retry
-      delay: 5000
-
-    404:
-      action: skip
-      log_level: debug
-
-  by_exception:
-    timeout:
-      action: fallback
+    path: "/{ip}"
+    params:
+      ip: event.ip_address          # Read from event
+      token: "abc123"                # Literal value
+    query_params:
+      - token
+    response:
+      mapping:
+        country_code: country
+        city_name: city
       fallback:
-        risk_score: 70           # Higher risk on timeout
-        timeout: true
+        country_code: "Unknown"
+        city_name: "Unknown"
+        error: true
 ```
 
----
-
-## 9. Request/Response Transformation
-
-### 9.1 Request Transformation
+### Pipeline Usage
 
 ```yaml
-endpoints:
-  - name: risk_check
-    path: /check
-    method: POST
-
-    request_transform:
-      # Rename fields
-      rename:
-        event.wallet.address: walletAddress
-        event.user.id: userId
-
-      # Add computed fields
-      add:
-        timestamp: now()
-        request_id: uuid()
-
-      # Remove sensitive fields
-      remove:
-        - event.user.password
-        - event.user.ssn
+pipeline:
+  steps:
+    - step:
+        type: api
+        id: check_ip
+        api: ipinfo
+        endpoint: ip_lookup
+        # Parameters automatically read from context
+        # Result stored in: api.ipinfo.ip_lookup
 ```
 
-### 9.2 Response Transformation
-
-```yaml
-endpoints:
-  - name: risk_check
-
-    response_transform:
-      # Normalize score to 0-100
-      risk_score: |
-        response.score * 100
-
-      # Map risk levels
-      risk_level: |
-        case response.riskCategory
-          when "LOW" then "low"
-          when "MEDIUM" then "medium"
-          when "HIGH", "SEVERE" then "high"
-          else "unknown"
-        end
-
-      # Flatten nested response
-      categories: response.analysis.categories
-
-      # Combine fields
-      is_high_risk: |
-        response.score > 0.7 || response.riskCategory in ["HIGH", "SEVERE"]
-```
-
----
-
-## 10. Using External APIs
-
-### 10.1 In Rule Conditions
+### Using Response
 
 ```yaml
 rule:
-  id: high_risk_wallet
-  name: High Risk Wallet Detection
-
+  id: high_risk_country
   when:
-    event.type: crypto_transfer
-    conditions:
-      - external_api.chainalysis.risk_score > 80
-      - external_api.chainalysis.risk_level == "severe"
-      - external_api.chainalysis.categories contains "sanctions"
-
-  score: 100
-```
-
-### 10.2 In Pipeline Steps
-
-```yaml
-pipeline:
-  - type: api
-    id: wallet_risk_check
-    api: chainalysis
-    endpoint: wallet_risk
-
-    params:
-      address: event.wallet.address
-
-    output: context.wallet_risk
-
-    # Conditional execution
-    if: event.transaction.amount > 10000
-```
-
-### 10.3 Parallel API Calls
-
-```yaml
-pipeline:
-  - parallel:
-      - type: api
-        id: ip_check
-        api: maxmind
-        endpoint: ip_lookup
-
-      - type: api
-        id: device_check
-        api: fingerprintjs
-        endpoint: device_risk
-
-      - type: api
-        id: email_check
-        api: emailrep
-        endpoint: email_reputation
-
-    merge:
-      method: all
-      timeout: 5000
-```
-
-### 10.4 Chained API Calls
-
-```yaml
-pipeline:
-  # First: Get wallet info
-  - type: api
-    id: wallet_info
-    api: blockchain_explorer
-    endpoint: wallet_details
-    output: context.wallet_info
-
-  # Then: Check risk using wallet info
-  - type: api
-    id: risk_check
-    api: chainalysis
-    endpoint: wallet_risk
-
-    # Use output from previous step
-    params:
-      address: context.wallet_info.address
-      chain: context.wallet_info.chain
+    all:
+      - event.type == "payment"
+      - api.ipinfo.ip_lookup.country_code == "XX"
+      - api.ipinfo.ip_lookup.error != true
+  score: 80
 ```
 
 ---
 
-## 11. API Registry
+## 5. Environment Variables
 
-### 11.1 Centralized API Definition
+**Syntax**: `env.x.y.z` (dot notation)
 
+**Resolution**: At **compile time**, `env.x.y.z` is replaced with values from `config/server.yaml`
+
+**Example**:
 ```yaml
-# api-registry.yml
-api_registry:
-  version: "1.0"
+# config/server.yaml
+llm:
+  openai:
+    api_key: "sk_live_abc123"
 
-  apis:
-    # Risk Intelligence
-    - id: chainalysis
-      category: blockchain_risk
-      file: apis/chainalysis.yml
-
-    - id: elliptic
-      category: blockchain_risk
-      file: apis/elliptic.yml
-
-    # Device Intelligence
-    - id: fingerprintjs
-      category: device_fingerprint
-      file: apis/fingerprintjs.yml
-
-    # IP Intelligence
-    - id: maxmind
-      category: ip_reputation
-      file: apis/maxmind.yml
-
-    - id: ipqualityscore
-      category: ip_reputation
-      file: apis/ipqualityscore.yml
-
-    # Email Intelligence
-    - id: emailrep
-      category: email_validation
-      file: apis/emailrep.yml
-
-  # Default settings for all APIs
-  defaults:
-    timeout:
-      total: 5000
-    retry:
-      max_attempts: 3
-      backoff: exponential
-    cache:
-      enabled: true
-      ttl: 3600
+# API config
+auth:
+  type: header
+  name: "Authorization"
+  value: "Bearer ${env.llm.openai.api_key}"  # Compile-time replacement
 ```
 
-### 11.2 Environment-Specific Configuration
+**Mapping**: `config/server.yaml` structure maps directly to `env` namespace:
+- `llm.openai.api_key` → `env.llm.openai.api_key`
+- `datasources.postgres_rules.connection_string` → `env.datasources.postgres_rules.connection_string`
 
-```yaml
-# apis/chainalysis.yml
-external_api:
-  id: chainalysis
+---
 
-  environments:
-    development:
-      base_url: https://sandbox.chainalysis.com/v2
-      auth:
-        key: ${CHAINALYSIS_SANDBOX_KEY}
-      rate_limit:
-        requests_per_second: 10
+## 6. Grammar Summary
 
-    staging:
-      base_url: https://staging-api.chainalysis.com/v2
-      auth:
-        key: ${CHAINALYSIS_STAGING_KEY}
-      rate_limit:
-        requests_per_second: 50
+```
+API Config:
+  name + base_url + [auth] + [timeout_ms] + endpoints
 
-    production:
-      base_url: https://api.chainalysis.com/v2
-      auth:
-        key: ${CHAINALYSIS_PROD_KEY}
-      rate_limit:
-        requests_per_second: 100
+Endpoint:
+  method + path + [timeout_ms] + [params] + [query_params] + [request_body] + [response]
+
+Response:
+  [mapping: {output_field: response_field}] + [fallback: {field: value}]
+
+Pipeline Step:
+  type: api + id + api + endpoint + [params] + [output] + [timeout] + [on_error] + [next]
+
+Parameter Value:
+  ${expression}  |  "string"  |  number  |  boolean
+
+Error Handling:
+  fallback: { key: value, ... }
 ```
 
 ---
 
-## 12. Observability
-
-### 12.1 Logging
-
-```yaml
-observability:
-  logging:
-    enabled: true
-    level: info
-
-    include:
-      - request_id
-      - endpoint
-      - latency
-      - status_code
-      - cache_hit
-
-    exclude:
-      - request_body
-      - response_body
-      - auth_headers
-
-    # Sample logging for high-volume endpoints
-    sampling:
-      default: 1.0               # Log all
-      endpoints:
-        high_volume_check: 0.1   # Log 10%
-```
-
-### 12.2 Metrics
-
-```yaml
-observability:
-  metrics:
-    enabled: true
-
-    counters:
-      - api_requests_total
-      - api_errors_total
-      - api_cache_hits_total
-
-    histograms:
-      - api_request_duration_seconds
-      - api_response_size_bytes
-
-    labels:
-      - api_id
-      - endpoint
-      - status_code
-      - cache_hit
-```
-
-### 12.3 Tracing
-
-```yaml
-observability:
-  tracing:
-    enabled: true
-
-    capture:
-      - request_headers
-      - response_status
-      - latency
-      - retry_count
-
-    propagate:
-      - X-Request-ID
-      - X-Correlation-ID
-```
-
----
-
-## 13. Security
-
-### 13.1 Secrets Management
-
-```yaml
-security:
-  secrets:
-    provider: vault              # vault | aws_secrets | env
-
-    vault:
-      address: https://vault.company.com
-      path: secret/data/corint/apis
-      auth:
-        method: kubernetes
-        role: corint-api
-```
-
-### 13.2 Request Signing
-
-```yaml
-security:
-  request_signing:
-    enabled: true
-    algorithm: hmac-sha256
-
-    sign:
-      - timestamp
-      - path
-      - body_hash
-
-    headers:
-      signature: X-Signature
-      timestamp: X-Timestamp
-```
-
-### 13.3 Response Validation
-
-```yaml
-security:
-  response_validation:
-    # Validate response signature
-    verify_signature: true
-    signature_header: X-Response-Signature
-
-    # Validate response schema
-    validate_schema: true
-    on_validation_error: warn    # warn | fail
-```
-
----
-
-## 14. Testing
-
-### 14.1 Mock Configuration
-
-```yaml
-testing:
-  mocks:
-    chainalysis:
-      endpoints:
-        wallet_risk:
-          - match:
-              params:
-                address: "0x123..."
-            response:
-              risk_score: 85
-              risk_level: high
-
-          - match:
-              params:
-                address: "0x456..."
-            response:
-              risk_score: 10
-              risk_level: low
-
-          # Default response
-          - default: true
-            response:
-              risk_score: 50
-              risk_level: medium
-```
-
-### 14.2 Test Cases
-
-```yaml
-tests:
-  - name: "High risk wallet detection"
-    api: chainalysis
-    endpoint: wallet_risk
-
-    input:
-      address: "0xknown_high_risk_address"
-
-    expected:
-      risk_score: ">= 80"
-      risk_level: "high"
-
-  - name: "API timeout handling"
-    api: chainalysis
-    endpoint: wallet_risk
-
-    simulate:
-      latency: 10000             # Simulate timeout
-
-    expected:
-      fallback_used: true
-      risk_score: 50
-```
-
----
-
-## 15. Best Practices
-
-### 15.1 API Design
-
-**Good:**
-```yaml
-external_api:
-  id: risk_provider
-
-  # Clear naming
-  endpoints:
-    - name: wallet_risk_score
-      description: "Get risk score for cryptocurrency wallet"
-
-  # Explicit timeouts
-  timeout:
-    total: 5000
-
-  # Defined fallbacks
-  on_error:
-    action: fallback
-    fallback:
-      risk_score: 50
-```
-
-**Avoid:**
-```yaml
-external_api:
-  id: api1                       # Unclear name
-
-  endpoints:
-    - name: check                # Vague endpoint name
-      # No description
-      # No timeout (uses default)
-      # No error handling
-```
-
-### 15.2 Performance
-
-- Use caching for frequently accessed data
-- Set appropriate timeouts (don't wait forever)
-- Implement circuit breakers for unreliable APIs
-- Use parallel calls when possible
-- Consider rate limits in your design
-
-### 15.3 Reliability
-
-- Always define fallback values
-- Use retry with exponential backoff
-- Monitor API health and latency
-- Have backup providers for critical APIs
-
----
-
-## 16. Summary
-
-CORINT's External API specification provides:
-
-- **Unified API definition** format for all external services
-- **Flexible authentication** supporting API keys, OAuth, mTLS
-- **Robust error handling** with fallbacks and circuit breakers
-- **Performance optimization** through caching and rate limiting
-- **Full observability** with logging, metrics, and tracing
-- **Security features** including secrets management and request signing
-- **Testing support** with mock configurations
-
-This enables reliable integration with third-party risk intelligence services while maintaining performance and resilience.
-
----
-
-## 17. Related Documentation
-
-- `rule.md` - Using external API results in rules
-- `pipeline.md` - API steps in pipelines
+**Version**: 0.2.0 (MVP)
+**Target**: LLM-readable DSL specification
+**Status**: Simplified design for initial implementation

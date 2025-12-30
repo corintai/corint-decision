@@ -480,34 +480,12 @@ impl PipelineExecutor {
                 // Variable operations
                 Instruction::Store { name } => {
                     let value = ctx.pop()?;
+                    tracing::trace!("Storing value at '{}': {:?}", name, value);
 
-                    // Handle nested paths like "context.ip_info"
+                    // Handle nested paths like "api.ipinfo.ip_lookup"
                     if name.contains('.') {
                         let parts: Vec<&str> = name.split('.').collect();
-                        if parts.len() == 2 {
-                            // Two-level nesting: context.ip_info
-                            let root = parts[0];
-                            let key = parts[1];
-
-                            // Get or create the root object
-                            let mut root_obj = match ctx.load_variable(root) {
-                                Ok(val) => {
-                                    if let Value::Object(map) = val {
-                                        map
-                                    } else {
-                                        HashMap::new()
-                                    }
-                                }
-                                Err(_) => HashMap::new(),
-                            };
-
-                            // Set the nested value
-                            root_obj.insert(key.to_string(), value);
-                            ctx.store_variable(root.to_string(), Value::Object(root_obj));
-                        } else {
-                            // For deeper nesting, just use the full path as key for now
-                            ctx.store_variable(name.clone(), value);
-                        }
+                        Self::store_nested_value(&mut ctx, &parts, value);
                     } else {
                         // Simple variable name
                         ctx.store_variable(name.clone(), value);
@@ -643,6 +621,83 @@ impl PipelineExecutor {
             }
         }
 
+        // Execute decision logic if present
+        if let Some(ref decision_instructions) = program.decision_instructions {
+            tracing::debug!(
+                "Executing {} decision instructions",
+                decision_instructions.len()
+            );
+
+            let mut decision_pc = 0;
+            while decision_pc < decision_instructions.len() {
+                let instruction = &decision_instructions[decision_pc];
+                tracing::trace!("Decision pc={}: {:?}", decision_pc, instruction);
+
+                match instruction {
+                    Instruction::LoadField { path } => {
+                        let value = self.handle_load_field(&mut ctx, path).await?;
+                        ctx.push(value);
+                        decision_pc += 1;
+                    }
+
+                    Instruction::LoadConst { value } => {
+                        ctx.push(value.clone());
+                        decision_pc += 1;
+                    }
+
+                    Instruction::Compare { op } => {
+                        let right = ctx.pop()?;
+                        let left = ctx.pop()?;
+                        let result = operators::execute_compare(&left, op, &right)?;
+                        ctx.push(Value::Bool(result));
+                        decision_pc += 1;
+                    }
+
+                    Instruction::JumpIfFalse { offset } => {
+                        let condition = ctx.pop()?;
+                        if !Self::is_truthy(&condition) {
+                            decision_pc = (decision_pc as isize + offset) as usize;
+                        } else {
+                            decision_pc += 1;
+                        }
+                    }
+
+                    Instruction::Jump { offset } => {
+                        decision_pc = (decision_pc as isize + offset) as usize;
+                    }
+
+                    Instruction::SetSignal { signal } => {
+                        tracing::debug!("Decision: SetSignal {:?}", signal);
+                        ctx.set_signal(signal.clone());
+                        decision_pc += 1;
+                    }
+
+                    Instruction::SetReason { reason } => {
+                        tracing::debug!("Decision: SetReason {}", reason);
+                        ctx.set_reason(reason.clone());
+                        decision_pc += 1;
+                    }
+
+                    Instruction::SetActions { actions } => {
+                        tracing::debug!("Decision: SetActions {:?}", actions);
+                        ctx.set_actions(actions.clone());
+                        decision_pc += 1;
+                    }
+
+                    Instruction::Return => {
+                        break;
+                    }
+
+                    _ => {
+                        return Err(RuntimeError::RuntimeError(format!(
+                            "Unsupported instruction in decision logic: {:?}",
+                            instruction
+                        )));
+                    }
+                }
+            }
+        }
+
         let duration = start_time.elapsed();
         self.metrics
             .record_execution_time("program_execution", duration);
@@ -675,6 +730,25 @@ impl PipelineExecutor {
             Value::Array(a) => !a.is_empty(),
             Value::Object(o) => !o.is_empty(),
         }
+    }
+
+    /// Store a value at a nested path like ["api", "ipinfo", "ip_lookup"]
+    fn store_nested_value(ctx: &mut ExecutionContext, parts: &[&str], value: Value) {
+        if parts.is_empty() {
+            return;
+        }
+
+        if parts.len() == 1 {
+            // Base case: store at top level
+            ctx.store_variable(parts[0].to_string(), value);
+            return;
+        }
+
+        // Check if first part is a recognized namespace
+        let namespace = parts[0];
+        let remaining = &parts[1..];
+
+        ctx.store_in_namespace(namespace, remaining, value);
     }
 
     /// Handle LoadField instruction with feature resolution

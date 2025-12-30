@@ -444,7 +444,7 @@ pipeline:
     id: load_user
     service: user_db
     query: get_user_profile
-    output: context.user_profile
+    output: service.user_profile
 
   # Cache lookup
   - type: service

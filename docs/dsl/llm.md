@@ -110,8 +110,8 @@ rule:
       - event.transaction
       - event.user
       - event.device
-      - context.rules_score
-      - context.triggered_rules
+      - vars.rules_score
+      - vars.triggered_rules
 ```
 
 **That's it!** No need to configure:
@@ -161,14 +161,14 @@ rule:
   name: Ambiguous Transaction Pattern
   
   when:
-    event.type: transaction
-    conditions:
-      - context.rules_score >= 40
-      - context.rules_score <= 85
-      
+    all:
+      - event.type == "transaction"
+      - vars.rules_score >= 40
+      - vars.rules_score <= 85
+
   score: 65
   action: infer
-  
+
   infer:
     # Specify data to send to cognition AI
     data_snapshot:
@@ -180,13 +180,13 @@ rule:
       - event.user.tier
       - event.device.type
       - event.geo.country
-      
-      # Context data
-      - context.rules_score
-      - context.triggered_rules
-      - context.behavior_analysis
-      - context.device_fingerprint
-      - context.ip_reputation
+
+      # Computed data from various sources
+      - vars.rules_score
+      - vars.triggered_rules
+      - vars.behavior_analysis
+      - api.device_fingerprint
+      - api.ip_reputation
 ```
 
 ### 2.6 Data Snapshot Patterns
@@ -196,7 +196,10 @@ rule:
 infer:
   data_snapshot:
     - event.*
-    - context.*
+    - features.*
+    - api.*
+    - service.*
+    - vars.*
 ```
 
 **Include specific fields:**
@@ -206,7 +209,7 @@ infer:
     - event.transaction
     - event.user.id
     - event.user.tier
-    - context.rules_score
+    - vars.rules_score
 ```
 
 **Exclude sensitive data:**
@@ -214,7 +217,10 @@ infer:
 infer:
   data_snapshot:
     - event.*
-    - context.*
+    - features.*
+    - api.*
+    - service.*
+    - vars.*
   exclude:
     - event.user.password
     - event.user.ssn

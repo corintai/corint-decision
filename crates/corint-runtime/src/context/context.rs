@@ -136,14 +136,45 @@ impl ExecutionContext {
         // Validate event data doesn't contain reserved fields
         crate::validation::validate_event_data(&input.event)?;
 
+        // Extract namespaced data from result.variables (which may contain data from previous execution)
+        let mut api_ns = input.api.unwrap_or_default();
+        let mut service_ns = input.service.unwrap_or_default();
+        let mut llm_ns = input.llm.unwrap_or_default();
+        let mut vars_ns = input.vars.unwrap_or_default();
+
+        // Check if result.variables contains namespaced data that should be extracted
+        for (key, value) in &result.variables {
+            match key.as_str() {
+                "api" => {
+                    if let Value::Object(obj) = value {
+                        api_ns.extend(obj.clone());
+                    }
+                }
+                "service" => {
+                    if let Value::Object(obj) = value {
+                        service_ns.extend(obj.clone());
+                    }
+                }
+                "llm" => {
+                    if let Value::Object(obj) = value {
+                        llm_ns.extend(obj.clone());
+                    }
+                }
+                _ => {
+                    // Non-namespace variables go to vars
+                    vars_ns.insert(key.clone(), value.clone());
+                }
+            }
+        }
+
         Ok(Self {
             stack: Vec::new(),
             event: input.event,
             features: input.features.unwrap_or_default(),
-            api: input.api.unwrap_or_default(),
-            service: input.service.unwrap_or_default(),
-            llm: input.llm.unwrap_or_default(),
-            vars: input.vars.unwrap_or_default(),
+            api: api_ns,
+            service: service_ns,
+            llm: llm_ns,
+            vars: vars_ns,
             sys: super::system_vars::build_system_vars(),
             env: super::env_vars::load_environment_vars(),
             result,
@@ -334,6 +365,60 @@ impl ExecutionContext {
             .ok_or_else(|| RuntimeError::FieldNotFound(name.to_string()))
     }
 
+    /// Store a value in a namespace at a nested path
+    pub fn store_in_namespace(&mut self, namespace: &str, path: &[&str], value: Value) {
+        tracing::trace!("store_in_namespace: namespace={}, path={:?}, value={:?}", namespace, path, value);
+
+        let namespace_map = match namespace {
+            "api" => &mut self.api,
+            "service" => &mut self.service,
+            "llm" => &mut self.llm,
+            "vars" => &mut self.vars,
+            "env" => &mut self.env,
+            "sys" => &mut self.sys,
+            _ => {
+                // Unknown namespace, store in variables as fallback
+                let full_path = std::iter::once(namespace).chain(path.iter().copied()).collect::<Vec<_>>().join(".");
+                tracing::trace!("Unknown namespace {}, storing in variables as {}", namespace, full_path);
+                self.store_variable(full_path, value);
+                return;
+            }
+        };
+
+        // Navigate to the correct nested location and store the value
+        if path.is_empty() {
+            // Shouldn't happen, but handle gracefully
+            return;
+        }
+
+        if path.len() == 1 {
+            // Direct storage in namespace
+            tracing::trace!("Storing directly in {} namespace at key {}", namespace, path[0]);
+            namespace_map.insert(path[0].to_string(), value);
+        } else {
+            // Need to create nested objects
+            tracing::trace!("Storing nested in {} namespace at path {:?}", namespace, path);
+            Self::store_nested_in_map(namespace_map, path, value);
+        }
+
+        tracing::trace!("After store, {} namespace has {} entries", namespace, namespace_map.len());
+    }
+
+    /// Helper to store value in nested map hierarchy
+    fn store_nested_in_map(map: &mut HashMap<String, Value>, path: &[&str], value: Value) {
+        if path.len() == 1 {
+            map.insert(path[0].to_string(), value);
+        } else {
+            let key = path[0];
+            let mut nested = match map.get(key) {
+                Some(Value::Object(obj)) => obj.clone(),
+                _ => HashMap::new(),
+            };
+            Self::store_nested_in_map(&mut nested, &path[1..], value);
+            map.insert(key.to_string(), Value::Object(nested));
+        }
+    }
+
     // ========== Score and Rule Operations ==========
 
     /// Add to the score
@@ -389,19 +474,19 @@ impl ExecutionContext {
             context.insert(k, v);
         }
 
-        // Add api results
-        for (k, v) in self.api {
-            context.insert(k, v);
+        // Add api results under "api" namespace
+        if !self.api.is_empty() {
+            context.insert("api".to_string(), Value::Object(self.api));
         }
 
-        // Add service results
-        for (k, v) in self.service {
-            context.insert(k, v);
+        // Add service results under "service" namespace
+        if !self.service.is_empty() {
+            context.insert("service".to_string(), Value::Object(self.service));
         }
 
-        // Add llm results
-        for (k, v) in self.llm {
-            context.insert(k, v);
+        // Add llm results under "llm" namespace
+        if !self.llm.is_empty() {
+            context.insert("llm".to_string(), Value::Object(self.llm));
         }
 
         // Add vars

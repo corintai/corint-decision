@@ -102,6 +102,7 @@ impl Clone for ListService {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::MemoryBackend;
 
     #[tokio::test]
     async fn test_list_service_multiple_backends() {

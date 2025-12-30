@@ -208,15 +208,15 @@ pipeline:
     params:
       user_id: event.user.id
 
-    # Store result in context
-    output: context.user_profile
+    # Store result in service namespace
+    output: service.user_profile
 
   # Use result in conditions
   - type: rules
     id: check_user_tier
     conditions:
-      - context.user_profile.tier == "premium"
-      - context.user_profile.kyc_verified == true
+      - service.user_profile.tier == "premium"
+      - service.user_profile.kyc_verified == true
 ```
 
 ---
@@ -256,7 +256,7 @@ services:
       - name: set_user_risk_cache
         operation: set
         key: "risk:user:{{ event.user.id }}"
-        value: "{{ context.risk_result }}"
+        value: "{{ vars.risk_result }}"
         ttl: 3600                     # seconds
         serialize: json
 
@@ -292,29 +292,29 @@ pipeline:
     id: check_cache
     service: redis_cache
     operation: get_user_risk_cache
-    output: context.cached_risk
+    output: service.cached_risk
 
   - branch:
       when:
         # If cache hit, use cached value
-        - condition: "context.cached_risk exists"
+        - condition: "service.cached_risk exists"
           pipeline:
             - type: action
-              decision: context.cached_risk
+              decision: service.cached_risk
 
         # If cache miss, compute and cache
-        - condition: "context.cached_risk missing"
+        - condition: "service.cached_risk missing"
           pipeline:
             - type: rules
               id: compute_risk
-              output: context.computed_risk
+              output: vars.computed_risk
 
             - type: service
               id: update_cache
               service: redis_cache
               operation: set_user_risk_cache
               params:
-                value: context.computed_risk
+                value: vars.computed_risk
 ```
 
 ---
@@ -381,15 +381,15 @@ pipeline:
       - user_association_5h
       - device_profile
 
-    output: context.features
+    output: features
 
   # Use features in rules
   - type: rules
     id: feature_based_rules
     conditions:
-      - context.features.user_behavior_7d.login_count > 100
-      - context.features.user_association_5h.devices_per_ip > 10
-      - context.features.device_profile.trust_score < 0.5
+      - features.user_behavior_7d.login_count > 100
+      - features.user_association_5h.devices_per_ip > 10
+      - features.device_profile.trust_score < 0.5
 ```
 
 ---
@@ -478,7 +478,7 @@ services:
         request:
           user_id: "{{ event.user.id }}"
           transaction_amount: "{{ event.transaction.amount }}"
-          features: "{{ context.features }}"
+          features: "{{ features }}"
 
         response:
           risk_score: float
@@ -522,8 +522,8 @@ services:
           value:
             user_id: "{{ event.user.id }}"
             event_type: "{{ event.type }}"
-            risk_score: "{{ context.final_risk_score }}"
-            decision: "{{ context.decision }}"
+            risk_score: "{{ vars.final_risk_score }}"
+            decision: "{{ vars.decision }}"
             timestamp: "{{ sys.timestamp }}"
 
       - name: fraud_alerts
@@ -534,7 +534,7 @@ services:
           value:
             alert_type: high_risk
             user_id: "{{ event.user.id }}"
-            risk_score: "{{ context.risk_score }}"
+            risk_score: "{{ vars.risk_score }}"
 
     timeout:
       send: 5000
@@ -551,7 +551,7 @@ pipeline:
   # Process risk decision
   - type: rules
     id: risk_evaluation
-    output: context.risk_result
+    output: vars.risk_result
 
   # Publish decision to event bus
   - type: service
@@ -567,7 +567,7 @@ pipeline:
     id: publish_alert
     service: event_bus
     topic: fraud_alerts
-    if: context.risk_result.score > 80
+    if: vars.risk_result.score > 80
     async: true
 ```
 
@@ -614,7 +614,7 @@ services:
             body:
               query:
                 terms:
-                  device_id: "{{ context.user_devices }}"
+                  device_id: "{{ vars.user_devices }}"
               aggs:
                 unique_users:
                   cardinality:
@@ -651,28 +651,28 @@ pipeline:
     id: load_user
     service: user_db
     query: get_user_profile
-    output: context.user_profile
+    output: service.user_profile
 
   # Step 2: Get cached risk score
   - type: service
     id: check_cache
     service: redis_cache
     operation: get_user_risk_cache
-    output: context.cached_risk
+    output: service.cached_risk
 
   # Step 3: Call KYC service
   - type: service
     id: verify_kyc
     service: kyc_service
     endpoint: get_verification_status
-    output: context.kyc_status
+    output: service.kyc_status
 
   # Step 4: Use all results
   - type: rules
     id: combined_check
     conditions:
-      - context.user_profile.tier == "premium"
-      - context.kyc_status.verified == true
+      - service.user_profile.tier == "premium"
+      - service.kyc_status.verified == true
 ```
 
 ### 9.2 Parallel Service Calls
@@ -705,9 +705,9 @@ pipeline:
   # All results available after merge
   - type: rules
     conditions:
-      - context.load_user.tier == "premium"
-      - context.load_features.login_count > 10
-      - context.check_kyc.verified == true
+      - service.load_user.tier == "premium"
+      - features.user_behavior_7d.login_count > 10
+      - service.check_kyc.verified == true
 ```
 
 ### 9.3 Conditional Service Calls
@@ -723,9 +723,9 @@ pipeline:
     # Conditional execution
     if: |
       event.transaction.amount > 10000 ||
-      context.basic_risk_score > 70
+      vars.basic_risk_score > 70
 
-    output: context.ml_risk_score
+    output: service.ml_risk_score
 ```
 
 ---
@@ -871,7 +871,7 @@ pipeline:
   # Use fallback if feature store failed
   - type: rules
     conditions:
-      - context.load_features.login_count > 10
+      - features.login_count > 10
       # Works whether from feature store or computed on-demand
 ```
 
@@ -940,7 +940,7 @@ services:
         params:
           - name: user_ids
             type: array<string>
-            source: context.user_id_list
+            source: vars.user_id_list
 
 # Usage in pipeline
 pipeline:

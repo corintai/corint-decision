@@ -1,0 +1,82 @@
+version: "0.1"
+
+# Example: Comprehensive Fraud Check Pipeline
+# Demonstrates all external API features
+
+---
+
+pipeline:
+  id: fraud_check_example
+  name: Fraud Detection Example Pipeline
+  description: Shows all external API integration patterns
+
+  entry: check_ip
+
+  when:
+    all:
+      - event.type == "payment"
+
+  steps:
+    # Example 1: Simple GET request
+    - step:
+        id: check_ip
+        name: IP Reputation Check
+        type: api
+        api: fraud_detector
+        endpoint: check_ip
+        # Parameters automatically read from context (defined in API config)
+        # Result automatically stored in: context.fraud_detector.check_ip
+        next: analyze_transaction
+
+    # Example 2: POST request with complex body
+    - step:
+        id: analyze_transaction
+        name: Transaction Risk Analysis
+        type: api
+        api: fraud_detector
+        endpoint: analyze_transaction
+        # Parameters automatically read from context (defined in API config)
+        # Result automatically stored in: context.fraud_detector.analyze_transaction
+        next: check_high_risk
+
+    # Example 3: Conditional API call
+    - step:
+        id: update_high_risk
+        name: Update High Risk Score
+        type: api
+        api: fraud_detector
+        endpoint: update_risk
+        # Parameters automatically read from context (defined in API config)
+        # Result automatically stored in: context.fraud_detector.update_risk
+        next: notify_team
+
+    # Example 4: Using previous API results
+    # Note: To chain API results, define params in API config to read from previous API output
+    # For example: user_email: context.user_service.get_user.email
+    - step:
+        id: enhanced_check
+        name: Enhanced Risk Check
+        type: api
+        api: fraud_detector
+        endpoint: analyze_transaction
+        # Parameters automatically read from context (defined in API config)
+        # Can override output for multiple calls to same endpoint:
+        output: context.enhanced_analysis
+        next: end
+
+    # Example 5: PATCH request
+    - step:
+        id: mark_reviewed
+        name: Mark as Reviewed
+        type: api
+        api: fraud_detector
+        endpoint: update_status
+        # Parameters automatically read from context (defined in API config)
+        # Result automatically stored in: context.fraud_detector.update_status
+        next: end
+
+  metadata:
+    version: "1.0.0"
+    author: "Risk Team"
+    updated: "2025-12-30"
+    purpose: "Example demonstrating external API integration patterns"

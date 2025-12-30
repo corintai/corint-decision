@@ -174,3 +174,8 @@ llm:
 
     # Default temperature (0.0 - 1.0)
     temperature: 0.7
+
+# external api configuration
+api:
+  ipinfo:
+    token: "a63066c9a63590"

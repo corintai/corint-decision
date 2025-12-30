@@ -77,8 +77,13 @@ impl RepositoryLoader {
         // 2. Load pipelines
         let pipeline_ids = repo.list_pipelines().await?;
         for id in pipeline_ids {
-            if let Ok((_, yaml)) = repo.load_pipeline(&id).await {
-                content.pipelines.push((id, yaml));
+            match repo.load_pipeline(&id).await {
+                Ok((_, yaml)) => {
+                    content.pipelines.push((id, yaml));
+                }
+                Err(e) => {
+                    eprintln!("[ERROR] Failed to load pipeline '{}': {:?}", id, e);
+                }
             }
         }
 
@@ -157,57 +162,13 @@ impl RepositoryLoader {
             RepositoryError::Other(format!("Failed to read {:?}: {}", path, e))
         })?;
 
-        // Parse YAML - handle the nested structure
-        let yaml: serde_yaml::Value = serde_yaml::from_str(&content).map_err(|e| {
+        // Parse YAML directly into ApiConfig structure
+        // serde will handle the deserialization based on our struct definition
+        let config: ApiConfig = serde_yaml::from_str(&content).map_err(|e| {
             RepositoryError::ParseError(format!("Failed to parse {:?}: {}", path, e))
         })?;
 
-        let name = yaml
-            .get("name")
-            .and_then(|v| v.as_str())
-            .unwrap_or("unknown")
-            .to_string();
-
-        let base_url = yaml
-            .get("base_url")
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_string();
-
-        let mut endpoints = Vec::new();
-        if let Some(eps) = yaml.get("endpoints").and_then(|v| v.as_mapping()) {
-            for (ep_name, ep_value) in eps {
-                if let (Some(name), Some(ep_map)) = (ep_name.as_str(), ep_value.as_mapping()) {
-                    let method = ep_map
-                        .get(&serde_yaml::Value::String("method".to_string()))
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("GET")
-                        .to_string();
-
-                    let ep_path = ep_map
-                        .get(&serde_yaml::Value::String("path".to_string()))
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("")
-                        .to_string();
-
-                    endpoints.push(ApiEndpoint {
-                        name: name.to_string(),
-                        method,
-                        path: ep_path,
-                        path_params: std::collections::HashMap::new(),
-                        query_params: std::collections::HashMap::new(),
-                    });
-                }
-            }
-        }
-
-        Ok(ApiConfig {
-            name,
-            base_url,
-            endpoints,
-            headers: std::collections::HashMap::new(),
-            timeout_ms: 5000,
-        })
+        Ok(config)
     }
 
     /// Load datasource configurations from configs/datasources/

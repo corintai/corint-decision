@@ -710,8 +710,8 @@ rule:
   name: New Device Login
 
   when:
-    event.type: login
-    conditions:
+    all:
+      - event.type == "login"
       - device.id not_in user.known_devices
 
   score: 40

@@ -100,6 +100,10 @@ impl RepositoryContent {
     }
 }
 
+// Re-export API types defined in corint-runtime
+// Note: These types need to be available for repository loading,
+// but the actual implementation is in corint-runtime
+// We define them here to avoid circular dependencies
 /// External API configuration
 ///
 /// Defines how to connect to an external API service.
@@ -111,42 +115,78 @@ pub struct ApiConfig {
     /// Base URL
     pub base_url: String,
 
-    /// Endpoint definitions
-    #[serde(default)]
-    pub endpoints: Vec<ApiEndpoint>,
+    /// Optional authentication configuration
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub auth: Option<ApiAuth>,
 
-    /// Default headers
-    #[serde(default)]
-    pub headers: std::collections::HashMap<String, String>,
-
-    /// Timeout in milliseconds
+    /// Timeout in milliseconds (default: 10000)
     #[serde(default = "default_timeout")]
     pub timeout_ms: u64,
+
+    /// Endpoint definitions (as a map: endpoint_name -> endpoint_config)
+    #[serde(default)]
+    pub endpoints: std::collections::HashMap<String, ApiEndpoint>,
+}
+
+/// Authentication configuration for API
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ApiAuth {
+    /// Authentication type (currently only "header" is supported)
+    #[serde(rename = "type")]
+    pub auth_type: String,
+
+    /// Header name (e.g., "Authorization", "X-API-Key")
+    pub name: String,
+
+    /// Header value (can use ${env.x.y.z} for environment variables)
+    pub value: String,
 }
 
 fn default_timeout() -> u64 {
-    5000
+    10000  // Changed from 5000 to 10000 per docs
 }
 
 /// API endpoint definition
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ApiEndpoint {
-    /// Endpoint name
-    pub name: String,
-
-    /// HTTP method
+    /// HTTP method (GET, POST, PUT, DELETE, PATCH)
     pub method: String,
 
     /// Path (can include path parameters like {id})
     pub path: String,
 
-    /// Path parameter mappings
-    #[serde(default)]
-    pub path_params: std::collections::HashMap<String, String>,
+    /// Optional timeout for this endpoint (overrides API default)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub timeout_ms: Option<u64>,
 
-    /// Query parameter mappings
-    #[serde(default)]
-    pub query_params: std::collections::HashMap<String, String>,
+    /// Parameter mapping from context or literals
+    /// Key: param name, Value: context path (e.g., "event.user.id") or literal value
+    #[serde(default, skip_serializing_if = "std::collections::HashMap::is_empty")]
+    pub params: std::collections::HashMap<String, serde_json::Value>,
+
+    /// Query parameter names (array of param names to include in query string)
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub query_params: Vec<String>,
+
+    /// Request body template for POST/PUT/PATCH (with ${param_name} placeholders)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub request_body: Option<String>,
+
+    /// Response handling configuration
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub response: Option<ApiResponse>,
+}
+
+/// Response handling configuration
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ApiResponse {
+    /// Field mapping: output_field -> response_field
+    #[serde(default, skip_serializing_if = "std::collections::HashMap::is_empty")]
+    pub mapping: std::collections::HashMap<String, String>,
+
+    /// Fallback value on error (4xx, 5xx, timeout)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub fallback: Option<serde_json::Value>,
 }
 
 /// Data source configuration
@@ -370,13 +410,13 @@ mod tests {
         let config = ApiConfig {
             name: "ipinfo".to_string(),
             base_url: "https://ipinfo.io".to_string(),
-            endpoints: vec![],
-            headers: std::collections::HashMap::new(),
-            timeout_ms: 5000,
+            auth: None,
+            timeout_ms: 10000,
+            endpoints: std::collections::HashMap::new(),
         };
 
         assert_eq!(config.name, "ipinfo");
-        assert_eq!(config.timeout_ms, 5000);
+        assert_eq!(config.timeout_ms, 10000);
     }
 
     #[test]

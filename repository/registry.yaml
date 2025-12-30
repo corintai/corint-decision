@@ -42,6 +42,10 @@ registry:
     when: event.type == "no_sep_demo"
     description: Demo pipeline without --- separators
 
+  - pipeline: api_pipeline
+    when: event.type == "api"
+    description: API Pipeline
+
   # Loan application events
   # - pipeline: loan_application_pipeline
   #   when:

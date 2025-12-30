@@ -1,0 +1,42 @@
+pipeline:
+  id: api_pipeline
+  name: API Pipeline
+  description: API Pipeline
+  version: "1.0.0"
+
+  entry: api_step
+
+  steps:
+    - step:
+        id: api_step
+        name: API Step
+        type: api
+        api: ipinfo
+        endpoint: ip_lookup
+     
+  decision:
+    - when:
+        all:
+          - api.ipinfo.ip_lookup.country_code == "US"
+      result: approve
+      reason: "US"
+   
+    - when:
+        all:
+          - api.ipinfo.ip_lookup.country_code == "CN"
+      result: decline
+      reason: "Non-US"
+
+    - default: true
+      result: review
+      actions: ["manual_review"]
+      reason: "Non-US or CN"
+  
+  metadata:
+    version: "1.0.0"
+    author: "Security Team"
+    updated: "2025-12-20 10:00:00"
+
+    # Custom fields
+    owner: "security_team"
+    tags: [login, authentication, security]

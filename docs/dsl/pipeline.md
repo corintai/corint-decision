@@ -883,7 +883,7 @@ pipeline:
         query: get_user_profile
         params:
           user_id: event.user.id
-        output: context.user_profile
+        output: service.user_profile
         next: check_risk_cache
 
     # Step 2: Check cache for existing risk score
@@ -893,7 +893,7 @@ pipeline:
         type: service
         service: redis_cache
         query: get_user_risk_cache
-        output: context.cached_risk
+        output: service.cached_risk
         next: ip_reputation
 
     # Step 3: Check external API
