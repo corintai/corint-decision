@@ -3,7 +3,7 @@ version: "0.1"
 # Production Fraud Detection Pipeline
 # This pipeline uses the reusable fraud_detection_core ruleset from library
 
-imports:
+import:
   rulesets:
     - library/rulesets/fraud_detection_core.yaml
 

@@ -3,7 +3,7 @@ version: "0.1"
 # High-value payment ruleset (extends payment_base)
 # Stricter thresholds for large transactions
 
-imports:
+import:
   rulesets:
     - library/rulesets/payment_base.yaml
   rules:

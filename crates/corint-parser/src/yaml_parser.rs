@@ -658,7 +658,7 @@ ruleset:
         let yaml_str = r#"
 version: "0.1"
 
-imports:
+import:
   rules:
     - some/path.yaml
 
@@ -670,12 +670,12 @@ ruleset:
 "#;
 
         let docs = YamlParser::parse_multi_document(yaml_str).unwrap();
-        // Should produce 2 documents: header (version + imports), ruleset
+        // Should produce 2 documents: header (version + import), ruleset
         assert_eq!(docs.len(), 2);
 
-        // First document has version and imports
+        // First document has version and import
         assert!(docs[0].get("version").is_some());
-        assert!(docs[0].get("imports").is_some());
+        assert!(docs[0].get("import").is_some());
 
         // Second document has ruleset
         assert!(docs[1].get("ruleset").is_some());

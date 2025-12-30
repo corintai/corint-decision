@@ -3,7 +3,7 @@ version: "0.1"
 # Login Risk Assessment Pipeline
 # Comprehensive login security pipeline with device trust, location analysis, and behavior monitoring
 
-imports:
+import:
   rulesets:
     - library/rulesets/login_risk.yaml
 

@@ -3,7 +3,7 @@ version: "0.1"
 # Base payment risk ruleset
 # This is the parent ruleset that defines common payment rules
 
-imports:
+import:
   rules:
     - library/rules/geography/suspicious_ip.yaml
     - library/rules/payment/card_testing.yaml

@@ -303,9 +303,9 @@ Use expression features to compute weighted scores, or aggregate in ruleset conc
 
 ---
 
-## 6. Imports and Include (Reusable Modules)
+## 6. Import and Include (Reusable Modules)
 
-Pipelines use the `imports` section to declare dependencies on rulesets and other pipelines. This enables modular, reusable pipeline design.
+Pipelines use the `import` section to declare dependencies on rulesets and other pipelines. This enables modular, reusable pipeline design.
 
 ### 6.1 Import Declaration
 
@@ -314,8 +314,8 @@ Pipelines use multi-document YAML format with `---` separator:
 ```yaml
 version: "0.1"
 
-# First document: Imports
-imports:
+# First document: Import
+import:
   rulesets:
     - library/rulesets/fraud_detection_core.yaml
     - library/rulesets/payment_high_value.yaml
@@ -346,7 +346,7 @@ When a pipeline imports a ruleset, it automatically gets all the ruleset's rule 
 
 ```yaml
 # Pipeline only needs to declare the ruleset
-imports:
+import:
   rulesets:
     - library/rulesets/fraud_detection_core.yaml  # This ruleset imports 6 rules
 
@@ -360,9 +360,9 @@ pipeline:
 
 The compiler resolves transitive dependencies automatically:
 ```
-Pipeline imports: fraud_detection_core
+Pipeline import: fraud_detection_core
   ↓
-fraud_detection_core imports:
+fraud_detection_core import:
   - fraud_farm.yaml
   - account_takeover.yaml
   - velocity_abuse.yaml
@@ -375,7 +375,7 @@ All 6 rules are available
 
 ### 6.3 Ruleset Include (Execution)
 
-After importing a ruleset via the `imports` section, you can execute it in your pipeline steps:
+After importing a ruleset via the `import` section, you can execute it in your pipeline steps:
 
 ```yaml
 steps:
@@ -401,7 +401,7 @@ steps:
       pipeline: common_feature_flow
 ```
 
-### 6.5 Complete Example with Imports
+### 6.5 Complete Example with Import
 
 **Fraud Detection Pipeline:**
 
@@ -409,7 +409,7 @@ steps:
 version: "0.1"
 
 # Declare dependencies
-imports:
+import:
   rulesets:
     - library/rulesets/fraud_detection_core.yaml
 
@@ -437,7 +437,7 @@ This 24-line pipeline replaces what would have been a 337-line monolithic file!
 ```yaml
 version: "0.1"
 
-imports:
+import:
   rulesets:
     - library/rulesets/payment_standard.yaml
     - library/rulesets/payment_high_value.yaml
@@ -491,7 +491,7 @@ repository/
 
 From `fraud_detection.yaml`, you import using paths relative to repository root:
 ```yaml
-imports:
+import:
   rulesets:
     - library/rulesets/fraud_detection_core.yaml  # ✅ Correct
 ```
@@ -503,7 +503,7 @@ You can import and use multiple rulesets in a single pipeline:
 ```yaml
 version: "0.1"
 
-imports:
+import:
   rulesets:
     - library/rulesets/device_risk.yaml
     - library/rulesets/geo_risk.yaml
@@ -998,7 +998,7 @@ OBJECT ::= KEY ":" VALUE { KEY ":" VALUE }
 For comprehensive understanding of pipelines and the CORINT ecosystem:
 
 ### Core Concepts
-- **[imports.md](imports.md)** - Complete module system and dependency management specification
+- **[import.md](import.md)** - Complete module system and dependency management specification
 - **[ruleset.md](ruleset.md)** - Ruleset specification and decision logic
 - **[rule.md](rule.md)** - Individual rule specification
 
@@ -1043,7 +1043,7 @@ A CORINT Pipeline currently supports:
 - ✅ `extract`, `reason` - Legacy format support
 
 **Features:**
-- ✅ Imports system for modular composition
+- ✅ Import system for modular composition
 - ✅ Automatic transitive dependency resolution
 - ✅ Compile-time validation
 - ✅ Router steps for conditional flows

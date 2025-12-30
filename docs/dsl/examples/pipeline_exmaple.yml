@@ -106,7 +106,7 @@
 
 version: "1.0"
 
-imports:
+import:
   rulesets:
     - library/rulesets/payment_high_value.yaml
     - library/rulesets/payment_standard.yaml

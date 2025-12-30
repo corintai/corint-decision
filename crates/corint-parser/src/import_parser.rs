@@ -15,7 +15,7 @@ impl ImportParser {
     ///
     /// Expected format:
     /// ```yaml
-    /// imports:
+    /// import:
     ///   rules:
     ///     - library/rules/fraud/fraud_farm.yaml
     ///     - library/rules/payment/card_testing.yaml
@@ -25,8 +25,8 @@ impl ImportParser {
     ///     - library/pipelines/common_feature_extraction.yaml
     /// ```
     pub fn parse_from_yaml(yaml: &YamlValue) -> Result<Option<Imports>> {
-        // Check if imports section exists
-        let imports_obj = match yaml.get("imports") {
+        // Check if import section exists
+        let imports_obj = match yaml.get("import") {
             Some(obj) => obj,
             None => return Ok(None), // No imports section
         };
@@ -40,7 +40,7 @@ impl ImportParser {
                     imports = imports.add_rule(path.to_string());
                 } else {
                     return Err(ParseError::InvalidValue {
-                        field: "imports.rules".to_string(),
+                        field: "import.rules".to_string(),
                         message: "Rule import path must be a string".to_string(),
                     });
                 }
@@ -54,7 +54,7 @@ impl ImportParser {
                     imports = imports.add_ruleset(path.to_string());
                 } else {
                     return Err(ParseError::InvalidValue {
-                        field: "imports.rulesets".to_string(),
+                        field: "import.rulesets".to_string(),
                         message: "Ruleset import path must be a string".to_string(),
                     });
                 }
@@ -68,7 +68,7 @@ impl ImportParser {
                     imports = imports.add_pipeline(path.to_string());
                 } else {
                     return Err(ParseError::InvalidValue {
-                        field: "imports.pipelines".to_string(),
+                        field: "import.pipelines".to_string(),
                         message: "Pipeline import path must be a string".to_string(),
                     });
                 }
@@ -82,7 +82,7 @@ impl ImportParser {
                     imports.templates.push(path.to_string());
                 } else {
                     return Err(ParseError::InvalidValue {
-                        field: "imports.templates".to_string(),
+                        field: "import.templates".to_string(),
                         message: "Template import path must be a string".to_string(),
                     });
                 }
@@ -105,10 +105,10 @@ impl ImportParser {
     ///   id: test_rule
     /// ```
     ///
-    /// 2. Multi-document with imports (new format):
+    /// 2. Multi-document with import (new format):
     /// ```yaml
     /// version: "0.1"
-    /// imports:
+    /// import:
     ///   rules: [...]
     /// ---
     /// rule:
@@ -207,7 +207,7 @@ mod tests {
     fn test_parse_imports_with_rules() {
         let yaml_str = r#"
 version: "0.1"
-imports:
+import:
   rules:
     - library/rules/fraud/fraud_farm.yaml
     - library/rules/payment/card_testing.yaml
@@ -225,7 +225,7 @@ imports:
     #[test]
     fn test_parse_imports_with_rulesets() {
         let yaml_str = r#"
-imports:
+import:
   rulesets:
     - library/rulesets/fraud_detection_core.yaml
 "#;
@@ -243,7 +243,7 @@ imports:
     #[test]
     fn test_parse_imports_all_types() {
         let yaml_str = r#"
-imports:
+import:
   rules:
     - rule1.yaml
   rulesets:
@@ -276,7 +276,7 @@ rule:
     fn test_parse_with_imports_multi_document() {
         let yaml_str = r#"
 version: "0.1"
-imports:
+import:
   rules:
     - library/rules/fraud_farm.yaml
 
@@ -323,7 +323,7 @@ rule:
     #[test]
     fn test_parse_imports_invalid_rule_path() {
         let yaml_str = r#"
-imports:
+import:
   rules:
     - 123  # Invalid: not a string
 "#;

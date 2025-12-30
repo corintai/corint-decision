@@ -96,14 +96,14 @@ This enables:
 - **Code reuse** - Define common rules once in a base ruleset
 - **Consistent baselines** - Maintain standard rule sets across variants
 - **Easy customization** - Override decision thresholds per use case
-- **Reduced duplication** - Eliminate redundant rule imports
+- **Reduced duplication** - Eliminate redundant rule import
 
 ### 5.5.1 Basic Inheritance Syntax
 
 ```yaml
 version: "0.1"
 
-imports:
+import:
   rulesets:
     - library/rulesets/payment_base.yaml  # Import parent ruleset
 
@@ -143,7 +143,7 @@ When a ruleset extends a parent:
 ```yaml
 version: "0.2"
 
-imports:
+import:
   rules:
     - library/rules/geography/suspicious_ip.yaml
     - library/rules/payment/card_testing.yaml
@@ -187,7 +187,7 @@ ruleset:
 ```yaml
 version: "0.2"
 
-imports:
+import:
   rulesets:
     - library/rulesets/payment_base.yaml  # Import parent
   rules:
@@ -303,9 +303,9 @@ Error: `CircularExtends { child_id: "b", extends_id: "a" }`
 
 ---
 
-## 5.6 Ruleset Imports and Dependencies
+## 5.6 Ruleset Import and Dependencies
 
-**Rulesets use the `imports` section to declare their rule dependencies explicitly.**
+**Rulesets use the `import` section to declare their rule dependencies explicitly.**
 
 This enables:
 - **Modular design** - Rules are defined once and reused across multiple rulesets
@@ -320,8 +320,8 @@ Rulesets use multi-document YAML format with `---` separator:
 ```yaml
 version: "0.2"
 
-# First document: Imports
-imports:
+# First document: Import
+import:
   rules:
     - library/rules/fraud/fraud_farm.yaml
     - library/rules/fraud/account_takeover.yaml
@@ -347,14 +347,14 @@ ruleset:
       signal: decline
 ```
 
-### 5.5.2 Complete Example with Imports
+### 5.5.2 Complete Example with Import
 
 Here's a production-grade ruleset that imports all its rule dependencies:
 
 ```yaml
 version: "0.2"
 
-imports:
+import:
   rules:
     - library/rules/fraud/fraud_farm.yaml
     - library/rules/fraud/account_takeover.yaml
@@ -424,7 +424,7 @@ You can create multiple rulesets that import the same rules but with different c
 ```yaml
 version: "0.2"
 
-imports:
+import:
   rules:
     - library/rules/payment/card_testing.yaml
     - library/rules/payment/velocity_check.yaml
@@ -461,7 +461,7 @@ ruleset:
 ```yaml
 version: "0.2"
 
-imports:
+import:
   rules:
     # Import the SAME rules as payment_standard
     - library/rules/payment/card_testing.yaml
@@ -537,7 +537,7 @@ repository/
 
 From `fraud_detection_core.yaml`, you import rules using paths relative to repository root:
 ```yaml
-imports:
+import:
   rules:
     - library/rules/fraud/fraud_farm.yaml        # ✅ Correct
     - library/rules/fraud/account_takeover.yaml  # ✅ Correct
@@ -551,7 +551,7 @@ imports:
 # Pipeline only needs to import the ruleset
 version: "0.1"
 
-imports:
+import:
   rulesets:
     - library/rulesets/fraud_detection_core.yaml  # This brings in all 6 rules automatically
 
@@ -567,9 +567,9 @@ pipeline:
 
 The compiler automatically resolves the transitive dependencies:
 ```
-Pipeline imports: fraud_detection_core
+Pipeline import: fraud_detection_core
   ↓
-fraud_detection_core imports:
+fraud_detection_core import:
   - fraud_farm.yaml
   - account_takeover.yaml
   - velocity_abuse.yaml
@@ -1234,7 +1234,7 @@ conclusion:
 For comprehensive understanding of rulesets and the CORINT ecosystem:
 
 ### Core Concepts
-- **[imports.md](imports.md)** - Complete module system and dependency management specification
+- **[import.md](import.md)** - Complete module system and dependency management specification
 - **[rule.md](rule.md)** - Individual rule specification and rule library creation
 - **[pipeline.md](pipeline.md)** - Pipeline orchestration that uses rulesets
 
@@ -1260,7 +1260,7 @@ A CORINT Ruleset:
 - **Produces decision signals**: `approve`, `decline`, `review`, `hold`, or `pass`
 - Integrates cleanly with CORINT Pipelines
 - Improves modularity and maintainability
-- **Uses imports to declare rule dependencies explicitly**
+- **Uses import to declare rule dependencies explicitly**
 
 **Key Points (Three-Layer Model):**
 - **Rules** detect and score individual risk patterns

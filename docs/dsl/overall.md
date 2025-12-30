@@ -27,7 +27,7 @@ An RDL file may contain one of the following:
 version: "0.1"
 
 # Optional: Import dependencies
-imports:
+import:
   rules:
     - library/rules/fraud/fraud_farm.yaml
   rulesets:
@@ -46,12 +46,12 @@ Components:
 
 | Component | Purpose |
 |----------|---------|
-| **imports** | Declare dependencies on external rules/rulesets (optional) |
+| **import** | Declare dependencies on external rules/rulesets (optional) |
 | **rule** | A single risk logic unit |
 | **ruleset** | A group of rules |
 | **pipeline** | The full risk processing DAG |
 
-### 2.1 Imports (Module System)
+### 2.1 Import (Module System)
 
 RDL supports a module system for code reuse and maintainability:
 
@@ -59,7 +59,7 @@ RDL supports a module system for code reuse and maintainability:
 version: "0.1"
 
 # Declare dependencies
-imports:
+import:
   rules:
     - library/rules/fraud/fraud_farm.yaml
     - library/rules/payment/card_testing.yaml
@@ -77,22 +77,22 @@ ruleset:
 ```
 
 **Key Principles:**
-- **Explicit Dependencies**: All dependencies must be declared via `imports`
+- **Explicit Dependencies**: All dependencies must be declared via `import`
 - **Compile-Time Merging**: Dependencies resolved during compilation
-- **Dependency Propagation**: Ruleset imports automatically load their rule dependencies
-- **No Circular Dependencies**: Compiler detects and prevents circular imports
+- **Dependency Propagation**: Ruleset import automatically loads their rule dependencies
+- **No Circular Dependencies**: Compiler detects and prevents circular import
 - **ID Uniqueness**: All Rule IDs and Ruleset IDs must be globally unique
 
 **Dependency Hierarchy:**
 ```
 Pipeline
-  ↓ imports rulesets
+  ↓ import rulesets
 Ruleset
-  ↓ imports rules
+  ↓ import rules
 Rule (leaf, no dependencies)
 ```
 
-(See `imports.md` for complete specification.)
+(See `import.md` for complete specification.)
 
 ---
 
@@ -486,7 +486,7 @@ RDL documentation is organized as follows:
 - **rule.md** - Rule specification (including dynamic thresholds and dependencies)
 - **ruleset.md** - Ruleset specification
 - **pipeline.md** - Pipeline orchestration
-- **imports.md** - Module system and dependency management (NEW)
+- **import.md** - Module system and dependency management (NEW)
 
 ### Data & Schema
 - **event.md** - Standard event types and schemas

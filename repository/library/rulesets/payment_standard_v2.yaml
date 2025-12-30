@@ -3,7 +3,7 @@ version: "0.1"
 # Standard payment ruleset (extends payment_base)
 # Uses inheritance to reuse base rules but applies different thresholds
 
-imports:
+import:
   rulesets:
     - library/rulesets/payment_base.yaml
 

@@ -36,11 +36,11 @@ rule:
 
 #[test]
 fn test_parse_rule_with_imports_new_format() {
-    // New format - multi-document with imports
+    // New format - multi-document with import
     let yaml = r#"
 version: "0.1"
 
-imports:
+import:
   rules:
     - library/rules/fraud/fraud_farm.yaml
     - library/rules/payment/card_testing.yaml
@@ -110,7 +110,7 @@ fn test_parse_ruleset_with_imports_new_format() {
     let yaml = r#"
 version: "0.1"
 
-imports:
+import:
   rules:
     - library/rules/fraud/fraud_farm.yaml
     - library/rules/fraud/account_takeover.yaml
@@ -168,7 +168,7 @@ fn test_parse_imports_only() {
     let yaml = r#"
 version: "0.1"
 
-imports:
+import:
   rules:
     - rule1.yaml
     - rule2.yaml
@@ -215,7 +215,7 @@ fn test_multi_document_parsing() {
 
     let yaml = r#"
 version: "0.1"
-imports:
+import:
   rules:
     - test.yaml
 
@@ -269,7 +269,7 @@ fn test_parse_pipeline_with_imports_new_format() {
     let yaml = r#"
 version: "0.1"
 
-imports:
+import:
   rulesets:
     - library/rulesets/fraud_detection_core.yaml
 
@@ -315,7 +315,7 @@ fn test_parse_pipeline_with_multiple_imports() {
     let yaml = r#"
 version: "0.1"
 
-imports:
+import:
   rulesets:
     - library/rulesets/payment_standard.yaml
     - library/rulesets/payment_high_value.yaml

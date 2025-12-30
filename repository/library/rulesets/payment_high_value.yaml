@@ -3,7 +3,7 @@ version: "0.1"
 # Reusable high-value payment risk ruleset
 # This ruleset explicitly imports all its rule dependencies
 
-imports:
+import:
   rules:
     - library/rules/geography/suspicious_ip.yaml
     - library/rules/payment/card_testing.yaml

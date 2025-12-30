@@ -1158,7 +1158,7 @@ Rules are imported and referenced by rulesets (not by pipelines directly):
 # library/rulesets/fraud_detection_core.yaml
 version: "0.1"
 
-imports:
+import:
   rules:
     - library/rules/fraud/fraud_farm.yaml
     - library/rules/fraud/account_takeover.yaml
@@ -1213,13 +1213,13 @@ tests:
 ✅ **Collaboration**: Team members work on separate rules
 ✅ **Versioning**: Track changes with metadata
 
-(See `imports.md` for complete module system specification.)
+(See `import.md` for complete module system specification.)
 
 ---
 
 ## 16. Related Documentation
 
-- `imports.md` - Module system and code reuse (NEW)
+- `import.md` - Module system and code reuse (NEW)
 - `ruleset.md` - Ruleset and decision logic
 - `expression.md` - Expression language for conditions
 - `feature.md` - Feature engineering for rule conditions

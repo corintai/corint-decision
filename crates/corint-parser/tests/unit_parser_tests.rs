@@ -848,7 +848,7 @@ fn test_parse_imports() {
     let yaml = r#"
 version: "0.1"
 
-imports:
+import:
   rules:
     - library/rules/fraud/velocity_check.yaml
     - library/rules/fraud/geo_check.yaml
@@ -894,7 +894,7 @@ fn test_parse_imports_with_pipelines() {
     let yaml = r#"
 version: "0.1"
 
-imports:
+import:
   rules:
     - library/rules/rule1.yaml
   rulesets:
@@ -1158,7 +1158,7 @@ rule:
 fn test_yaml_parser_multi_document() {
     let yaml = r#"
 version: "0.1"
-imports:
+import:
   rules:
     - library/test.yaml
 ---

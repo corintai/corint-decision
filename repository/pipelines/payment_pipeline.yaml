@@ -3,7 +3,7 @@ version: "0.1"
 # Payment Risk Control Pipeline with Conditional Routing
 # This pipeline uses reusable payment rulesets from library
 
-imports:
+import:
   rulesets:
     - library/rulesets/payment_high_value.yaml
     - library/rulesets/payment_standard.yaml

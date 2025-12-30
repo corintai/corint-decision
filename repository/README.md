@@ -92,7 +92,7 @@ Rules reference features using the `features.` prefix (e.g., `features.transacti
 # my_custom_pipeline.yaml
 version: "0.1"
 
-imports:
+import:
   rulesets:
     - library/rulesets/fraud_detection_core.yaml
 
@@ -140,7 +140,7 @@ rule:
 version: "0.1"
 
 # Explicitly import rule dependencies
-imports:
+import:
   rules:
     - library/rules/fraud/fraud_farm.yaml
     - library/rules/custom/my_rule.yaml

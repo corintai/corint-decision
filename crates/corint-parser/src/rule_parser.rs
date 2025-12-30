@@ -14,7 +14,7 @@ use serde_yaml::Value as YamlValue;
 pub struct RuleParser;
 
 impl RuleParser {
-    /// Parse a rule from YAML string (legacy format, no imports)
+    /// Parse a rule from YAML string (legacy format, no import)
     ///
     /// This maintains backward compatibility with existing code.
     pub fn parse(yaml_str: &str) -> Result<Rule> {
@@ -22,13 +22,13 @@ impl RuleParser {
         Self::parse_from_yaml(&yaml)
     }
 
-    /// Parse a rule with optional imports from YAML string (new format)
+    /// Parse a rule with optional import from YAML string (new format)
     ///
     /// Supports both formats:
     /// 1. Legacy single-document format (backward compatible)
-    /// 2. New multi-document format with imports
+    /// 2. New multi-document format with import
     ///
-    /// Returns an RdlDocument<Rule> containing both the rule and its imports (if any)
+    /// Returns an RdlDocument<Rule> containing both the rule and its import (if any)
     pub fn parse_with_imports(yaml_str: &str) -> Result<RdlDocument<Rule>> {
         let (imports, definition_yaml) = ImportParser::parse_with_imports(yaml_str)?;
 
@@ -475,7 +475,7 @@ rule:
     fn test_parse_with_imports_new_format() {
         let yaml = r#"
 version: "0.1"
-imports:
+import:
   rules:
     - library/rules/fraud/fraud_farm.yaml
 
@@ -510,7 +510,7 @@ rule:
     fn test_parse_with_imports_multiple_imports() {
         let yaml = r#"
 version: "0.1"
-imports:
+import:
   rules:
     - library/rules/rule1.yaml
     - library/rules/rule2.yaml

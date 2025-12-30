@@ -35,8 +35,8 @@ pub struct RdlDocument<T> {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub version: Option<String>,
 
-    /// Optional imports section
-    #[serde(skip_serializing_if = "Option::is_none")]
+    /// Optional import section
+    #[serde(rename = "import", skip_serializing_if = "Option::is_none")]
     pub imports: Option<Imports>,
 
     /// The actual definition (Rule, Ruleset, or Pipeline)

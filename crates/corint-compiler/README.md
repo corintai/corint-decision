@@ -262,4 +262,4 @@ mod tests {
 
 - [Ruleset Inheritance](../../docs/dsl/ruleset.md#inheritance)
 - [Parameterized Rules](../../docs/dsl/rule.md#parameters)
-- [Import System](../../docs/dsl/imports.md)
+- [Import System](../../docs/dsl/import.md)

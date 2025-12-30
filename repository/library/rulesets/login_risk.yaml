@@ -3,7 +3,7 @@ version: "0.1"
 # Login Risk Assessment Ruleset
 # Comprehensive login security rules with device, location, and behavior analysis
 
-imports:
+import:
   rules:
     # Disabled: requires unimplemented features (geo_distance_from_last_login, hours_since_last_login)
     # - library/rules/account/impossible_travel.yaml

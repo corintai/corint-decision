@@ -3,7 +3,7 @@ version: "0.1"
 # Reusable core fraud detection ruleset
 # This ruleset explicitly imports all its rule dependencies
 
-imports:
+import:
   rules:
     - library/rules/fraud/fraud_farm.yaml
     - library/rules/fraud/account_takeover.yaml
