@@ -10,7 +10,7 @@ use axum::{
     extract::State,
     Json,
 };
-use corint_core::Value;
+use corint_core::{ast::Signal, Value};
 use corint_sdk::DecisionRequest;
 use std::collections::HashMap;
 use tracing::{error, info};
@@ -82,12 +82,19 @@ pub(super) async fn decide(
     let response = engine.decide(request).await?;
     drop(engine); // Release lock as soon as possible
 
-    // Convert action to decision result string
+    // Convert signal to decision result string (lowercase to match test expectations)
     let result_str = response
         .result
         .signal
-        .map(|a| format!("{:?}", a).to_uppercase())
-        .unwrap_or_else(|| "PASS".to_string());
+        .map(|signal| match signal {
+            Signal::Approve => "approve",
+            Signal::Decline => "decline",
+            Signal::Review => "review",
+            Signal::Hold => "hold",
+            Signal::Pass => "pass",
+        })
+        .unwrap_or("pass")
+        .to_string();
 
     // Build the response
     Ok(Json(DecideResponsePayload {

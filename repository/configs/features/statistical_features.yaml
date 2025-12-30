@@ -155,22 +155,11 @@ features:
     when: event.event_type == "login"
     unit: hours
 
-  # - name: geo_distance_from_last_login
-  #   description: "Distance (km) from last login location"
-  #   type: Expression  # Not yet implemented
-  #   method: geo_distance
-  #   datasource: supabase_events
-  #   entity: events
-  #   dimension: user_id
-  #   dimension_value: "{event.user_id}"
-  #   location_field: location
-  #   when:
-  #     - field: event_type
-  #       operator: eq
-  #       value: "login"
-  #   cache:
-  #     enabled: true
-  #     ttl: 300
+  - name: geo_distance_from_last_login
+    description: "Distance (km) from last login location (placeholder)"
+    type: expression
+    expression: "0"  # Placeholder - always returns 0 (geo_distance not yet implemented)
+    when: event.event_type == "login"
 
   # - name: country_changed
   #   description: "Has user's country changed since last login?"
