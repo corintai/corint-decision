@@ -11,8 +11,7 @@ use corint_core::ast::pipeline::{
     ApiTarget, ErrorAction, ErrorHandling, PipelineStep, Route, StepDetails, StepNext,
 };
 use corint_core::ast::{
-    Branch, FeatureDefinition, MergeStrategy, Pipeline, PromptTemplate, RdlDocument, Schema,
-    SchemaProperty, Step, WhenBlock,
+    Branch, FeatureDefinition, MergeStrategy, Pipeline, RdlDocument, Step, WhenBlock,
 };
 use serde_yaml::Value as YamlValue;
 use std::collections::HashMap;
@@ -35,7 +34,6 @@ const ROUTER_STEP_FIELDS: &[&str] = &["routes", "default"];
 const TRIGGER_STEP_FIELDS: &[&str] = &["target", "params"];
 // Legacy step types (for backward compatibility only)
 const EXTRACT_STEP_FIELDS: &[&str] = &["features"];
-const REASON_STEP_FIELDS: &[&str] = &["provider", "model", "prompt", "output_schema"];
 
 /// Helper function to combine common fields with type-specific fields
 fn get_valid_fields_for_step_type(step_type: &str) -> Vec<&'static str> {
@@ -53,7 +51,6 @@ fn get_valid_fields_for_step_type(step_type: &str) -> Vec<&'static str> {
         "trigger" => TRIGGER_STEP_FIELDS,
         // Legacy step types (backward compatibility)
         "extract" => EXTRACT_STEP_FIELDS,
-        "reason" => REASON_STEP_FIELDS,
         _ => &[],
     };
 
@@ -240,27 +237,6 @@ impl PipelineParser {
                     when: None,
                     details: StepDetails::Extract {
                         features: Some(features),
-                    },
-                },
-                Step::Reason {
-                    id: _,
-                    provider,
-                    model,
-                    prompt,
-                    output_schema,
-                } => PipelineStep {
-                    id: step_id.clone(),
-                    name: "LLM Reasoning".to_string(),
-                    step_type: "reason".to_string(),
-                    routes: None,
-                    default: None,
-                    next: Some(StepNext::StepId("end".to_string())),
-                    when: None,
-                    details: StepDetails::Reason {
-                        provider: Some(provider),
-                        model: Some(model),
-                        prompt: Some(prompt),
-                        output_schema,
                     },
                 },
                 Step::Service {
@@ -516,31 +492,6 @@ impl PipelineParser {
                 Ok(StepDetails::Extract { features })
             }
 
-            "reason" => {
-                let provider = YamlParser::get_optional_string(step_obj, "provider");
-                let model = YamlParser::get_optional_string(step_obj, "model");
-                let prompt = if let Some(prompt_str) =
-                    YamlParser::get_optional_string(step_obj, "prompt")
-                {
-                    Some(PromptTemplate {
-                        template: prompt_str,
-                    })
-                } else {
-                    None
-                };
-                let output_schema = step_obj
-                    .get("output_schema")
-                    .map(Self::parse_schema)
-                    .transpose()?;
-
-                Ok(StepDetails::Reason {
-                    provider,
-                    model,
-                    prompt,
-                    output_schema,
-                })
-            }
-
             _ => Ok(StepDetails::Unknown {}),
         }
     }
@@ -685,7 +636,6 @@ impl PipelineParser {
 
         match step_type.as_str() {
             "extract" => Self::parse_extract_step(yaml),
-            "reason" => Self::parse_reason_step(yaml),
             "service" => Self::parse_service_step(yaml),
             "api" => Self::parse_api_step(yaml),
             "include" => Self::parse_include_step(yaml),
@@ -722,66 +672,6 @@ impl PipelineParser {
         let value = ExpressionParser::parse(&value_str)?;
 
         Ok(FeatureDefinition { name, value })
-    }
-
-    /// Parse reason step
-    fn parse_reason_step(yaml: &YamlValue) -> Result<Step> {
-        let id = YamlParser::get_string(yaml, "id")?;
-        let provider = YamlParser::get_string(yaml, "provider")?;
-        let model = YamlParser::get_string(yaml, "model")?;
-
-        let prompt_str = YamlParser::get_string(yaml, "prompt")?;
-        let prompt = PromptTemplate {
-            template: prompt_str,
-        };
-
-        let output_schema = yaml
-            .get("output_schema")
-            .map(Self::parse_schema)
-            .transpose()?;
-
-        Ok(Step::Reason {
-            id,
-            provider,
-            model,
-            prompt,
-            output_schema,
-        })
-    }
-
-    /// Parse schema (simplified version)
-    fn parse_schema(yaml: &YamlValue) -> Result<Schema> {
-        let schema_type = YamlParser::get_string(yaml, "type")?;
-
-        let properties =
-            if let Some(props_obj) = yaml.get("properties").and_then(|v| v.as_mapping()) {
-                let mut map = HashMap::new();
-                for (key, value) in props_obj {
-                    if let Some(key_str) = key.as_str() {
-                        let prop = Self::parse_schema_property(value)?;
-                        map.insert(key_str.to_string(), prop);
-                    }
-                }
-                Some(map)
-            } else {
-                None
-            };
-
-        Ok(Schema {
-            schema_type,
-            properties,
-        })
-    }
-
-    /// Parse schema property
-    fn parse_schema_property(yaml: &YamlValue) -> Result<SchemaProperty> {
-        let property_type = YamlParser::get_string(yaml, "type")?;
-        let description = YamlParser::get_optional_string(yaml, "description");
-
-        Ok(SchemaProperty {
-            property_type,
-            description,
-        })
     }
 
     /// Parse service step
@@ -1202,30 +1092,5 @@ pipeline:
         // Legacy format now converts to new PipelineStep format
         assert_eq!(pipeline.steps.len(), 1);
         assert_eq!(pipeline.steps[0].step_type, "extract");
-    }
-
-    #[test]
-    fn test_parse_reason_step() {
-        let yaml = r#"
-pipeline:
-  steps:
-    - type: reason
-      id: llm_analysis
-      provider: openai
-      model: gpt-4
-      prompt: "Analyze this transaction"
-      output_schema:
-        type: object
-        properties:
-          is_fraud:
-            type: boolean
-          confidence:
-            type: number
-"#;
-
-        let pipeline = PipelineParser::parse(yaml).unwrap();
-        // Legacy format now converts to new PipelineStep format
-        assert_eq!(pipeline.steps.len(), 1);
-        assert_eq!(pipeline.steps[0].step_type, "reason");
     }
 }

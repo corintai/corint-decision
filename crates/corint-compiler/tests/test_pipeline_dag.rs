@@ -82,6 +82,7 @@ fn test_simple_linear_pipeline() {
         entry: "step1".to_string(),
         when: None,
         steps: vec![step1, step2],
+        decision: None,
         metadata: None,
     };
 
@@ -158,6 +159,7 @@ fn test_router_with_multiple_routes() {
         entry: "router1".to_string(),
         when: None,
         steps: vec![router, high_step, medium_step, low_step],
+        decision: None,
         metadata: None,
     };
 
@@ -247,6 +249,7 @@ fn test_sequential_routers() {
         entry: "router1".to_string(),
         when: None,
         steps: vec![router1, router2, approve, manual, reject],
+        decision: None,
         metadata: None,
     };
 
@@ -314,6 +317,7 @@ fn test_complex_routing_logic() {
         entry: "router".to_string(),
         when: None,
         steps: vec![router, high, low],
+        decision: None,
         metadata: None,
     };
 
@@ -347,6 +351,7 @@ fn test_unreachable_step_in_pipeline() {
         entry: "step1".to_string(),
         when: None,
         steps: vec![step1, step2],
+        decision: None,
         metadata: None,
     };
 
@@ -393,6 +398,7 @@ fn test_router_without_default() {
         entry: "router".to_string(),
         when: None,
         steps: vec![router, approve],
+        decision: None,
         metadata: None,
     };
 
@@ -423,6 +429,7 @@ fn test_all_routes_lead_to_end() {
         entry: "router".to_string(),
         when: None,
         steps: vec![router],
+        decision: None,
         metadata: None,
     };
 
@@ -456,6 +463,7 @@ fn test_invalid_step_reference() {
         entry: "step1".to_string(),
         when: None,
         steps: vec![step1],
+        decision: None,
         metadata: None,
     };
 
@@ -476,6 +484,7 @@ fn test_empty_pipeline() {
         entry: "step1".to_string(),
         when: None,
         steps: vec![],
+        decision: None,
         metadata: None,
     };
 

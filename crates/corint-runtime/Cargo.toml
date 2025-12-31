@@ -39,7 +39,3 @@ otel = ["dep:opentelemetry", "dep:opentelemetry_sdk", "dep:opentelemetry-prometh
 [dev-dependencies]
 tokio = { version = "1.0", features = ["full", "test-util"] }
 tempfile = "3.10"
-
-[[example]]
-name = "llm_providers"
-path = "examples/llm_providers.rs"

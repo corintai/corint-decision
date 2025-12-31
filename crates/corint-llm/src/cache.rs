@@ -1,9 +1,9 @@
 //! LLM response caching
 
-use crate::llm::client::{LLMRequest, LLMResponse};
+use crate::client::{LLMRequest, LLMResponse};
 use async_trait::async_trait;
-use std::collections::HashMap;
-use std::sync::{Arc, RwLock};
+use dashmap::DashMap;
+use std::sync::Arc;
 
 /// LLM cache trait
 #[async_trait]
@@ -18,16 +18,16 @@ pub trait LLMCache: Send + Sync {
     async fn clear(&self);
 }
 
-/// In-memory LLM cache implementation
+/// In-memory LLM cache implementation using DashMap for thread-safe concurrent access
 pub struct InMemoryLLMCache {
-    cache: Arc<RwLock<HashMap<String, LLMResponse>>>,
+    cache: Arc<DashMap<String, LLMResponse>>,
 }
 
 impl InMemoryLLMCache {
     /// Create a new in-memory cache
     pub fn new() -> Self {
         Self {
-            cache: Arc::new(RwLock::new(HashMap::new())),
+            cache: Arc::new(DashMap::new()),
         }
     }
 
@@ -55,16 +55,16 @@ impl Default for InMemoryLLMCache {
 impl LLMCache for InMemoryLLMCache {
     async fn get(&self, request: &LLMRequest) -> Option<LLMResponse> {
         let key = Self::cache_key(request);
-        self.cache.read().unwrap().get(&key).cloned()
+        self.cache.get(&key).map(|r| r.clone())
     }
 
     async fn set(&self, request: LLMRequest, response: LLMResponse) {
         let key = Self::cache_key(&request);
-        self.cache.write().unwrap().insert(key, response);
+        self.cache.insert(key, response);
     }
 
     async fn clear(&self) {
-        self.cache.write().unwrap().clear();
+        self.cache.clear();
     }
 }
 

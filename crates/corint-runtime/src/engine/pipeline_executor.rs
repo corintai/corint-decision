@@ -1,6 +1,6 @@
 //! Pipeline executor
 //!
-//! Executes IR programs with support for async operations (features, LLM, services).
+//! Executes IR programs with support for async operations (features, services).
 
 #[cfg(test)]
 #[path = "tests/mod.rs"]
@@ -11,7 +11,6 @@ use crate::context::ExecutionContext;
 use crate::error::{Result, RuntimeError};
 use crate::external_api::ExternalApiClient;
 use crate::feature::{FeatureExecutor, FeatureExtractor};
-use crate::llm::LLMClient;
 use crate::observability::{Metrics, MetricsCollector};
 use crate::result::{DecisionResult, ExecutionResult};
 use crate::service::ServiceClient;
@@ -26,7 +25,6 @@ use std::time::Instant;
 pub struct PipelineExecutor {
     feature_extractor: Option<Arc<FeatureExtractor>>,
     feature_executor: Option<Arc<FeatureExecutor>>,
-    llm_client: Option<Arc<dyn LLMClient>>,
     service_client: Option<Arc<dyn ServiceClient>>,
     external_api_client: Arc<ExternalApiClient>,
     list_service: Option<Arc<crate::lists::ListService>>,
@@ -39,7 +37,6 @@ impl PipelineExecutor {
         Self {
             feature_extractor: None,
             feature_executor: None,
-            llm_client: None,
             service_client: None,
             external_api_client: Arc::new(ExternalApiClient::new()),
             list_service: None,
@@ -52,7 +49,6 @@ impl PipelineExecutor {
         Self {
             feature_extractor: Some(Arc::new(FeatureExtractor::new(storage))),
             feature_executor: None,
-            llm_client: None,
             service_client: None,
             external_api_client: Arc::new(ExternalApiClient::new()),
             list_service: None,
@@ -63,12 +59,6 @@ impl PipelineExecutor {
     /// Set feature executor for lazy feature calculation
     pub fn with_feature_executor(mut self, executor: Arc<FeatureExecutor>) -> Self {
         self.feature_executor = Some(executor);
-        self
-    }
-
-    /// Set LLM client
-    pub fn with_llm_client(mut self, client: Arc<dyn LLMClient>) -> Self {
-        self.llm_client = Some(client);
         self
     }
 
@@ -516,31 +506,6 @@ impl PipelineExecutor {
                         // Fallback: return placeholder
                         Self::placeholder_feature(feature_type)
                     };
-                    ctx.push(value);
-                    pc += 1;
-                }
-
-                // LLM calls
-                Instruction::CallLLM { prompt, model, .. } => {
-                    let llm_start = Instant::now();
-                    let value = if let Some(ref client) = self.llm_client {
-                        use crate::llm::LLMRequest;
-                        let request = LLMRequest::new(prompt.clone(), model.clone());
-                        match client.call(request).await {
-                            Ok(response) => {
-                                self.metrics.counter("llm_calls_success").inc();
-                                Value::String(response.content)
-                            }
-                            Err(e) => {
-                                self.metrics.counter("llm_calls_error").inc();
-                                Value::String(format!("LLM Error: {}", e))
-                            }
-                        }
-                    } else {
-                        Value::String("LLM not configured".to_string())
-                    };
-                    self.metrics
-                        .record_execution_time("llm_call", llm_start.elapsed());
                     ctx.push(value);
                     pc += 1;
                 }

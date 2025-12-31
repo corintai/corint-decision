@@ -650,6 +650,98 @@ corint-repository──┘──> corint-core (Error, Value)
 
 ---
 
+### 7. LLM Layer (`corint-llm`) - Development-Time Only
+
+**⚠️ IMPORTANT**: LLM is **NOT** a runtime component. It is a development-time code generation tool.
+
+**Responsibility**: Generate CORINT YAML configurations from natural language descriptions during development.
+
+**Why LLM is NOT in Runtime**:
+1. **Latency Incompatibility**: LLM inference takes 2-5 seconds, while CORINT requires <100-300ms decision latency (10-50x mismatch)
+2. **Reliability**: External API dependencies, network timeouts, and rate limits introduce failure points
+3. **Cost**: Per-request LLM calls are expensive at scale
+4. **Complexity**: Error handling, fallback logic, and observability challenges
+
+**Architecture**:
+```
+┌──────────────────────────────────────────────────────────┐
+│ Development Time (Offline)                                │
+├──────────────────────────────────────────────────────────┤
+│  Natural Language Description                             │
+│         ↓                                                  │
+│  corint-llm (LLM-powered generator)                       │
+│  - RuleGenerator                                          │
+│  - RulesetGenerator                                       │
+│  - PipelineGenerator                                      │
+│  - APIConfigGenerator                                     │
+│  - DecisionFlowGenerator                                  │
+│         ↓                                                  │
+│  Generated YAML Configurations                            │
+│         ↓                                                  │
+│  Developer Review & Version Control                       │
+└──────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────┐
+│ Production Time (Real-time <100ms)                       │
+├──────────────────────────────────────────────────────────┤
+│  Event Input                                              │
+│         ↓                                                  │
+│  CORINT Runtime (No LLM)                                  │
+│  - Rules                                                   │
+│  - Rulesets                                               │
+│  - Pipelines                                              │
+│  - External APIs (non-LLM)                                │
+│  - Data Sources                                           │
+│         ↓                                                  │
+│  Decision Output (<100-300ms)                             │
+└──────────────────────────────────────────────────────────┘
+```
+
+**Supported LLM Providers**:
+```rust
+// OpenAI
+let provider = OpenAIProvider::new(api_key);
+
+// Anthropic
+let provider = AnthropicProvider::new(api_key);
+
+// Google Gemini
+let provider = GeminiProvider::new(api_key);
+
+// DeepSeek
+let provider = DeepSeekProvider::new(api_key);
+
+// Mock (for testing)
+let provider = MockProvider::with_response(yaml);
+```
+
+**Usage Example**:
+```rust
+use corint_llm::{RuleGenerator, OpenAIProvider};
+
+// Generate a rule from natural language
+let provider = Arc::new(OpenAIProvider::new(api_key));
+let generator = RuleGenerator::with_defaults(provider);
+
+let description = "Flag transactions over $10,000 from new accounts (< 30 days old)";
+let rule_yaml = generator.generate(description).await?;
+
+// Save to repository
+std::fs::write("repository/library/rules/fraud/high_amount_new_account.yaml", rule_yaml)?;
+```
+
+**Key Points**:
+- ✅ LLM generates YAML configurations offline
+- ✅ Developers review and commit generated YAML to version control
+- ✅ CORINT runtime executes compiled YAML with zero LLM calls
+- ❌ NO LLM calls at runtime
+- ❌ NO performance impact on production decisions
+- ❌ NO external dependencies in production
+
+**Documentation**: See [LLM_GUIDE.md](LLM_GUIDE.md) for complete usage guide.
+
+---
+
 ## Decision Logic Architecture
 
 ### Three-Layer Decision Model

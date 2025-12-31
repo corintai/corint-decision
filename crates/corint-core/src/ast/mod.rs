@@ -20,8 +20,7 @@ pub use expression::{Expression, LogicalGroupOp, UnaryOperator};
 pub use import::{ImportContext, Imports, RdlDocument};
 pub use operator::Operator;
 pub use pipeline::{
-    Branch, FeatureDefinition, MergeStrategy, Pipeline, PipelineDecisionRule, PromptTemplate,
-    Schema, SchemaProperty, Step,
+    Branch, FeatureDefinition, MergeStrategy, Pipeline, PipelineDecisionRule, Step,
 };
 pub use registry::{PipelineRegistry, RegistryEntry};
 pub use rule::{Condition, ConditionGroup, Rule, RuleParams, WhenBlock};

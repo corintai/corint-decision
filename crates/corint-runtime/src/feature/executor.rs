@@ -1108,11 +1108,11 @@ mod tests {
 
     #[test]
     fn test_expression_evaluator_complex() {
-        // Note: Our simple evaluator doesn't handle operator precedence correctly
-        // It evaluates "5+10*2" as (5+10)*2 = 30, not 5+(10*2) = 25
-        // This is because we search for operators in order /, *, +, - and use rfind
+        // Our evaluator now correctly handles operator precedence
+        // It evaluates "5+10*2" as 5+(10*2) = 25 (correct)
+        // We search for operators in order +, -, /, * to ensure proper precedence
         let result = ExpressionEvaluator::eval_math_expr("5+10*2").unwrap();
-        assert_eq!(result, Value::Number(30.0));
+        assert_eq!(result, Value::Number(25.0));
 
         // For correct precedence, users should use parentheses or separate features
         // e.g., create intermediate features or use a proper expression parser

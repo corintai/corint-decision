@@ -94,16 +94,6 @@ pub enum Instruction {
     },
 
     // ===== External Calls =====
-    /// Call LLM for reasoning
-    CallLLM {
-        /// LLM provider (e.g., "openai")
-        provider: String,
-        /// Model name (e.g., "gpt-4")
-        model: String,
-        /// Prompt template
-        prompt: String,
-    },
-
     /// Call external service (internal)
     CallService {
         /// Service name
@@ -383,28 +373,6 @@ mod tests {
             assert_eq!(time_window, TimeWindow::Last24Hours);
         } else {
             panic!("Expected CallFeature instruction");
-        }
-    }
-
-    #[test]
-    fn test_llm_call() {
-        let call_llm = Instruction::CallLLM {
-            provider: "openai".to_string(),
-            model: "gpt-4".to_string(),
-            prompt: "Analyze this event".to_string(),
-        };
-
-        if let Instruction::CallLLM {
-            provider,
-            model,
-            prompt,
-        } = call_llm
-        {
-            assert_eq!(provider, "openai");
-            assert_eq!(model, "gpt-4");
-            assert_eq!(prompt, "Analyze this event");
-        } else {
-            panic!("Expected CallLLM instruction");
         }
     }
 

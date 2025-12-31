@@ -1,8 +1,8 @@
 # CORINT Risk Definition Language (RDL)
 ## Overall Specification (v0.1)
 
-**RDL is the domain-specific language used by CORINT (Cognitive Risk Intelligence) to define rules, rule groups, reasoning logic, and full risk‑processing pipelines.**  
-It enables modern hybrid risk engines to combine deterministic logic with LLM‑based reasoning in a unified, explainable, high‑performance format.
+**RDL is the domain-specific language used by CORINT (Cognitive Risk Intelligence) to define rules, rule groups, reasoning logic, and full risk‑processing pipelines.**
+It enables modern hybrid risk engines to combine deterministic logic with external data sources and APIs in a unified, explainable, high‑performance format.
 
 ---
 
@@ -10,11 +10,11 @@ It enables modern hybrid risk engines to combine deterministic logic with LLM‑
 
 RDL is designed to:
 
-- Provide a declarative, human-readable format for risk logic  
-- Support both traditional rule engines and LLM cognitive reasoning  
-- Compile into a Rust‑friendly IR (AST) for high‑performance execution  
-- Represent end‑to‑end risk processing flows  
-- Enable transparency, auditability, and explainability  
+- Provide a declarative, human-readable format for risk logic
+- Support traditional rule engines with modern data integration
+- Compile into a Rust‑friendly IR (AST) for high‑performance execution
+- Represent end‑to‑end risk processing flows
+- Enable transparency, auditability, and explainability
 - Be cloud‑native, language‑agnostic, and extensible  
 
 ---
@@ -146,18 +146,7 @@ Operators:
 
 ---
 
-### 3.1.2 LLM-Based Conditions
-
-```yaml
-- LLM.reason(event) contains "suspicious"
-- LLM.tags contains "device_mismatch"
-- LLM.score > 0.7
-- LLM.output.risk_score > 0.3
-```
-
----
-
-### 3.1.3 External API Conditions
+### 3.1.2 External API Conditions
 
 ```yaml
 - external_api.Chainalysis.risk_score > 80
@@ -165,7 +154,7 @@ Operators:
 
 ---
 
-### 3.1.4 Decision Making
+### 3.1.3 Decision Making
 
 **Actions are not defined in Rules.**  
 Rules only detect risk factors and provide scores.
@@ -253,7 +242,7 @@ Key features:
 - String operations and regex
 - Time-based aggregations
 - Built-in functions
-- LLM and external API integration
+- External API integration
 
 (See `expression.md` for complete specification.)
 
@@ -354,19 +343,27 @@ Context layers:
 
 ---
 
-## 7. LLM Integration
+## 7. LLM Code Generation (Development-Time Only)
 
-RDL enables seamless integration with Large Language Models for cognitive reasoning.
+**⚠️ IMPORTANT**: LLM is **NOT** a runtime component. It is a development-time code generation tool.
 
-Capabilities:
-- Multiple LLM providers (OpenAI, Anthropic, custom)
-- Prompt engineering and templating
-- Structured output schemas
-- Response caching and optimization
-- Error handling and fallbacks
-- Cost tracking
+The `corint-llm` crate provides LLM-powered YAML configuration generation during development:
 
-(See `llm.md` for comprehensive guide.)
+**Development-Time Capabilities**:
+- Generate rules from natural language descriptions
+- Generate rulesets with decision logic
+- Generate complete pipelines
+- Generate API configurations
+- Multiple LLM providers (OpenAI, Anthropic, Gemini, DeepSeek)
+
+**Key Points**:
+- ✅ LLM generates YAML configurations offline
+- ✅ Developers review and commit generated YAML
+- ✅ CORINT runtime executes compiled YAML with zero LLM calls
+- ❌ NO LLM calls at runtime
+- ❌ NO performance impact on production decisions
+
+(See [LLM_GUIDE.md](../LLM_GUIDE.md) for complete usage guide.)
 
 ---
 
@@ -418,7 +415,6 @@ Optimizations:
 - Multi-level caching (feature-level caching implemented)
 - Parallelization (feature dependencies executed in parallel)
 - Connection pooling (at datasource level)
-- LLM optimization (basic caching implemented)
 
 Note: Advanced performance optimizations are implemented at the runtime level rather than through DSL configuration.
 
@@ -496,9 +492,11 @@ RDL documentation is organized as follows:
 ### Advanced Features
 - **feature.md** - Feature engineering and statistical analysis
 - **list.md** - Custom List feature (blocklists, allowlists, multi-backend support)
-- **llm.md** - LLM integration guide
 - **service.md** - Internal service integration (databases, caches, microservices)
 - **external.md** - External API integration (third-party services)
+
+### Development Tools
+- **[LLM_GUIDE.md](../LLM_GUIDE.md)** - LLM code generation guide (development-time only)
 
 ### Operational
 - (Error handling implemented at runtime level)
@@ -519,7 +517,7 @@ version: "0.1"
 rule:
   id: high_risk_login
   name: High-Risk Login Detection
-  description: Detect risky login behavior using rules + LLM reasoning
+  description: Detect risky login behavior using rules and external data
 
   when:
     all:
@@ -527,30 +525,29 @@ rule:
       - device.is_new == true
       - geo.country in ["RU", "UA", "NG"]
       - user.login_failed_count > 3
-      - LLM.reason(event) contains "suspicious"
-      - LLM.score > 0.7
+      - features.device_change_velocity > 0.7
 
   score: +80
 ```
 
 ---
 
-### 14.2 Loan Application Consistency
+### 14.2 High Value Transaction
 
 ```yaml
 version: "0.1"
 
 rule:
-  id: loan_inconsistency
-  name: Loan Application Inconsistency
-  description: Detect mismatch between declared information and LLM inference
+  id: high_value_transaction
+  name: High Value Transaction Detection
+  description: Detect high-value transactions from new accounts
 
   when:
     all:
-      - event.type == "loan_application"
-      - applicant.income < 3000
-      - applicant.request_amount > applicant.income * 3
-      - LLM.output.employment_stability < 0.3
+      - event.type == "transaction"
+      - event.amount > 10000
+      - features.account_age_days < 30
+      - features.transaction_count_7d > 5
 
   score: +120
 ```
@@ -586,7 +583,6 @@ CONDITION_LIST ::=
 
 CONDITION ::=
       EXPRESSION
-    | LLM_EXPR
     | EXTERNAL_EXPR
 
 EXPRESSION ::= FIELD OP VALUE
@@ -594,12 +590,6 @@ EXPRESSION ::= FIELD OP VALUE
 FIELD ::= IDENT ("." IDENT)*
 
 OP ::= "==" | "!=" | "<" | ">" | "<=" | ">=" | "in" | "regex" | "exists" | "missing"
-
-LLM_EXPR ::=
-      "LLM.reason(" ARG ")" MATCH_OP VALUE
-    | "LLM.tags" MATCH_OP STRING
-    | "LLM.score" OP NUMBER
-    | "LLM.output." FIELD OP VALUE
 
 MATCH_OP ::= "contains" | "not_contains"
 
@@ -668,7 +658,7 @@ RDL compiles into:
 2. **Rust IR** - High-performance execution format
 3. **Type-checked IR** - With schema validation
 4. **Explainability trace** - For decision transparency
-5. **Deterministic + LLM hybrid execution plan** - Optimized execution
+5. **Optimized bytecode** - For efficient execution
 
 The compilation process includes:
 - Syntax validation
@@ -676,20 +666,22 @@ The compilation process includes:
 - Dependency resolution
 - Optimization passes
 - Error detection
+- Bytecode generation
 
 ---
 
 ## 19. Summary
 
-RDL provides a modern, explainable, AI‑augmented DSL for advanced risk engines:
+RDL provides a modern, explainable DSL for advanced risk engines:
 
-- Rules + LLM reasoning in one language
+- Declarative rule definition with powerful expressions
 - Modular (Rule → Ruleset → Pipeline)
 - High‑performance and auditable
 - Dynamic thresholds and adaptive rules
 - Comprehensive feature engineering and statistical analysis
 - Complete internal service integration (databases, caches, microservices)
 - Comprehensive external API integration
+- LLM-powered development tools (code generation)
 - Designed for banks, fintech, e‑commerce, and Web3
 
 This DSL is the foundation of the Cognitive Risk Intelligence Platform (CORINT).

@@ -11,8 +11,7 @@ use corint_core::ast::pipeline::{
     ApiTarget, ErrorAction, ErrorHandling, PipelineStep, Route, StepDetails, StepNext,
 };
 use corint_core::ast::{
-    Branch, FeatureDefinition, MergeStrategy, PromptTemplate, Schema,
-    SchemaProperty, Step, WhenBlock,
+    Branch, FeatureDefinition, MergeStrategy, Step, WhenBlock,
 };
 use serde_yaml::Value as YamlValue;
 use std::collections::HashMap;
@@ -165,31 +164,6 @@ pub(super) fn parse_step_details(step_obj: &YamlValue, step_type: &str) -> Resul
             Ok(StepDetails::Extract { features })
         }
 
-        "reason" => {
-            let provider = YamlParser::get_optional_string(step_obj, "provider");
-            let model = YamlParser::get_optional_string(step_obj, "model");
-            let prompt = if let Some(prompt_str) =
-                YamlParser::get_optional_string(step_obj, "prompt")
-            {
-                Some(PromptTemplate {
-                    template: prompt_str,
-                })
-            } else {
-                None
-            };
-            let output_schema = step_obj
-                .get("output_schema")
-                .map(parse_schema)
-                .transpose()?;
-
-            Ok(StepDetails::Reason {
-                provider,
-                model,
-                prompt,
-                output_schema,
-            })
-        }
-
         _ => Ok(StepDetails::Unknown {}),
     }
 }
@@ -334,7 +308,6 @@ pub(super) fn parse_step(yaml: &YamlValue) -> Result<Step> {
 
     match step_type.as_str() {
         "extract" => parse_extract_step(yaml),
-        "reason" => parse_reason_step(yaml),
         "service" => parse_service_step(yaml),
         "api" => parse_api_step(yaml),
         "include" => parse_include_step(yaml),
@@ -371,66 +344,6 @@ pub(super) fn parse_feature_definition(yaml: &YamlValue) -> Result<FeatureDefini
     let value = ExpressionParser::parse(&value_str)?;
 
     Ok(FeatureDefinition { name, value })
-}
-
-/// Parse reason step
-pub(super) fn parse_reason_step(yaml: &YamlValue) -> Result<Step> {
-    let id = YamlParser::get_string(yaml, "id")?;
-    let provider = YamlParser::get_string(yaml, "provider")?;
-    let model = YamlParser::get_string(yaml, "model")?;
-
-    let prompt_str = YamlParser::get_string(yaml, "prompt")?;
-    let prompt = PromptTemplate {
-        template: prompt_str,
-    };
-
-    let output_schema = yaml
-        .get("output_schema")
-        .map(parse_schema)
-        .transpose()?;
-
-    Ok(Step::Reason {
-        id,
-        provider,
-        model,
-        prompt,
-        output_schema,
-    })
-}
-
-/// Parse schema (simplified version)
-pub(super) fn parse_schema(yaml: &YamlValue) -> Result<Schema> {
-    let schema_type = YamlParser::get_string(yaml, "type")?;
-
-    let properties =
-        if let Some(props_obj) = yaml.get("properties").and_then(|v| v.as_mapping()) {
-            let mut map = HashMap::new();
-            for (key, value) in props_obj {
-                if let Some(key_str) = key.as_str() {
-                    let prop = parse_schema_property(value)?;
-                    map.insert(key_str.to_string(), prop);
-                }
-            }
-            Some(map)
-        } else {
-            None
-        };
-
-    Ok(Schema {
-        schema_type,
-        properties,
-    })
-}
-
-/// Parse schema property
-pub(super) fn parse_schema_property(yaml: &YamlValue) -> Result<SchemaProperty> {
-    let property_type = YamlParser::get_string(yaml, "type")?;
-    let description = YamlParser::get_optional_string(yaml, "description");
-
-    Ok(SchemaProperty {
-        property_type,
-        description,
-    })
 }
 
 /// Parse service step

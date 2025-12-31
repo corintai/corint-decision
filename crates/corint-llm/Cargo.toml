@@ -1,0 +1,44 @@
+[package]
+name = "corint-llm"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+description = "LLM integration for CORINT - Code generation and AI-powered analysis"
+keywords = ["llm", "ai", "code-generation", "decision-engine"]
+
+[dependencies]
+# 核心依赖
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+serde_yaml = "0.9"
+async-trait = "0.1"
+thiserror = "1.0"
+anyhow = "1.0"
+
+# 异步运行时
+tokio = { version = "1.0", features = ["full"] }
+
+# HTTP客户端
+reqwest = { version = "0.11", features = ["json"] }
+
+# 缓存
+dashmap = "5.5"  # 并发HashMap for cache
+
+# 正则表达式
+regex = "1.10"
+
+# 日志
+tracing = "0.1"
+
+# 可选：结构化输出验证
+jsonschema = { version = "0.17", optional = true }
+
+# 可选：CORINT解析器（用于验证生成的YAML）
+corint-parser = { path = "../corint-parser", optional = true }
+
+[dev-dependencies]
+tokio-test = "0.4"
+
+[features]
+default = []
+validation = ["jsonschema", "corint-parser"]  # 生成内容验证

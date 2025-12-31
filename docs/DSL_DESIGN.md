@@ -109,18 +109,15 @@ ruleset:
 
 ```yaml
 pipeline:
-  # Feature extraction
-  - type: extract
-    id: features
-    
-  # Behavior analysis
-  - type: reason
-    id: behavior_analysis
-    
+  # Check IP reputation
+  - type: api
+    id: ip_check
+    api: ip_reputation_service
+
   # Execute ruleset (decision happens here)
   - include:
       ruleset: takeover_detection
-      
+
   # Done! takeover_detection's action is the final decision
   # Pipeline doesn't need to make decisions
 ```
@@ -132,7 +129,7 @@ pipeline:
 ```
 1. Pipeline starts execution
    ↓
-2. Extract features, call APIs, LLM analysis
+2. Load features, call external APIs
    ↓
 3. Execute Ruleset
    ├─ Evaluate each Rule
@@ -394,9 +391,11 @@ CORINT RDL documentation is organized into five categories for clarity and ease 
 │
 ├─ 🚀 Advanced Features (Sophisticated capabilities)
 │  ├─ feature.md         Feature engineering, statistical analysis, and aggregations
-│  ├─ llm.md             Large Language Model integration for cognitive reasoning
 │  ├─ service.md         Internal service integration (DB, cache, microservices, MQ)
 │  └─ external.md        External API integration for third-party risk intelligence
+│
+├─ 🛠️ Development Tools
+│  └─ LLM_GUIDE.md       LLM code generation guide (development-time only)
 │
 ├─ ⚙️ Operational (Production deployment and monitoring)
 │  └─ (Error handling implemented at runtime level)

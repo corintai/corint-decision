@@ -213,21 +213,6 @@ pub enum StepDetails {
         features: Option<Vec<FeatureDefinition>>,
     },
 
-    Reason {
-        /// LLM provider
-        #[serde(skip_serializing_if = "Option::is_none")]
-        provider: Option<String>,
-        /// Model name
-        #[serde(skip_serializing_if = "Option::is_none")]
-        model: Option<String>,
-        /// Prompt template
-        #[serde(skip_serializing_if = "Option::is_none")]
-        prompt: Option<PromptTemplate>,
-        /// Output schema
-        #[serde(skip_serializing_if = "Option::is_none")]
-        output_schema: Option<Schema>,
-    },
-
     /// Catch-all for unknown step types
     Unknown {},
 }
@@ -262,35 +247,6 @@ pub struct FeatureDefinition {
     pub value: Expression,
 }
 
-/// Prompt template for LLM reasoning
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct PromptTemplate {
-    /// Template string with placeholders
-    pub template: String,
-}
-
-/// Schema definition for structured data
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct Schema {
-    /// Schema type (e.g., "object")
-    #[serde(rename = "type")]
-    pub schema_type: String,
-    /// Properties for object schemas
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub properties: Option<HashMap<String, SchemaProperty>>,
-}
-
-/// Property in a schema
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct SchemaProperty {
-    /// Property type (e.g., "string", "number", "boolean")
-    #[serde(rename = "type")]
-    pub property_type: String,
-    /// Optional description
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub description: Option<String>,
-}
-
 // Legacy types for backward compatibility
 /// A single step in the pipeline (legacy enum - kept for backward compatibility)
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -302,20 +258,6 @@ pub enum Step {
         id: String,
         /// Feature definitions to extract
         features: Vec<FeatureDefinition>,
-    },
-
-    /// Call LLM for reasoning
-    Reason {
-        /// Step identifier
-        id: String,
-        /// LLM provider (e.g., "openai", "anthropic")
-        provider: String,
-        /// Model name (e.g., "gpt-4", "claude-3")
-        model: String,
-        /// Prompt template
-        prompt: PromptTemplate,
-        /// Optional output schema for structured responses
-        output_schema: Option<Schema>,
     },
 
     /// Call external service (internal)
@@ -555,63 +497,6 @@ impl FeatureDefinition {
     /// Create a new feature definition
     pub fn new(name: String, value: Expression) -> Self {
         Self { name, value }
-    }
-}
-
-impl PromptTemplate {
-    /// Create a new prompt template
-    pub fn new(template: String) -> Self {
-        Self { template }
-    }
-}
-
-impl Schema {
-    /// Create a new object schema
-    pub fn object() -> Self {
-        Self {
-            schema_type: "object".to_string(),
-            properties: Some(HashMap::new()),
-        }
-    }
-
-    /// Add a property to the schema
-    pub fn add_property(mut self, name: String, property: SchemaProperty) -> Self {
-        self.properties
-            .get_or_insert_with(HashMap::new)
-            .insert(name, property);
-        self
-    }
-}
-
-impl SchemaProperty {
-    /// Create a string property
-    pub fn string() -> Self {
-        Self {
-            property_type: "string".to_string(),
-            description: None,
-        }
-    }
-
-    /// Create a number property
-    pub fn number() -> Self {
-        Self {
-            property_type: "number".to_string(),
-            description: None,
-        }
-    }
-
-    /// Create a boolean property
-    pub fn boolean() -> Self {
-        Self {
-            property_type: "boolean".to_string(),
-            description: None,
-        }
-    }
-
-    /// Set description
-    pub fn with_description(mut self, description: String) -> Self {
-        self.description = Some(description);
-        self
     }
 }
 

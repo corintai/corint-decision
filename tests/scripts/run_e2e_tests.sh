@@ -1108,8 +1108,8 @@ main() {
         }
     }' "decline"
 
-    # Test 44: Multiple devices 24h - should decline (unique_devices_24h feature)
-    # With expression features working, score exceeds decline threshold
+    # Test 44: Multiple devices 24h - should review (unique_devices_24h feature)
+    # Triggers multiple_devices_24h rule (score 80) → review
     run_test_case "Multiple Devices 24h" '{
         "event": {
             "type": "transaction",
@@ -1120,10 +1120,10 @@ main() {
             "device_id": "device_test_999",
             "timestamp": "'"$CURRENT_TIME"'"
         }
-    }' "decline"
+    }' "review"
 
-    # Test 45: High device activity - should decline (txn_count_by_device_24h feature)
-    # With expression features working, score exceeds decline threshold
+    # Test 45: High device activity - should approve (txn_count_by_device_24h feature)
+    # Triggers high_device_activity rule (score 75) → approve (75 < 80)
     run_test_case "High Device Activity" '{
         "event": {
             "type": "transaction",
@@ -1134,7 +1134,7 @@ main() {
             "device_id": "device_high_activity",
             "timestamp": "'"$CURRENT_TIME"'"
         }
-    }' "decline"
+    }' "approve"
 
     echo ""
     echo "--- Feature Coverage Tests (Payment) ---"

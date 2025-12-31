@@ -203,27 +203,6 @@ impl PipelineParser {
                         features: Some(features),
                     },
                 },
-                Step::Reason {
-                    id: _,
-                    provider,
-                    model,
-                    prompt,
-                    output_schema,
-                } => PipelineStep {
-                    id: step_id.clone(),
-                    name: "LLM Reasoning".to_string(),
-                    step_type: "reason".to_string(),
-                    routes: None,
-                    default: None,
-                    next: Some(StepNext::StepId("end".to_string())),
-                    when: None,
-                    details: StepDetails::Reason {
-                        provider: Some(provider),
-                        model: Some(model),
-                        prompt: Some(prompt),
-                        output_schema,
-                    },
-                },
                 Step::Service {
                     id: _,
                     service,
@@ -554,30 +533,5 @@ pipeline:
         // Legacy format now converts to new PipelineStep format
         assert_eq!(pipeline.steps.len(), 1);
         assert_eq!(pipeline.steps[0].step_type, "extract");
-    }
-
-    #[test]
-    fn test_parse_reason_step() {
-        let yaml = r#"
-pipeline:
-  steps:
-    - type: reason
-      id: llm_analysis
-      provider: openai
-      model: gpt-4
-      prompt: "Analyze this transaction"
-      output_schema:
-        type: object
-        properties:
-          is_fraud:
-            type: boolean
-          confidence:
-            type: number
-"#;
-
-        let pipeline = PipelineParser::parse(yaml).unwrap();
-        // Legacy format now converts to new PipelineStep format
-        assert_eq!(pipeline.steps.len(), 1);
-        assert_eq!(pipeline.steps[0].step_type, "reason");
     }
 }

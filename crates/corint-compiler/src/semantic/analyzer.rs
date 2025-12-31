@@ -128,23 +128,6 @@ impl SemanticAnalyzer {
                 }
             }
 
-            Step::Reason { id, prompt, .. } => {
-                // Check for duplicate step ID
-                if !step_ids.insert(id.clone()) {
-                    return Err(CompileError::InvalidExpression(format!(
-                        "Duplicate step ID: {}",
-                        id
-                    )));
-                }
-
-                // Validate prompt template is not empty
-                if prompt.template.is_empty() {
-                    return Err(CompileError::InvalidExpression(
-                        "LLM prompt template cannot be empty".to_string(),
-                    ));
-                }
-            }
-
             Step::Service {
                 id, output, params, ..
             } => {

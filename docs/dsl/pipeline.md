@@ -154,7 +154,6 @@ A **step** is the smallest processing unit in a pipeline. All steps are wrapped 
 | `api` | External API lookup (supports single, any, all modes) | ✅ Implemented |
 | `trigger` | External action (message queue, webhook, notification) | ✅ Implemented |
 | `extract` | Feature extraction (legacy format) | ✅ Implemented (legacy) |
-| `reason` | LLM cognitive reasoning step (legacy format) | ✅ Implemented (legacy) |
 
 ### 2.2 Planned Step Types (📋)
 
@@ -958,13 +957,12 @@ STEP_BODY ::=
       [ STEP_TYPE_PARAMS ]
       [ "next:" STRING ]
 
-STEP_TYPE ::= "ruleset" | "router" | "api" | "llm" | "action" | "custom"
+STEP_TYPE ::= "ruleset" | "router" | "api" | "action" | "custom"
 
 STEP_TYPE_PARAMS ::=
       RULESET_PARAMS
     | ROUTER_PARAMS
     | API_PARAMS
-    | LLM_PARAMS
 
 RULESET_PARAMS ::= "ruleset:" STRING
 
@@ -980,10 +978,6 @@ ROUTE ::=
 
 API_PARAMS ::=
       "api:" STRING
-      [ "params:" OBJECT ]
-
-LLM_PARAMS ::=
-      "llm:" STRING
       [ "params:" OBJECT ]
 
 METADATA_MAP ::= KEY ":" VALUE { KEY ":" VALUE }
@@ -1010,7 +1004,9 @@ For comprehensive understanding of pipelines and the CORINT ecosystem:
 ### Integration
 - **[service.md](service.md)** - Internal service integration (databases, caches, microservices)
 - **[external.md](external.md)** - External API integration
-- **[llm.md](llm.md)** - LLM integration for cognitive reasoning
+
+### Development Tools
+- **[LLM_GUIDE.md](../LLM_GUIDE.md)** - LLM code generation guide (development-time only)
 
 ### Architecture
 - **[overall.md](overall.md)** - High-level RDL overview
@@ -1040,7 +1036,7 @@ A CORINT Pipeline currently supports:
 - ✅ `service` - Internal service calls
 - ✅ `api` - External API calls (single, any, all modes)
 - ✅ `trigger` - External actions
-- ✅ `extract`, `reason` - Legacy format support
+- ✅ `extract` - Legacy format support
 
 **Features:**
 - ✅ Import system for modular composition
