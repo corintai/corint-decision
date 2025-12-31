@@ -614,6 +614,8 @@ INSERT INTO lists (id, description, backend) VALUES
 
 ## API Endpoints
 
+>planning
+
 ```
 # List Management
 GET    /v1/lists                         # Get all configured lists
@@ -669,30 +671,31 @@ curl -X POST http://localhost:8080/v1/lists/suspicious_ips/import \
 
 ## Implementation Plan
 
-### Phase 1: Core (MVP)
+### Phase 1: Core (MVP) ✅ **COMPLETED**
 
-1. **AST & Parser**
-   - Add `ListReference` expression variant
-   - Add `InList`/`NotInList` operators
-   - Parse `list.xxx` syntax
+1. **AST & Parser** ✅
+   - ✅ Add `ListReference` expression variant
+   - ✅ Add `InList`/`NotInList` operators
+   - ✅ Parse `list.xxx` syntax
 
-2. **IR & Compiler**
-   - Add `ListLookup` instruction
-   - Compile list lookups
+2. **IR & Compiler** ✅
+   - ✅ Add `ListLookup` instruction
+   - ✅ Compile list lookups
 
-3. **Runtime**
-   - Create `ListService` with `MemoryBackend`
-   - Execute `ListLookup` instruction
+3. **Runtime** ✅
+   - ✅ Create `ListService` with `MemoryBackend`
+   - ✅ Execute `ListLookup` instruction
 
-4. **Config**
-   - Load lists from `repository/configs/lists/*.yaml`
+4. **Config** ✅
+   - ✅ Load lists from `repository/configs/lists/*.yaml`
 
 ### Phase 2: Backends
 
-1. **Redis Backend** - For high-performance lookups
-2. **PostgreSQL Backend** - With metadata and expiration
-3. **File Backend** - For static lists
-4. **Caching Layer** - Local cache with TTL
+1. **Redis Backend** - For high-performance lookups ❌
+2. **PostgreSQL Backend** - With metadata and expiration ✅
+3. **File Backend** - For static lists ✅
+4. **SQLite Backend** - For embedded database storage ✅
+5. **Caching Layer** - Local cache with TTL ❌
 
 ### Phase 3: Management
 
@@ -718,50 +721,7 @@ curl -X POST http://localhost:8080/v1/lists/suspicious_ips/import \
 ## Example Pipeline
 
 ```yaml
-# pipeline.yaml
-pipeline:
-  id: fraud_detection
-  name: Fraud Detection with Lists
-
-steps:
-  - ruleset:
-      id: list_checks
-      name: List-based Checks
-      rules:
-        # Immediate block for blocklisted emails
-        - id: email_blocklist
-          name: Email Blocklist
-          when:
-            all:
-              - user.email in list.email_blocklist
-          score: 500
-
-        # Skip checks for trusted users
-        - id: trusted_user
-          name: Trusted User Bypass
-          when:
-            all:
-              - user.id in list.trusted_users
-          score: -200
-
-        # Flag high-risk countries
-        - id: high_risk_country
-          name: High Risk Country
-          when:
-            all:
-              - user.country in list.high_risk_countries
-              - user.id not in list.trusted_users
-          score: 100
-
-        # Suspicious IP check
-        - id: suspicious_ip
-          name: Suspicious IP
-          when:
-            all:
-              - event.ip in list.suspicious_ips
-          score: 75
-
-# repository/configs/lists/fraud_lists.yaml
+# Step 1: Configure lists (repository/configs/lists/fraud_lists.yaml)
 lists:
   - id: email_blocklist
     description: "Blocked emails"
@@ -774,10 +734,105 @@ lists:
   - id: high_risk_countries
     description: "High risk countries"
     backend: file
-    path: "repository/configs/lists/data/high_risk_countries.txt"
+    path: "configs/lists/data/high_risk_countries.txt"
 
   - id: suspicious_ips
     description: "Suspicious IPs"
-    backend: redis
-    cache_ttl: 60
+    backend: memory
+    initial_values:
+      - "192.168.1.100"
+      - "10.0.0.50"
+
+---
+
+# Step 2: Define ruleset with list checks (library/rulesets/list_based_checks.yaml)
+version: "0.1"
+
+ruleset:
+  id: list_based_checks
+  name: List-based Checks
+  description: Rules that use custom lists for fraud detection
+
+  rules:
+    # Immediate block for blocklisted emails
+    - id: email_blocklist
+      name: Email Blocklist
+      when:
+        all:
+          - user.email in list.email_blocklist
+      score: 500
+
+    # Skip checks for trusted users
+    - id: trusted_user
+      name: Trusted User Bypass
+      when:
+        all:
+          - user.id in list.trusted_users
+      score: -200
+
+    # Flag high-risk countries
+    - id: high_risk_country
+      name: High Risk Country
+      when:
+        all:
+          - user.country in list.high_risk_countries
+          - user.id not in list.trusted_users
+      score: 100
+
+    # Suspicious IP check
+    - id: suspicious_ip
+      name: Suspicious IP
+      when:
+        all:
+          - event.ip in list.suspicious_ips
+      score: 75
+
+  conclusion:
+    - when: total_score >= 500
+      signal: decline
+      reason: "Blocklisted entity detected"
+    - when: total_score >= 100
+      signal: review
+      reason: "Multiple risk indicators"
+    - default: true
+      signal: approve
+
+---
+
+# Step 3: Define pipeline that uses the ruleset (pipelines/fraud_detection.yaml)
+version: "0.1"
+
+import:
+  rulesets:
+    - library/rulesets/list_based_checks.yaml
+
+---
+
+pipeline:
+  id: fraud_detection
+  name: Fraud Detection with Lists
+  description: Fraud detection pipeline using list-based checks
+
+  entry: list_check_step
+
+  when:
+    all:
+      - event.type == "transaction"
+
+  steps:
+    - step:
+        id: list_check_step
+        name: List-based Checks
+        type: ruleset
+        ruleset: list_based_checks
+
+  decision:
+    - when: results.list_based_checks.signal == "decline"
+      result: decline
+      reason: "{results.list_based_checks.reason}"
+    - when: results.list_based_checks.signal == "review"
+      result: review
+      reason: "{results.list_based_checks.reason}"
+    - default: true
+      result: approve
 ```

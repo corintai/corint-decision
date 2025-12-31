@@ -56,17 +56,6 @@ rule:
   score: 500
 ```
 
-**Allowlist Check**:
-```yaml
-rule:
-  id: trusted_user
-  name: Trusted User Bypass
-  when:
-    all:
-      - user.id in list.vip_users
-  score: -100
-```
-
 ### 2.3 Negative Checks (not in)
 
 ```yaml
