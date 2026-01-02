@@ -161,7 +161,16 @@ pub enum StepDetails {
     Service {
         /// Service name
         service: String,
-        /// Optional query/operation
+        /// Optional endpoint (for ms_http)
+        #[serde(skip_serializing_if = "Option::is_none")]
+        endpoint: Option<String>,
+        /// Optional method (for ms_grpc)
+        #[serde(skip_serializing_if = "Option::is_none")]
+        method: Option<String>,
+        /// Optional topic (for mq)
+        #[serde(skip_serializing_if = "Option::is_none")]
+        topic: Option<String>,
+        /// Optional query/operation (legacy support)
         #[serde(skip_serializing_if = "Option::is_none")]
         query: Option<String>,
         /// Parameters

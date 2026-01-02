@@ -255,6 +255,9 @@ impl PipelineParser {
                     when: None,
                     details: StepDetails::Service {
                         service,
+                        endpoint: None,
+                        method: None,
+                        topic: None,
                         query: Some(operation),
                         params: Some(params),
                         output,
@@ -437,11 +440,17 @@ impl PipelineParser {
 
             "service" => {
                 let service = YamlParser::get_string(step_obj, "service")?;
+                let endpoint = YamlParser::get_optional_string(step_obj, "endpoint");
+                let method = YamlParser::get_optional_string(step_obj, "method");
+                let topic = YamlParser::get_optional_string(step_obj, "topic");
                 let query = YamlParser::get_optional_string(step_obj, "query");
                 let params = Self::parse_params(step_obj)?;
                 let output = YamlParser::get_optional_string(step_obj, "output");
                 Ok(StepDetails::Service {
                     service,
+                    endpoint,
+                    method,
+                    topic,
                     query,
                     params,
                     output,

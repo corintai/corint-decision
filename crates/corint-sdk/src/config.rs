@@ -162,11 +162,15 @@ pub struct ServiceConfig {
 
 /// Service type
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
+#[serde(rename_all = "snake_case")]
 pub enum ServiceType {
-    Http,
-    Database,
-    Redis,
+    /// Internal HTTP microservice
+    MsHttp,
+    /// Internal gRPC microservice
+    MsGrpc,
+    /// Message queue (Kafka, RabbitMQ)
+    Mq,
+    /// Mock service for testing
     Mock,
 }
 
@@ -294,16 +298,16 @@ mod tests {
     #[test]
     fn test_engine_config_with_service() {
         let service = ServiceConfig {
-            service_type: ServiceType::Http,
-            endpoint: "https://api.example.com".to_string(),
+            service_type: ServiceType::MsHttp,
+            endpoint: "http://kyc-service.internal:8080".to_string(),
         };
 
         let config = EngineConfig::new().with_service(service.clone());
 
         assert!(config.service.is_some());
         let config_service = config.service.unwrap();
-        assert!(matches!(config_service.service_type, ServiceType::Http));
-        assert_eq!(config_service.endpoint, "https://api.example.com");
+        assert!(matches!(config_service.service_type, ServiceType::MsHttp));
+        assert_eq!(config_service.endpoint, "http://kyc-service.internal:8080");
     }
 
     #[test]
@@ -332,14 +336,14 @@ mod tests {
 
     #[test]
     fn test_service_type_variants() {
-        let http = ServiceType::Http;
-        let database = ServiceType::Database;
-        let redis = ServiceType::Redis;
+        let ms_http = ServiceType::MsHttp;
+        let ms_grpc = ServiceType::MsGrpc;
+        let mq = ServiceType::Mq;
         let mock = ServiceType::Mock;
 
-        assert!(matches!(http, ServiceType::Http));
-        assert!(matches!(database, ServiceType::Database));
-        assert!(matches!(redis, ServiceType::Redis));
+        assert!(matches!(ms_http, ServiceType::MsHttp));
+        assert!(matches!(ms_grpc, ServiceType::MsGrpc));
+        assert!(matches!(mq, ServiceType::Mq));
         assert!(matches!(mock, ServiceType::Mock));
     }
 
@@ -435,13 +439,24 @@ mod tests {
     }
 
     #[test]
-    fn test_service_config_database() {
+    fn test_service_config_grpc() {
         let service = ServiceConfig {
-            service_type: ServiceType::Database,
-            endpoint: "postgresql://localhost:5432/db".to_string(),
+            service_type: ServiceType::MsGrpc,
+            endpoint: "risk-scoring.internal:9090".to_string(),
         };
 
-        assert!(matches!(service.service_type, ServiceType::Database));
-        assert!(service.endpoint.contains("postgresql"));
+        assert!(matches!(service.service_type, ServiceType::MsGrpc));
+        assert!(service.endpoint.contains("9090"));
+    }
+
+    #[test]
+    fn test_service_config_mq() {
+        let service = ServiceConfig {
+            service_type: ServiceType::Mq,
+            endpoint: "kafka-1.internal:9092".to_string(),
+        };
+
+        assert!(matches!(service.service_type, ServiceType::Mq));
+        assert!(service.endpoint.contains("kafka"));
     }
 }

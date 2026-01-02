@@ -1,0 +1,68 @@
+version: "0.1"
+
+# Risk Scoring Service (Internal gRPC Microservice)
+# This service provides ML-based risk scoring capabilities
+
+services:
+  - id: risk_scoring_service
+    type: ms_grpc
+    name: Risk Scoring Service
+    description: Internal ML-based risk scoring service for real-time risk assessment
+
+    connection:
+      host: risk-scoring.internal
+      port: 9090
+      discovery:
+        type: consul
+        service_name: risk-scoring
+
+    timeout_ms: 5000
+
+    methods:
+      # Calculate risk score based on features
+      calculate_score:
+        service: RiskScoringService
+        method: CalculateScore
+        params:
+          user_id: event.user.id
+          transaction_amount: event.transaction.amount
+          features: features
+        response:
+          mapping:
+            score: risk_score
+            factors: risk_factors
+            version: model_version
+          fallback:
+            score: 0.0
+            factors: []
+            version: "unknown"
+
+      # Get model information
+      get_model_info:
+        service: RiskScoringService
+        method: GetModelInfo
+        params:
+          model_id: "default"
+        response:
+          mapping:
+            name: model_name
+            version: model_version
+            created_at: created_timestamp
+          fallback:
+            name: "unknown"
+            version: "unknown"
+            created_at: ""
+
+      # Batch scoring
+      batch_score:
+        service: RiskScoringService
+        method: BatchScore
+        params:
+          requests: vars.batch_requests
+        response:
+          mapping:
+            scores: risk_scores
+            count: total_count
+          fallback:
+            scores: []
+            count: 0

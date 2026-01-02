@@ -219,6 +219,9 @@ impl PipelineParser {
                     when: None,
                     details: StepDetails::Service {
                         service,
+                        endpoint: None,
+                        method: None,
+                        topic: None,
                         query: Some(operation),
                         params: Some(params),
                         output,

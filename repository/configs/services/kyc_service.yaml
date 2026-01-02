@@ -1,0 +1,62 @@
+version: "0.1"
+
+# KYC Verification Service (Internal HTTP Microservice)
+# This service provides identity verification capabilities
+
+services:
+  - id: kyc_service
+    type: ms_http
+    name: KYC Verification Service
+    description: Internal KYC identity verification service for user onboarding
+    base_url: http://kyc-service.internal:8080
+    timeout_ms: 10000
+
+    endpoints:
+      # POST endpoint with request body
+      verify_identity:
+        method: POST
+        path: /api/v1/verify/identity
+        timeout_ms: 15000
+        params:
+          user_id: event.user.id
+          document_type: event.kyc.document_type
+          document_number: event.kyc.document_number
+        request_body: |
+          {
+            "user_id": "${user_id}",
+            "document_type": "${document_type}",
+            "document_number": "${document_number}"
+          }
+        response:
+          mapping:
+            is_verified: verified
+            confidence_score: confidence
+            level: verification_level
+          fallback:
+            is_verified: false
+            confidence_score: 0.0
+            level: "unverified"
+
+      # GET endpoint with path placeholder
+      get_status:
+        method: GET
+        path: /api/v1/status/{user_id}
+        params:
+          user_id: event.user.id
+        response:
+          fallback:
+            status: "unknown"
+            verified: false
+
+      # GET endpoint with query parameters
+      search_users:
+        method: GET
+        path: /api/v1/users/search
+        params:
+          email: event.user.email
+          phone: event.user.phone
+          limit: 10
+        query_params:
+          - email
+          - phone
+          - limit

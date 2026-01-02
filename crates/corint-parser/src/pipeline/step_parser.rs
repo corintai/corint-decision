@@ -109,11 +109,17 @@ pub(super) fn parse_step_details(step_obj: &YamlValue, step_type: &str) -> Resul
 
         "service" => {
             let service = YamlParser::get_string(step_obj, "service")?;
+            let endpoint = YamlParser::get_optional_string(step_obj, "endpoint");
+            let method = YamlParser::get_optional_string(step_obj, "method");
+            let topic = YamlParser::get_optional_string(step_obj, "topic");
             let query = YamlParser::get_optional_string(step_obj, "query");
             let params = parse_params(step_obj)?;
             let output = YamlParser::get_optional_string(step_obj, "output");
             Ok(StepDetails::Service {
                 service,
+                endpoint,
+                method,
+                topic,
                 query,
                 params,
                 output,

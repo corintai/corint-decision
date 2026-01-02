@@ -150,7 +150,7 @@ A **step** is the smallest processing unit in a pipeline. All steps are wrapped 
 | `rule` | Execute a single rule | ✅ Implemented |
 | `ruleset` | Execute a ruleset | ✅ Implemented |
 | `pipeline` | Call a sub-pipeline | ✅ Implemented |
-| `service` | Internal service call (database, cache, microservice, etc.) | ✅ Implemented |
+| `service` | Internal microservice call (ms_http, ms_grpc, mq) | ✅ Implemented |
 | `api` | External API lookup (supports single, any, all modes) | ✅ Implemented |
 | `trigger` | External action (message queue, webhook, notification) | ✅ Implemented |
 | `extract` | Feature extraction (legacy format) | ✅ Implemented (legacy) |
@@ -870,29 +870,25 @@ version: "0.1"
 pipeline:
   id: service_integration_pipeline
   name: Service Integration Example
-  entry: load_user_profile
+  entry: verify_kyc
 
   steps:
-    # Step 1: Load user profile from database
+    # Step 1: Call internal HTTP microservice for KYC verification
     - step:
-        id: load_user_profile
-        name: Load User Profile
+        id: verify_kyc
+        name: Verify KYC
         type: service
-        service: user_db
-        query: get_user_profile
-        params:
-          user_id: event.user.id
-        output: service.user_profile
-        next: check_risk_cache
+        service: kyc_service
+        endpoint: verify_identity
+        next: calculate_risk
 
-    # Step 2: Check cache for existing risk score
+    # Step 2: Call internal gRPC microservice for risk scoring
     - step:
-        id: check_risk_cache
-        name: Check Risk Cache
+        id: calculate_risk
+        name: Calculate Risk Score
         type: service
-        service: redis_cache
-        query: get_user_risk_cache
-        output: service.cached_risk
+        service: risk_scoring_service
+        method: calculate_score
         next: ip_reputation
 
     # Step 3: Check external API
@@ -918,10 +914,9 @@ pipeline:
     - step:
         id: publish_decision
         name: Publish Decision
-        type: trigger
-        target: event_bus.risk_decisions
-        params:
-          decision: results.comprehensive_risk_check.signal
+        type: service
+        service: event_bus
+        topic: risk_decisions
 ```
 
 ---
@@ -1002,7 +997,7 @@ For comprehensive understanding of pipelines and the CORINT ecosystem:
 - **[feature.md](feature.md)** - Feature engineering and extraction
 
 ### Integration
-- **[service.md](service.md)** - Internal service integration (databases, caches, microservices)
+- **[service.md](service.md)** - Internal service integration (microservices and message queues)
 - **[external.md](external.md)** - External API integration
 
 ### Development Tools

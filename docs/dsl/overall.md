@@ -421,32 +421,36 @@ Note: Advanced error handling features (retry logic, circuit breaker, fallback c
 
 ## 8. Internal Service Integration
 
-RDL provides comprehensive integration with internal services for data access and computation.
+RDL provides integration with internal microservices and message queues.
 
 Service types:
-- **Database services** - MySQL, PostgreSQL, MongoDB, Cassandra
-- **Cache services** - Redis, Memcached
-- **Feature Store** - Pre-computed features
-- **Microservices** - Internal RESTful/gRPC services
-- **Message queues** - Kafka, RabbitMQ
-- **Search services** - Elasticsearch
+- **HTTP microservices** (`ms_http`) - Internal RESTful services
+- **gRPC microservices** (`ms_grpc`) - Internal gRPC services
+- **Message queues** (`mq`) - Kafka, RabbitMQ event streaming
 
 Example:
 ```yaml
 pipeline:
-  # Database query
+  # Call internal HTTP microservice
   - type: service
-    id: load_user
-    service: user_db
-    query: get_user_profile
-    output: service.user_profile
+    id: verify_kyc
+    service: kyc_service
+    endpoint: verify_identity
 
-  # Cache lookup
+  # Call internal gRPC service
   - type: service
-    id: check_cache
-    service: redis_cache
-    operation: get_user_risk_cache
+    id: calculate_risk
+    service: risk_scoring_service
+    method: calculate_score
+
+  # Publish to message queue
+  - type: service
+    id: publish_event
+    service: event_bus
+    topic: risk_decisions
 ```
+
+**Note:** For database and cache access, use **Datasources** (see datasources configuration). For third-party HTTP APIs, use **External APIs** (see `external.md`).
 
 (See `service.md` for complete specification.)
 
@@ -490,7 +494,7 @@ RDL documentation is organized as follows:
 ### Advanced Features
 - **feature.md** - Feature engineering and statistical analysis
 - **list.md** - Custom List feature (blocklists, allowlists, multi-backend support)
-- **service.md** - Internal service integration (databases, caches, microservices)
+- **service.md** - Internal service integration (microservices, message queues)
 - **external.md** - External API integration (third-party services)
 
 ### Operational
@@ -674,8 +678,8 @@ RDL provides a modern, explainable DSL for advanced risk engines:
 - High‑performance and auditable
 - Dynamic thresholds and adaptive rules
 - Comprehensive feature engineering and statistical analysis
-- Complete internal service integration (databases, caches, microservices)
-- Comprehensive external API integration
+- Internal service integration (microservices and message queues)
+- External API integration (third-party services)
 - Designed for banks, fintech, e‑commerce, and Web3
 
 This DSL is the foundation of the Cognitive Risk Intelligence Platform (CORINT).

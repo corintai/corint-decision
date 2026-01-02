@@ -165,6 +165,7 @@ fn compile_service_step(step: &PipelineStep, ctx: &mut CompileContext) -> Result
         query,
         params: _,
         output,
+        ..
     } = &step.details
     {
         // Compile service call

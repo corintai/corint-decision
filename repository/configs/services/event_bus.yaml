@@ -1,0 +1,71 @@
+version: "0.1"
+
+# Event Bus (Message Queue)
+# Kafka event streaming for risk decisions and fraud alerts
+
+services:
+  - id: event_bus
+    type: mq
+    name: Event Bus
+    description: Kafka event streaming for risk decisions and fraud alerts
+
+    connection:
+      driver: kafka
+      brokers:
+        - kafka-1.internal:9092
+        - kafka-2.internal:9092
+        - kafka-3.internal:9092
+
+    timeout_ms: 5000
+
+    topics:
+      # Risk decisions topic
+      risk_decisions:
+        message:
+          key: ${event.user.id}
+          value: |
+            {
+              "user_id": "${event.user.id}",
+              "event_type": "${event.type}",
+              "risk_score": ${vars.final_risk_score},
+              "decision": "${vars.decision}",
+              "timestamp": "${sys.timestamp}",
+              "metadata": {
+                "request_id": "${sys.request_id}",
+                "pipeline_version": "v1.0",
+                "triggered_rules": ${vars.triggered_rules}
+              }
+            }
+
+      # Fraud alerts topic
+      fraud_alerts:
+        message:
+          key: ${event.user.id}
+          value: |
+            {
+              "alert_type": "high_risk",
+              "user_id": "${event.user.id}",
+              "risk_score": ${vars.risk_score},
+              "triggered_rules": ${vars.triggered_rules},
+              "timestamp": "${sys.timestamp}",
+              "context": {
+                "event_type": "${event.type}",
+                "amount": ${event.transaction.amount},
+                "ip_address": "${event.ip_address}",
+                "device_id": "${event.device.id}"
+              }
+            }
+
+      # User activity events topic
+      user_activity:
+        message:
+          key: ${event.user.id}
+          value: |
+            {
+              "user_id": "${event.user.id}",
+              "event_type": "${event.type}",
+              "timestamp": "${sys.timestamp}",
+              "ip_address": "${event.ip_address}",
+              "user_agent": "${event.user_agent}",
+              "session_id": "${event.session_id}"
+            }

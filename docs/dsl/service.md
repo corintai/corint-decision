@@ -1,503 +1,333 @@
 # CORINT Risk Definition Language (RDL)
 ## Internal Service Integration Specification (v0.1)
 
-This document defines how internal services (databases, caches, microservices, message queues, etc.) are configured, invoked, and managed within CORINT's Risk Definition Language.
+This document defines how internal microservices and message queues are configured, invoked, and managed within CORINT's Risk Definition Language.
+
+**Note:** For database and cache access, use **Datasources** (see `repository/configs/datasources/`). For third-party HTTP APIs, use **External APIs** (see `external.md`).
 
 Internal services enable integration with:
-- **Database services** (MySQL, PostgreSQL, MongoDB, Cassandra)
-- **Cache services** (Redis, Memcached)
-- **Feature Store** (pre-computed features)
-- **Internal microservices** (User Service, Account Service, KYC Service)
-- **Message queues** (Kafka, RabbitMQ)
-- **Search services** (Elasticsearch)
+- **HTTP microservices** (`ms_http`) - RESTful internal services
+- **gRPC microservices** (`ms_grpc`) - gRPC internal services
+- **Message queues** (`mq`) - Event streaming and async notifications
 
 ---
 
-## 1. Service vs External API
+## 1. Service Type Overview
 
-### 1.1 Key Differences
+### 1.1 Service Types
 
-| Aspect | Internal Service | External API |
-|--------|-----------------|--------------|
-| **Network** | Internal network | Public internet |
-| **Reliability** | High (99.9%+) | Variable |
-| **Latency** | Low (< 10ms) | High (50-500ms) |
-| **Authentication** | Simple internal auth | Complex (OAuth, API Key) |
-| **Retry Strategy** | Conservative (1-2 retries) | Aggressive (3+ retries) |
-| **Circuit Breaker** | Optional | Recommended |
-| **Caching** | Short TTL or none | Long TTL |
-| **Cost Model** | Internal resource | Pay-per-call |
+| Type | Purpose | Protocol | Authentication |
+|------|---------|----------|----------------|
+| `ms_http` | Internal HTTP/REST microservices | HTTP/HTTPS | None (internal) |
+| `ms_grpc` | Internal gRPC microservices | gRPC | None (internal) |
+| `mq` | Message queue event streaming | Kafka, RabbitMQ | None (internal) |
 
-### 1.2 Design Philosophy
+### 1.2 Comparison with External Systems
 
-Internal services prioritize:
-- **Performance** - Low latency, high throughput
-- **Consistency** - Strong consistency guarantees
-- **Simplicity** - Minimal configuration overhead
-- **Reliability** - Fail fast, clear error messages
+| Aspect | Internal Service | External API | Datasource |
+|--------|-----------------|--------------|------------|
+| **Use Case** | Internal microservices, MQ | Third-party APIs | Database, Cache, Feature Store |
+| **Network** | Internal network | Public internet | Internal (DB/Cache) |
+| **Authentication** | None | Required (API keys, tokens) | Connection strings |
+| **Configuration** | service.yaml | configs/apis/ | configs/datasources/ |
+| **Retry Strategy** | Conservative (1-2) | Aggressive (3+) | Built-in |
+
+### 1.3 When to Use What
+
+- **Datasource** → Database queries, Redis cache, Feature engineering
+- **External API** → Third-party HTTP APIs (IPInfo, fraud detection services)
+- **Internal Service (ms_http)** → Internal HTTP microservices (KYC, scoring)
+- **Internal Service (ms_grpc)** → Internal gRPC services (ML models, real-time scoring)
+- **Internal Service (mq)** → Async event publishing (Kafka, RabbitMQ)
 
 ---
 
-## 2. Service Definition Structure
+## 2. HTTP Microservice (`ms_http`)
 
 ### 2.1 Basic Structure
 
-```yaml
-services:
-  - id: string                      # Unique identifier
-    name: string                    # Human-readable name
-    type: database | cache | microservice | mq | search | feature_store
-    description: string             # Purpose description
-
-    connection: <connection-config> # Connection settings
-    timeout: <timeout-config>       # Timeout settings
-    retry: <retry-config>           # Retry policy (optional)
-    cache: <cache-config>           # Result caching (optional)
-    on_error: <error-config>        # Error handling
-```
-
----
-
-## 3. Database Services
-
-### 3.1 Relational Database (MySQL/PostgreSQL)
+**Note**: `ms_http` follows the same structure as External API (see `external.md`) but **without authentication** since it's for internal services.
 
 ```yaml
 services:
-  - id: user_db
-    name: User Database
-    type: database
-    description: Primary user data store
+  - id: <string>                # Required: Unique service identifier
+    type: ms_http               # Required: HTTP microservice type
+    name: <string>              # Required: Human-readable name
+    description: <string>       # Optional: Service description
+    base_url: <string>          # Required: Base URL (e.g., http://service.internal:8080)
+    timeout_ms: <integer>       # Optional: Default timeout in milliseconds (default: 5000)
 
-    connection:
-      driver: postgresql              # postgresql | mysql
-      host: ${DB_HOST}
-      port: 5432
-      database: corint_users
-      username: ${DB_USER}
-      password: ${DB_PASSWORD}
-
-      # Connection pool
-      pool:
-        min_size: 5
-        max_size: 20
-        idle_timeout: 300000          # ms
-
-      # SSL/TLS
-      ssl:
-        enabled: true
-        verify_cert: true
-
-    # Query definitions
-    queries:
-      - name: get_user_profile
-        sql: |
-          SELECT user_id, tier, risk_score, kyc_verified, created_at
-          FROM users
-          WHERE user_id = :user_id
-        params:
-          - name: user_id
-            type: string
-            source: event.user.id
-        cache:
-          enabled: true
-          ttl: 300                    # 5 minutes
-
-      - name: get_user_transactions
-        sql: |
-          SELECT transaction_id, amount, currency, created_at
-          FROM transactions
-          WHERE user_id = :user_id
-            AND created_at >= :start_date
-          ORDER BY created_at DESC
-          LIMIT :limit
-        params:
-          - name: user_id
-            type: string
-            source: event.user.id
-          - name: start_date
-            type: datetime
-            source: vars.query_start_date
-          - name: limit
-            type: integer
-            default: 100
-
-      - name: count_failed_logins
-        sql: |
-          SELECT COUNT(*) as count
-          FROM login_attempts
-          WHERE user_id = :user_id
-            AND success = false
-            AND created_at >= NOW() - INTERVAL :window
-        params:
-          - name: user_id
-            type: string
-            source: event.user.id
-          - name: window
-            type: string
-            default: "24 hours"
-
-    timeout:
-      query: 5000                     # ms
-      connection: 2000                # ms
-
-    retry:
-      max_attempts: 2
-      backoff: linear
-      retry_on:
-        - connection_timeout
-        - read_timeout
-
-    on_error:
-      action: fail
-      log_level: error
+    endpoints:                  # Required: Endpoint definitions
+      <endpoint_name>:          # Endpoint identifier (key, not list item)
+        method: <http_method>   # Required: GET | POST | PUT | PATCH | DELETE
+        path: <string>          # Required: URL path, can include {placeholders}
+        timeout_ms: <integer>   # Optional: Override default timeout for this endpoint
+        params:                 # Optional: Parameter mapping from context
+          <param_name>: <context_path>  # e.g., user_id: event.user.id (no ${})
+          <param_name>: <literal>       # e.g., api_version: "v1"
+        query_params:           # Optional: Query parameter names
+          - <param_name>
+        request_body: <string>  # Optional: JSON template for POST/PUT/PATCH
+                                # Use ${param_name} for substitution
+        response:               # Optional: Response handling
+          mapping:              # Optional: Field mapping/renaming
+            <output_field>: <response_field>
+          fallback:             # Optional: Default value on error
+            <field>: <value>
 ```
 
-### 3.2 NoSQL Database (MongoDB)
-
-```yaml
-services:
-  - id: session_store
-    name: Session Store
-    type: database
-    description: User session data store
-
-    connection:
-      driver: mongodb
-      uri: ${MONGODB_URI}
-      database: sessions
-
-      options:
-        read_preference: primary
-        write_concern: majority
-
-    queries:
-      - name: get_session
-        collection: user_sessions
-        operation: find_one
-        filter:
-          user_id: "{{ event.user.id }}"
-          expires_at: { $gt: "{{ sys.timestamp }}" }
-        projection:
-          session_id: 1
-          device_id: 1
-          ip_address: 1
-          created_at: 1
-
-      - name: get_user_devices
-        collection: user_devices
-        operation: find
-        filter:
-          user_id: "{{ event.user.id }}"
-        sort:
-          last_seen: -1
-        limit: 10
-```
-
-### 3.3 Using Database Queries in Pipeline
-
-```yaml
-pipeline:
-  # Database query step
-  - type: service
-    id: load_user_profile
-    service: user_db
-    query: get_user_profile
-
-    # Override parameters
-    params:
-      user_id: event.user.id
-
-    # Store result in service namespace
-    output: service.user_profile
-
-  # Use result in conditions
-  - type: rules
-    id: check_user_tier
-    conditions:
-      - service.user_profile.tier == "premium"
-      - service.user_profile.kyc_verified == true
-```
-
----
-
-## 4. Cache Services
-
-### 4.1 Redis Cache
-
-```yaml
-services:
-  - id: redis_cache
-    name: Redis Cache
-    type: cache
-    description: Primary caching layer
-
-    connection:
-      driver: redis
-      host: ${REDIS_HOST}
-      port: 6379
-      password: ${REDIS_PASSWORD}
-      db: 0
-
-      pool:
-        min_size: 5
-        max_size: 50
-
-      options:
-        connect_timeout: 1000         # ms
-        socket_timeout: 2000          # ms
-
-    operations:
-      - name: get_user_risk_cache
-        operation: get
-        key: "risk:user:{{ event.user.id }}"
-        deserialize: json
-
-      - name: set_user_risk_cache
-        operation: set
-        key: "risk:user:{{ event.user.id }}"
-        value: "{{ vars.risk_result }}"
-        ttl: 3600                     # seconds
-        serialize: json
-
-      - name: get_ip_reputation
-        operation: get
-        key: "ip:reputation:{{ event.geo.ip }}"
-        deserialize: json
-
-      - name: incr_login_attempts
-        operation: incr
-        key: "login:attempts:{{ event.user.id }}"
-        expire: 3600
-
-      - name: get_device_trust_score
-        operation: hget
-        key: "device:trust"
-        field: "{{ event.device.id }}"
-
-    timeout:
-      command: 1000                   # ms
-
-    on_error:
-      action: skip                    # Cache miss is not fatal
-      log_level: warn
-```
-
-### 4.2 Cache Patterns
-
-```yaml
-pipeline:
-  # Cache-aside pattern
-  - type: service
-    id: check_cache
-    service: redis_cache
-    operation: get_user_risk_cache
-    output: service.cached_risk
-
-  - branch:
-      when:
-        # If cache hit, use cached value
-        - condition: "service.cached_risk exists"
-          pipeline:
-            - type: action
-              decision: service.cached_risk
-
-        # If cache miss, compute and cache
-        - condition: "service.cached_risk missing"
-          pipeline:
-            - type: rules
-              id: compute_risk
-              output: vars.computed_risk
-
-            - type: service
-              id: update_cache
-              service: redis_cache
-              operation: set_user_risk_cache
-              params:
-                value: vars.computed_risk
-```
-
----
-
-## 5. Feature Store Services
-
-### 5.1 Feature Store Definition
-
-```yaml
-services:
-  - id: feature_store
-    name: Feature Store
-    type: feature_store
-    description: Pre-computed risk features
-
-    connection:
-      backend: redis                  # redis | dynamodb | custom
-      host: ${FEATURE_STORE_HOST}
-      port: 6379
-
-    features:
-      - name: user_behavior_7d
-        key_template: "features:user:{{ event.user.id }}:7d"
-        schema:
-          login_count: integer
-          transaction_count: integer
-          avg_transaction_amount: float
-          devices_used: integer
-          ips_used: integer
-        ttl: 3600
-
-      - name: user_association_5h
-        key_template: "features:assoc:{{ event.user.id }}:5h"
-        schema:
-          devices_per_ip: integer
-          users_per_device: integer
-          users_per_ip: integer
-        ttl: 300
-
-      - name: device_profile
-        key_template: "features:device:{{ event.device.id }}"
-        schema:
-          trust_score: float
-          first_seen: datetime
-          last_seen: datetime
-          users_count: integer
-        ttl: 1800
-
-    on_miss:
-      action: compute                 # compute | fail | skip
-      fallback_ttl: 60
-```
-
-### 5.2 Using Feature Store
-
-```yaml
-pipeline:
-  # Load pre-computed features
-  - type: service
-    id: load_features
-    service: feature_store
-    features:
-      - user_behavior_7d
-      - user_association_5h
-      - device_profile
-
-    output: features
-
-  # Use features in rules
-  - type: rules
-    id: feature_based_rules
-    conditions:
-      - features.user_behavior_7d.login_count > 100
-      - features.user_association_5h.devices_per_ip > 10
-      - features.device_profile.trust_score < 0.5
-```
-
----
-
-## 6. Internal Microservices
-
-### 6.1 RESTful Microservice
+### 2.2 Complete Example
 
 ```yaml
 services:
   - id: kyc_service
-    name: KYC Service
-    type: microservice
-    description: Internal KYC verification service
-
-    connection:
-      protocol: http
-      base_url: http://kyc-service.internal:8080
-      version: v1
-
-      # Internal authentication
-      auth:
-        type: internal_token
-        token: ${INTERNAL_SERVICE_TOKEN}
+    type: ms_http
+    name: KYC Verification Service
+    description: Internal KYC identity verification service
+    base_url: http://kyc-service.internal:8080
+    timeout_ms: 5000
 
     endpoints:
-      - name: verify_identity
-        path: /verify/identity
+      # POST endpoint with request body
+      verify_identity:
         method: POST
-
-        request:
-          headers:
-            Content-Type: application/json
-          body:
-            user_id: "{{ event.user.id }}"
-            document_type: "{{ event.kyc.document_type }}"
-            document_number: "{{ event.kyc.document_number }}"
-
-        response:
-          verified: boolean
-          confidence: float
-          verification_level: string
-
-      - name: get_verification_status
-        path: /status/{user_id}
-        method: GET
-
+        path: /api/v1/verify/identity
+        timeout_ms: 10000
         params:
-          - name: user_id
-            type: string
-            source: event.user.id
+          user_id: event.user.id
+          document_type: event.kyc.document_type
+          document_number: event.kyc.document_number
+        request_body: |
+          {
+            "user_id": "${user_id}",
+            "document_type": "${document_type}",
+            "document_number": "${document_number}"
+          }
+        response:
+          mapping:
+            is_verified: verified
+            confidence_score: confidence
+            level: verification_level
+          fallback:
+            is_verified: false
+            confidence_score: 0.0
+            level: "unverified"
 
-    timeout:
-      connect: 500
-      read: 3000
+      # GET endpoint with path placeholder
+      get_status:
+        method: GET
+        path: /api/v1/status/{user_id}
+        params:
+          user_id: event.user.id
+        response:
+          fallback:
+            status: "unknown"
+            verified: false
 
-    retry:
-      max_attempts: 2
-      backoff: exponential
+      # GET endpoint with query parameters
+      search_users:
+        method: GET
+        path: /api/v1/users/search
+        params:
+          email: event.user.email
+          phone: event.user.phone
+          limit: 10
+        query_params:
+          - email
+          - phone
+          - limit
 ```
 
-### 6.2 gRPC Microservice
+### 2.3 Usage in Pipeline
 
 ```yaml
-services:
-  - id: risk_scoring_service
-    name: Risk Scoring Service
-    type: microservice
-    description: Internal ML-based risk scoring
+pipeline:
+  id: kyc_verification_flow
+  name: KYC Verification Flow
+  entry: verify_kyc
 
-    connection:
-      protocol: grpc
-      host: risk-scoring.internal
-      port: 9090
+  steps:
+    # Call KYC verification
+    - step:
+        id: verify_kyc
+        type: service
+        service: kyc_service
+        endpoint: verify_identity
+        # Parameters automatically read from context based on endpoint config
+        # Result stored in: service.kyc_service.verify_identity
+        next: check_status
 
-      # Service discovery (optional)
-      discovery:
-        type: consul                  # consul | kubernetes | static
-        service_name: risk-scoring
+    # Call with parameter override
+    - step:
+        id: check_status
+        type: service
+        service: kyc_service
+        endpoint: get_status
+        params:
+          user_id: ${event.different_user_id}  # Override default mapping
+        output: service.kyc_status  # Custom output location
+        next: kyc_check
 
-    methods:
-      - name: calculate_risk_score
-        service: RiskScoringService
-        method: CalculateScore
+    # Use results in rules
+    - step:
+        id: kyc_check
+        type: ruleset
+        ruleset: kyc_verification_rules
+```
 
-        request:
-          user_id: "{{ event.user.id }}"
-          transaction_amount: "{{ event.transaction.amount }}"
-          features: "{{ features }}"
+### 2.4 Accessing Results
 
-        response:
-          risk_score: float
-          risk_factors: array
-          model_version: string
+```yaml
+rule:
+  id: kyc_verified_check
+  when:
+    all:
+      - service.kyc_service.verify_identity.is_verified == true
+      - service.kyc_service.verify_identity.confidence_score > 0.8
+  score: -20  # Reduce risk score if verified
 ```
 
 ---
 
-## 7. Message Queue Services
+## 3. gRPC Microservice (`ms_grpc`)
 
-### 7.1 Kafka Producer
+### 3.1 Basic Structure
+
+```yaml
+services:
+  - id: <string>              # Required: Unique service identifier
+    type: ms_grpc             # Required: gRPC microservice type
+    name: <string>            # Required: Human-readable name
+    description: <string>     # Optional: Service description
+
+    connection:
+      host: <string>          # Required: Service host
+      port: <integer>         # Required: Service port
+      discovery:              # Optional: Service discovery
+        type: <discovery_type>  # consul | kubernetes | static
+        service_name: <string>  # Service name in registry
+
+    timeout_ms: <integer>     # Optional: Default timeout (default: 5000)
+
+    methods:                  # Required: gRPC method definitions
+      <method_name>:          # Method identifier (key, not list item)
+        service: <string>     # Required: gRPC service name
+        method: <string>      # Required: gRPC method name
+        params:               # Optional: Parameter mapping
+          <param_name>: <context_path>
+        response:             # Optional: Response handling
+          mapping:
+            <output_field>: <response_field>
+          fallback:
+            <field>: <value>
+```
+
+### 3.2 Complete Example
+
+```yaml
+services:
+  - id: risk_scoring_service
+    type: ms_grpc
+    name: Risk Scoring Service
+    description: Internal ML-based risk scoring service
+
+    connection:
+      host: risk-scoring.internal
+      port: 9090
+      discovery:
+        type: consul
+        service_name: risk-scoring
+
+    timeout_ms: 5000
+
+    methods:
+      calculate_score:
+        service: RiskScoringService
+        method: CalculateScore
+        params:
+          user_id: event.user.id
+          transaction_amount: event.transaction.amount
+          features: features
+        response:
+          mapping:
+            score: risk_score
+            factors: risk_factors
+            version: model_version
+          fallback:
+            score: 0.0
+            factors: []
+            version: "unknown"
+
+      get_model_info:
+        service: RiskScoringService
+        method: GetModelInfo
+        params:
+          model_id: "default"
+```
+
+### 3.3 Usage in Pipeline
+
+```yaml
+pipeline:
+  id: risk_scoring_flow
+  name: Risk Scoring Flow
+  entry: calculate_risk
+
+  steps:
+    # Call gRPC service
+    - step:
+        id: calculate_risk
+        type: service
+        service: risk_scoring_service
+        method: calculate_score
+        # Result stored in: service.risk_scoring_service.calculate_score
+        next: risk_evaluation
+
+    # Use results
+    - step:
+        id: risk_evaluation
+        type: ruleset
+        ruleset: risk_assessment_rules
+```
+
+---
+
+## 4. Message Queue (`mq`)
+
+### 4.1 Basic Structure
+
+```yaml
+services:
+  - id: <string>              # Required: Unique service identifier
+    type: mq                  # Required: Message queue type
+    name: <string>            # Required: Human-readable name
+    description: <string>     # Optional: Service description
+
+    connection:
+      driver: <driver_type>   # Required: kafka | rabbitmq
+      brokers:                # Required: Broker list
+        - <broker_url>
+
+    timeout_ms: <integer>     # Optional: Send timeout (default: 5000)
+
+    topics:                   # Required: Topic definitions (topics must already exist)
+      <topic_name>:           # Topic identifier (key, not list item)
+        message:              # Required: Message template
+          key: <string>       # Optional: Message key (supports ${} placeholders)
+          value: <string>     # Required: JSON template for message payload
+                              # Use ${placeholder} for substitution
+                              # String values: "${placeholder}" (with quotes)
+                              # Number/boolean values: ${placeholder} (without quotes)
+```
+
+### 4.2 Complete Example (Kafka)
 
 ```yaml
 services:
   - id: event_bus
+    type: mq
     name: Event Bus
-    type: message_queue
-    description: Kafka event streaming
+    description: Kafka event streaming for risk decisions
 
     connection:
       driver: kafka
@@ -506,743 +336,233 @@ services:
         - kafka-2.internal:9092
         - kafka-3.internal:9092
 
-      producer:
-        acks: 1                       # 0 | 1 | all
-        compression: snappy
-        batch_size: 16384
-        linger_ms: 10
+    timeout_ms: 5000
 
     topics:
-      - name: risk_decisions
-        partitions: 12
-        replication_factor: 3
-
+      risk_decisions:
         message:
-          key: "{{ event.user.id }}"
-          value:
-            user_id: "{{ event.user.id }}"
-            event_type: "{{ event.type }}"
-            risk_score: "{{ vars.final_risk_score }}"
-            decision: "{{ vars.decision }}"
-            timestamp: "{{ sys.timestamp }}"
+          key: ${event.user.id}
+          value: |
+            {
+              "user_id": "${event.user.id}",
+              "event_type": "${event.type}",
+              "risk_score": ${vars.final_risk_score},
+              "decision": "${vars.decision}",
+              "timestamp": "${sys.timestamp}",
+              "metadata": {
+                "request_id": "${sys.request_id}",
+                "pipeline_version": "v1.0"
+              }
+            }
 
-      - name: fraud_alerts
-        partitions: 6
-
+      fraud_alerts:
         message:
-          key: "{{ event.user.id }}"
-          value:
-            alert_type: high_risk
-            user_id: "{{ event.user.id }}"
-            risk_score: "{{ vars.risk_score }}"
-
-    timeout:
-      send: 5000
-
-    on_error:
-      action: retry
-      max_retries: 3
+          key: ${event.user.id}
+          value: |
+            {
+              "alert_type": "high_risk",
+              "user_id": "${event.user.id}",
+              "risk_score": ${vars.risk_score},
+              "triggered_rules": ${vars.triggered_rules},
+              "timestamp": "${sys.timestamp}",
+              "context": {
+                "event_type": "${event.type}",
+                "amount": ${event.transaction.amount}
+              }
+            }
 ```
 
-### 7.2 Using Message Queue in Pipeline
+### 4.3 Usage in Pipeline
 
 ```yaml
 pipeline:
-  # Process risk decision
-  - type: rules
-    id: risk_evaluation
-    output: vars.risk_result
+  id: fraud_detection_flow
+  name: Fraud Detection Flow
+  entry: risk_evaluation
 
-  # Publish decision to event bus
-  - type: service
-    id: publish_decision
-    service: event_bus
-    topic: risk_decisions
+  steps:
+    # Execute risk evaluation
+    - step:
+        id: risk_evaluation
+        type: ruleset
+        ruleset: fraud_detection
+        next: publish_decision
 
-    # Async publishing (non-blocking)
-    async: true
-
-  # Conditional alert publishing
-  - type: service
-    id: publish_alert
-    service: event_bus
-    topic: fraud_alerts
-    if: vars.risk_result.score > 80
-    async: true
+    # Publish decision to event bus (non-blocking by default)
+    - step:
+        id: publish_decision
+        type: service
+        service: event_bus
+        topic: risk_decisions
 ```
 
 ---
 
-## 8. Search Services
+## 5. Service Usage Patterns
 
-### 8.1 Elasticsearch
-
-```yaml
-services:
-  - id: user_search
-    name: User Search Service
-    type: search
-    description: Elasticsearch user data
-
-    connection:
-      driver: elasticsearch
-      hosts:
-        - es-1.internal:9200
-        - es-2.internal:9200
-
-      auth:
-        username: ${ES_USER}
-        password: ${ES_PASSWORD}
-
-    indices:
-      - name: users
-        queries:
-          - name: search_similar_users
-            body:
-              query:
-                bool:
-                  must:
-                    - match:
-                        email_domain: "{{ email_domain(event.user.email) }}"
-                  filter:
-                    - range:
-                        created_at:
-                          gte: "now-30d"
-              size: 100
-
-          - name: find_shared_devices
-            body:
-              query:
-                terms:
-                  device_id: "{{ vars.user_devices }}"
-              aggs:
-                unique_users:
-                  cardinality:
-                    field: user_id
-
-      - name: transactions
-        queries:
-          - name: high_value_transactions
-            body:
-              query:
-                bool:
-                  must:
-                    - term:
-                        user_id: "{{ event.user.id }}"
-                    - range:
-                        amount:
-                          gte: 10000
-                  filter:
-                    - range:
-                        created_at:
-                          gte: "now-7d"
-```
-
----
-
-## 9. Service Usage Patterns
-
-### 9.1 Sequential Service Calls
+### 5.1 Sequential Service Calls
 
 ```yaml
 pipeline:
-  # Step 1: Load user profile from database
-  - type: service
-    id: load_user
-    service: user_db
-    query: get_user_profile
-    output: service.user_profile
+  id: sequential_service_example
+  name: Sequential Service Calls Example
+  entry: verify_kyc
 
-  # Step 2: Get cached risk score
-  - type: service
-    id: check_cache
-    service: redis_cache
-    operation: get_user_risk_cache
-    output: service.cached_risk
-
-  # Step 3: Call KYC service
-  - type: service
-    id: verify_kyc
-    service: kyc_service
-    endpoint: get_verification_status
-    output: service.kyc_status
-
-  # Step 4: Use all results
-  - type: rules
-    id: combined_check
-    conditions:
-      - service.user_profile.tier == "premium"
-      - service.kyc_status.verified == true
-```
-
-### 9.2 Parallel Service Calls
-
-```yaml
-pipeline:
-  - parallel:
-      # Load user data
-      - type: service
-        id: load_user
-        service: user_db
-        query: get_user_profile
-
-      # Load features
-      - type: service
-        id: load_features
-        service: feature_store
-        features: [user_behavior_7d]
-
-      # Check KYC
-      - type: service
-        id: check_kyc
+  steps:
+    # Step 1: Call KYC service
+    - step:
+        id: verify_kyc
+        name: Verify KYC
+        type: service
         service: kyc_service
-        endpoint: get_verification_status
+        endpoint: verify_identity
+        next: calculate_risk
 
-    merge:
-      method: all
-      timeout: 3000
+    # Step 2: Call risk scoring service
+    - step:
+        id: calculate_risk
+        name: Calculate Risk Score
+        type: service
+        service: risk_scoring_service
+        method: calculate_score
+        next: combined_check
 
-  # All results available after merge
-  - type: rules
-    conditions:
-      - service.load_user.tier == "premium"
-      - features.user_behavior_7d.login_count > 10
-      - service.check_kyc.verified == true
+    # Step 3: Use both results
+    - step:
+        id: combined_check
+        name: Combined Verification
+        type: ruleset
+        ruleset: combined_verification_rules
 ```
 
-### 9.3 Conditional Service Calls
+### 5.2 Conditional Service Calls
 
 ```yaml
 pipeline:
-  # Only call expensive service if needed
-  - type: service
-    id: ml_risk_scoring
-    service: risk_scoring_service
-    method: calculate_risk_score
+  id: conditional_service_example
+  name: Conditional Service Calls Example
+  entry: ml_risk_scoring
 
-    # Conditional execution
-    if: |
-      event.transaction.amount > 10000 ||
-      vars.basic_risk_score > 70
+  steps:
+    # Only call expensive service if needed
+    - step:
+        id: ml_risk_scoring
+        name: ML Risk Scoring
+        type: service
+        service: risk_scoring_service
+        method: calculate_score
+        when:
+          any:
+            - event.transaction.amount > 10000
+            - vars.basic_risk_score > 70
+        next: final_decision
 
-    output: service.ml_risk_score
+    - step:
+        id: final_decision
+        name: Final Decision
+        type: ruleset
+        ruleset: decision_rules
+```
+
+### 5.3 Event Publishing
+
+```yaml
+pipeline:
+  id: event_publishing_example
+  name: Event Publishing Example
+  entry: risk_check
+
+  steps:
+    # Step 1: Evaluate risk
+    - step:
+        id: risk_check
+        name: Risk Check
+        type: ruleset
+        ruleset: fraud_detection
+        next: publish_event
+
+    # Step 2: Publish to message queue (non-blocking by default)
+    - step:
+        id: publish_event
+        name: Publish Event
+        type: service
+        service: event_bus
+        topic: risk_decisions
+        next: final_decision
+
+    # Step 3: Continue execution immediately
+    - step:
+        id: final_decision
+        name: Final Decision
+        type: ruleset
+        ruleset: decision_logic
 ```
 
 ---
 
-## 10. Service Configuration Management
+## 6. Best Practices
 
-### 10.1 Environment-Specific Configuration
+### 6.1 Service Design
 
+**Good**:
 ```yaml
 services:
-  - id: user_db
-    name: User Database
-    type: database
+  - id: kyc_verification_service
+    type: ms_http
+    name: KYC Verification Service
+    description: Internal identity verification service for user onboarding
+    base_url: ${KYC_SERVICE_URL}  # Use environment variable
 
-    environments:
-      development:
-        connection:
-          host: localhost
-          port: 5432
-          database: corint_dev
-          pool:
-            max_size: 5
-
-      staging:
-        connection:
-          host: db-staging.internal
-          port: 5432
-          database: corint_staging
-          pool:
-            max_size: 20
-
-      production:
-        connection:
-          host: db-primary.internal
-          port: 5432
-          database: corint_prod
-          pool:
-            max_size: 100
-          # Read replica for analytics queries
-          read_replica:
-            host: db-replica.internal
-```
-
-### 10.2 Service Registry
-
-```yaml
-# service-registry.yml
-service_registry:
-  version: "1.0"
-
-  services:
-    # Databases
-    - id: user_db
-      category: database
-      file: services/databases/user_db.yml
-
-    - id: transaction_db
-      category: database
-      file: services/databases/transaction_db.yml
-
-    # Caches
-    - id: redis_cache
-      category: cache
-      file: services/cache/redis.yml
-
-    # Microservices
-    - id: kyc_service
-      category: microservice
-      file: services/microservices/kyc.yml
-
-    - id: user_service
-      category: microservice
-      file: services/microservices/user.yml
-
-    # Feature Store
-    - id: feature_store
-      category: feature_store
-      file: services/feature_store/main.yml
-
-  # Default settings for all services
-  defaults:
-    timeout:
-      connect: 1000
-      read: 3000
-    retry:
-      max_attempts: 2
-      backoff: linear
-```
-
----
-
-## 11. Error Handling
-
-### 11.1 Service-Specific Error Handling
-
-```yaml
-services:
-  - id: user_db
-    name: User Database
-    type: database
-
-    on_error:
-      default:
-        action: fail
-        log_level: error
-
-      by_error_type:
-        connection_timeout:
-          action: retry
-          max_retries: 2
-
-        query_timeout:
-          action: fallback
+    endpoints:
+      verify_identity:
+        method: POST
+        path: /api/v1/verify/identity
+        timeout_ms: 10000  # Longer timeout for complex verification
+        response:
           fallback:
-            tier: "standard"
-            risk_score: 50
-
-        connection_refused:
-          action: fail
-          alert: critical
-
-        deadlock:
-          action: retry
-          max_retries: 3
-          backoff: exponential
+            verified: false
+            confidence: 0.0
 ```
 
-### 11.2 Graceful Degradation
-
+**Avoid**:
 ```yaml
-pipeline:
-  # Try to load from feature store
-  - type: service
-    id: load_features
-    service: feature_store
-    features: [user_behavior_7d]
+services:
+  - id: svc1                    # ❌ Unclear name
+    type: ms_http
+    # ❌ No description
+    base_url: http://localhost  # ❌ Hardcoded URL
 
-    on_error:
-      action: fallback
-      fallback_service: user_db
-      fallback_query: compute_features_on_demand
-
-  # Use fallback if feature store failed
-  - type: rules
-    conditions:
-      - features.login_count > 10
-      # Works whether from feature store or computed on-demand
+    endpoints:
+      endpoint1:                # ❌ Vague name
+        method: POST
+        path: /verify
+        # ❌ No fallback handling
 ```
+
+### 6.2 Reliability
+
+- **Timeouts**: Set appropriate timeouts for each endpoint
+- **Fallbacks**: Provide sensible fallback values for non-critical services
+- **Message queues**: MQ publishing is non-blocking by default
+
+### 6.3 Performance
+
+- **Conditional calls**: Use `when` to avoid unnecessary service calls
+- **Caching**: Cache frequently accessed data in Datasources
+- **Connection pooling**: Configure appropriate connection pools (handled by runtime)
+
+### 6.4 Maintainability
+
+- **Descriptive names**: Use clear service and endpoint names
+- **Documentation**: Add descriptions for all services and endpoints
+- **Environment variables**: Use `${env.port}` for environment-specific configs
+- **Version control**: Track service configuration changes
+- **Monitoring**: Add logging and monitoring for all service calls
 
 ---
 
-## 12. Performance Optimization
+## 7. Related Documentation
 
-### 12.1 Connection Pooling
-
-```yaml
-services:
-  - id: user_db
-    type: database
-
-    connection:
-      pool:
-        min_size: 10                  # Minimum connections
-        max_size: 100                 # Maximum connections
-        idle_timeout: 300000          # Close idle connections after 5min
-        max_lifetime: 1800000         # Rotate connections every 30min
-
-        # Health check
-        health_check:
-          enabled: true
-          interval: 30000             # Check every 30s
-          query: "SELECT 1"
-```
-
-### 12.2 Query Result Caching
-
-```yaml
-services:
-  - id: user_db
-    type: database
-
-    queries:
-      - name: get_user_profile
-        sql: SELECT * FROM users WHERE user_id = :user_id
-
-        # Cache query results
-        cache:
-          enabled: true
-          backend: redis_cache
-          key_template: "db:user:{{ user_id }}"
-          ttl: 300                    # 5 minutes
-
-          # Cache conditions
-          cache_if:
-            - response.tier is_not_null
-```
-
-### 12.3 Batch Operations
-
-```yaml
-services:
-  - id: user_db
-    type: database
-
-    queries:
-      # Batch query
-      - name: get_users_batch
-        sql: |
-          SELECT user_id, tier, risk_score
-          FROM users
-          WHERE user_id = ANY(:user_ids)
-        params:
-          - name: user_ids
-            type: array<string>
-            source: vars.user_id_list
-
-# Usage in pipeline
-pipeline:
-  - type: service
-    id: load_users
-    service: user_db
-    query: get_users_batch
-    params:
-      user_ids: [user1, user2, user3, ...]
-```
-
----
-
-## 13. Observability
-
-### 13.1 Service Metrics
-
-```yaml
-observability:
-  metrics:
-    enabled: true
-
-    # Service-level metrics
-    service_metrics:
-      - service_calls_total
-      - service_call_duration_seconds
-      - service_errors_total
-      - service_cache_hits_total
-
-      # Connection pool metrics
-      - connection_pool_active
-      - connection_pool_idle
-      - connection_pool_wait_duration
-
-    labels:
-      - service_id
-      - service_type
-      - query_name
-      - error_type
-```
-
-### 13.2 Service Tracing
-
-```yaml
-observability:
-  tracing:
-    enabled: true
-
-    # Distributed tracing
-    propagate_trace_context: true
-
-    capture:
-      - service_id
-      - query_name
-      - query_duration
-      - cache_hit
-      - connection_time
-
-    # Trace sampling
-    sampling_rate: 0.1                # 10% of requests
-    always_sample_on_error: true
-```
-
-### 13.3 Service Health Checks
-
-```yaml
-services:
-  - id: user_db
-    type: database
-
-    health_check:
-      enabled: true
-      interval: 30000                 # ms
-      timeout: 5000                   # ms
-
-      check:
-        type: query
-        query: "SELECT 1"
-
-      on_failure:
-        action: alert
-        alert_level: critical
-
-        # Circuit breaker
-        consecutive_failures: 3
-        circuit_open_duration: 60000  # 1 minute
-```
-
----
-
-## 14. Security
-
-### 14.1 Internal Authentication
-
-```yaml
-services:
-  - id: kyc_service
-    type: microservice
-
-    connection:
-      auth:
-        # Service-to-service token
-        type: internal_token
-        token: ${INTERNAL_SERVICE_TOKEN}
-
-        # Or mTLS
-        type: mtls
-        cert: ${SERVICE_CERT}
-        key: ${SERVICE_KEY}
-        ca: ${CA_CERT}
-```
-
-### 14.2 Query Parameter Sanitization
-
-```yaml
-services:
-  - id: user_db
-    type: database
-
-    security:
-      # SQL injection prevention
-      parameterized_queries: true
-      allow_dynamic_sql: false
-
-      # Query validation
-      validate_params: true
-      max_query_length: 10000
-```
-
-### 14.3 Sensitive Data Masking
-
-```yaml
-observability:
-  logging:
-    # Mask sensitive fields in logs
-    mask_fields:
-      - password
-      - ssn
-      - credit_card
-      - api_key
-
-    # Redact patterns
-    redact_patterns:
-      - regex: '\b\d{4}-\d{4}-\d{4}-\d{4}\b'  # Credit cards
-      - regex: '\b\d{3}-\d{2}-\d{4}\b'        # SSN
-```
-
----
-
-## 15. Testing
-
-### 15.1 Service Mocks
-
-```yaml
-testing:
-  mocks:
-    user_db:
-      queries:
-        get_user_profile:
-          - match:
-              params:
-                user_id: "test_user_1"
-            response:
-              user_id: test_user_1
-              tier: premium
-              risk_score: 10
-              kyc_verified: true
-
-          - match:
-              params:
-                user_id: "test_user_2"
-            response:
-              user_id: test_user_2
-              tier: standard
-              risk_score: 50
-              kyc_verified: false
-
-          # Default response
-          - default: true
-            response:
-              user_id: "{{ params.user_id }}"
-              tier: standard
-              risk_score: 30
-```
-
-### 15.2 Integration Testing
-
-```yaml
-tests:
-  - name: "Database connection test"
-    service: user_db
-    query: get_user_profile
-
-    input:
-      user_id: test_user_1
-
-    expected:
-      response.tier: "premium"
-      response.kyc_verified: true
-
-  - name: "Cache hit test"
-    service: redis_cache
-    operation: get_user_risk_cache
-
-    setup:
-      - cache_key: "risk:user:test_user_1"
-        cache_value: { score: 85 }
-
-    expected:
-      cache_hit: true
-      response.score: 85
-```
-
----
-
-## 16. Best Practices
-
-### 16.1 Service Design
-
-**Good:**
-```yaml
-services:
-  - id: user_profile_db
-    name: User Profile Database
-    type: database
-    description: "Primary user data store for profile information"
-
-    # Clear connection settings
-    connection:
-      driver: postgresql
-      host: ${DB_HOST}
-      pool:
-        max_size: 50
-
-    # Well-defined queries
-    queries:
-      - name: get_user_by_id
-        description: "Retrieve user profile by user ID"
-        sql: SELECT * FROM users WHERE user_id = :user_id
-        params:
-          - name: user_id
-            type: string
-            required: true
-```
-
-**Avoid:**
-```yaml
-services:
-  - id: db1                           # Unclear name
-    type: database
-    # No description
-    queries:
-      - name: query1                  # Vague name
-        sql: SELECT * FROM users WHERE user_id = :id
-        # No parameter definitions
-```
-
-### 16.2 Performance
-
-- **Use connection pooling** for all database services
-- **Enable caching** for read-heavy queries
-- **Batch operations** when loading multiple records
-- **Parallel calls** for independent service requests
-- **Query optimization** - use indexes, limit result sets
-
-### 16.3 Reliability
-
-- **Fail fast** for critical services
-- **Graceful degradation** for optional services
-- **Circuit breakers** for unstable services
-- **Health checks** to detect failures early
-- **Connection retries** with exponential backoff
-
-### 16.4 Maintainability
-
-- **Descriptive names** for services and queries
-- **Clear documentation** for all service operations
-- **Environment separation** for dev/staging/prod
-- **Version control** for service configurations
-- **Monitoring and alerting** for all services
-
----
-
-## 17. Summary
-
-CORINT's Internal Service Integration provides:
-
-- **Unified service definition** for databases, caches, microservices, message queues
-- **Performance optimization** through connection pooling, caching, batching
-- **Reliability features** including retries, circuit breakers, health checks
-- **Flexible error handling** with fallback strategies
-- **Full observability** with metrics, tracing, and logging
-- **Security controls** for authentication, authorization, data masking
-- **Testing support** with mocks and integration tests
-
-This enables efficient integration with internal infrastructure while maintaining performance, reliability, and security.
-
----
-
-## 18. Related Documentation
-
-- `external.md` - External third-party API integration
-- `feature.md` - Feature engineering and statistical analysis
+- `external.md` - External third-party API integration (same HTTP format as `ms_http` + auth)
 - `context.md` - Context and variable management
 - `pipeline.md` - Service integration in pipelines
