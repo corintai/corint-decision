@@ -1,7 +1,7 @@
 # CORINT Risk Definition Language (RDL)
 ## Overall Specification (v0.1)
 
-**RDL is the domain-specific language used by CORINT (Cognitive Risk Intelligence) to define rules, rule groups, reasoning logic, and full risk‑processing pipelines.**
+**RDL is the domain-specific language used by CORINT (Cognitive Risk Intelligence) to define rules, rule groups, and full risk‑processing pipelines.**
 It enables modern hybrid risk engines to combine deterministic logic with external data sources and APIs in a unified, explainable, high‑performance format.
 
 ---
@@ -11,11 +11,12 @@ It enables modern hybrid risk engines to combine deterministic logic with extern
 RDL is designed to:
 
 - Provide a declarative, human-readable format for risk logic
+- Be LLM-friendly for automated generation and modification  
 - Support traditional rule engines with modern data integration
 - Compile into a Rust‑friendly IR (AST) for high‑performance execution
 - Represent end‑to‑end risk processing flows
 - Enable transparency, auditability, and explainability
-- Be cloud‑native, language‑agnostic, and extensible  
+- Be cloud‑native, language‑agnostic, and extensible
 
 ---
 
@@ -111,15 +112,11 @@ rule:
   score: number
 ```
 
-**Note:** Rules do not define actions. Actions are defined in Ruleset's `decision_logic`.
-
 ---
 
 ### 3.1.1 `when` Block
 
 #### Event Filter
-
-**Note**: The old event filter syntax (`event.type: value`) is deprecated. Use condition syntax instead.
 
 ```yaml
 when:
@@ -149,7 +146,7 @@ Operators:
 ### 3.1.2 External API Conditions
 
 ```yaml
-- external_api.Chainalysis.risk_score > 80
+- api.Chainalysis.risk_score > 80
 ```
 
 ---
@@ -271,29 +268,84 @@ RDL includes comprehensive feature engineering capabilities for risk control sce
 
 **✅ Available Now:**
 ```yaml
-# Distinct Count - Association analysis
-count_distinct(device.id, {geo.ip == event.geo.ip}, last_5h) > 10
+# Feature Definition
+features:
+  # Distinct Count - Association analysis
+  - name: distinct_userid_device_5h
+    description: "Number of unique devices in last 5 hours"
+    type: aggregation
+    method: distinct
+    datasource: postgresql_events
+    entity: events
+    dimension: user_id
+    dimension_value: "{event.user_id}"
+    field: device_id
+    window: 5h
+    when:
+      all:
+        - type == "login"
+        - geo.ip == "{event.geo.ip}"
 
-# Basic aggregations
-sum(transaction.amount, last_24h)
-avg(transaction.amount, last_7d)
+  # Basic aggregations
+  - name: sum_userid_txn_amt_24h
+    description: "Total transaction amount in last 24 hours"
+    type: aggregation
+    method: sum
+    datasource: postgresql_events
+    entity: events
+    dimension: user_id
+    dimension_value: "{event.user_id}"
+    field: amount
+    window: 24h
+    when: type == "transaction"
+
+  - name: avg_userid_txn_amt_7d
+    description: "Average transaction amount in last 7 days"
+    type: aggregation
+    method: avg
+    datasource: postgresql_events
+    entity: events
+    dimension: user_id
+    dimension_value: "{event.user_id}"
+    field: amount
+    window: 7d
+    when: type == "transaction"
+
+# Usage in Rules
+rule:
+  id: high_risk_detection
+  when:
+    all:
+      - features.distinct_userid_device_5h > 10
+      - features.sum_userid_txn_amt_24h > 5000
+      - features.avg_userid_txn_amt_7d > 1000
+  score: 80
 ```
 
 **📋 Coming Soon:**
 ```yaml
 # Statistical Functions - In development
-percentile(amounts, last_90d, p=95)
-stddev(amounts, last_30d)
-z_score(current_amount, amounts, last_90d)
-```
+features:
+  - name: p95_userid_txn_amt_90d
+    type: aggregation
+    method: percentile
+    percentile: 95
+    field: amount
+    window: 90d
 
-**Feature Access**: All calculated features must be accessed using the `features.` namespace prefix:
-  ```yaml
-  when:
-    all:
-    - features.transaction_sum_7d > 5000
-    - features.login_count_24h > 10
-  ```
+  - name: stddev_userid_txn_amt_30d
+    type: aggregation
+    method: stddev
+    field: amount
+    window: 30d
+
+  - name: zscore_userid_txn_amt
+    type: state
+    method: z_score
+    field: amount
+    current_value: "{event.amount}"
+    window: 90d
+```
 
 **Common Use Cases (✅ Available Now):**
 - Login count for an account in the past 7 days ✅
@@ -330,44 +382,45 @@ Features:
 
 ## 6. Context and Variable Management
 
-Context management enables data flow between pipeline steps.
+CORINT uses a **flattened namespace architecture** with 8 namespaces organized by processing method:
 
-Context layers:
-- **event** - Input event data (read-only)
-- **vars** - Pipeline variables (read-only)
-- **context** - Step outputs (read-write)
-- **sys** - System variables (read-only)
-- **env** - Environment configuration (read-only)
+| Namespace | Mutability | Purpose |
+|-----------|------------|---------|
+| `event` | Read-only | Raw user request data |
+| `features` | Writable | Complex feature computations (DB queries, aggregations) |
+| `api` | Writable | External third-party API results |
+| `service` | Writable | Internal microservice results |
+| `vars` | Writable | Simple variables and calculations |
+| `sys` | Read-only | System auto-generated metadata |
+| `env` | Read-only | Environment configuration |
+| `results` | Read-only | Ruleset execution results (pipeline-level) |
 
-(See `context.md` for complete details.)
+**Access Pattern:**
+All namespaces use dot notation for field access:
+```yaml
+event.user.id                    # Nested field access
+features.transaction_count_7d     # Feature value
+api.device_fingerprint.risk_score # Multi-level nesting
+results.fraud_detection.signal    # Ruleset result
+```
+
+**Usage Example:**
+```yaml
+rule:
+  when:
+    all:
+      - event.amount > 1000
+      - features.transaction_count_7d > 20
+      - api.device_fingerprint.risk_score > 0.7
+      - vars.high_risk_threshold < 80
+      - sys.hour >= 22
+```
+
+(See `context.md` for complete details and BNF grammar.)
 
 ---
 
-## 7. LLM Code Generation (Development-Time Only)
-
-**⚠️ IMPORTANT**: LLM is **NOT** a runtime component. It is a development-time code generation tool.
-
-The `corint-llm` crate provides LLM-powered YAML configuration generation during development:
-
-**Development-Time Capabilities**:
-- Generate rules from natural language descriptions
-- Generate rulesets with decision logic
-- Generate complete pipelines
-- Generate API configurations
-- Multiple LLM providers (OpenAI, Anthropic, Gemini, DeepSeek)
-
-**Key Points**:
-- ✅ LLM generates YAML configurations offline
-- ✅ Developers review and commit generated YAML
-- ✅ CORINT runtime executes compiled YAML with zero LLM calls
-- ❌ NO LLM calls at runtime
-- ❌ NO performance impact on production decisions
-
-(See [LLM_GUIDE.md](../LLM_GUIDE.md) for complete usage guide.)
-
----
-
-## 8. Error Handling
+## 7. Error Handling
 
 Production-grade error handling ensures reliability and graceful degradation.
 
@@ -381,46 +434,7 @@ Note: Advanced error handling features (retry logic, circuit breaker, fallback c
 
 ---
 
-## 9. Observability
-
-Comprehensive observability for monitoring and debugging.
-
-Features:
-- Metrics collection (Counter, Histogram) - implemented at runtime level
-- Distributed tracing (Span, Tracer) - implemented at runtime level
-- Health check endpoint - `/health` endpoint available
-
-Note: Observability features are implemented at the runtime level rather than through DSL configuration.
-
----
-
-## 10. Testing
-
-Robust testing framework for validation and quality assurance.
-
-Test types:
-- Unit tests (individual rules)
-- Integration tests (rulesets)
-- Pipeline tests (end-to-end)
-- Regression tests (historical cases)
-- Performance tests (load and stress)
-
----
-
-## 11. Performance Optimization
-
-High-performance execution for real-time decisioning.
-
-Optimizations:
-- Multi-level caching (feature-level caching implemented)
-- Parallelization (feature dependencies executed in parallel)
-- Connection pooling (at datasource level)
-
-Note: Advanced performance optimizations are implemented at the runtime level rather than through DSL configuration.
-
----
-
-## 12. Internal Service Integration
+## 8. Internal Service Integration
 
 RDL provides comprehensive integration with internal services for data access and computation.
 
@@ -453,7 +467,7 @@ pipeline:
 
 ---
 
-## 13. External API Integration
+## 9. External API Integration
 
 ```yaml
 external_api.<provider>.<field>
@@ -469,7 +483,7 @@ external_api.Chainalysis.risk_score > 80
 
 ---
 
-## 14. Documentation Structure
+## 10. Documentation Structure
 
 RDL documentation is organized as follows:
 
@@ -495,9 +509,6 @@ RDL documentation is organized as follows:
 - **service.md** - Internal service integration (databases, caches, microservices)
 - **external.md** - External API integration (third-party services)
 
-### Development Tools
-- **[LLM_GUIDE.md](../LLM_GUIDE.md)** - LLM code generation guide (development-time only)
-
 ### Operational
 - (Error handling implemented at runtime level)
 
@@ -507,9 +518,9 @@ RDL documentation is organized as follows:
 
 ---
 
-## 15. Examples
+## 11. Examples
 
-### 14.1 Login Risk Example
+### 11.1 Login Risk Example
 
 ```yaml
 version: "0.1"
@@ -532,7 +543,7 @@ rule:
 
 ---
 
-### 14.2 High Value Transaction
+### 11.2 High Value Transaction
 
 ```yaml
 version: "0.1"
@@ -554,7 +565,7 @@ rule:
 
 ---
 
-## 16. BNF Grammar (Formal)
+## 12. BNF Grammar (Formal)
 
 ```
 RDL ::= "version" ":" STRING
@@ -625,7 +636,7 @@ PARAMS_MAP ::= KEY ":" VALUE { KEY ":" VALUE }
 
 ---
 
-## 17. Decision Architecture
+## 13. Decision Architecture
 
 RDL uses a three-layer decision architecture:
 
@@ -650,7 +661,7 @@ RDL uses a three-layer decision architecture:
 Rules → Scores → Ruleset → Action → Pipeline Output
 ```
 
-## 18. Compilation Model
+## 14. Compilation Model
 
 RDL compiles into:
 
@@ -670,7 +681,7 @@ The compilation process includes:
 
 ---
 
-## 19. Summary
+## 15. Summary
 
 RDL provides a modern, explainable DSL for advanced risk engines:
 
@@ -681,7 +692,6 @@ RDL provides a modern, explainable DSL for advanced risk engines:
 - Comprehensive feature engineering and statistical analysis
 - Complete internal service integration (databases, caches, microservices)
 - Comprehensive external API integration
-- LLM-powered development tools (code generation)
 - Designed for banks, fintech, e‑commerce, and Web3
 
 This DSL is the foundation of the Cognitive Risk Intelligence Platform (CORINT).
