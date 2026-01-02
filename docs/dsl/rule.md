@@ -908,12 +908,12 @@ rule:
   id: high_risk_login
 
   metadata:
-    # === Required Fields ===
+    # === Recommended Fields ===
     version: "1.2.0"
     author: "security-team"
     updated: "2024-02-01"
 
-    # === Optional Fields ===
+    # === Custom Fields ===
     # Ownership
     owner: "risk-ops"
 
@@ -1109,12 +1109,12 @@ When creating rules for a library, include comprehensive metadata:
 
 ```yaml
 metadata:
-  # === Required Fields ===
+  # === Recommended Fields ===
   version: "1.0.0"              # Semantic versioning (MAJOR.MINOR.PATCH)
   author: "Team Name"
   updated: "2024-12-11"
 
-  # === Optional Fields (Recommended for Library Rules) ===
+  # === Custom Fields (Recommended for Library Rules) ===
   category: fraud | payment | geography | account | device
   severity: critical | high | medium | low
   tags: [tag1, tag2, tag3]
