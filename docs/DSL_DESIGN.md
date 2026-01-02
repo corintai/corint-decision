@@ -1,5 +1,11 @@
 # CORINT RDL Architecture
 
+> **⚠️ Note:** This document describes the original design architecture. Some syntax examples use earlier terminology that has since evolved. For the latest DSL specifications, please refer to:
+> - `dsl/overall.md` - Complete RDL specification
+> - `dsl/pipeline.md` - Pipeline specification
+> - `dsl/ruleset.md` - Ruleset specification
+> - `docs/ARCHITECTURE.md` - Current implementation architecture
+
 ## Three-Layer Decision Architecture
 
 RDL adopts a clear three-layer architecture with distinct responsibilities:
@@ -30,17 +36,17 @@ RDL adopts a clear three-layer architecture with distinct responsibilities:
 └─────────────────────────────────────────────────────────┘
                           ↓ action
 ┌─────────────────────────────────────────────────────────┐
-│ Layer 3: Pipeline (Orchestrator)                        │
+│ Layer 3: Pipeline (Orchestrator + Decision Maker)       │
 ├─────────────────────────────────────────────────────────┤
 │ Responsibilities:                                        │
 │ - Orchestrate execution flow                            │
-│ - Define step sequence                                  │
-│ - Manage data flow                                      │
-│ - Control branching and parallelism                     │
+│ - Define step sequence (via next routing)              │
+│ - Manage data flow between steps                        │
+│ - Route events conditionally (via router steps)         │
+│ - ✅ Make final decisions (via required decision block)│
+│ - ✅ Map ruleset signals to final results              │
 │                                                          │
-│ Does NOT include:                                        │
-│ - ❌ Decision logic                                     │
-│ - ❌ Action definitions                                 │
+│ Output: approve, decline, review, hold                   │
 └─────────────────────────────────────────────────────────┘
 ```
 

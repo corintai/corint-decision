@@ -621,13 +621,13 @@ ruleset:
   rules:
     - velocity_check
     - geo_mismatch
-  decision_logic:
-    - condition: total_score >= 150
-      action: deny
-    - condition: total_score >= 75
-      action: review
+  conclusion:
+    - when: total_score >= 150
+      signal: decline
+    - when: total_score >= 75
+      signal: review
     - default: true
-      action: approve
+      signal: approve
 
 # Specialized for payments (inherits base)
 ruleset:

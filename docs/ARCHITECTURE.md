@@ -528,7 +528,7 @@ pub mod ast {
         pub id: String,
         pub name: String,
         pub rules: Vec<String>,
-        pub decision_logic: Vec<DecisionLogicRule>,
+        pub conclusion: Vec<ConclusionRule>,
     }
 
     pub struct Expression { /* ... */ }
@@ -771,7 +771,7 @@ std::fs::write("repository/library/rules/fraud/high_amount_new_account.yaml", ru
 │ - Output: critical_risk, high_risk, medium_risk, etc.  │
 │                                                          │
 │ Does NOT include:                                        │
-│ - ❌ Final decisions (approve/deny/review/challenge)   │
+│ - ❌ Final decisions (approve/decline/review/hold)     │
 └─────────────────────────────────────────────────────────┘
                           ↓ signal
 ┌─────────────────────────────────────────────────────────┐
@@ -779,12 +779,12 @@ std::fs::write("repository/library/rules/fraud/high_amount_new_account.yaml", ru
 ├─────────────────────────────────────────────────────────┤
 │ Responsibilities:                                        │
 │ - Orchestrate execution flow                            │
-│ - Define step sequence                                  │
-│ - Manage data flow                                      │
-│ - Control branching and parallelism                     │
-│ - ✅ Make final decisions (via decision section)       │
-│ - ✅ Decide based on signals from rulesets             │
-│ - Output: approve, deny, review, challenge              │
+│ - Define step sequence (via next routing)              │
+│ - Manage data flow between steps                        │
+│ - Route events conditionally (via router steps)         │
+│ - ✅ Make final decisions (via required decision block)│
+│ - ✅ Map ruleset signals to final results              │
+│ - Output: approve, decline, review, hold                │
 └─────────────────────────────────────────────────────────┘
 ```
 
@@ -898,31 +898,31 @@ pipeline:
 
   # ✅ Final decisions based on signals from rulesets
   decision:
-    # Critical risk → always deny
-    - when: context.takeover_detection.signal == "critical_risk"
-      action: deny
+    # Critical risk → always decline
+    - when: results.takeover_detection.signal == "critical_risk"
+      result: decline
       reason: "Critical security risk detected"
 
     # High risk for VIP → review (lenient)
     - when: |
-        context.takeover_detection.signal == "high_risk" &&
+        results.takeover_detection.signal == "high_risk" &&
         event.user.tier == "vip"
-      action: review
+      result: review
       reason: "VIP user high risk - manual review"
 
-    # High risk for others → deny
-    - when: context.takeover_detection.signal == "high_risk"
-      action: deny
+    # High risk for others → decline
+    - when: results.takeover_detection.signal == "high_risk"
+      result: decline
       reason: "High security risk detected"
 
-    # Medium risk → challenge
-    - when: context.takeover_detection.signal == "medium_risk"
-      action: challenge
+    # Medium risk → hold for additional verification
+    - when: results.takeover_detection.signal == "medium_risk"
+      result: hold
       reason: "Additional verification required"
 
     # Default → approve
     - default: true
-      action: approve
+      result: approve
       reason: "Login approved"
 ```
 
@@ -971,7 +971,7 @@ pipeline:
    │   │   └─→ Check list membership (ListService)
    │   │
    │   ├─→ Evaluate rulesets
-   │   │   └─→ Execute decision_logic
+   │   │   └─→ Execute conclusion logic
    │   │
    │   └─→ Produce decision
    │
@@ -981,7 +981,7 @@ pipeline:
    ↓
 6. Response
    {
-     "decision": "deny",
+     "decision": "decline",
      "score": 90,
      "triggered_rules": ["new_device_login", "unusual_location"],
      "reason": "Account takeover pattern detected",
@@ -1138,9 +1138,9 @@ context.register_function("custom_risk_score", |args| {
 ### 3. Custom Actions
 
 ```yaml
-decision_logic:
-  - condition: score > 80
-    action: custom_action
+conclusion:
+  - when: score > 80
+    signal: custom_action
     custom_action:
       type: webhook
       url: https://...
@@ -1237,7 +1237,7 @@ test:
         amount: 10000
         country: "NG"
       expected:
-        decision: deny
+        decision: decline
         triggered_rules: ["high_amount", "high_risk_country"]
 ```
 

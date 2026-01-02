@@ -4,24 +4,182 @@ Complete end-to-end testing suite for the CORINT Decision Engine.
 
 ## Quick Start
 
+Run all tests with a single command:
+
 ```bash
 # From project root directory - ONE COMMAND TO RUN ALL TESTS
 ./tests/scripts/run_e2e_tests.sh
 ```
 
-The script will automatically:
-1. ✅ Generate SQL test data with relative timestamps
-2. ✅ Create SQLite database and insert data
-3. ✅ Build the server in release mode
-4. ✅ Start the server with test configuration
-5. ✅ Run all 10 test cases
-6. ✅ Display detailed test report in console
-7. ✅ Clean up server process
+### Automated Test Flow
 
-## Test Report Example
+The script automatically executes the following steps:
 
 ```
+┌─────────────────────────────────────────────────────────────┐
+│  Step 1: Generate SQL Test Data                            │
+│  ✓ Creates test_data.sql with 445 events                   │
+│  ✓ Creates 12 list entries (blocked users/IPs/countries)   │
+│  ✓ Uses relative timestamps (1h, 24h, 7d, 30d ago)         │
+└─────────────────────────────────────────────────────────────┘
+                            ↓
+┌─────────────────────────────────────────────────────────────┐
+│  Step 2: Create SQLite Database                            │
+│  ✓ Deletes old database                                    │
+│  ✓ Executes: sqlite3 e2e_test.db < test_data.sql           │
+│  ✓ Verifies 445 events + 12 list entries inserted          │
+│  ✓ Displays list statistics (blocked_users/IPs/countries)  │
+└─────────────────────────────────────────────────────────────┘
+                            ↓
+┌─────────────────────────────────────────────────────────────┐
+│  Step 3: Build Server (Release Mode)                       │
+│  ✓ cargo build --release                                   │
+└─────────────────────────────────────────────────────────────┘
+                            ↓
+┌─────────────────────────────────────────────────────────────┐
+│  Step 4: Start Server                                      │
+│  ✓ Starts server on port 8080                              │
+│  ✓ Uses test repository (tests/e2e_repo)                   │
+│  ✓ Waits for health check                                  │
+└─────────────────────────────────────────────────────────────┘
+                            ↓
+┌─────────────────────────────────────────────────────────────┐
+│  Step 5: Run 10 Test Cases                                 │
+│  • 4 Transaction Tests                                     │
+│  • 3 Login Tests                                           │
+│  • 3 Payment Tests                                         │
+└─────────────────────────────────────────────────────────────┘
+                            ↓
+┌─────────────────────────────────────────────────────────────┐
+│  Step 6: Display Test Report                               │
+│  ✓ Summary: Total / Passed / Failed                        │
+│  ✓ List all passed tests                                   │
+│  ✓ List all failed tests with details                      │
+└─────────────────────────────────────────────────────────────┘
+                            ↓
+┌─────────────────────────────────────────────────────────────┐
+│  Step 7: Cleanup                                           │
+│  ✓ Stops server process                                    │
+│  ✓ Exit with appropriate code                              │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### What You DON'T Need to Do
+
+The test automation handles everything - you don't need to:
+
+- ❌ Manually run Python scripts
+- ❌ Manually create the database
+- ❌ Manually start the server
+- ❌ Manually check log files
+- ❌ Manually track which tests passed or failed
+
+**Everything is automated!** 🚀
+
+## Example Output
+
+When you run the test script, you'll see detailed output for each step:
+
+```bash
+$ ./tests/scripts/run_e2e_tests.sh
+
 ============================================================================
+CORINT Decision Engine - E2E Test Suite
+============================================================================
+
+[INFO] Step 1: Generating SQL test data...
+============================================================
+CORINT E2E Test Data Generator
+============================================================
+
+Generating test data...
+  ✓ Normal transactions: 100 events
+  ✓ Suspicious transactions: 20 events
+  ✓ Velocity abuse patterns: 30 events
+  ✓ Login events: 200 events
+  ✓ Payment events: 80 events
+  ✓ Account takeover patterns: 15 events
+
+Generating list data...
+  ✓ Blocked users: 5 entries
+  ✓ Blocked IPs: 3 entries
+  ✓ High risk countries: 4 entries
+
+✓ SQL file generated: tests/data/test_data.sql
+[✓] SQL data generated
+
+[INFO] Step 1.5: Creating database and inserting test data...
+[✓] Database created with 445 events and 12 list entries
+
+[INFO] Step 1.6: Verifying database list data...
+[✓] Database list verification passed
+  Lists created:
+  - blocked_ips: 3 entries
+  - blocked_users: 5 entries
+  - high_risk_countries: 4 entries
+
+[INFO] Step 2: Building server...
+[✓] Server built successfully
+
+[INFO] Step 3: Starting test server...
+[INFO] Server started (PID: 12345)
+[INFO] Waiting for server to start...
+[✓] Server is ready!
+
+[INFO] Step 4: Running test cases...
+============================================================================
+
+--- Transaction Flow Tests ---
+
+[✓] Normal Transaction: PASSED (decision: APPROVE)
+[✓] Blocked User Transaction: PASSED (decision: DENY)
+[✓] High Value New User: PASSED (decision: REVIEW)
+[✓] High Risk Country: PASSED (decision: REVIEW)
+
+--- Login Flow Tests ---
+
+[✓] Normal Login: PASSED (decision: APPROVE)
+[✓] Blocked IP Login: PASSED (decision: DENY)
+[✓] High Risk Country Login: PASSED (decision: REVIEW)
+
+--- Payment Flow Tests ---
+
+[✓] Normal Payment: PASSED (decision: APPROVE)
+[✓] Very High Payment: PASSED (decision: REVIEW)
+[✓] Blocked User Payment: PASSED (decision: DENY)
+
+============================================================================
+
+[INFO] Step 5: Test Report
+============================================================================
+
+Test Summary:
+  Total Tests:  10
+  Passed:       10
+  Failed:       0
+
+✓ Passed Tests (10):
+  ✓ Normal Transaction
+  ✓ Blocked User Transaction
+  ✓ High Value New User
+  ✓ High Risk Country
+  ✓ Normal Login
+  ✓ Blocked IP Login
+  ✓ High Risk Country Login
+  ✓ Normal Payment
+  ✓ Very High Payment
+  ✓ Blocked User Payment
+
+============================================================================
+
+[✓] All tests passed! 🎉
+```
+
+### Example with Failed Tests
+
+If some tests fail, you'll see detailed information:
+
+```
 Test Summary:
   Total Tests:  10
   Passed:       8
@@ -42,7 +200,6 @@ Test Summary:
     → Expected: review, Got: approve
   ✗ High Risk Country Login
     → Expected: review, Got: decline
-============================================================================
 ```
 
 ## What Gets Tested
@@ -84,6 +241,19 @@ Test Summary:
 9. Very High Payment → REVIEW
 10. Blocked User → DENY
 
+## Generated Files
+
+After running the test script, the following files are automatically created:
+
+```
+tests/
+├── data/
+│   ├── test_data.sql       # Generated SQL statements (445 events + 12 list entries)
+│   └── e2e_test.db         # SQLite database (contains events and list_entries tables)
+└── results/
+    └── server.log          # Server output logs
+```
+
 ## Test Data
 
 Test data is generated as **SQL INSERT statements** with **relative timestamps** to avoid time window issues:
@@ -96,9 +266,9 @@ Test data is generated as **SQL INSERT statements** with **relative timestamps**
 - 30 days ago
 ```
 
-### Workflow (Automatic)
+### Automatic Workflow
 
-When you run `./tests/scripts/run_e2e_tests.sh`:
+When you run `./tests/scripts/run_e2e_tests.sh`, the script automatically:
 
 1. **Generate SQL**: Python script creates `test_data.sql` with 445 events
 2. **Create Database**: Executes `sqlite3 e2e_test.db < test_data.sql`
@@ -106,22 +276,41 @@ When you run `./tests/scripts/run_e2e_tests.sh`:
 4. **Run Tests**: Executes 10 test cases via API calls
 5. **Report Results**: Displays pass/fail summary in console
 
+### Fresh Test Environment
+
+Every test run creates a fresh environment:
+
+- ✅ Regenerates SQL with timestamps relative to current time
+- ✅ Deletes old database and rebuilds from scratch
+- ✅ Recompiles the server
+- ✅ Re-executes all test cases
+
+This ensures consistent and reproducible test results.
+
 ### Data Diversity
 - **Users**: 50 normal + 10 suspicious + 5 VIP = 65 total
 - **Events**: ~445 events across 5 types
 - **Patterns**: Velocity abuse, account takeover, geographic anomalies
 - **Time Range**: Last 30 days (relative to test execution time)
 
-### Database Lists
+### Database Content
 
-In addition to events, the test data generator creates **database-backed list entries** for testing list membership features:
+The test database contains two main tables:
 
-**List Entries (12 total)**:
+#### 1. Events Table
+- **445 test events** across multiple event types
+- Event types: `transaction`, `login`, `payment`
+- Timestamps relative to current time (1h to 30d ago)
+- Diverse user patterns (normal, suspicious, VIP)
+
+#### 2. List Entries Table (12 total entries)
+
+**List Structure:**
 - **blocked_users** (5 entries): `sus_0001`, `sus_0002`, `sus_0003`, `sus_0004`, `sus_0005`
 - **blocked_ips** (3 entries): Malicious IP addresses from known botnets
 - **high_risk_countries** (4 entries): `NG`, `RU`, `CN`, `KP`
 
-**Database Schema**:
+**Database Schema:**
 ```sql
 CREATE TABLE list_entries (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -133,55 +322,57 @@ CREATE TABLE list_entries (
 );
 ```
 
-**Query List Data**:
+**Query List Data:**
 ```bash
-# View all lists
+# View all lists with counts
 sqlite3 tests/data/e2e_test.db \
   "SELECT list_id, COUNT(*) FROM list_entries GROUP BY list_id"
 
-# Check if user is blocked
-sqlite3 tests/data/e2e_test.db \
-  "SELECT COUNT(*) FROM list_entries
-   WHERE list_id = 'blocked_users' AND value = 'sus_0001'"
+# Output:
+# blocked_ips|3
+# blocked_users|5
+# high_risk_countries|4
 
-# Or use the verification script
+# Check specific list
+sqlite3 tests/data/e2e_test.db \
+  "SELECT * FROM list_entries WHERE list_id = 'blocked_users'"
+
+# Or use the automated verification script
 bash tests/scripts/verify_db_lists.sh
 ```
 
-**Note**: The current implementation uses **memory-backed lists** (loaded from YAML configs) for testing. Database-backed lists require PostgreSQL. The SQLite list data exists for verification and future PostgreSQL migration.
+**Implementation Note**: The current test suite uses **memory-backed lists** (loaded from YAML configs). Database-backed lists require PostgreSQL. The SQLite list data exists for verification and future migration.
 
 ## Architecture
 
 ```
 tests/
-├── README.md                          # This file
-├── QUICKSTART.md                      # Quick start guide (Chinese)
+├── README.md                          # This file (complete test documentation)
 ├── e2e_test.md                        # Detailed test plan
-├── data/
+├── data/                              # Generated test data (created at runtime)
 │   ├── test_data.sql                 # Generated SQL INSERT statements
 │   └── e2e_test.db                   # SQLite database (created from SQL)
 ├── e2e_repo/                          # Test-specific repository
-│   ├── registry.yaml                 # Event routing
+│   ├── registry.yaml                 # Event routing configuration
 │   ├── pipelines/
-│   │   ├── transaction_test.yaml
-│   │   ├── login_test.yaml
-│   │   └── payment_test.yaml
+│   │   ├── transaction_test.yaml    # Transaction flow pipeline
+│   │   ├── login_test.yaml          # Login flow pipeline
+│   │   └── payment_test.yaml        # Payment flow pipeline
 │   └── configs/
 │       ├── datasources/
-│       │   └── sqlite_e2e.yaml
+│       │   └── sqlite_e2e.yaml      # SQLite datasource config
 │       ├── features/
 │       │   └── e2e_features.yaml    # 17 comprehensive features
 │       └── lists/
-│           ├── blocked_users.yaml
-│           ├── blocked_ips.yaml
-│           └── high_risk_countries.yaml
+│           ├── blocked_users.yaml   # Memory-backed blocked users list
+│           ├── blocked_ips.yaml     # Memory-backed blocked IPs list
+│           └── high_risk_countries.yaml  # Memory-backed country list
 ├── scripts/
 │   ├── generate_test_data.py        # Generate SQLite test data + lists
 │   ├── verify_db_lists.sh           # Verify database list entries
-│   └── run_e2e_tests.sh             # Main test runner
-└── results/
-    ├── server.log                    # Server output
-    └── failed_tests.log              # Failed test details
+│   └── run_e2e_tests.sh             # Main test runner (run this!)
+└── results/                           # Test results (created at runtime)
+    └── server.log                    # Server output logs
 ```
 
 ## Running Individual Components

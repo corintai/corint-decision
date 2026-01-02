@@ -152,13 +152,16 @@ ruleset:
   rules:
     - velocity_check
     - geo_mismatch
-  decision_logic:
-    - condition: total_score >= 100
-      action: deny
-    - condition: total_score >= 60
-      action: review
+  conclusion:
+    - when: total_score >= 100
+      signal: decline
+      reason: "High fraud risk"
+    - when: total_score >= 60
+      signal: review
+      reason: "Medium risk - needs review"
     - default: true
-      action: approve
+      signal: approve
+      reason: "Low risk"
 "#;
 
 let ruleset = RulesetParser::parse(yaml)?;
@@ -194,9 +197,10 @@ ruleset:
   id: login_risk
   rules:
     - too_many_failures
-  decision_logic:
-    - condition: total_score >= 60
-      action: deny
+  conclusion:
+    - when: total_score >= 60
+      signal: decline
+      reason: "Too many failed login attempts"
 "#;
 
 let artifacts = PipelineParser::parse_multi(yaml)?;
