@@ -4,8 +4,6 @@
 A **Rule** is the smallest executable logic unit within CORINT's Cognitive Risk Intelligence framework.
 Rules define deterministic conditions used to evaluate risk events and generate risk scores.
 
-> **⚠️ Important:** This document clearly marks **✅ Implemented** vs **📋 Planned** features.
-
 ---
 
 ## 1. Rule Structure
@@ -17,28 +15,11 @@ rule:
   id: string                 # ✅ Required: Unique identifier
   name: string               # ✅ Required: Human-readable name
   description: string        # ✅ Optional: Rule description
-  params:                    # ✅ Parsed (Phase 3): Parameters (runtime substitution not yet implemented)
-    <param-key>: <value>
   when: <condition-block>    # ✅ Required: Condition logic
   score: number              # ✅ Required: Risk score (supports negative values)
   metadata:                  # ✅ Optional: Arbitrary metadata
     <key>: <value>
 ```
-
-### 1.2 Planned Fields (📋 Not Yet Implemented)
-
-The following fields are documented for future implementation but are **NOT** currently supported:
-
-```yaml
-rule:
-  priority: number           # 📋 NOT IMPLEMENTED
-  depends_on: [...]          # 📋 NOT IMPLEMENTED
-  conflicts_with: [...]      # 📋 NOT IMPLEMENTED
-  group: string              # 📋 NOT IMPLEMENTED
-  group_priority: number     # 📋 NOT IMPLEMENTED
-  dynamic_threshold: {...}   # 📋 NOT IMPLEMENTED
-```
-
 ---
 
 ## 2. `id`
@@ -75,35 +56,26 @@ description: Detect risky login behavior using rules and LLM reasoning.
 
 ## 5. `when` Block
 
-The core of the rule.  
-Describes conditions that must be satisfied for the rule to trigger.
+The core of the rule. Describes conditions that must be satisfied for the rule to trigger.
 
-Structure:
+The `when` clause supports boolean expressions, logical operators (`all`/`any`/`not`), and arbitrary nesting for complex condition evaluation.
 
-```yaml
-when:
-  <event-filter>
-  when:
-    all:
-    - <expression>
-    - <expression>
-    - ...
-```
+### 5.1 Basic Syntax (✅ Implemented)
 
-### 5.1 Condition Syntax (✅ Implemented)
-
-CORINT supports structured condition logic using `all`, `any`, and `not`:
+**1. Simple Boolean Expression:**
+A single boolean expression that evaluates to true or false.
 
 ```yaml
-when:
-  all:                                      # All conditions must be true (AND)
-    - event.type == "login"                 # Event field access
-    - event.country in ["RU", "NG"]         # Membership check
-    - event.device.is_new == true           # Nested field access
-    - features.login_failed_count_24h > 3   # Feature access with features. prefix
+when: event.amount < 100
 ```
 
-**Important:** Unlike feature definitions, rules use the `event.` prefix to access event fields.
+**2. Logical Operators:**
+- `all`: All conditions must be true (AND logic)
+- `any`: At least one condition must be true (OR logic)
+- `not`: Negate the condition (NOT logic)
+
+**3. Nesting:**
+Logical operators can be nested arbitrarily to create complex conditions.
 
 ### 5.2 Logical Operators (✅ Implemented)
 
@@ -114,6 +86,8 @@ when:
     - event.amount > 1000
     - event.country == "US"
     - features.txn_count_24h < 10
+    - not:
+        - risk.tags contains "proxy"
 ```
 
 **any** - At least one condition must be true (OR logic):
@@ -132,21 +106,31 @@ when:
     - event.verified == true
 ```
 
-**Nested logic**:
+**Complex Nested Logic:**
 ```yaml
 when:
-  all:
-    - event.type == "transaction"
-    - any:
-        - event.amount > 10000
-        - event.country in ["RU", "CN"]
-    - not:
-        - event.user_id in list.vip_users
+  any:
+    # Category A: High Amount + High-Risk Country + Non-Whitelist
+    - all:
+        - event.amount >= 3000
+        - event.country in ["NG", "PK", "UA", "RU"]
+        - not:
+            - event.user_id in list.vip_users
+    
+    # Category B: Device/IP Anomaly + High Failure Frequency
+    - all:
+        - any:
+            - device.is_emulator == true
+            - network.is_proxy == true
+            - network.is_tor == true
+        - features.login_fail_count_1h >= 3
 ```
 
-**Note**: When accessing calculated features, always use the `features.` namespace prefix:
-- ✅ `features.transaction_sum_7d > 5000` - Correct
-- ❌ `transaction_sum_7d > 5000` - Incorrect (will not work)
+**Important:** 
+- Rules use the `event.` prefix to access event fields (unlike feature definitions)
+- When accessing calculated features, always use the `features.` namespace prefix:
+  - ✅ `features.transaction_sum_7d > 5000` - Correct
+  - ❌ `transaction_sum_7d > 5000` - Incorrect (will not work)
 
 ### 5.3 Supported Operators (✅ Implemented)
 
@@ -159,77 +143,122 @@ when:
 | `in list` | membership in custom list | `event.user_id in list.blocked_users` |
 | `not in` | not in array | `event.status not in ["blocked", "suspended"]` |
 | `not in list` | not in custom list | `event.email not in list.vip_emails` |
-| `contains` | string contains substring | `event.email contains "@suspicious.com"` |
+| `contains` | string/array contains | `event.email contains "@suspicious.com"`, `user.tags contains "vip"` |
 | `starts_with` | string starts with | `event.phone starts_with "+1"` |
 | `ends_with` | string ends with | `event.email ends_with ".com"` |
 | `regex` | regular expression match | `event.id regex "^TX-[0-9]{8}$"` |
 
+**Operator Examples:**
+```yaml
+event.amount == 100              # Equality
+event.amount != 0               # Inequality
+event.amount > 1000             # Greater than
+event.amount >= 500             # Greater than or equal
+event.amount < 100              # Less than
+event.amount <= 50              # Less than or equal
+event.country in ["US", "CA", "UK"]  # Membership check
+event.user_id in list.blocked_users   # Custom list membership
+event.status not in ["blocked", "suspended"]  # Not in array
+event.email not in list.vip_emails    # Not in custom list
+user.tags contains "vip"        # String/array contains
+risk.tags contains "proxy"     # Array contains
+```
+
 > **Note:** `exists` and `missing` operators are NOT currently implemented. Check for null/non-null values instead: `event.field == null` or `event.field != null`
 
+### 5.4 Context Variables (✅ Implemented)
+
+Common context variable prefixes for rule conditions:
+
+| Prefix | Purpose | Example |
+|--------|---------|---------|
+| `event.*` | Event data | `event.amount`, `event.user_id`, `event.type` |
+| `features.*` | Computed features | `features.transaction_sum_7d`, `features.login_count_24h` |
+| `api.*` | External API results | `api.device_fingerprint.risk_score`, `api.ip_geolocation.country` |
+| `service.*` | Internal service results | `service.user_profile.vip_status` |
+| `vars.*` | Pipeline variables | `vars.high_risk_threshold` |
+| `sys.*` | System variables | `sys.hour`, `sys.timestamp` |
+| `env.*` | Environment config | `env.api_timeout_ms` |
+| `results.*` | Ruleset results | `results.fraud_detection.signal` |
+| `list.*` | Custom lists | `list.blocked_users`, `list.vip_emails` |
+
+**Note:** In rules, always use the appropriate namespace prefix. For example:
+- ✅ `event.amount` - Correct
+- ✅ `features.txn_count_24h` - Correct
+- ❌ `amount` - Incorrect (missing prefix)
+
+### 5.5 Common Patterns (✅ Implemented)
+
+**Pattern 1: Whitelist Check**
+```yaml
+when:
+  all:
+    - event.amount > 1000
+    - not:
+        - event.user_id in list.vip_users
+```
+
+**Pattern 2: Blacklist Check**
+```yaml
+when:
+  any:
+    - event.user_id in list.blocked_users
+    - user.tags contains "fraud"
+```
+
+**Pattern 3: Risk Score Range**
+```yaml
+when:
+  all:
+    - features.total_score >= 50
+    - features.total_score < 80
+```
+
+**Pattern 4: Geographic Restriction**
+```yaml
+when:
+  all:
+    - event.country not in ["US", "CA", "UK"]
+    - event.amount > 1000
+```
+
+**Pattern 5: Multiple Risk Indicators**
+```yaml
+when:
+  any:
+    - all:
+        - device.is_emulator == true
+        - features.login_fail_count_1h >= 3
+    - all:
+        - network.is_proxy == true
+        - event.amount > 5000
+```
+
+### 5.6 Best Practices
+
+**1. Readability:**
+- Use comments to explain complex condition groups
+- Group related conditions together
+- Use meaningful variable names
+
+**2. Performance:**
+- Place cheaper conditions first in `all` clauses
+- Place more likely conditions first in `any` clauses
+- Avoid deeply nested conditions when possible
+
+**3. Maintainability:**
+- Keep conditions focused and specific
+- Document the business logic behind complex conditions
+- Use consistent naming conventions
+
+**4. Testing:**
+- Test each condition branch independently
+- Test edge cases (boundary values, null values)
+- Test nested conditions at each level
+
 ---
 
-## 6. LLM-Based Conditions (📋 NOT IMPLEMENTED)
-
-> **⚠️ WARNING:** This section documents planned features that are **NOT currently implemented**.
-> Do NOT use LLM operators in production rules - they will fail at runtime.
-
-The following LLM-based condition syntax is planned for future releases but not yet available:
-
-### 6.1 Text Reasoning (📋 Planned)
-
-```yaml
-# ⚠️ NOT YET IMPLEMENTED
-- LLM.reason(event) contains "suspicious"
-```
-
-### 6.2 Tag-Based Reasoning (📋 Planned)
-
-```yaml
-# ⚠️ NOT YET IMPLEMENTED
-- LLM.tags contains "device_mismatch"
-```
-
-### 6.3 Score-Based Reasoning (📋 Planned)
-
-```yaml
-# ⚠️ NOT YET IMPLEMENTED
-- LLM.score > 0.7
-```
-
-### 6.4 Structured JSON Output (📋 Planned)
-
-```yaml
-# ⚠️ NOT YET IMPLEMENTED
-- LLM.output.risk_score > 0.3
-```
-
-**Current Workaround:** Implement LLM reasoning in your application layer before sending events to CORINT.
-
----
-
-## 7. External API Conditions (📋 NOT IMPLEMENTED)
-
-> **⚠️ WARNING:** This section documents planned features that are **NOT currently implemented**.
-
-The following external API condition syntax is planned but not yet available:
-
-```yaml
-# ⚠️ NOT YET IMPLEMENTED
-- external_api.Chainalysis.risk_score > 80
-- external_api.DeviceFingerprint.is_suspicious == true
-```
-
-**Planned integrations:**
-- Device fingerprint providers
-- IP reputation lookups
-- Email risk scoring
-- Web3 on-chain intelligence
-
-**Current Workaround:** Fetch external API data in your application layer and include it in the event data sent to CORINT.
-
----
-
-## 8. `score`
+## 6. `score`
 
 The numeric score to be added when the rule is triggered.
 
@@ -238,7 +267,7 @@ score: +80
 ```
 
 Scores are typically added together across multiple rules and later aggregated in a pipeline step.
-### 8.1 Negative Scores
+### 6.1 Negative Scores
 
 The `score` field supports both positive and **negative numbers**.  
 Negative scores are typically used to lower the total risk score, grant trust credits, or offset other rules that increase risk.
@@ -256,200 +285,16 @@ Negative scores are useful for modeling low-risk behavior, whitelist conditions,
 
 ---
 
-## 9. Parameterized Rules (`params`) **[Phase 3]**
-
-**Parameterized rules allow you to define default parameter values that can be customized per use case without duplicating rule logic.**
-
-This enables:
-- **Reusable rule templates** - Define rules once with configurable parameters
-- **Easy customization** - Override parameter values per deployment
-- **Reduced duplication** - Same rule logic, different thresholds
-- **Type-safe configuration** - Parameters validated at compile-time
-
-### 9.1 Basic Syntax
-
-```yaml
-rule:
-  id: velocity_pattern
-  name: Velocity Pattern Detection
-  description: Detects velocity abuse with configurable thresholds
-
-  # Default parameter values
-  params:
-    time_window_minutes: 60
-    max_transactions: 10
-    max_amount: 5000
-    severity: "medium"
-
-  when:
-    all:
-      - event.type == "transaction"
-      # Reference params in conditions (future support)
-      - transaction_count_last_hour > 10
-      - total_amount_last_hour > 5000
-
-  score: 60
-```
-
-### 9.2 Parameter Types
-
-Parameters support JSON-compatible types:
-
-```yaml
-params:
-  # Numbers
-  threshold: 100
-  multiplier: 1.5
-
-  # Strings
-  severity: "high"
-  category: "fraud"
-
-  # Booleans
-  enabled: true
-  strict_mode: false
-
-  # Arrays
-  allowed_countries: ["US", "CA", "UK"]
-  risk_levels: [1, 2, 3]
-
-  # Objects
-  thresholds:
-    low: 30
-    medium: 60
-    high: 100
-```
-
-### 9.3 Use Cases
-
-**1. Regional Variations**
-
-Different thresholds for different regions:
-
-```yaml
-# Base rule with params
-rule:
-  id: transaction_velocity_check
-  params:
-    max_transactions_per_hour: 10
-    max_amount_per_hour: 5000
-  when:
-    # Conditions using thresholds
-```
-
-Deploy with region-specific overrides:
-- US deployment: `max_transactions_per_hour: 15`
-- EU deployment: `max_transactions_per_hour: 10` (stricter)
-- APAC deployment: `max_transactions_per_hour: 20` (more lenient)
-
-**2. A/B Testing**
-
-Test different thresholds without changing rule logic:
-
-```yaml
-rule:
-  id: fraud_score_threshold
-  params:
-    deny_threshold: 100
-    review_threshold: 60
-  when:
-    # Rule logic
-```
-
-Run A/B tests:
-- Control group: Default parameters
-- Test group A: `deny_threshold: 120` (more lenient)
-- Test group B: `deny_threshold: 80` (stricter)
-
-**3. Environment-Specific Configuration**
-
-Different settings for dev/staging/production:
-
-```yaml
-rule:
-  id: rate_limit_check
-  params:
-    rate_limit: 100
-    burst_size: 10
-```
-
-Override per environment:
-- Development: `rate_limit: 1000` (relaxed for testing)
-- Staging: `rate_limit: 100` (production-like)
-- Production: `rate_limit: 50` (strict)
-
-### 9.4 Status and Future Work
-
-**Current Status (Phase 3):**
-- ✅ AST support for params field
-- ✅ Parser support for reading params from YAML
-- ✅ Parameters stored in rule definition
-
-**Future Implementation:**
-- ⏳ Parameter substitution in rule conditions
-- ⏳ Runtime parameter override mechanism
-- ⏳ Parameter validation and type checking
-- ⏳ Parameter inheritance in rule templates
-
-**Note:** While the params field is fully parsed and stored in Phase 3, runtime parameter substitution and rule instantiation will be implemented in future phases when specific use cases require it.
-
-### 9.5 Best Practices
-
-1. **Use Descriptive Names**
-   ```yaml
-   # Good
-   params:
-     max_transactions_per_hour: 10
-
-   # Avoid
-   params:
-     limit: 10
-   ```
-
-2. **Provide Sensible Defaults**
-   ```yaml
-   params:
-     threshold: 100  # Good default for most cases
-   ```
-
-3. **Document Parameters**
-   ```yaml
-   rule:
-     id: velocity_check
-     description: |
-       Velocity check with configurable thresholds.
-       Parameters:
-       - time_window_minutes: Time window for counting (default: 60)
-       - max_transactions: Maximum transactions allowed (default: 10)
-     params:
-       time_window_minutes: 60
-       max_transactions: 10
-   ```
-
-4. **Group Related Parameters**
-   ```yaml
-   params:
-     thresholds:
-       low: 30
-       medium: 60
-       high: 100
-     limits:
-       daily: 1000
-       hourly: 100
-   ```
-
----
-
-## 10. Dynamic Thresholds (📋 NOT IMPLEMENTED)
+## 7. Dynamic Thresholds (📋 NOT IMPLEMENTED)
 
 > **⚠️ WARNING:** This entire section documents planned features that are **NOT currently implemented**.
 > The `dynamic_threshold` field does NOT exist in the Rule struct and will cause parse errors.
 
-### 10.1 Overview
+### 7.1 Overview
 
 Static thresholds may not adapt well to changing patterns. Dynamic thresholds (when implemented) will allow rules to automatically adjust based on historical data.
 
-### 10.2 Dynamic Threshold Definition (📋 Planned)
+### 7.2 Dynamic Threshold Definition (📋 Planned)
 
 ```yaml
 # ⚠️ NOT YET IMPLEMENTED - This will cause parse errors
@@ -498,7 +343,7 @@ rule:
   score: 60
 ```
 
-### 9.3 Threshold Methods
+### 7.3 Threshold Methods
 
 #### Percentile-Based
 
@@ -533,7 +378,7 @@ dynamic_threshold:
     multiplier: 1.5                 # 1.5x the moving average
 ```
 
-### 9.4 Entity-Specific Thresholds
+### 7.4 Entity-Specific Thresholds
 
 ```yaml
 dynamic_threshold:
@@ -548,7 +393,7 @@ dynamic_threshold:
     percentile: 95
 ```
 
-### 9.5 Time-Aware Thresholds
+### 7.5 Time-Aware Thresholds
 
 ```yaml
 dynamic_threshold:
@@ -571,7 +416,7 @@ dynamic_threshold:
         percentile: 90
 ```
 
-### 9.6 Complete Dynamic Threshold Example
+### 7.6 Complete Dynamic Threshold Example
 
 ```yaml
 rule:
@@ -643,327 +488,7 @@ rule:
 
 ---
 
-## 11. Rule Dependencies and Conflict Management (📋 NOT IMPLEMENTED)
-
-> **⚠️ WARNING:** This entire section documents planned features that are **NOT currently implemented**.
-> Fields like `priority`, `depends_on`, `conflicts_with`, and `group` do NOT exist in the Rule struct.
-
-### 10.1 Overview (Planned)
-
-When implemented, CORINT will provide mechanisms to:
-- Define rule execution order
-- Specify dependencies between rules
-- Detect and handle conflicts
-- Set rule priorities
-
-### 10.2 Rule Priority (📋 Planned)
-
-```yaml
-# ⚠️ NOT YET IMPLEMENTED - priority field does not exist
-rule:
-  id: critical_blocklist_check
-  name: Blocklist Check
-
-  # Priority: higher number = higher priority (NOT SUPPORTED)
-  priority: 900  # WILL CAUSE PARSE ERROR OR BE IGNORED
-
-  when:
-    all:
-      - event.user_id in list.blocklist  # Use "in list" operator instead
-
-  score: 1000
-```
-
-### 10.3 Rule Dependencies (📋 Planned)
-
-```yaml
-# ⚠️ NOT YET IMPLEMENTED - depends_on field does not exist
-rule:
-  id: complex_fraud_pattern
-  name: Complex Fraud Pattern Detection
-
-  # This rule depends on other rules running first (NOT SUPPORTED)
-  depends_on:                            # WILL CAUSE PARSE ERROR OR BE IGNORED
-    - rule: device_fingerprint_check
-      required: true
-
-  # Access dependency results in conditions (NOT SUPPORTED)
-  when:
-    all:
-      - event.type == "transaction"
-      # context.rules.* does NOT exist
-      - context.rules.device_fingerprint_check.triggered == true  # NOT SUPPORTED
-
-  score: 80
-```
-
-**Current Workaround:** Rules are currently evaluated independently. Rulesets aggregate all triggered rules' scores.
-
-### 10.4 Dependency Graph (📋 Planned)
-
-```yaml
-# ⚠️ NOT YET IMPLEMENTED
-rule:
-  id: rule_c
-  depends_on:                    # NOT SUPPORTED
-    - rule: rule_a
-    - rule: rule_b
-```
-
-### 10.5 Conflict Detection (📋 Planned)
-
-```yaml
-# ⚠️ NOT YET IMPLEMENTED
-rule:
-  id: high_value_approved_user
-  name: High Value Approved User
-
-  # Declare potential conflicts (NOT SUPPORTED)
-  conflicts_with:                # NOT SUPPORTED
-    - rule: high_value_new_user
-      resolution: priority        # priority | first_match | both
-      reason: "Same transaction cannot be both approved and new user"
-
-    - rule: blocked_user_check
-      resolution: priority
-      reason: "Approved user should not be on blocklist"
-
-  when:
-    all:
-      - event.type == "transaction"
-      - event.transaction.amount > 10000
-      - user.status == "approved"
-
-  score: -30                      # Reduce risk for approved users
-```
-
-### 10.6 Conflict Resolution Strategies (📋 Planned)
-
-```yaml
-# ⚠️ NOT YET IMPLEMENTED
-conflict_resolution:              # NOT SUPPORTED
-  default_strategy: priority
-  # ...
-```
-
-### 10.7 Rule Groups (📋 Planned)
-
-```yaml
-# ⚠️ NOT YET IMPLEMENTED - group fields do not exist
-rule:
-  id: geo_risk_high
-  name: High Risk Geography
-
-  # Rule group for mutual exclusivity (NOT SUPPORTED)
-  group: geo_risk_level           # NOT SUPPORTED
-  group_priority: 3               # NOT SUPPORTED
-
-  when:
-    all:
-      - event.country in ["NK", "IR", "SY"]  # Use event. prefix
-  score: 100
-
----
-
-rule:
-  id: geo_risk_medium
-  name: Medium Risk Geography
-
-  group: geo_risk_level           # NOT SUPPORTED
-  group_priority: 2               # NOT SUPPORTED
-
-  when:
-    all:
-      - event.country in ["RU", "CN", "NG"]  # Correct syntax
-  score: 50
-
----
-
-rule:
-  id: geo_risk_low
-  name: Low Risk Geography
-
-  group: geo_risk_level           # NOT SUPPORTED
-  group_priority: 1               # NOT SUPPORTED
-
-  when:
-    all:
-      - event.country in ["BR", "IN", "MX"]  # Correct syntax
-  score: 20
-```
-
-### 10.8 Conditional Dependencies (📋 Planned)
-
-```yaml
-# ⚠️ NOT YET IMPLEMENTED
-rule:
-  id: enhanced_verification
-  name: Enhanced Verification Required
-
-  depends_on:                     # NOT SUPPORTED
-    - rule: basic_verification
-      required: true
-
-    # Conditional dependency
-    - rule: llm_deep_analysis
-      required_if: context.rules.basic_verification.score > 50
-      timeout: 5000ms
-      on_timeout: skip
-
-  when:
-    all:
-      - context.rules.basic_verification.triggered == true
-      - context.rules.basic_verification.score > 30
-
-  score: 40
-```
-
-### 10.9 Dependency Validation
-
-```yaml
-# System validates at compile time:
-dependency_validation:
-  checks:
-    - circular_dependency_detection
-    - missing_dependency_detection
-    - conflict_consistency_check
-    - priority_conflict_detection
-
-  on_error:
-    circular_dependency: fail
-    missing_dependency: fail
-    conflict_inconsistency: warn
-    priority_conflict: warn
-```
-
-### 10.10 Complete Example with Dependencies
-
-```yaml
-version: "0.1"
-
-rule:
-  id: sophisticated_fraud_detection
-  name: Sophisticated Fraud Detection
-  description: Multi-layer fraud detection with dependencies
-
-  # High priority
-  priority: 500
-
-  # Dependencies
-  depends_on:
-    - rule: device_risk_check
-      required: true
-    - rule: velocity_check
-      required: true
-    - rule: behavioral_analysis
-      required: false
-      on_missing: continue
-
-  # Conflicts
-  conflicts_with:
-    - rule: trusted_user_bypass
-      resolution: priority
-
-  # Group
-  group: fraud_detection_tier
-  group_priority: 3
-
-  when:
-    all:
-      - event.type == "transaction"
-      # Use dependency results
-      - all:
-          - context.rules.device_risk_check.triggered == true
-          - context.rules.velocity_check.score >= 40
-      - any:
-          - context.rules.behavioral_analysis.score > 60
-          - event.transaction.amount > 50000
-
-  # Dynamic threshold
-  dynamic_threshold:
-    source:
-      metric: transaction.amount
-      entity: user.id
-    method: percentile
-    percentile:
-      value: 99
-      window: 90d
-
-  score: 85
-
-  metadata:
-    version: "1.2.0"
-    author: "fraud-team"
-    updated: "2024-02-01"
-```
-
----
-
-## 12. Rule Metadata
-
-### 11.1 Metadata Fields
-
-```yaml
-rule:
-  id: high_risk_login
-
-  metadata:
-    # === Recommended Fields ===
-    version: "1.2.0"
-    author: "security-team"
-    updated: "2024-02-01"
-
-    # === Custom Fields ===
-    # Ownership
-    owner: "risk-ops"
-
-    # Timestamps
-    created: "2024-01-01"
-
-    # Documentation
-    documentation_url: "https://wiki.company.com/rules/high_risk_login"
-
-    # Tags for organization
-    tags:
-      - authentication
-      - high_priority
-      - login
-
-    # Compliance
-    compliance:
-      - PCI-DSS
-      - SOC2
-
-    # Change history
-    changelog:
-      - version: "1.2.0"
-        date: "2024-02-01"
-        author: "alice@company.com"
-        changes:
-          - "Added LLM condition"
-          - "Adjusted score from 70 to 80"
-      - version: "1.1.0"
-        date: "2024-01-15"
-        changes:
-          - "Added geo condition"
-```
-
----
-
-## 13. Decision Making
-
-**Rules do not define actions.**
-
-Actions are defined at the Ruleset level through `decision_logic`.
-Rules only detect risk factors and contribute scores.
-
-See `ruleset.md` for decision-making configuration.
-
----
-
-## 14. Complete Examples
-
-### 13.1 Login Risk Example (✅ Correct Syntax)
+## 8. Complete Examples
 
 ```yaml
 version: "0.1"
@@ -983,34 +508,11 @@ rule:
   score: 80                                          # No need for + prefix
 ```
 
-> **Note:** The original example showed LLM conditions which are NOT implemented. Use feature engineering instead.
-
 ---
 
-### 13.2 Transaction Risk Example (✅ Correct Syntax)
+## 9. Summary
 
-```yaml
-version: "0.1"
-
-rule:
-  id: high_value_new_user
-  name: High Value Transaction from New User
-  description: Detect high-value transactions from users with limited history.
-
-  when:
-    all:
-      - event.type == "transaction"
-      - event.amount > 5000
-      - features.user_total_transactions < 5        # Low transaction count
-
-  score: 120
-```
-
----
-
-## 15. Summary
-
-### 15.1 Implemented Features (✅)
+### 9.1 Implemented Features (✅)
 
 A CORINT Rule currently supports:
 
@@ -1021,7 +523,6 @@ A CORINT Rule currently supports:
 - ✅ `when` - Condition logic (all/any/not)
 - ✅ `score` - Risk score (supports negative values)
 - ✅ `metadata` - Arbitrary metadata
-- ✅ `params` - Parameters (parsed, runtime substitution not yet implemented)
 
 **Condition Logic:**
 - ✅ Logical operators: `all` (AND), `any` (OR), `not` (NOT)
@@ -1036,192 +537,12 @@ A CORINT Rule currently supports:
 - ✅ Forms the basis of reusable Rulesets
 - ✅ Integrates seamlessly into Pipelines
 - ✅ **Does not define actions** (actions defined in Ruleset)
-
-### 15.2 Planned Features (📋)
-
-The following are documented for future implementation:
-
-**NOT YET IMPLEMENTED:**
-- 📋 LLM-based conditions (`LLM.reason()`, `LLM.score`, etc.)
-- 📋 External API conditions (`external_api.*`)
-- 📋 Dynamic thresholds (`dynamic_threshold` field)
-- 📋 Rule dependencies (`depends_on` field)
-- 📋 Rule priorities (`priority` field)
-- 📋 Conflict management (`conflicts_with` field)
-- 📋 Rule groups (`group`, `group_priority` fields)
-- 📋 Parameter substitution in conditions (params are parsed but not substituted)
-- 📋 `exists` and `missing` operators
-
-### 15.3 Current Capabilities
-
-**What you can do today:**
-- Define deterministic risk detection rules
-- Access event fields and computed features
-- Use complex boolean logic with nesting
-- Assign positive or negative risk scores
-- Organize rules into rulesets
-- Add metadata for governance
-
-**What requires workarounds:**
-- LLM reasoning → Implement in application layer before sending events
-- External APIs → Fetch data and include in event payload
-- Dynamic thresholds → Use percentile features with feature engineering
-- Rule dependencies → Use ruleset-level score aggregation
-
-This document establishes the authoritative specification of RDL Rules for CORINT v0.1.
-
 ---
 
-## 15. Rule Library and Reusability
-
-### 15.1 Creating Reusable Rule Files
-
-Rules can be defined in separate files for reuse across multiple rulesets and pipelines:
-
-```yaml
-# library/rules/fraud/fraud_farm.yaml
-version: "0.1"
-
-rule:
-  id: fraud_farm_pattern
-  name: Fraud Farm Detection
-  description: Detect organized fraud farms with high IP/device association
-
-  when:
-    all:
-      - ip_device_count > 10
-      - ip_user_count > 5
-
-  score: 100
-
-  metadata:
-    version: "1.0.0"
-    author: "fraud-team"
-    updated: "2024-12-11"
-    category: fraud
-    severity: critical
-    tags: [organized_fraud, bot_networks]
-```
-
-### 15.2 Rule Metadata for Library
-
-When creating rules for a library, include comprehensive metadata:
-
-```yaml
-metadata:
-  # === Recommended Fields ===
-  version: "1.0.0"              # Semantic versioning (MAJOR.MINOR.PATCH)
-  author: "Team Name"
-  updated: "2024-12-11"
-
-  # === Custom Fields (Recommended for Library Rules) ===
-  category: fraud | payment | geography | account | device
-  severity: critical | high | medium | low
-  tags: [tag1, tag2, tag3]
-  description_detail: "Detailed explanation"
-  detection: "Condition summary"
-  features:
-    - feature_name: "Feature description"
-    - another_feature: "Another description"
-  common_in: [attack_type1, attack_type2]
-  changelog:
-    - version: "1.0.0"
-      date: "2024-12-11"
-      changes: "Initial version"
-```
-
-### 15.3 ID Naming Conventions
-
-**Rule ID Format**: `<category>_<specific_pattern>`
-
-| Category | Prefix | Example |
-|----------|--------|---------|
-| Fraud | `fraud_` | `fraud_farm_pattern`, `fraud_velocity_abuse` |
-| Payment | `payment_` | `payment_card_testing`, `payment_high_value` |
-| Geography | `geo_` | `geo_suspicious_country`, `geo_impossible_travel` |
-| Account | `account_` | `account_takeover_pattern`, `account_new_user_risk` |
-| Device | `device_` | `device_fingerprint_mismatch` |
-
-**Naming Principles**:
-- ✅ Use `snake_case` (lowercase + underscores)
-- ✅ Include category prefix to avoid conflicts
-- ✅ Be descriptive and clear
-- ✅ Use `_pattern` or `_check` suffix
-- ❌ Avoid generic names like `rule1`, `check`, `test`
-- ❌ Keep under 50 characters
-
-### 15.4 Using Rules from Library
-
-Rules are imported and referenced by rulesets (not by pipelines directly):
-
-```yaml
-# library/rulesets/fraud_detection_core.yaml
-version: "0.1"
-
-import:
-  rules:
-    - library/rules/fraud/fraud_farm.yaml
-    - library/rules/fraud/account_takeover.yaml
-
----
-
-ruleset:
-  id: fraud_detection_core
-  rules:
-    - fraud_farm_pattern          # Reference by ID
-    - account_takeover_pattern    # Reference by ID
-```
-
-### 15.5 Rule Testing
-
-Create test files alongside rule definitions:
-
-```yaml
-# library/rules/fraud/fraud_farm.test.yaml
-tests:
-  - name: "Fraud farm detected - high device count"
-    input:
-      ip_device_count: 15
-      ip_user_count: 8
-    expected:
-      triggered: true
-      score: 100
-
-  - name: "Normal traffic - below threshold"
-    input:
-      ip_device_count: 2
-      ip_user_count: 1
-    expected:
-      triggered: false
-      score: 0
-
-  - name: "Edge case - only device count high"
-    input:
-      ip_device_count: 15
-      ip_user_count: 2
-    expected:
-      triggered: false
-      score: 0
-```
-
-### 15.6 Benefits of Rule Libraries
-
-✅ **Reusability**: Define once, use in multiple rulesets
-✅ **Consistency**: Same logic across all pipelines
-✅ **Maintainability**: Update in one place
-✅ **Testability**: Test rules independently
-✅ **Collaboration**: Team members work on separate rules
-✅ **Versioning**: Track changes with metadata
-
-(See `import.md` for complete module system specification.)
-
----
-
-## 16. Related Documentation
+## 9.2. Related Documentation
 
 - `import.md` - Module system and code reuse (NEW)
 - `ruleset.md` - Ruleset and decision logic
 - `expression.md` - Expression language for conditions
 - `feature.md` - Feature engineering for rule conditions
-- `versioning.md` - Rule versioning and deployment
 - `../repository/README.md` - Rule library usage guide
