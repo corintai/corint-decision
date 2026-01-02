@@ -2,7 +2,7 @@
 
 use crate::client::{LLMClient, LLMRequest, LLMResponse};
 use crate::error::{LLMError, Result};
-use crate::generator::prompt_templates::{PIPELINE_GENERATION_PROMPT, SYSTEM_MESSAGE};
+use crate::generator::prompt_templates::{build_pipeline_prompt, SYSTEM_MESSAGE};
 use crate::generator::yaml_extractor::extract_yaml;
 use std::sync::Arc;
 
@@ -54,7 +54,8 @@ impl PipelineGenerator {
     /// # }
     /// ```
     pub async fn generate(&self, description: &str) -> Result<String> {
-        let prompt = PIPELINE_GENERATION_PROMPT.replace("{description}", description);
+        // Use the new build_pipeline_prompt function with full DSL spec
+        let prompt = build_pipeline_prompt(description);
 
         let request = LLMRequest {
             prompt,
@@ -83,7 +84,8 @@ impl PipelineGenerator {
         &self,
         description: &str,
     ) -> Result<(String, LLMResponse)> {
-        let prompt = PIPELINE_GENERATION_PROMPT.replace("{description}", description);
+        // Use the new build_pipeline_prompt function with full DSL spec
+        let prompt = build_pipeline_prompt(description);
 
         let request = LLMRequest {
             prompt,

@@ -1,5 +1,8 @@
 //! Prompt templates for code generation
 
+/// CORINT DSL overall specification (embedded at compile time)
+const CORINT_DSL_SPEC: &str = include_str!("../../../../docs/dsl/overall.md");
+
 /// Prompt template for generating a CORINT Rule
 pub const RULE_GENERATION_PROMPT: &str = r#"You are a CORINT decision engine expert. Generate a YAML rule configuration based on the user's description.
 
@@ -75,39 +78,39 @@ Requirements:
 Generate the ruleset now:
 "#;
 
-/// Prompt template for generating a CORINT Pipeline
+/// Build the pipeline generation prompt with full DSL specification
+pub fn build_pipeline_prompt(description: &str) -> String {
+    format!(
+        r#"You are a CORINT decision engine expert. Generate a YAML pipeline configuration based on the user's description.
+
+===== COMPLETE CORINT DSL SPECIFICATION =====
+
+{}
+
+===== END OF SPECIFICATION =====
+
+User Description:
+{}
+
+Requirements:
+1. Generate ONLY valid YAML, no markdown code blocks, no explanations
+2. Use proper CORINT DSL syntax as defined in the specification above
+3. Include a descriptive id (snake_case)
+4. Define entry point and all steps according to the Pipeline specification
+5. Use proper step types and transitions
+6. Ensure all step IDs are referenced correctly
+7. Follow the three-layer architecture: Rules → Rulesets → Pipelines
+8. DO NOT include any text before or after the YAML
+9. The YAML must start with "pipeline:" at the beginning
+
+Generate the pipeline now:
+"#,
+        CORINT_DSL_SPEC, description
+    )
+}
+
+/// Prompt template for generating a CORINT Pipeline (legacy, use build_pipeline_prompt instead)
 pub const PIPELINE_GENERATION_PROMPT: &str = r#"You are a CORINT decision engine expert. Generate a YAML pipeline configuration based on the user's description.
-
-CORINT Pipeline DSL Format:
-```yaml
-pipeline:
-  id: <unique_identifier>
-  description: <clear description>
-  entry: <first_step_id>
-  steps:
-    - step:
-        type: <api|service|ruleset|router>
-        id: <step_identifier>
-        # For api type:
-        api: <api_name>
-        endpoint: <endpoint_name>
-        output: <variable_name>
-        # For ruleset type:
-        ruleset: <ruleset_id>
-        # For router type:
-        routes:
-          - when: <condition>
-            next: <step_id>
-        default: <step_id>
-        # Common:
-        next: <next_step_id>
-```
-
-Step Types:
-- api: Call external API
-- service: Call internal service
-- ruleset: Execute ruleset
-- router: Conditional routing based on results
 
 User Description:
 {description}
