@@ -391,7 +391,7 @@ CORINT RDL documentation is organized into five categories for clarity and ease 
 ├─ 🚀 Advanced Features (Sophisticated capabilities)
 │  ├─ feature.md         Feature engineering, statistical analysis, and aggregations
 │  ├─ service.md         Internal service integration (microservices, message queues)
-│  └─ external.md        External API integration for third-party risk intelligence
+│  └─ api.md             External API integration for third-party risk intelligence
 │
 ├─ 🛠️ Development Tools
 │  └─ LLM_GUIDE.md       LLM code generation guide (development-time only)

@@ -1,5 +1,5 @@
 # CORINT Risk Definition Language (RDL)
-## Overall Specification (v0.1)
+## Overall Specification (v0.2)
 
 **RDL is the domain-specific language used by CORINT (Cognitive Risk Intelligence) to define rules, rule groups, and full risk‑processing pipelines.**
 It enables modern hybrid risk engines to combine deterministic logic with external data sources and APIs in a unified, explainable, high‑performance format.
@@ -213,17 +213,23 @@ Rulesets group rules and produce decision signals via conclusion logic based on 
 
 ## 3.3 Pipeline
 
-A pipeline defines the entire risk‑processing DAG.  
-It supports:
+A pipeline defines the entire risk‑processing DAG with explicit orchestration and decision-making capabilities.
 
-- Sequential steps  
-- Conditional steps  
-- Branching  
-- Parallel execution  
-- Merge strategies  
-- Score aggregation  
-- Ruleset inclusion  
-- External API calls  
+**Core Capabilities:**
+- Sequential step execution (via `next` field)
+- Conditional step execution (via `when` blocks)
+- Router-based routing (conditional branches via `router` step type)
+- Ruleset execution (via `ruleset` step type)
+- Sub-pipeline calls (via `pipeline` step type)
+- Internal service integration (via `service` step type - HTTP/gRPC/MQ)
+- External API calls (via `api` step type)
+- **Pipeline-level decision logic** (required `decision` block maps signals to results)
+
+**Architecture:**
+- Pipelines orchestrate rulesets and make final decisions
+- Rulesets produce **signals** (`approve`, `decline`, `review`, `hold`, `pass`) via `conclusion`
+- Pipelines map signals to **results** via required `decision` block
+- Same ruleset can be reused across pipelines with different decision mappings
 
 (See `pipeline.md` for full details.)
 
@@ -254,12 +260,13 @@ RDL includes comprehensive feature engineering capabilities for risk control sce
 **🟢 Currently Available (Production-Ready):**
 - **Aggregation Features:**
   - Basic: count, sum, avg, min, max
+  - Statistics: distinct, stddev, median, percentile
   - Association analysis: count_distinct for unique value counting
   - Expression features: compute from other features
-  - Lookup features: retrieve pre-computed values
+  - Lookup features: retrieve pre-computed values from Redis/cache
 
-**📋 In Development:**
-- **Advanced Statistics:** percentile, stddev, median, mode (SQL generation exists, orchestration in progress)
+**📋 Planned (Not Yet Implemented):**
+- **Advanced Statistics:** variance, mode, entropy
 - **State Features:** z_score, outlier detection, baseline comparison
 - **Sequence Features:** pattern matching, consecutive counts, trends
 - **Graph Features:** network analysis, centrality, community detection
@@ -431,26 +438,43 @@ Service types:
 Example:
 ```yaml
 pipeline:
-  # Call internal HTTP microservice
-  - type: service
-    id: verify_kyc
-    service: kyc_service
-    endpoint: verify_identity
+  id: service_integration_example
+  entry: verify_kyc
 
-  # Call internal gRPC service
-  - type: service
-    id: calculate_risk
-    service: risk_scoring_service
-    method: calculate_score
+  steps:
+    # Call internal HTTP microservice
+    - step:
+        id: verify_kyc
+        name: Verify KYC
+        type: service
+        service: kyc_service
+        endpoint: verify_identity
+        next: calculate_risk
 
-  # Publish to message queue
-  - type: service
-    id: publish_event
-    service: event_bus
-    topic: risk_decisions
+    # Call internal gRPC service
+    - step:
+        id: calculate_risk
+        name: Calculate Risk Score
+        type: service
+        service: risk_scoring_service
+        method: calculate_score
+        next: publish_event
+
+    # Publish to message queue
+    - step:
+        id: publish_event
+        name: Publish Decision Event
+        type: service
+        service: event_bus
+        topic: risk_decisions
+
+  decision:
+    - default: true
+      result: approve
+      reason: "Service calls completed"
 ```
 
-**Note:** For database and cache access, use **Datasources** (see datasources configuration). For third-party HTTP APIs, use **External APIs** (see `external.md`).
+**Note:** For database and cache access, use **Datasources** (see datasources configuration). For third-party HTTP APIs, use **External APIs** (see `api.md`).
 
 (See `service.md` for complete specification.)
 
@@ -459,16 +483,16 @@ pipeline:
 ## 9. External API Integration
 
 ```yaml
-external_api.<provider>.<field>
+api.<provider>.<field>
 ```
 
 Example:
 
 ```yaml
-external_api.Chainalysis.risk_score > 80
+api.Chainalysis.risk_score > 80
 ```
 
-(See `external.md` for complete specification.)
+(See `api.md` for complete specification.)
 
 ---
 
@@ -478,7 +502,6 @@ RDL documentation is organized as follows:
 
 ### Overview & Architecture
 - **overall.md** (this file) - High-level overview and introduction
-- **ARCHITECTURE.md** - Three-layer decision architecture (design philosophy)
 
 ### Core Components
 - **expression.md** - Expression language (fundamental syntax)
@@ -495,13 +518,12 @@ RDL documentation is organized as follows:
 - **feature.md** - Feature engineering and statistical analysis
 - **list.md** - Custom List feature (blocklists, allowlists, multi-backend support)
 - **service.md** - Internal service integration (microservices, message queues)
-- **external.md** - External API integration (third-party services)
+- **api.md** - External API integration (third-party services)
 
 ### Operational
 - (Error handling implemented at runtime level)
 
 ### Examples
-- **examples/** - Real-world pipeline examples
 - **repository/** - Production rule library and reusable components
 
 ---
@@ -593,7 +615,7 @@ OP ::= "==" | "!=" | "<" | ">" | "<=" | ">=" | "in" | "regex" | "exists" | "miss
 MATCH_OP ::= "contains" | "not_contains"
 
 EXTERNAL_EXPR ::=
-      "external_api." IDENT "." FIELD OP VALUE
+      "api." IDENT "." FIELD OP VALUE
 
 SIGNAL ::= "approve" | "decline" | "review" | "hold" | "pass"
 
@@ -601,6 +623,7 @@ RULESET ::= "ruleset:"
               "id:" STRING
               [ "name:" STRING ]
               [ "description:" STRING ]
+              [ "extends:" STRING ]
               "rules:" RULE_ID_LIST
               [ "conclusion:" CONCLUSION_LIST ]
               [ "metadata:" METADATA_MAP ]
@@ -626,28 +649,38 @@ PARAMS_MAP ::= KEY ":" VALUE { KEY ":" VALUE }
 
 ## 13. Decision Architecture
 
-RDL uses a three-layer decision architecture:
+RDL uses a three-layer decision architecture with clear separation of concerns:
 
-### Layer 1: Rules (Detectors)
-- Detect individual risk factors
-- Produce scores
-- **No actions defined**
+### Layer 1: Rules (Pattern Detectors)
+- Detect individual risk factors and patterns
+- Produce risk scores (positive or negative)
+- **No decision-making** - only detection and scoring
+- Example: "Failed login count > 5" → score +80
 
-### Layer 2: Rulesets (Decision Makers)
-- Combine rule results
-- Evaluate patterns and thresholds
-- **Define actions through decision_logic**
-- Produce final decisions
+### Layer 2: Rulesets (Signal Generators)
+- Combine and evaluate rule results
+- Aggregate scores using `total_score`
+- Produce **signals** via `conclusion` block
+- **Signals:** `approve`, `decline`, `review`, `hold`, `pass`
+- Signals are suggestions/recommendations, not final decisions
+- Example: "total_score >= 100" → signal: decline
 
-### Layer 3: Pipelines (Orchestrators)
-- Orchestrate execution flow
-- Manage data flow between steps
-- **No decision logic** - uses ruleset decisions
+### Layer 3: Pipelines (Final Decision Makers)
+- Orchestrate execution flow (rulesets, services, APIs)
+- Collect signals from multiple rulesets
+- **Make final decisions** via required `decision` block
+- Map ruleset signals to final results
+- Can override or combine multiple ruleset suggestions
+- Example: Map "decline" signal → decline result with actions
 
 **Decision Flow:**
 ```
-Rules → Scores → Ruleset → Action → Pipeline Output
+Rules (detect) → Scores → Ruleset (conclude) → Signals → Pipeline (decide) → Results + Actions
 ```
+
+**Key Principle:**
+- **Rulesets suggest** (via signals) - reusable across contexts
+- **Pipelines decide** (via decision) - context-specific final action
 
 ## 14. Compilation Model
 

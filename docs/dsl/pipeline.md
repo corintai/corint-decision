@@ -763,7 +763,7 @@ For comprehensive understanding of pipelines and the CORINT ecosystem:
 
 ### Integration
 - **[service.md](service.md)** - Internal service integration (microservices and message queues)
-- **[external.md](external.md)** - External API integration
+- **[api.md](api.md)** - External API integration
 
 ### Development Tools
 - **[LLM_GUIDE.md](../LLM_GUIDE.md)** - LLM code generation guide (development-time only)

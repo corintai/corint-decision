@@ -3,7 +3,7 @@
 
 This document defines how internal microservices and message queues are configured, invoked, and managed within CORINT's Risk Definition Language.
 
-**Note:** For database and cache access, use **Datasources** (see `repository/configs/datasources/`). For third-party HTTP APIs, use **External APIs** (see `external.md`).
+**Note:** For database and cache access, use **Datasources** (see `repository/configs/datasources/`). For third-party HTTP APIs, use **External APIs** (see `api.md`).
 
 Internal services enable integration with:
 - **HTTP microservices** (`ms_http`) - RESTful internal services
@@ -46,7 +46,7 @@ Internal services enable integration with:
 
 ### 2.1 Basic Structure
 
-**Note**: `ms_http` follows the same structure as External API (see `external.md`) but **without authentication** since it's for internal services.
+**Note**: `ms_http` follows the same structure as External API (see `api.md`) but **without authentication** since it's for internal services.
 
 ```yaml
 services:
@@ -563,6 +563,6 @@ services:
 
 ## 7. Related Documentation
 
-- `external.md` - External third-party API integration (same HTTP format as `ms_http` + auth)
+- `api.md` - External third-party API integration (same HTTP format as `ms_http` + auth)
 - `context.md` - Context and variable management
 - `pipeline.md` - Service integration in pipelines
