@@ -164,6 +164,52 @@ ruleset:
 }
 
 #[test]
+fn test_parse_ruleset_with_imports_without_separator() {
+    // Test that ruleset with imports works even without explicit --- separator
+    // The parser should automatically detect and insert the separator
+    let yaml = r#"
+version: "0.2"
+
+import:
+  rules:
+    - library/rules/fraud/fraud_farm.yaml
+    - library/rules/fraud/account_takeover.yaml
+
+ruleset:
+  id: fraud_detection_core
+  name: Core Fraud Detection Ruleset
+  description: Comprehensive fraud detection
+  rules:
+    - fraud_farm_pattern
+    - account_takeover_pattern
+  conclusion:
+    - when: total_score >= 100
+      signal: decline
+      reason: "High risk score"
+    - default: true
+      signal: approve
+      reason: "No significant fraud indicators"
+"#;
+
+    let doc = RulesetParser::parse_with_imports(yaml).unwrap();
+
+    // Check version
+    assert_eq!(doc.version(), "0.2");
+
+    // Check imports
+    assert!(doc.has_imports());
+    let imports = doc.imports();
+    assert_eq!(imports.rules.len(), 2);
+    assert_eq!(imports.rules[0], "library/rules/fraud/fraud_farm.yaml");
+    assert_eq!(imports.rules[1], "library/rules/fraud/account_takeover.yaml");
+
+    // Check ruleset
+    assert_eq!(doc.definition.id, "fraud_detection_core");
+    assert_eq!(doc.definition.rules.len(), 2);
+    assert_eq!(doc.definition.conclusion.len(), 2);
+}
+
+#[test]
 fn test_parse_imports_only() {
     let yaml = r#"
 version: "0.1"
