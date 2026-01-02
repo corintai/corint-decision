@@ -438,6 +438,42 @@ decision:
 | `actions` | array | No | Actions to execute (e.g., `["KYC", "2FA"]`) |
 | `reason` | string | No | Human-readable reason (supports templates like `"{results.fraud_check.reason}"`) |
 
+**Important: Sequential Execution and Short-Circuit Logic**
+
+Decision rules are evaluated sequentially from top to bottom:
+
+1. **Sequential Execution**: The system evaluates each `when` condition in order
+2. **Short-Circuit Logic**: **When the first `when` condition is satisfied, the corresponding `result` is executed immediately, and all subsequent rules are skipped.**
+3. **Default Rule**: The `default: true` rule is only executed when all preceding `when` conditions are not satisfied
+
+This means the order of decision rules is crucial! They should be arranged from **most specific to most general**.
+
+**Example:**
+
+```yaml
+decision:
+  # Rule 1: Critical risk - immediate decline
+  - when: results.fraud_check.signal == "decline"
+    result: decline
+    reason: "Fraud detected"
+
+  # Rule 2: Only checked if rule 1 is not satisfied
+  - when: results.fraud_check.signal == "review"
+    result: review
+    reason: "Manual review required"
+
+  # Default rule: Only executed when all preceding rules are not satisfied
+  - default: true
+    result: approve
+    reason: "All checks passed"
+```
+
+**Execution Flow Examples:**
+
+- If `fraud_check.signal = "decline"`: Rule 1 satisfied → `decline` → **stop** (rules 2, default skipped)
+- If `fraud_check.signal = "review"`: Rule 1 not satisfied, Rule 2 satisfied → `review` → **stop**
+- If `fraud_check.signal = "approve"`: Rules 1, 2 not satisfied → execute default → `approve`
+
 ### 4.3 When to Use Pipeline Decision
 
 **Use Pipeline `decision` when:**
