@@ -384,9 +384,8 @@ CORINT RDL documentation is organized into five categories for clarity and ease 
 │  ├─ ruleset.md         Ruleset specification for grouping rules and decision logic
 │  └─ pipeline.md        Pipeline orchestration for complete risk processing workflows
 │
-├─ 📊 Data & Schema (Data structures and type system)
+├─ 📊 Data & Context (Data structures and context management)
 │  ├─ event.md           Standard event types, schemas, and data structures
-│  ├─ schema.md          Type system, validation, schema definitions, and validators
 │  └─ context.md         Context and variable management for data flow between steps
 │
 ├─ 🚀 Advanced Features (Sophisticated capabilities)

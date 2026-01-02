@@ -365,22 +365,7 @@ features:
 
 ---
 
-## 5. Data Types and Schema
-
-RDL includes a comprehensive type system for data validation and safety.
-
-Features:
-- Primitive types (string, number, boolean, datetime)
-- Composite types (arrays, objects, maps)
-- Custom type definitions
-- Schema validation
-- Format validators
-
-(See `schema.md` for full specification.)
-
----
-
-## 6. Context and Variable Management
+## 5. Context and Variable Management
 
 CORINT uses a **flattened namespace architecture** with 8 namespaces organized by processing method:
 
@@ -498,9 +483,8 @@ RDL documentation is organized as follows:
 - **pipeline.md** - Pipeline orchestration
 - **import.md** - Module system and dependency management (NEW)
 
-### Data & Schema
+### Data & Context
 - **event.md** - Standard event types and schemas
-- **schema.md** - Type system and data schemas
 - **context.md** - Context and variable management
 
 ### Advanced Features
