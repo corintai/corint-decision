@@ -670,6 +670,9 @@ def generate_crypto_payment_history():
     - 5 historical crypto payments with amounts 1500-1800
     - Max = 1800, so test 3000 > 1800*2 (3600) is false (avoids max_payment_exceeded)
     - Test amount: 3000 (> 1000) triggers crypto_payment_risk
+    - Also add 2 transaction events in 24h to avoid payment_dominance rule
+      (payment_to_txn_ratio = payment_count_24h / txn_count_24h)
+      With 1 payment (test) and 2 transactions, ratio = 1/2 = 0.5 < 0.8
     Expected: score = 100 → review
     """
     events = []
@@ -701,6 +704,26 @@ def generate_crypto_payment_history():
             })
         ))
 
+    # Add 2 transaction events in 24h to avoid payment_dominance rule
+    # This ensures payment_to_txn_ratio = 1 / (2 + 0.0001) ≈ 0.5 < 0.8
+    for i in range(2):
+        hours_ago = 6 + (i * 6)  # 6 and 12 hours ago (within 24h)
+        events.append((
+            "transaction",
+            user_id,
+            generate_timestamp(hours_ago=hours_ago),
+            500.0 + (i * 100),  # 500, 600 - moderate amounts
+            "USD",
+            f"merchant_txn_{i:03d}",
+            f"device_0104",
+            "192.168.1.50",
+            "US",
+            f"{user_id}@example.com",
+            None,
+            "completed",
+            None
+        ))
+
     return events
 
 
@@ -711,41 +734,76 @@ def generate_crypto_payment_history():
 def generate_low_weekly_activity_history():
     """Generate low weekly activity history for Test 34 (tests txn_count_7d)
 
-    Rules that should trigger:
+    Goal: ONLY trigger low_weekly_activity (score 60) → review
+
+    Rules to trigger:
     - low_weekly_activity: txn_count_7d < 3 AND amount > 2000 → score 60
-    - high_value_new_user: amount > 1000 AND total_txn < 5 → score 80
-    Total: 140 (review)
 
     Rules to avoid:
-    - amount_spike: ratio > 3.0 → score 60 (would push to 200 = decline)
-    - exceeds_max_history: amount > max * 1.5 → score 70 (would push to 210 = decline)
+    - high_value_new_user: amount > 1000 AND total_txn < 5 → Need >= 5 total txns
+    - velocity_spike: txn_velocity_1h_to_24h > 10 → No txns in 1h window
+    - amount_spike: ratio > 3.0 → Keep avg high
+    - exceeds_max_history: amount > max * 1.5 → Keep max >= 1700
+    - amount_concentration: concentration > 0.8 → Keep 24h total high
 
     Design:
-    - 3 total transactions, 2 in 7-day window (< 3)
-    - Baseline amounts: 1700, 900, 900 → avg = 1166.67, max = 1700
-    - Test amount: 2500
-    - Ratio: 2500 / 1166.67 = 2.14 < 3.0 (avoids amount_spike)
-    - Max check: 2500 > 1700 * 1.5 = 2550? No (avoids exceeds_max_history)
-    Expected: 60 + 80 = 140 → review
+    - 6 total transactions (>= 5 to avoid high_value_new_user)
+    - 2 in 7-day window (< 3 to trigger low_weekly_activity)
+    - No transactions in 1h window (avoid velocity_spike)
+    - 24h amounts sum to > 2125 (avoid concentration)
+    - Historical max >= 1700 (avoid exceeds_max with 2500 test amount)
+    - High avg to keep ratio < 3.0
+
+    Expected: 60 → review
     """
     events = []
     user_id = "user_low_weekly_activity"
 
-    # 3 transactions: 1 outside 7d window, 2 within 7d window
-    # Set amounts: one high (1700) to avoid exceeds_max_history, others lower (900)
-    days_offsets = [2, 5, 15]  # 2 and 5 days ago within 7d, 15 days ago outside
-    amounts = [900.0, 900.0, 1700.0]  # Max 1700, so test 2500 > 1700*1.5 (2550) is false
+    # Transaction 1: 3 hours ago (within 24h AND 7d, well outside 1h)
+    events.append((
+        "transaction",
+        user_id,
+        generate_timestamp(hours_ago=3),
+        1300.0,
+        "USD",
+        "merchant_001",
+        "device_lwact_001",
+        "192.168.1.10",
+        "US",
+        f"{user_id}@example.com",
+        None,
+        None,
+        None
+    ))
 
-    for i, days_ago in enumerate(days_offsets):
+    # Transaction 2: 8 hours ago (within 24h AND 7d)
+    events.append((
+        "transaction",
+        user_id,
+        generate_timestamp(hours_ago=8),
+        1200.0,
+        "USD",
+        "merchant_002",
+        "device_lwact_001",
+        "192.168.1.10",
+        "US",
+        f"{user_id}@example.com",
+        None,
+        None,
+        None
+    ))
+
+    # Transactions 3-6: Outside 7d but within 90d (for total count >= 5)
+    for i, days in enumerate([10, 20, 30, 50]):
         events.append((
             "transaction",
             user_id,
-            generate_timestamp(days_ago=days_ago),
-            amounts[i],
+            generate_timestamp(days_ago=days),
+            2000.0,
             "USD",
-            f"merchant_{i:03d}",
-            f"rnd_device_{i:05d}",
-            f"192.168.1.{i + 10}",
+            f"merchant_{i+3:03d}",
+            f"device_lwact_{i+2:03d}",
+            "192.168.1.10",
             "US",
             f"{user_id}@example.com",
             None,
@@ -1463,7 +1521,9 @@ def generate_weekly_payment_history():
     user_id = "user_payment_weekly"
 
     # 8 payments @ 3000 each
-    days_offsets = [1, 2, 3, 4, 5, 6, 7, 7]  # 8 payments within 7 days
+    # Use 6 instead of 7 for last two to ensure they fall within 7-day window
+    # (7 days ago might be just outside the 604800 second window depending on time of day)
+    days_offsets = [1, 2, 3, 4, 5, 6, 6, 6]  # 8 payments within 7 days
 
     for i, days_ago in enumerate(days_offsets):
         events.append((
@@ -1831,16 +1891,26 @@ def generate_shared_device_history():
 def generate_user_0102_login_history():
     """Generate login history for user_0102 (Test 14 - Geographic Mismatch)
 
-    To prevent low_login_history rule from triggering, ensure this user
-    has >= 2 successful logins in past 7 days.
-    Use same device as test event to avoid new_device_high_risk_country rule.
+    Design:
+    - Has >= 2 successful logins in past 7 days (avoids low_login_history)
+    - Has 2 different devices in 7d history (unique_devices_7d = 2 > 1)
+    - Test event uses NEW device from high-risk country
+    - This triggers new_device_high_risk_country: unique_devices_7d > 1 AND country in high_risk
+    Expected: score = 90 → review
     """
     events = []
     user_id = "user_0102"
 
-    # 3 successful logins in past 7 days, same device as test
-    days_offsets = [2, 4, 6]
-    for i, days_ago in enumerate(days_offsets):
+    # 4 successful logins from 2 different devices in past 7 days
+    # This ensures unique_devices_7d = 2 > 1
+    login_data = [
+        (2, "device_0102_a"),  # 2 days ago, device A
+        (3, "device_0102_b"),  # 3 days ago, device B
+        (5, "device_0102_a"),  # 5 days ago, device A
+        (6, "device_0102_b"),  # 6 days ago, device B
+    ]
+
+    for days_ago, device in login_data:
         events.append((
             "login",
             user_id,
@@ -1848,8 +1918,8 @@ def generate_user_0102_login_history():
             None,
             None,
             None,
-            "device_00003",  # Same device as Test 14 to keep unique_devices_7d = 1
-            "192.168.2.100",  # Same IP as test
+            device,
+            "192.168.2.100",
             "US",  # Normal login from US
             f"{user_id}@example.com",
             None,

@@ -1,0 +1,23 @@
+# E2E Test Datasource Configuration - Redis
+# This datasource is used for Redis integration testing
+
+# Datasource name
+name: redis_e2e
+
+# Datasource type
+type: cache
+
+# Provider: redis
+provider: redis
+
+# Connection string - will be overridden by REDIS_URL environment variable
+# Default: redis://localhost:6379
+connection_string: "redis://localhost:6379"
+
+# Database index
+database: 0
+
+# Optional settings
+options:
+  max_connections: "5"
+  timeout_ms: "5000"

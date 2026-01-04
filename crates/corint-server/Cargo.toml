@@ -7,7 +7,7 @@ license = "Elastic-2.0"
 [dependencies]
 # Core dependencies
 corint-sdk = { path = "../corint-sdk", features = ["sqlx"] }
-corint-runtime = { path = "../corint-runtime", features = ["sqlx"] }
+corint-runtime = { path = "../corint-runtime", features = ["sqlx", "clickhouse"] }
 corint-core = { path = "../corint-core" }
 corint-repository = { path = "../corint-repository", features = ["api"] }
 

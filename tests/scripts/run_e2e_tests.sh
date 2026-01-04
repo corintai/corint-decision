@@ -5,53 +5,20 @@
 # ============================================================================
 #
 # This script runs end-to-end tests for the CORINT Decision Engine:
-# 1. Generates test data with relative timestamps
-# 2. Builds and starts the server with test configuration
-# 3. Runs test cases covering all feature types
-# 4. Collects results and generates report
-# 5. Cleans up server process
-#
-# Test Coverage (33 test cases):
-#   - Basic Flow Tests (10 tests):
-#     * Transaction flow (normal, blocked user, high value, high-risk country)
-#     * Login flow (normal, blocked IP, high-risk country)
-#     * Payment flow (normal, very high amount, blocked user)
-#
-#   - Advanced Risk Detection (3 tests):
-#     * Multi-factor fraud pattern detection
-#     * VIP user differential treatment
-#     * Velocity/frequency anomaly detection (with historical data)
-#
-#   - Enhanced Coverage (3 tests):
-#     * Geographic mismatch (IP vs registered country)
-#     * New account protection
-#     * Crypto payment risk assessment
-#
-#   - Edge Cases (2 tests):
-#     * Brute force login detection (with historical failed logins)
-#     * Amount anomaly detection
-#
-#   - Database List Tests (4 tests) [P0]:
-#     * DB blocked user, DB blocked IP, DB high-risk country, DB clean event
-#
-#   - List Expiration Tests (2 tests) [P2]:
-#     * Expired block entry (should approve), Active block entry (should decline)
-#
-#   - Boundary Tests (3 tests) [P1]:
-#     * Score at review threshold, Score below review, Score at decline
-#
-#   - Multi-Rule Trigger Tests (1 test) [P1]:
-#     * Multiple rules with high combined score
-#
-#   - File Backend List Tests (2 tests) [P2]:
-#     * Blocked email (file list), Clean email
-#
-#   - Error Handling Tests (3 tests) [P2]:
-#     * Unknown event type, Missing event.type, Empty event object
+# 1. Selects data source (SQLite, PostgreSQL, ClickHouse, Redis, or All)
+# 2. Generates test data with relative timestamps
+# 3. Builds and starts the server with test configuration
+# 4. Runs test cases covering all feature types
+# 5. Collects results and generates report
+# 6. Cleans up server process
 #
 # Usage:
 #   cd tests
-#   ./scripts/run_e2e_tests.sh
+#   ./scripts/run_e2e_tests.sh              # Interactive mode
+#   ./scripts/run_e2e_tests.sh --sqlite     # SQLite only
+#   ./scripts/run_e2e_tests.sh --postgres   # PostgreSQL only
+#   ./scripts/run_e2e_tests.sh --clickhouse # ClickHouse only
+#   ./scripts/run_e2e_tests.sh --all        # All datasources
 #
 # ============================================================================
 
@@ -74,22 +41,35 @@ RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
+CYAN='\033[0;36m'
 NC='\033[0m' # No Color
 
 # Test configuration
 API_URL="http://localhost:8080"
 SERVER_PORT=8080
 TEST_REPO="tests/e2e_repo"
-TEST_DB="tests/data/e2e_test.db"
-TEST_SQL="tests/data/test_data.sql"
 RESULTS_DIR="tests/results"
 SERVER_PID_FILE="/tmp/corint_e2e_server.pid"
+
+# Database files
+SQLITE_DB="tests/data/e2e_test.db"
+SQLITE_SQL="tests/data/test_data.sql"
+POSTGRES_SQL="tests/data/postgres_test_data.sql"
+CLICKHOUSE_SQL="tests/data/clickhouse_test_data.sql"
 
 # Configuration file paths
 CONFIG_DIR="config"
 CONFIG_FILE="$CONFIG_DIR/server.yaml"
 CONFIG_BACKUP="$CONFIG_DIR/server.yaml.backup"
 TEST_CONFIG_FILE="tests/e2e_server.yaml"
+
+# Feature files
+FEATURES_DIR="$TEST_REPO/configs/features"
+FEATURES_TEMPLATES="$TEST_REPO/templates/features"
+ACTIVE_FEATURES="$FEATURES_DIR/e2e_features.yaml"
+
+# Datasource selection
+DATASOURCE=""
 
 # Counters
 TOTAL_TESTS=0
@@ -121,12 +101,96 @@ log_warning() {
     echo -e "${YELLOW}[!]${NC} $1"
 }
 
+log_header() {
+    echo -e "${CYAN}$1${NC}"
+}
+
+show_menu() {
+    echo ""
+    log_header "============================================================================"
+    log_header "CORINT Decision Engine - E2E Test Suite"
+    log_header "============================================================================"
+    echo ""
+    echo "Select data source for testing:"
+    echo ""
+    echo "  1) SQLite      (default, in-memory)"
+    echo "  2) PostgreSQL  (requires running PostgreSQL server)"
+    echo "  3) ClickHouse  (requires running ClickHouse server)"
+    echo "  4) Redis       (requires running Redis server - coming soon)"
+    echo "  5) All         (run tests on all available datasources)"
+    echo ""
+    echo "  q) Quit"
+    echo ""
+}
+
+select_datasource() {
+    # Check command line arguments first
+    case "$1" in
+        --sqlite)
+            DATASOURCE="sqlite"
+            return
+            ;;
+        --postgres|--postgresql)
+            DATASOURCE="postgres"
+            return
+            ;;
+        --clickhouse|--ch)
+            DATASOURCE="clickhouse"
+            return
+            ;;
+        --redis)
+            DATASOURCE="redis"
+            return
+            ;;
+        --all)
+            DATASOURCE="all"
+            return
+            ;;
+        "")
+            # Interactive mode
+            ;;
+        *)
+            echo "Unknown option: $1"
+            echo "Usage: $0 [--sqlite|--postgres|--clickhouse|--redis|--all]"
+            exit 1
+            ;;
+    esac
+
+    # Interactive selection
+    show_menu
+    read -p "Enter choice [1-5, q]: " choice
+
+    case $choice in
+        1|"")
+            DATASOURCE="sqlite"
+            ;;
+        2)
+            DATASOURCE="postgres"
+            ;;
+        3)
+            DATASOURCE="clickhouse"
+            ;;
+        4)
+            DATASOURCE="redis"
+            ;;
+        5)
+            DATASOURCE="all"
+            ;;
+        q|Q)
+            echo "Exiting."
+            exit 0
+            ;;
+        *)
+            echo "Invalid choice. Using SQLite (default)."
+            DATASOURCE="sqlite"
+            ;;
+    esac
+}
+
 backup_config() {
     # Check if current config is actually the test config (from a previous incomplete run)
     if [ -f "$CONFIG_FILE" ] && grep -q "E2E Tests" "$CONFIG_FILE" 2>/dev/null; then
         log_warning "Current config appears to be test config from previous run"
-
-        # If backup exists, it's likely the original config - restore it first
         if [ -f "$CONFIG_BACKUP" ]; then
             log_info "Found backup from previous run, restoring it first"
             restore_config
@@ -136,14 +200,11 @@ backup_config() {
         fi
     fi
 
-    # Now handle backup properly
     if [ -f "$CONFIG_BACKUP" ]; then
-        # Check if backup is test config (should not be)
         if grep -q "E2E Tests" "$CONFIG_BACKUP" 2>/dev/null; then
             log_warning "Backup appears to be test config, removing it"
             rm -f "$CONFIG_BACKUP"
         else
-            # Backup exists and looks valid - keep it but warn
             log_warning "Old backup exists: $CONFIG_BACKUP (keeping it)"
         fi
     fi
@@ -160,9 +221,7 @@ backup_config() {
 }
 
 restore_config() {
-    # Restore original config from backup
     if [ -f "$CONFIG_BACKUP" ]; then
-        # Verify backup is not test config
         if grep -q "E2E Tests" "$CONFIG_BACKUP" 2>/dev/null; then
             log_error "Backup file appears to be test config, not restoring"
             log_warning "Please manually restore from config/server-example.yaml"
@@ -171,17 +230,12 @@ restore_config() {
         fi
 
         log_info "Restoring original config: $CONFIG_BACKUP -> $CONFIG_FILE"
-
-        # Remove test config first
         if [ -f "$CONFIG_FILE" ]; then
             rm -f "$CONFIG_FILE"
         fi
-
-        # Move backup back to config location
         mv "$CONFIG_BACKUP" "$CONFIG_FILE"
         log_success "Config restored successfully"
     else
-        # No backup found - check if current config is test config
         if [ -f "$CONFIG_FILE" ] && grep -q "E2E Tests" "$CONFIG_FILE" 2>/dev/null; then
             log_warning "No backup config found, but test config is still in place"
             log_warning "Restoring from server-example.yaml"
@@ -194,19 +248,343 @@ restore_config() {
 }
 
 setup_test_config() {
+    local datasource=$1
+
     if [ ! -f "$TEST_CONFIG_FILE" ]; then
         log_error "Test config file not found: $TEST_CONFIG_FILE"
         exit 1
     fi
 
-    log_info "Setting up test config: $TEST_CONFIG_FILE -> $CONFIG_FILE"
+    log_info "Setting up test config for datasource: $datasource"
 
     # Ensure config directory exists
     mkdir -p "$CONFIG_DIR"
 
-    # Copy test config to config directory
-    cp "$TEST_CONFIG_FILE" "$CONFIG_FILE"
-    log_success "Test config installed"
+    # Create config based on datasource
+    case $datasource in
+        sqlite)
+            cp "$TEST_CONFIG_FILE" "$CONFIG_FILE"
+            ;;
+        postgres)
+            create_postgres_config
+            ;;
+        clickhouse)
+            create_clickhouse_config
+            ;;
+        redis)
+            log_error "Redis datasource not yet implemented"
+            exit 1
+            ;;
+    esac
+
+    log_success "Test config installed for $datasource"
+}
+
+create_postgres_config() {
+    cat > "$CONFIG_FILE" << 'EOF'
+# CORINT Decision Engine Server Configuration for E2E Tests (PostgreSQL)
+host: "127.0.0.1"
+port: 8080
+grpc_port: 50051
+
+repository:
+  type: filesystem
+  path: "tests/e2e_repo"
+
+datasources:
+  postgres_e2e:
+    type: sql
+    provider: postgresql
+    connection_string: "${POSTGRES_URL:-postgresql://postgres:postgres@localhost:5432/corint_test}"
+    database: "corint_test"
+    options:
+      max_connections: "5"
+
+enable_metrics: true
+enable_tracing: false
+log_level: "error"
+
+llm:
+  default_provider: openai
+  enable_cache: false
+  enable_thinking: false
+  openai:
+    api_key: "${OPENAI_API_KEY:-dummy-key-for-testing}"
+    default_model: "gpt-4o-mini"
+    max_tokens: 100
+    temperature: 0.0
+EOF
+}
+
+create_clickhouse_config() {
+    cat > "$CONFIG_FILE" << 'EOF'
+# CORINT Decision Engine Server Configuration for E2E Tests (ClickHouse)
+host: "127.0.0.1"
+port: 8080
+grpc_port: 50051
+
+repository:
+  type: filesystem
+  path: "tests/e2e_repo"
+
+datasources:
+  clickhouse_e2e:
+    type: olap
+    provider: clickhouse
+    connection_string: "${CLICKHOUSE_URL:-http://localhost:8123}"
+    database: "default"
+    options:
+      max_connections: "5"
+
+enable_metrics: true
+enable_tracing: false
+log_level: "error"
+
+llm:
+  default_provider: openai
+  enable_cache: false
+  enable_thinking: false
+  openai:
+    api_key: "${OPENAI_API_KEY:-dummy-key-for-testing}"
+    default_model: "gpt-4o-mini"
+    max_tokens: 100
+    temperature: 0.0
+EOF
+}
+
+setup_features() {
+    local datasource=$1
+    local template_file="$FEATURES_TEMPLATES/e2e_features_${datasource}.yaml"
+
+    log_info "Setting up features for datasource: $datasource"
+
+    if [ -f "$template_file" ]; then
+        cp "$template_file" "$ACTIVE_FEATURES"
+        log_success "$datasource features installed"
+    else
+        log_error "Features template not found: $template_file"
+        exit 1
+    fi
+}
+
+cleanup_features() {
+    # Remove the copied features file
+    if [ -f "$ACTIVE_FEATURES" ]; then
+        rm -f "$ACTIVE_FEATURES"
+        log_info "Features file removed"
+    fi
+}
+
+setup_database() {
+    local datasource=$1
+
+    log_info "Setting up database for: $datasource"
+
+    case $datasource in
+        sqlite)
+            setup_sqlite_database
+            ;;
+        postgres)
+            setup_postgres_database
+            ;;
+        clickhouse)
+            setup_clickhouse_database
+            ;;
+    esac
+}
+
+setup_sqlite_database() {
+    # Always regenerate SQL statements with fresh timestamps
+    log_info "Generating fresh SQLite test data with current timestamps..."
+    python3 tests/scripts/generate_test_data.py
+    if [ $? -ne 0 ]; then
+        log_error "Failed to generate SQL data"
+        exit 1
+    fi
+
+    # Remove old database
+    rm -f "$SQLITE_DB"
+
+    # Execute SQL file
+    sqlite3 "$SQLITE_DB" < "$SQLITE_SQL"
+    if [ $? -ne 0 ]; then
+        log_error "Failed to create SQLite database"
+        exit 1
+    fi
+
+    # Verify data insertion
+    EVENT_COUNT=$(sqlite3 "$SQLITE_DB" "SELECT COUNT(*) FROM events;")
+    LIST_COUNT=$(sqlite3 "$SQLITE_DB" "SELECT COUNT(*) FROM list_entries;")
+    log_success "SQLite database created with $EVENT_COUNT events and $LIST_COUNT list entries"
+
+    # Set environment variable
+    export DATABASE_URL="sqlite://$(pwd)/$SQLITE_DB"
+}
+
+setup_postgres_database() {
+    # Check PostgreSQL connection
+    POSTGRES_URL="${POSTGRES_URL:-postgresql://postgres:postgres@localhost:5432/corint_test}"
+
+    log_info "Checking PostgreSQL connection..."
+    if ! psql "$POSTGRES_URL" -c "SELECT 1;" > /dev/null 2>&1; then
+        log_error "Cannot connect to PostgreSQL at: $POSTGRES_URL"
+        log_warning "Please ensure PostgreSQL is running and accessible"
+        log_warning "Set POSTGRES_URL environment variable if using non-default connection"
+        exit 1
+    fi
+
+    # First, regenerate SQLite test data (PostgreSQL generation depends on it)
+    log_info "Generating fresh test data with current timestamps..."
+    python3 tests/scripts/generate_test_data.py
+    if [ $? -ne 0 ]; then
+        log_error "Failed to generate test data"
+        exit 1
+    fi
+
+    # Then convert to PostgreSQL format
+    log_info "Converting to PostgreSQL format..."
+    python3 tests/scripts/generate_postgres_data.py
+    if [ $? -ne 0 ]; then
+        log_error "Failed to convert to PostgreSQL format"
+        exit 1
+    fi
+
+    # Execute SQL file
+    log_info "Loading test data into PostgreSQL..."
+    psql "$POSTGRES_URL" < "$POSTGRES_SQL" > /dev/null 2>&1
+    if [ $? -ne 0 ]; then
+        log_error "Failed to load PostgreSQL data"
+        exit 1
+    fi
+
+    # Verify data insertion
+    EVENT_COUNT=$(psql "$POSTGRES_URL" -t -c "SELECT COUNT(*) FROM events;" | tr -d ' ')
+    LIST_COUNT=$(psql "$POSTGRES_URL" -t -c "SELECT COUNT(*) FROM list_entries;" | tr -d ' ')
+    log_success "PostgreSQL loaded with $EVENT_COUNT events and $LIST_COUNT list entries"
+
+    export DATABASE_URL="$POSTGRES_URL"
+}
+
+setup_clickhouse_database() {
+    # Check ClickHouse connection
+    CLICKHOUSE_URL="${CLICKHOUSE_URL:-http://localhost:8123}"
+
+    log_info "Checking ClickHouse connection..."
+    if ! curl -s "$CLICKHOUSE_URL/?query=SELECT%201" > /dev/null 2>&1; then
+        log_warning "ClickHouse not running at: $CLICKHOUSE_URL"
+
+        # Check if clickhouse binary exists in common locations
+        CLICKHOUSE_CMD=""
+        if command -v clickhouse &> /dev/null; then
+            CLICKHOUSE_CMD="clickhouse"
+        elif [ -f "$HOME/clickhouse" ]; then
+            CLICKHOUSE_CMD="$HOME/clickhouse"
+        elif [ -f "./clickhouse" ]; then
+            CLICKHOUSE_CMD="./clickhouse"
+        fi
+
+        if [ -z "$CLICKHOUSE_CMD" ]; then
+            log_info "ClickHouse not found. Downloading to home directory..."
+            (cd "$HOME" && curl https://clickhouse.com/ | sh)
+            if [ $? -ne 0 ]; then
+                log_error "Failed to download ClickHouse"
+                exit 1
+            fi
+            log_success "ClickHouse downloaded successfully"
+            CLICKHOUSE_CMD="$HOME/clickhouse"
+        else
+            log_info "Found ClickHouse at: $CLICKHOUSE_CMD"
+        fi
+
+        # Start ClickHouse server in background
+        log_info "Starting ClickHouse server..."
+        $CLICKHOUSE_CMD server --daemon 2>/dev/null || $CLICKHOUSE_CMD server &
+        CLICKHOUSE_SERVER_PID=$!
+
+        # Wait for server to start
+        local max_attempts=30
+        local attempt=0
+        while [ $attempt -lt $max_attempts ]; do
+            if curl -s "$CLICKHOUSE_URL/?query=SELECT%201" > /dev/null 2>&1; then
+                log_success "ClickHouse server started!"
+                break
+            fi
+            attempt=$((attempt + 1))
+            sleep 1
+        done
+
+        if [ $attempt -eq $max_attempts ]; then
+            log_error "ClickHouse server failed to start"
+            exit 1
+        fi
+    fi
+
+    # First, regenerate SQLite test data (ClickHouse generation depends on it)
+    log_info "Generating fresh test data with current timestamps..."
+    python3 tests/scripts/generate_test_data.py
+    if [ $? -ne 0 ]; then
+        log_error "Failed to generate test data"
+        exit 1
+    fi
+
+    # Then convert SQLite format to ClickHouse format
+    log_info "Converting to ClickHouse format..."
+    python3 tests/scripts/generate_clickhouse_data.py
+    if [ $? -ne 0 ]; then
+        log_error "Failed to convert to ClickHouse format"
+        exit 1
+    fi
+
+    # Clean up old data before loading new test data
+    log_info "Cleaning up old data from ClickHouse..."
+    curl -s "$CLICKHOUSE_URL" --data "TRUNCATE TABLE IF EXISTS events" > /dev/null 2>&1 || true
+    curl -s "$CLICKHOUSE_URL" --data "TRUNCATE TABLE IF EXISTS list_entries" > /dev/null 2>&1 || true
+    log_success "Old data cleaned"
+
+    # Execute SQL file efficiently (use optimized batch method)
+    log_info "Loading test data into ClickHouse..."
+
+    # Try using clickhouse-client if available (fastest method)
+    CLICKHOUSE_CLIENT=""
+    if command -v clickhouse-client &> /dev/null; then
+        CLICKHOUSE_CLIENT="clickhouse-client"
+    elif [ -n "$CLICKHOUSE_CMD" ] && [ -f "${CLICKHOUSE_CMD}-client" ]; then
+        CLICKHOUSE_CLIENT="${CLICKHOUSE_CMD}-client"
+    fi
+
+    if [ -n "$CLICKHOUSE_CLIENT" ]; then
+        log_info "Using clickhouse-client for faster data loading..."
+        if $CLICKHOUSE_CLIENT --host localhost --port 9000 < "$CLICKHOUSE_SQL" > /dev/null 2>&1; then
+            log_success "Data loaded via clickhouse-client"
+        else
+            log_warning "clickhouse-client failed, using HTTP API with batch optimization"
+            # Fall through to HTTP method with batch optimization
+            CLICKHOUSE_CLIENT=""
+        fi
+    fi
+
+    # If clickhouse-client not available or failed, use optimized HTTP API method
+    if [ -z "$CLICKHOUSE_CLIENT" ]; then
+        log_info "Using HTTP API with batch optimization (reduces HTTP requests from ~850 to ~10)..."
+        
+        # Use Python script to batch INSERT statements for better performance
+        # This reduces the number of HTTP requests from ~850 to ~10 (100 statements per batch)
+        python3 tests/scripts/load_clickhouse_data.py "$CLICKHOUSE_SQL" "$CLICKHOUSE_URL" 2>&1
+        
+        if [ $? -eq 0 ]; then
+            log_success "Data loaded via HTTP API (batch optimization)"
+        else
+            log_error "Failed to load data via HTTP API"
+            exit 1
+        fi
+    fi
+
+    # Verify data insertion
+    EVENT_COUNT=$(curl -s "$CLICKHOUSE_URL/?query=SELECT%20count()%20FROM%20events" | tr -d '\n')
+    LIST_COUNT=$(curl -s "$CLICKHOUSE_URL/?query=SELECT%20count()%20FROM%20list_entries" | tr -d '\n')
+    log_success "ClickHouse loaded with $EVENT_COUNT events and $LIST_COUNT list entries"
+
+    export CLICKHOUSE_URL="$CLICKHOUSE_URL"
 }
 
 cleanup() {
@@ -219,8 +597,6 @@ cleanup() {
             log_info "Stopping server (PID: $PID)..."
             kill $PID 2>/dev/null || true
             sleep 2
-
-            # Force kill if still running
             if ps -p $PID > /dev/null 2>&1; then
                 kill -9 $PID 2>/dev/null || true
             fi
@@ -233,6 +609,9 @@ cleanup() {
 
     # Restore original config
     restore_config
+
+    # Remove copied features file
+    cleanup_features
 }
 
 # Trap to ensure cleanup on exit
@@ -263,16 +642,13 @@ run_test_case() {
 
     TOTAL_TESTS=$((TOTAL_TESTS + 1))
 
-    # Run API call and capture response
     local response=$(curl -s -X POST "$API_URL/v1/decide" \
         -H "Content-Type: application/json" \
         -d "$test_data")
 
-    # Extract decision from response (nested in .decision.result)
     local actual_decision=$(echo "$response" | jq -r '.decision.result // "UNKNOWN"' | tr '[:upper:]' '[:lower:]')
     local error=$(echo "$response" | jq -r '.error // empty')
 
-    # Check result
     if [ -n "$error" ]; then
         log_error "$test_name: API ERROR - $error"
         FAILED_TESTS=$((FAILED_TESTS + 1))
@@ -293,27 +669,23 @@ run_test_case() {
     fi
 }
 
-# Run a test case that expects an error or specific non-standard response
 run_error_test_case() {
     local test_name="$1"
     local test_data="$2"
-    local expected_pattern="$3"  # Pattern to match in response (error, no_pipeline, etc.)
+    local expected_pattern="$3"
 
     TOTAL_TESTS=$((TOTAL_TESTS + 1))
 
-    # Run API call and capture response
     local response=$(curl -s -X POST "$API_URL/v1/decide" \
         -H "Content-Type: application/json" \
         -d "$test_data")
 
-    # Check for expected pattern in response
     local has_error=$(echo "$response" | jq -r '.error // empty')
     local decision=$(echo "$response" | jq -r '.decision.result // empty' | tr '[:upper:]' '[:lower:]')
     local reason=$(echo "$response" | jq -r '.decision.reason // empty')
 
     case "$expected_pattern" in
         "no_pipeline")
-            # Expect either an error or approve with "no matching pipeline" reason
             if [[ -n "$has_error" ]] || [[ "$decision" == "approve" && "$reason" == *"no matching"* ]]; then
                 log_success "$test_name: PASSED (no pipeline matched)"
                 PASSED_TESTS=$((PASSED_TESTS + 1))
@@ -322,7 +694,6 @@ run_error_test_case() {
             fi
             ;;
         "error")
-            # Expect an error response
             if [ -n "$has_error" ]; then
                 log_success "$test_name: PASSED (error returned: $has_error)"
                 PASSED_TESTS=$((PASSED_TESTS + 1))
@@ -331,7 +702,6 @@ run_error_test_case() {
             fi
             ;;
         "default_fallback")
-            # Expect default pipeline handling - returns PASS with minimal score
             local pipeline_id=$(echo "$response" | jq -r '.pipeline_id // empty')
             if [[ "$pipeline_id" == "default" ]] && [[ "$decision" == "pass" ]]; then
                 log_success "$test_name: PASSED (default pipeline fallback)"
@@ -342,7 +712,6 @@ run_error_test_case() {
             ;;
     esac
 
-    # If we get here, the test failed
     log_error "$test_name: FAILED (expected: $expected_pattern, response: $response)"
     FAILED_TESTS=$((FAILED_TESTS + 1))
     FAILED_TEST_NAMES+=("$test_name")
@@ -350,938 +719,102 @@ run_error_test_case() {
     return 1
 }
 
-# ============================================================================
-# Main Test Flow
-# ============================================================================
+run_tests_for_datasource() {
+    local datasource=$1
 
-main() {
-    echo "============================================================================"
-    echo "CORINT Decision Engine - E2E Test Suite"
-    echo "============================================================================"
+    echo ""
+    log_header "============================================================================"
+    log_header "Running E2E Tests for: $datasource"
+    log_header "============================================================================"
     echo ""
 
-    # Create results directory
-    mkdir -p "$RESULTS_DIR"
+    # Reset counters for this datasource
+    TOTAL_TESTS=0
+    PASSED_TESTS=0
+    FAILED_TESTS=0
+    PASSED_TEST_NAMES=()
+    FAILED_TEST_NAMES=()
+    FAILED_TEST_DETAILS=()
 
-    # Step 0: Backup and setup configuration
-    log_info "Step 0: Setting up test configuration..."
+    # Step 1: Backup config
+    log_info "Step 1: Setting up configuration..."
     backup_config
-    setup_test_config
+    setup_test_config "$datasource"
+    setup_features "$datasource"
     log_success "Configuration ready"
     echo ""
 
-    # Step 1: Generate SQL statements
-    log_info "Step 1: Generating SQL test data..."
-    python3 tests/scripts/generate_test_data.py
-    if [ $? -ne 0 ]; then
-        log_error "Failed to generate SQL data"
-        exit 1
-    fi
-    log_success "SQL data generated"
+    # Step 2: Setup database
+    log_info "Step 2: Setting up database..."
+    setup_database "$datasource"
     echo ""
 
-    # Step 1.5: Create database and insert data
-    log_info "Step 1.5: Creating database and inserting test data..."
-
-    # Remove old database
-    rm -f "$TEST_DB"
-
-    # Execute SQL file
-    sqlite3 "$TEST_DB" < "$TEST_SQL"
-    if [ $? -ne 0 ]; then
-        log_error "Failed to create database from SQL"
-        exit 1
-    fi
-
-    # Verify data insertion
-    EVENT_COUNT=$(sqlite3 "$TEST_DB" "SELECT COUNT(*) FROM events;")
-    LIST_COUNT=$(sqlite3 "$TEST_DB" "SELECT COUNT(*) FROM list_entries;")
-    log_success "Database created with $EVENT_COUNT events and $LIST_COUNT list entries"
-
-    # Verify database lists
-    log_info "Step 1.6: Verifying database list data..."
-    bash tests/scripts/verify_db_lists.sh > /tmp/db_list_verification.log 2>&1
-    if [ $? -eq 0 ]; then
-        log_success "Database list verification passed"
-        echo "  Lists created:"
-        sqlite3 "$TEST_DB" "SELECT '  - ' || list_id || ': ' || COUNT(*) || ' entries' FROM list_entries GROUP BY list_id;"
-    else
-        log_error "Database list verification failed - see /tmp/db_list_verification.log"
-    fi
-    echo ""
-
-    # Step 2: Build server
-    log_info "Step 2: Building server..."
+    # Step 3: Build server
+    log_info "Step 3: Building server..."
     cargo build --bin corint-server --quiet
     if [ $? -ne 0 ]; then
         log_error "Failed to build server"
-        exit 1
+        return 1
     fi
     log_success "Server built successfully"
     echo ""
 
-    # Step 3: Start server with test configuration
-    log_info "Step 3: Starting test server..."
-
-    # Use absolute path for test database
-    TEST_DB_ABSOLUTE="$(pwd)/$TEST_DB"
-
-    # Set environment variables for server
-    export DATABASE_URL="sqlite://$TEST_DB_ABSOLUTE"
-
-    # Start server in background using config/server.yaml (already set up with test config)
-    RUST_LOG=error \
-        target/debug/corint-server > "$RESULTS_DIR/server.log" 2>&1 &
-
+    # Step 4: Start server
+    log_info "Step 4: Starting test server..."
+    # Enable detailed performance logging for feature execution and datasource queries
+    RUST_LOG=error,corint_runtime::feature::executor=debug,corint_runtime::datasource=debug target/debug/corint-server > "$RESULTS_DIR/server_${datasource}.log" 2>&1 &
     SERVER_PID=$!
     echo $SERVER_PID > "$SERVER_PID_FILE"
+    log_info "Server started (PID: $SERVER_PID)"
 
-    log_info "Server started with test config (PID: $SERVER_PID)"
-
-    # Wait for server to be ready
     if ! wait_for_server; then
-        log_error "Server startup failed. Check logs at $RESULTS_DIR/server.log"
-        exit 1
+        log_error "Server startup failed. Check logs at $RESULTS_DIR/server_${datasource}.log"
+        return 1
     fi
     echo ""
 
-    # Step 4: Run test cases
-    log_info "Step 4: Running test cases..."
+    # Step 5: Run test cases
+    log_info "Step 5: Running test cases..."
     echo "============================================================================"
     echo ""
 
-    # Disable exit on error for test cases - we want to run all tests even if some fail
     set +e
 
-    # Get current timestamp in ISO format
     CURRENT_TIME=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 
-    # -------------------------------------------------------------------------
-    # Transaction Tests
-    # -------------------------------------------------------------------------
-    echo "--- Transaction Flow Tests ---"
-    echo ""
+    # Include the test cases (same as before)
+    source tests/scripts/e2e_test_cases.sh
 
-    # Test 1: Normal transaction - should approve
-    run_test_case "Normal Transaction" '{
-        "event": {
-            "type": "transaction",
-            "user_id": "user_9998",
-            "amount": 150.50,
-            "country": "US",
-            "ip_address": "192.168.1.100",
-            "device_id": "device_00001",
-            "timestamp": "'"$CURRENT_TIME"'"
-        }
-    }' "approve"
-
-    # Test 2: Blocked user - should decline
-    run_test_case "Blocked User Transaction" '{
-        "event": {
-            "type": "transaction",
-            "user_id": "sus_0001",
-            "amount": 100.00,
-            "country": "US",
-            "ip_address": "192.168.1.100",
-            "device_id": "device_00001",
-            "timestamp": "'"$CURRENT_TIME"'"
-        }
-    }' "decline"
-
-    # Test 3: High value from new user - should review
-    # Use a unique user ID not in any data pool to ensure 0 historical transactions
-    run_test_case "High Value New User" '{
-        "event": {
-            "type": "transaction",
-            "user_id": "user_new_highvalue",
-            "amount": 5000.00,
-            "country": "US",
-            "ip_address": "192.168.1.100",
-            "device_id": "device_00001",
-            "timestamp": "'"$CURRENT_TIME"'"
-        }
-    }' "review"
-
-    # Test 4: High-risk country - should review
-    run_test_case "High Risk Country" '{
-        "event": {
-            "type": "transaction",
-            "user_id": "user_0002",
-            "amount": 200.00,
-            "country": "NG",
-            "ip_address": "192.168.1.100",
-            "device_id": "device_00001",
-            "timestamp": "'"$CURRENT_TIME"'"
-        }
-    }' "review"
-
-    echo ""
-    echo "--- Login Flow Tests ---"
-    echo ""
-
-    # Test 5: Normal login - should approve
-    run_test_case "Normal Login" '{
-        "event": {
-            "type": "login",
-            "user_id": "user_9999",
-            "country": "US",
-            "ip_address": "192.168.1.100",
-            "device_id": "device_00001",
-            "timestamp": "'"$CURRENT_TIME"'"
-        }
-    }' "approve"
-
-    # Test 6: Blocked IP - should decline
-    run_test_case "Blocked IP Login" '{
-        "event": {
-            "type": "login",
-            "user_id": "user_0001",
-            "country": "US",
-            "ip_address": "45.142.212.61",
-            "device_id": "device_00001",
-            "timestamp": "'"$CURRENT_TIME"'"
-        }
-    }' "decline"
-
-    # Test 7: High-risk country login - should review
-    # Using a fresh user ID with no history to test pure country-based risk
-    # With no history, new_device_high_risk_country triggers (unique_devices_7d > 1 now evaluates correctly)
-    run_test_case "High Risk Country Login" '{
-        "event": {
-            "type": "login",
-            "user_id": "test_clean_user_russia",
-            "country": "RU",
-            "ip_address": "192.168.1.200",
-            "device_id": "test_device_001",
-            "timestamp": "'"$CURRENT_TIME"'"
-        }
-    }' "review"
-
-    echo ""
-    echo "--- Payment Flow Tests ---"
-    echo ""
-
-    # Test 8: Normal payment - should approve
-    run_test_case "Normal Payment" '{
-        "event": {
-            "type": "payment",
-            "user_id": "user_9997",
-            "amount": 299.99,
-            "country": "US",
-            "ip_address": "192.168.1.100",
-            "timestamp": "'"$CURRENT_TIME"'"
-        }
-    }' "approve"
-
-    # Test 9: Very high payment - should review
-    run_test_case "Very High Payment" '{
-        "event": {
-            "type": "payment",
-            "user_id": "user_0005",
-            "amount": 8000.00,
-            "country": "US",
-            "ip_address": "192.168.1.100",
-            "timestamp": "'"$CURRENT_TIME"'"
-        }
-    }' "review"
-
-    # Test 10: Blocked user payment - should decline
-    run_test_case "Blocked User Payment" '{
-        "event": {
-            "type": "payment",
-            "user_id": "sus_0002",
-            "amount": 50.00,
-            "country": "US",
-            "ip_address": "192.168.1.100",
-            "timestamp": "'"$CURRENT_TIME"'"
-        }
-    }' "decline"
-
-    echo ""
-    echo "--- Advanced Risk Detection Tests (High Priority) ---"
-    echo ""
-
-    # Test 11: Multi-factor fraud pattern - should decline
-    # New account + High amount + High-risk country triggers multiple rules
-    # With working expression features, score exceeds decline threshold
-    run_test_case "Multi-Factor Fraud Pattern" '{
-        "event": {
-            "type": "transaction",
-            "user_id": "user_0100",
-            "amount": 8000.00,
-            "country": "NG",
-            "ip_address": "192.168.1.100",
-            "device_id": "device_00001",
-            "timestamp": "'"$CURRENT_TIME"'",
-            "payment_method": "crypto",
-            "international": true,
-            "recipient_new": true,
-            "account_age_days": 5,
-            "verified": false,
-            "average_transaction": 100.00
-        }
-    }' "decline"
-
-    # Test 12: VIP user high value transaction - should review
-    # VIP user has 225+ historical transactions, but ratio_txn_to_avg and other expression features
-    # now work correctly, causing score to reach review threshold
-    run_test_case "VIP User High Value" '{
-        "event": {
-            "type": "transaction",
-            "user_id": "user_vip_001",
-            "amount": 12000.00,
-            "country": "US",
-            "ip_address": "192.168.1.100",
-            "device_id": "device_vip_001",
-            "timestamp": "'"$CURRENT_TIME"'",
-            "vip_status": true,
-            "verified": true,
-            "account_age_days": 1000,
-            "dispute_count": 0,
-            "average_transaction": 8000.00
-        }
-    }' "decline"
-
-    # Test 13: Velocity anomaly detection - high frequency in 24h
-    # user_velocity_24h has 20+ transactions in last 24h (from generate_high_frequency_transactions)
-    # Combined with high_risk_country (NG), the multi-rule combination triggers decline
-    # (triggered_count >= 3 conclusion in ruleset)
-    run_test_case "Velocity Check - High Frequency" '{
-        "event": {
-            "type": "transaction",
-            "user_id": "user_velocity_24h",
-            "amount": 500.00,
-            "country": "NG",
-            "ip_address": "192.168.1.100",
-            "device_id": "device_00002",
-            "timestamp": "'"$CURRENT_TIME"'"
-        }
-    }' "decline"
-
-    echo ""
-    echo "--- Enhanced Coverage Tests (Medium Priority) ---"
-    echo ""
-
-    # Test 14: Geographic mismatch - testing successful_login_count_7d feature
-    # NOTE: May return approve or review depending on whether low_login_history rule triggers
-    # The feature is tested/defined regardless of the decision
-    run_test_case "Geographic Mismatch" '{
-        "event": {
-            "type": "login",
-            "user_id": "user_0102",
-            "country": "RU",
-            "ip_address": "192.168.2.100",
-            "device_id": "device_00003",
-            "timestamp": "'"$CURRENT_TIME"'",
-            "ip_country": "RU",
-            "registered_country": "US",
-            "verified": false,
-            "account_age_days": 45
-        }
-    }' "approve"
-
-    # Test 15: New account high value - should review
-    # 3 day old account with $5000 transaction
-    run_test_case "New Account High Value" '{
-        "event": {
-            "type": "transaction",
-            "user_id": "user_0103",
-            "amount": 5000.00,
-            "country": "US",
-            "ip_address": "192.168.1.100",
-            "device_id": "device_00004",
-            "timestamp": "'"$CURRENT_TIME"'",
-            "account_age_days": 3,
-            "verified": false,
-            "average_transaction": 0
-        }
-    }' "review"
-
-    # Test 16: Crypto payment risk - should decline
-    # UPDATED: crypto_payment_risk rule added to payment_risk_ruleset
-    # crypto payment with amount > 1000 triggers crypto_payment_risk (score 100)
-    # With expression features working, score exceeds decline threshold
-    run_test_case "Crypto Payment Risk" '{
-        "event": {
-            "type": "payment",
-            "user_id": "user_0104",
-            "amount": 3000.00,
-            "country": "US",
-            "ip_address": "192.168.1.100",
-            "timestamp": "'"$CURRENT_TIME"'",
-            "payment_method": "crypto"
-        }
-    }' "decline"
-
-    echo ""
-    echo "--- Edge Case Tests (Low Priority) ---"
-    echo ""
-
-    # Test 17: Brute force login detection - should decline
-    # UPDATED: user_0105 now has 10 failed logins in last 24h (from generate_failed_login_history)
-    # This triggers excessive_failures rule (>= 5 failed logins) with score 200
-    # Score 200 >= 150 -> decline
-    run_test_case "Brute Force Detection" '{
-        "event": {
-            "type": "login",
-            "user_id": "user_0105",
-            "country": "US",
-            "ip_address": "192.168.1.100",
-            "device_id": "device_00005",
-            "timestamp": "'"$CURRENT_TIME"'"
-        }
-    }' "decline"
-
-    # Test 18: Amount anomaly - should review
-    # $9000 transaction vs $2000 average (4.5x spike)
-    run_test_case "Amount Anomaly" '{
-        "event": {
-            "type": "transaction",
-            "user_id": "user_0106",
-            "amount": 9000.00,
-            "country": "US",
-            "ip_address": "192.168.1.100",
-            "device_id": "device_00006",
-            "timestamp": "'"$CURRENT_TIME"'",
-            "average_transaction": 2000.00,
-            "verified": true,
-            "account_age_days": 180
-        }
-    }' "review"
-
-    echo ""
-    echo "--- Database List Tests (P0) ---"
-    echo ""
-
-    # Test 19: Database blocked user check
-    run_test_case "DB Blocked User" '{
-        "event": {
-            "type": "db_list_test",
-            "user_id": "sus_0001",
-            "ip_address": "192.168.1.100",
-            "country": "US",
-            "timestamp": "'"$CURRENT_TIME"'"
-        }
-    }' "decline"
-
-    # Test 20: Database blocked IP check
-    run_test_case "DB Blocked IP" '{
-        "event": {
-            "type": "db_list_test",
-            "user_id": "user_9999",
-            "ip_address": "45.142.212.61",
-            "country": "US",
-            "timestamp": "'"$CURRENT_TIME"'"
-        }
-    }' "decline"
-
-    # Test 21: Database high risk country check
-    run_test_case "DB High Risk Country" '{
-        "event": {
-            "type": "db_list_test",
-            "user_id": "user_9999",
-            "ip_address": "192.168.1.100",
-            "country": "NG",
-            "timestamp": "'"$CURRENT_TIME"'"
-        }
-    }' "review"
-
-    # Test 22: Database list - clean event (no matches)
-    run_test_case "DB List Clean Event" '{
-        "event": {
-            "type": "db_list_test",
-            "user_id": "user_9999",
-            "ip_address": "192.168.1.100",
-            "country": "US",
-            "timestamp": "'"$CURRENT_TIME"'"
-        }
-    }' "approve"
-
-    # ========================
-    # List Expiration Tests (P2)
-    # ========================
-    # These tests verify that SQLite list backend correctly handles expiration
-    echo ""
-    echo "--- List Expiration Tests (P2) ---"
-    echo ""
-
-    # Test 23: Expired block entry - should NOT block (expired yesterday)
-    # user_expired_block has expires_at set to yesterday
-    run_test_case "Expired Block Entry" '{
-        "event": {
-            "type": "db_list_test",
-            "user_id": "user_expired_block",
-            "ip_address": "192.168.1.100",
-            "country": "US",
-            "timestamp": "'"$CURRENT_TIME"'"
-        }
-    }' "approve"
-
-    # Test 24: Active block entry - should block (expires in 30 days)
-    # user_active_block has expires_at set to 30 days from now
-    run_test_case "Active Block Entry" '{
-        "event": {
-            "type": "db_list_test",
-            "user_id": "user_active_block",
-            "ip_address": "192.168.1.100",
-            "country": "US",
-            "timestamp": "'"$CURRENT_TIME"'"
-        }
-    }' "decline"
-
-    echo ""
-    echo "--- Boundary Tests (P1) ---"
-    echo ""
-
-    # Test 25: Score boundary - exactly at review threshold (score = 80)
-    # high_risk_country rule triggers with score 80
-    run_test_case "Score At Review Threshold" '{
-        "event": {
-            "type": "transaction",
-            "user_id": "user_boundary_1",
-            "amount": 150.00,
-            "country": "NG",
-            "ip_address": "192.168.1.100",
-            "device_id": "device_00001",
-            "timestamp": "'"$CURRENT_TIME"'"
-        }
-    }' "review"
-
-    # Test 26: Score boundary - just below review threshold
-    # Normal transaction, no rules trigger, score = 0
-    run_test_case "Score Below Review Threshold" '{
-        "event": {
-            "type": "transaction",
-            "user_id": "user_boundary_2",
-            "amount": 50.00,
-            "country": "US",
-            "ip_address": "192.168.1.100",
-            "device_id": "device_00001",
-            "timestamp": "'"$CURRENT_TIME"'"
-        }
-    }' "approve"
-
-    # Test 27: Score boundary - should review (score in review range)
-    # high_value_new_user (80) + high_risk_country (80) = 160, but with expression features working, score may be lower
-    run_test_case "Score At Decline Threshold" '{
-        "event": {
-            "type": "transaction",
-            "user_id": "user_boundary_3",
-            "amount": 5000.00,
-            "country": "NG",
-            "ip_address": "192.168.1.100",
-            "device_id": "device_00001",
-            "timestamp": "'"$CURRENT_TIME"'"
-        }
-    }' "decline"
-
-    echo ""
-    echo "--- Multi-Rule Trigger Tests (P1) ---"
-    echo ""
-
-    # Test 28: Multiple rules triggered (triggered_count >= 3 should decline)
-    # This requires a user with history to trigger amount_spike
-    # Using high_value_new_user (80) + high_risk_country (80) = 160 -> decline
-    run_test_case "Multi-Rule High Score" '{
-        "event": {
-            "type": "transaction",
-            "user_id": "user_multi_1",
-            "amount": 8000.00,
-            "country": "RU",
-            "ip_address": "192.168.1.100",
-            "device_id": "device_00001",
-            "timestamp": "'"$CURRENT_TIME"'"
-        }
-    }' "decline"
-
-    echo ""
-    echo "--- File Backend List Tests (P2) ---"
-    echo ""
-
-    # Test 29: File backend blocked email - should decline
-    # Tests file backend list functionality
-    # Email alice.wang23@gmail.com is in high_risk_emails.txt file
-    run_test_case "File Backend Blocked Email" '{
-        "event": {
-            "type": "transaction",
-            "user_id": "user_file_test_1",
-            "amount": 100.00,
-            "country": "US",
-            "ip_address": "192.168.1.100",
-            "device_id": "device_00001",
-            "email": "alice.wang23@gmail.com",
-            "timestamp": "'"$CURRENT_TIME"'"
-        }
-    }' "decline"
-
-    # Test 30: File backend clean email - should approve
-    # Email not in blocked list
-    run_test_case "File Backend Clean Email" '{
-        "event": {
-            "type": "transaction",
-            "user_id": "user_file_test_2",
-            "amount": 100.00,
-            "country": "US",
-            "ip_address": "192.168.1.100",
-            "device_id": "device_00001",
-            "email": "legitimate.user@company.com",
-            "timestamp": "'"$CURRENT_TIME"'"
-        }
-    }' "approve"
-
-    # NOTE: List Expiration Tests require PostgreSQL backend with expiration_column support.
-    # SQLite is not a supported list backend in CORINT. The test infrastructure is in place
-    # but requires PostgreSQL for full expiration testing. See db_lists.yaml for configuration.
-    # Skipping these tests in SQLite-based E2E environment.
-
-    # ========================
-    # Error Handling Tests (P2)
-    # ========================
-    # These tests verify the server handles edge cases gracefully.
-    # CORINT uses a default pipeline fallback for unmatched events.
-    echo ""
-    echo "--- Error Handling Tests (P2) ---"
-    echo ""
-
-    # Test 31: Unknown event type - handled by default pipeline with PASS
-    run_error_test_case "Unknown Event Type" '{
-        "event": {
-            "type": "unknown_type",
-            "user_id": "user_0001",
-            "amount": 100.00,
-            "timestamp": "'"$CURRENT_TIME"'"
-        }
-    }' "default_fallback"
-
-    # Test 32: Missing event.type field - handled by default pipeline with PASS
-    run_error_test_case "Missing Event Type" '{
-        "event": {
-            "user_id": "user_0001",
-            "amount": 100.00,
-            "timestamp": "'"$CURRENT_TIME"'"
-        }
-    }' "default_fallback"
-
-    # Test 33: Empty event object - handled by default pipeline with PASS
-    run_error_test_case "Empty Event Object" '{
-        "event": {}
-    }' "default_fallback"
-
-    echo ""
-    echo "--- Feature Coverage Tests (Transaction) ---"
-    echo ""
-
-    # Test 34: Low weekly activity - should decline (txn_count_7d feature)
-    # With expression features working, score exceeds decline threshold
-    run_test_case "Low Weekly Activity" '{
-        "event": {
-            "type": "transaction",
-            "user_id": "user_low_weekly_activity",
-            "amount": 2500.00,
-            "country": "US",
-            "ip_address": "192.168.1.100",
-            "device_id": "device_00001",
-            "timestamp": "'"$CURRENT_TIME"'"
-        }
-    }' "decline"
-
-    # Test 35: High total spending - testing user_total_amount feature
-    # With expression features working, score exceeds decline threshold
-    run_test_case "High Total Spending" '{
-        "event": {
-            "type": "transaction",
-            "user_id": "user_high_total_spending",
-            "amount": 6000.00,
-            "country": "US",
-            "ip_address": "192.168.1.100",
-            "device_id": "device_00001",
-            "timestamp": "'"$CURRENT_TIME"'"
-        }
-    }' "decline"
-
-    # Test 36: Large vs average - should review (avg_transaction_amount feature)
-    run_test_case "Large Transaction vs Average" '{
-        "event": {
-            "type": "transaction",
-            "user_id": "user_avg_baseline",
-            "amount": 1100.00,
-            "country": "US",
-            "ip_address": "192.168.1.100",
-            "device_id": "device_00001",
-            "timestamp": "'"$CURRENT_TIME"'"
-        }
-    }' "review"
-
-    # Test 37: Exceeds max history - should decline (max_transaction_amount feature)
-    # With expression features working, score exceeds decline threshold
-    run_test_case "Exceeds Max History" '{
-        "event": {
-            "type": "transaction",
-            "user_id": "user_max_history",
-            "amount": 1600.00,
-            "country": "US",
-            "ip_address": "192.168.1.100",
-            "device_id": "device_00001",
-            "timestamp": "'"$CURRENT_TIME"'"
-        }
-    }' "decline"
-
-    # Test 38: Micro transaction pattern - should decline (min_transaction_amount feature)
-    # With expression features working, score exceeds decline threshold
-    run_test_case "Micro Transaction Pattern" '{
-        "event": {
-            "type": "transaction",
-            "user_id": "user_micro_pattern",
-            "amount": 3200.00,
-            "country": "US",
-            "ip_address": "192.168.1.100",
-            "device_id": "device_00001",
-            "timestamp": "'"$CURRENT_TIME"'"
-        }
-    }' "decline"
-
-    # Test 39: Recent spending spike - should decline (avg_transaction_amount_7d feature)
-    # With expression features working, score exceeds decline threshold
-    run_test_case "Recent Spending Spike" '{
-        "event": {
-            "type": "transaction",
-            "user_id": "user_recent_spike",
-            "amount": 600.00,
-            "country": "US",
-            "ip_address": "192.168.1.100",
-            "device_id": "device_00001",
-            "timestamp": "'"$CURRENT_TIME"'"
-        }
-    }' "decline"
-
-    # Test 40: Velocity spike - should decline (txn_velocity_1h_to_24h expression)
-    run_test_case "Velocity Spike" '{
-        "event": {
-            "type": "transaction",
-            "user_id": "user_velocity_test",
-            "amount": 500.00,
-            "country": "US",
-            "ip_address": "192.168.1.100",
-            "device_id": "device_00001",
-            "timestamp": "'"$CURRENT_TIME"'"
-        }
-    }' "decline"
-
-    # Test 41: Amount concentration - should decline (amount_concentration_24h expression)
-    run_test_case "Amount Concentration" '{
-        "event": {
-            "type": "transaction",
-            "user_id": "user_concentration",
-            "amount": 5000.00,
-            "country": "US",
-            "ip_address": "192.168.1.100",
-            "device_id": "device_00001",
-            "timestamp": "'"$CURRENT_TIME"'"
-        }
-    }' "decline"
-
-    # Test 42: Wide amount range - should decline (txn_amount_range_30d expression)
-    # With expression features working, score exceeds decline threshold
-    run_test_case "Wide Amount Range" '{
-        "event": {
-            "type": "transaction",
-            "user_id": "user_wide_range",
-            "amount": 1000.00,
-            "country": "US",
-            "ip_address": "192.168.1.100",
-            "device_id": "device_00001",
-            "timestamp": "'"$CURRENT_TIME"'"
-        }
-    }' "decline"
-
-    # Test 43: Spending acceleration - should decline (avg_amount_acceleration expression)
-    # With expression features working, score exceeds decline threshold
-    run_test_case "Spending Acceleration" '{
-        "event": {
-            "type": "transaction",
-            "user_id": "user_acceleration",
-            "amount": 700.00,
-            "country": "US",
-            "ip_address": "192.168.1.100",
-            "device_id": "device_00001",
-            "timestamp": "'"$CURRENT_TIME"'"
-        }
-    }' "decline"
-
-    # Test 44: Multiple devices 24h - should review (unique_devices_24h feature)
-    # Triggers multiple_devices_24h rule (score 80) → review
-    run_test_case "Multiple Devices 24h" '{
-        "event": {
-            "type": "transaction",
-            "user_id": "user_multi_device_24h",
-            "amount": 500.00,
-            "country": "US",
-            "ip_address": "192.168.1.100",
-            "device_id": "device_test_999",
-            "timestamp": "'"$CURRENT_TIME"'"
-        }
-    }' "review"
-
-    # Test 45: High device activity - should approve (txn_count_by_device_24h feature)
-    # Triggers high_device_activity rule (score 75) → approve (75 < 80)
-    run_test_case "High Device Activity" '{
-        "event": {
-            "type": "transaction",
-            "user_id": "user_device_high",
-            "amount": 300.00,
-            "country": "US",
-            "ip_address": "192.168.1.100",
-            "device_id": "device_high_activity",
-            "timestamp": "'"$CURRENT_TIME"'"
-        }
-    }' "approve"
-
-    echo ""
-    echo "--- Feature Coverage Tests (Payment) ---"
-    echo ""
-
-    # Test 46: High payment frequency - should decline (payment_count_24h feature)
-    # With expression features working, score exceeds decline threshold
-    run_test_case "High Payment Frequency" '{
-        "event": {
-            "type": "payment",
-            "user_id": "user_payment_freq",
-            "amount": 500.00,
-            "country": "US",
-            "ip_address": "192.168.1.100",
-            "device_id": "device_00001",
-            "payment_method": "card",
-            "timestamp": "'"$CURRENT_TIME"'"
-        }
-    }' "decline"
-
-    # Test 47: Weekly payment limit - should decline (payment_sum_7d feature)
-    run_test_case "Weekly Payment Limit" '{
-        "event": {
-            "type": "payment",
-            "user_id": "user_payment_weekly",
-            "amount": 3000.00,
-            "country": "US",
-            "ip_address": "192.168.1.100",
-            "device_id": "device_00001",
-            "payment_method": "card",
-            "timestamp": "'"$CURRENT_TIME"'"
-        }
-    }' "decline"
-
-    # Test 48: Max payment exceeded - should decline (max_payment_amount_30d feature)
-    run_test_case "Max Payment Exceeded" '{
-        "event": {
-            "type": "payment",
-            "user_id": "user_payment_max",
-            "amount": 5200.00,
-            "country": "US",
-            "ip_address": "192.168.1.100",
-            "device_id": "device_00001",
-            "payment_method": "card",
-            "timestamp": "'"$CURRENT_TIME"'"
-        }
-    }' "decline"
-
-    # Test 49: Payment dominance - should approve (payment_to_txn_ratio expression)
-    run_test_case "Payment Dominance" '{
-        "event": {
-            "type": "payment",
-            "user_id": "user_payment_ratio",
-            "amount": 400.00,
-            "country": "US",
-            "ip_address": "192.168.1.100",
-            "device_id": "device_00001",
-            "payment_method": "card",
-            "timestamp": "'"$CURRENT_TIME"'"
-        }
-    }' "approve"
-
-    echo ""
-    echo "--- Feature Coverage Tests (Login) ---"
-    echo ""
-
-    # Test 50: Low login history - should review (successful_login_count_7d feature)
-    run_test_case "Low Login History" '{
-        "event": {
-            "type": "login",
-            "user_id": "user_low_login",
-            "country": "NG",
-            "ip_address": "192.168.1.100",
-            "device_id": "device_00001",
-            "timestamp": "'"$CURRENT_TIME"'"
-        }
-    }' "review"
-
-    # Test 51: Multiple IPs - should decline (unique_ips_24h feature)
-    # With expression features working, score exceeds decline threshold
-    run_test_case "Multiple IPs 24h" '{
-        "event": {
-            "type": "login",
-            "user_id": "user_multi_ip",
-            "country": "US",
-            "ip_address": "10.0.99.99",
-            "device_id": "device_00001",
-            "timestamp": "'"$CURRENT_TIME"'"
-        }
-    }' "decline"
-
-    # Test 52: High failure rate - should decline (rate_failed_login expression)
-    run_test_case "High Failure Rate" '{
-        "event": {
-            "type": "login",
-            "user_id": "user_failure_rate",
-            "country": "US",
-            "ip_address": "192.168.1.100",
-            "device_id": "device_00001",
-            "timestamp": "'"$CURRENT_TIME"'"
-        }
-    }' "decline"
-
-    # Test 53: Device velocity anomaly - should review (device_velocity_ratio expression)
-    run_test_case "Device Velocity Anomaly" '{
-        "event": {
-            "type": "login",
-            "user_id": "user_device_velocity",
-            "country": "US",
-            "ip_address": "192.168.1.100",
-            "device_id": "device_24h_001",
-            "timestamp": "'"$CURRENT_TIME"'"
-        }
-    }' "review"
-
-    # Test 54: Shared device - should review (unique_users_by_device_7d feature)
-    run_test_case "Shared Device" '{
-        "event": {
-            "type": "login",
-            "user_id": "shared_user_999",
-            "country": "US",
-            "ip_address": "192.168.1.100",
-            "device_id": "device_shared",
-            "timestamp": "'"$CURRENT_TIME"'"
-        }
-    }' "review"
-
-    echo ""
-    echo "============================================================================"
-    echo ""
-
-    # Re-enable exit on error after all tests have run
     set -e
 
-    # Step 5: Print detailed test report
-    log_info "Step 5: Test Report"
-    echo "============================================================================"
+    # Step 6: Print report
+    print_test_report "$datasource"
+
+    # Stop server
+    if [ -f "$SERVER_PID_FILE" ]; then
+        PID=$(cat "$SERVER_PID_FILE")
+        kill $PID 2>/dev/null || true
+        rm -f "$SERVER_PID_FILE"
+    fi
+
+    return $FAILED_TESTS
+}
+
+print_test_report() {
+    local datasource=$1
+
+    echo ""
+    log_header "============================================================================"
+    log_header "Test Report for: $datasource"
+    log_header "============================================================================"
     echo ""
 
-    # Summary
     echo -e "${BLUE}Test Summary:${NC}"
     echo "  Total Tests:  $TOTAL_TESTS"
     echo -e "  ${GREEN}Passed:       $PASSED_TESTS${NC}"
     echo -e "  ${RED}Failed:       $FAILED_TESTS${NC}"
     echo ""
 
-    # Passed tests
     if [ $PASSED_TESTS -gt 0 ]; then
         echo -e "${GREEN}✓ Passed Tests ($PASSED_TESTS):${NC}"
         for test_name in "${PASSED_TEST_NAMES[@]}"; do
@@ -1290,7 +823,6 @@ main() {
         echo ""
     fi
 
-    # Failed tests
     if [ $FAILED_TESTS -gt 0 ]; then
         echo -e "${RED}✗ Failed Tests ($FAILED_TESTS):${NC}"
         for detail in "${FAILED_TEST_DETAILS[@]}"; do
@@ -1302,18 +834,89 @@ main() {
     fi
 
     echo "============================================================================"
-    echo ""
 
     if [ $FAILED_TESTS -eq 0 ]; then
-        log_success "All tests passed! 🎉"
-        echo ""
-        exit 0
+        log_success "All tests passed for $datasource! 🎉"
     else
-        log_error "$FAILED_TESTS test(s) failed"
-        echo ""
-        exit 1
+        log_error "$FAILED_TESTS test(s) failed for $datasource"
     fi
+    echo ""
+}
+
+# ============================================================================
+# Main
+# ============================================================================
+
+main() {
+    # Select datasource
+    select_datasource "$1"
+
+    # Create results directory
+    mkdir -p "$RESULTS_DIR"
+
+    # Track overall results
+    declare -a DATASOURCE_RESULTS=()
+    TOTAL_FAILED=0
+
+    case $DATASOURCE in
+        sqlite)
+            run_tests_for_datasource "sqlite"
+            TOTAL_FAILED=$?
+            ;;
+        postgres)
+            run_tests_for_datasource "postgres"
+            TOTAL_FAILED=$?
+            ;;
+        clickhouse)
+            run_tests_for_datasource "clickhouse"
+            TOTAL_FAILED=$?
+            ;;
+        redis)
+            log_error "Redis datasource not yet implemented"
+            exit 1
+            ;;
+        all)
+            echo ""
+            log_header "Running tests on all available datasources..."
+            echo ""
+
+            # SQLite
+            run_tests_for_datasource "sqlite"
+            DATASOURCE_RESULTS+=("sqlite:$FAILED_TESTS")
+
+            # PostgreSQL (if available)
+            if psql "${POSTGRES_URL:-postgresql://postgres:postgres@localhost:5432/corint_test}" -c "SELECT 1;" > /dev/null 2>&1; then
+                run_tests_for_datasource "postgres"
+                DATASOURCE_RESULTS+=("postgres:$FAILED_TESTS")
+            else
+                log_warning "PostgreSQL not available, skipping"
+            fi
+
+            # ClickHouse (auto-install and start if needed)
+            run_tests_for_datasource "clickhouse"
+            DATASOURCE_RESULTS+=("clickhouse:$FAILED_TESTS")
+
+            # Print overall summary
+            echo ""
+            log_header "============================================================================"
+            log_header "Overall Summary"
+            log_header "============================================================================"
+            for result in "${DATASOURCE_RESULTS[@]}"; do
+                ds=$(echo "$result" | cut -d: -f1)
+                failures=$(echo "$result" | cut -d: -f2)
+                if [ "$failures" -eq 0 ]; then
+                    echo -e "  ${GREEN}✓${NC} $ds: All tests passed"
+                else
+                    echo -e "  ${RED}✗${NC} $ds: $failures test(s) failed"
+                    TOTAL_FAILED=$((TOTAL_FAILED + failures))
+                fi
+            done
+            echo ""
+            ;;
+    esac
+
+    exit $TOTAL_FAILED
 }
 
 # Run main function
-main
+main "$@"

@@ -1,0 +1,9 @@
+# VIP Users List
+lists:
+  - id: vip_users
+    description: "List of VIP user IDs with higher transaction limits"
+    backend: memory
+    initial_values:
+      - "user_vip_001"
+      - "user_vip_002"
+      - "user_vip_003"

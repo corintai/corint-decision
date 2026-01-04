@@ -113,7 +113,7 @@ rule:
   when:
     all:
       - event.country in list.high_risk_countries
-  score: 80
+  score: 90
 
 ---
 
@@ -163,7 +163,7 @@ rule:
     all:
       - features.user_total_amount > 50000
       - event.amount > 5000
-  score: 80
+  score: 40
 
 ---
 
@@ -176,7 +176,7 @@ rule:
     all:
       - features.avg_transaction_amount > 0
       - event.amount > features.avg_transaction_amount * 5
-  score: 80
+  score: 60
 
 ---
 
@@ -189,7 +189,7 @@ rule:
     all:
       - features.max_transaction_amount > 100
       - event.amount > features.max_transaction_amount * 1.5
-  score: 90
+  score: 65
 
 ---
 
@@ -202,7 +202,7 @@ rule:
     all:
       - features.min_transaction_amount < 10
       - event.amount > 3000
-  score: 40
+  score: 35
 
 ---
 
@@ -215,7 +215,7 @@ rule:
     all:
       - features.avg_transaction_amount > 0
       - features.avg_transaction_amount_7d > features.avg_transaction_amount * 2
-  score: 80
+  score: 55
 
 ---
 
@@ -227,7 +227,7 @@ rule:
   when:
     all:
       - features.txn_velocity_1h_to_24h > 10
-  score: 90
+  score: 70
 
 ---
 
@@ -239,7 +239,7 @@ rule:
   when:
     all:
       - features.amount_concentration_24h > 0.8
-  score: 160
+  score: 110
 
 ---
 
@@ -251,7 +251,7 @@ rule:
   when:
     all:
       - features.txn_amount_range_30d > 5000
-  score: 45
+  score: 35
 
 ---
 
@@ -263,7 +263,7 @@ rule:
   when:
     all:
       - features.avg_amount_acceleration > 2.5
-  score: 80
+  score: 55
 
 ---
 
@@ -287,7 +287,7 @@ rule:
   when:
     all:
       - features.txn_count_by_device_24h >= 10
-  score: 75
+  score: 80
 
 ---
 
@@ -334,19 +334,23 @@ ruleset:
       signal: decline
       reason: "Email is in blocked list"
 
-    # High risk - multiple indicators or high score
-    - when: total_score >= 150
+    # High risk - high score or many indicators
+    - when: total_score >= 230
       signal: decline
       reason: "High risk score threshold exceeded"
 
-    - when: triggered_count >= 3
+    - when: triggered_count >= 6
       signal: decline
       reason: "Multiple risk indicators detected"
 
     # Medium risk - review
-    - when: total_score >= 80
+    - when: total_score >= 50
       signal: review
       reason: "Medium risk score - manual review required"
+
+    - when: triggered_count >= 2
+      signal: review
+      reason: "Multiple risk factors require review"
 
     # Low risk - approve (default)
     - default: true

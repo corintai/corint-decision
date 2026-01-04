@@ -96,6 +96,9 @@ impl FeatureExecutor {
         feature_name: &str,
         context: &ExecutionContext,
     ) -> Result<Value> {
+        use std::time::Instant;
+        let start_time = Instant::now();
+
         let feature = self
             .features
             .get(feature_name)
@@ -109,6 +112,7 @@ impl FeatureExecutor {
         let context_map = context.event.clone();
 
         // Check dependencies first - compute them in parallel
+        let dep_start = Instant::now();
         let dep_values = if !feature.dependencies.is_empty() {
             debug!(
                 "Computing {} dependencies in parallel for feature '{}': {:?}",
@@ -132,6 +136,11 @@ impl FeatureExecutor {
 
             // Execute all dependency computations in parallel
             let results = future::try_join_all(dep_futures).await?;
+            let dep_elapsed = dep_start.elapsed();
+            debug!(
+                "Feature '{}' dependencies computed in {:?}",
+                feature_name, dep_elapsed
+            );
 
             // Convert results to HashMap
             results.into_iter().collect::<HashMap<String, Value>>()
@@ -148,7 +157,8 @@ impl FeatureExecutor {
                 if self.cache_manager.is_stats_enabled() {
                     self.cache_manager.stats().write().await.l1_hits += 1;
                 }
-                debug!("Feature '{}' L1 cache hit", feature_name);
+                let elapsed = start_time.elapsed();
+                debug!("Feature '{}' L1 cache hit ({}ms)", feature_name, elapsed.as_millis());
                 return Ok(value);
             }
 
@@ -162,7 +172,8 @@ impl FeatureExecutor {
                     if self.cache_manager.is_stats_enabled() {
                         self.cache_manager.stats().write().await.l2_hits += 1;
                     }
-                    debug!("Feature '{}' L2 cache hit", feature_name);
+                    let elapsed = start_time.elapsed();
+                    debug!("Feature '{}' L2 cache hit ({}ms)", feature_name, elapsed.as_millis());
 
                     // Populate L1 cache
                     self.cache_manager.set_to_l1_cache(&cache_key, value.clone(), cache_config.ttl)
@@ -177,13 +188,23 @@ impl FeatureExecutor {
             }
 
             // Compute feature
+            let compute_start = Instant::now();
             let value = self
                 .compute_feature(feature, &context_map, &dep_values)
                 .await?;
+            let compute_elapsed = compute_start.elapsed();
 
             if self.cache_manager.is_stats_enabled() {
                 self.cache_manager.stats().write().await.compute_count += 1;
             }
+
+            let total_elapsed = start_time.elapsed();
+            debug!(
+                "Feature '{}' computed (compute: {}ms, total: {}ms)",
+                feature_name,
+                compute_elapsed.as_millis(),
+                total_elapsed.as_millis()
+            );
 
             // Store in cache
             self.cache_manager.set_to_cache(&cache_key, value.clone(), cache_config)
@@ -196,8 +217,19 @@ impl FeatureExecutor {
                 self.cache_manager.stats().write().await.compute_count += 1;
             }
 
-            self.compute_feature(feature, &context_map, &dep_values)
-                .await
+            let compute_start = Instant::now();
+            let value = self.compute_feature(feature, &context_map, &dep_values).await?;
+            let compute_elapsed = compute_start.elapsed();
+            let total_elapsed = start_time.elapsed();
+
+            debug!(
+                "Feature '{}' computed without cache (compute: {}ms, total: {}ms)",
+                feature_name,
+                compute_elapsed.as_millis(),
+                total_elapsed.as_millis()
+            );
+
+            Ok(value)
         }
     }
 
@@ -207,15 +239,42 @@ impl FeatureExecutor {
         feature_names: &[String],
         context: &ExecutionContext,
     ) -> Result<HashMap<String, Value>> {
+        use std::time::Instant;
+        let batch_start = Instant::now();
+
         let mut results = HashMap::new();
 
         // Sort features by dependency order
         let sorted_features = self.sort_by_dependencies(feature_names)?;
 
-        for feature_name in sorted_features {
-            let value = self.execute_feature_impl(&feature_name, context).await?;
-            results.insert(feature_name, value);
+        debug!(
+            "Executing {} features sequentially in dependency order",
+            sorted_features.len()
+        );
+
+        for (idx, feature_name) in sorted_features.iter().enumerate() {
+            let feature_start = Instant::now();
+            let value = self.execute_feature_impl(feature_name, context).await?;
+            let feature_elapsed = feature_start.elapsed();
+
+            debug!(
+                "[{}/{}] Feature '{}' completed in {}ms",
+                idx + 1,
+                sorted_features.len(),
+                feature_name,
+                feature_elapsed.as_millis()
+            );
+
+            results.insert(feature_name.clone(), value);
         }
+
+        let batch_elapsed = batch_start.elapsed();
+        debug!(
+            "Batch execution of {} features completed in {}ms (avg: {}ms/feature)",
+            sorted_features.len(),
+            batch_elapsed.as_millis(),
+            if sorted_features.is_empty() { 0 } else { batch_elapsed.as_millis() / sorted_features.len() as u128 }
+        );
 
         Ok(results)
     }
@@ -233,11 +292,24 @@ impl FeatureExecutor {
         context: &HashMap<String, Value>,
         dependencies: &HashMap<String, Value>,
     ) -> Result<Value> {
-        debug!("Computing feature '{}'", feature.name);
+        use std::time::Instant;
+        let start = Instant::now();
+
+        debug!(
+            "Computing feature '{}' (type: {:?})",
+            feature.name, feature.feature_type
+        );
 
         // For expression features, pass dependencies directly
         if feature.feature_type == crate::feature::definition::FeatureType::Expression {
-            return self.execute_expression(feature, context, dependencies).await;
+            let result = self.execute_expression(feature, context, dependencies).await?;
+            let elapsed = start.elapsed();
+            debug!(
+                "Expression feature '{}' computed in {}μs",
+                feature.name,
+                elapsed.as_micros()
+            );
+            return Ok(result);
         }
 
         // Determine data source for other feature types
@@ -247,9 +319,24 @@ impl FeatureExecutor {
             .get(&datasource_name)
             .with_context(|| format!("Data source '{}' not found", datasource_name))?;
 
+        debug!(
+            "Feature '{}' using datasource '{}'",
+            feature.name, datasource_name
+        );
+
         // Execute feature based on type
-        self.execute_feature_by_type(feature, datasource, context)
-            .await
+        let result = self
+            .execute_feature_by_type(feature, datasource, context)
+            .await?;
+
+        let elapsed = start.elapsed();
+        debug!(
+            "Feature '{}' datasource query completed in {}ms",
+            feature.name,
+            elapsed.as_millis()
+        );
+
+        Ok(result)
     }
 
     /// Execute a feature based on its type

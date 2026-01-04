@@ -176,6 +176,11 @@ ruleset:
 
   # Conclusion produces signals
   conclusion:
+    # VIP bypass - VIP users skip risk checks (except blocklist)
+    - when: event.user_id in list.vip_users
+      signal: approve
+      reason: "VIP user - approved with elevated limits"
+
     # Critical risk - blocked user or limit exceeded
     - when: triggered_rules contains "user_in_blocklist"
       signal: decline
@@ -186,14 +191,22 @@ ruleset:
       reason: "Daily payment limit exceeded"
 
     # High risk
-    - when: total_score >= 150
+    - when: total_score >= 250
       signal: decline
       reason: "High risk score threshold exceeded"
 
+    - when: triggered_count >= 4
+      signal: decline
+      reason: "Multiple risk indicators detected"
+
     # Medium risk - review
-    - when: total_score >= 100
+    - when: total_score >= 80
       signal: review
       reason: "Medium risk - manual review required"
+
+    - when: triggered_count >= 2
+      signal: review
+      reason: "Multiple risk factors require review"
 
     # Low risk - approve (default)
     - default: true

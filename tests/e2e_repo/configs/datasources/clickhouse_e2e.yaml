@@ -1,0 +1,26 @@
+# E2E Test Datasource Configuration - ClickHouse
+# This datasource is used for ClickHouse integration testing
+
+# Datasource name
+name: clickhouse_e2e
+
+# Datasource type
+type: olap
+
+# Provider: clickhouse
+provider: clickhouse
+
+# Connection string - will be overridden by CLICKHOUSE_URL environment variable
+# Default: http://127.0.0.1:8123
+connection_string: "http://127.0.0.1:8123"
+
+# Database name
+database: "default"
+
+# Events table name
+events_table: "events"
+
+# Optional settings
+options:
+  max_connections: "5"
+  timeout_ms: "10000"

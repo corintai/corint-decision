@@ -1,0 +1,26 @@
+# E2E Test Datasource Configuration - PostgreSQL
+# This datasource is used for PostgreSQL integration testing
+
+# Datasource name
+name: postgres_e2e
+
+# Datasource type
+type: sql
+
+# Provider: postgresql
+provider: postgresql
+
+# Connection string - will be overridden by POSTGRES_URL environment variable
+# Default: postgresql://localhost:5432/corint_test
+connection_string: "postgresql://postgres:postgres@localhost:5432/corint_test"
+
+# Database name
+database: "corint_test"
+
+# Events table name
+events_table: "events"
+
+# Optional settings
+options:
+  max_connections: "5"
+  timeout_ms: "5000"

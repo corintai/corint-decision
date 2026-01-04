@@ -37,3 +37,4 @@ config/server.yaml
 config/server.yaml.*
 
 temp
+clickhouse
