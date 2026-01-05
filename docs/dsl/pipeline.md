@@ -1,5 +1,5 @@
 # CORINT Risk Definition Language (RDL)
-## Pipeline Specification (v0.2)
+## Pipeline Specification (v0.1)
 
 A **Pipeline** defines the full risk‑processing flow in CORINT's Cognitive Risk Intelligence framework.
 It represents a declarative Directed Acyclic Graph (DAG) composed of processing steps with explicit routing.
@@ -788,25 +788,25 @@ ARRAY ::= "[" VALUE { "," VALUE } "]"
 For comprehensive understanding of pipelines and the CORINT ecosystem:
 
 ### Core Concepts
-- **[import.md](import.md)** - Complete module system and dependency management specification
-- **[ruleset.md](ruleset.md)** - Ruleset specification and decision logic
-- **[rule.md](rule.md)** - Individual rule specification
+- [import.md](import.md) - Complete module system and dependency management specification
+- [ruleset.md](ruleset.md) - Ruleset specification and decision logic
+- [rule.md](rule.md) - Individual rule specification
 
 ### Advanced Topics
-- **[expression.md](expression.md)** - Expression language for conditions
-- **[context.md](context.md)** - Context management and data flow between steps
-- **[feature.md](feature.md)** - Feature engineering and extraction
+- [expression.md](expression.md) - Expression language for conditions
+- [context.md](context.md) - Context management and data flow between steps
+- [feature.md](feature.md) - Feature engineering and extraction
 
 ### Integration
-- **[service.md](service.md)** - Internal service integration (microservices and message queues)
-- **[api.md](api.md)** - External API integration
+- [service.md](service.md) - Internal service integration (microservices and message queues)
+- [api.md](api.md) - External API integration
 
 ### Development Tools
-- **[LLM_GUIDE.md](../LLM_GUIDE.md)** - LLM code generation guide (development-time only)
+- [LLM_GUIDE.md](../LLM_GUIDE.md) - LLM code generation guide (development-time only)
 
 ### Architecture
-- **[overall.md](overall.md)** - High-level RDL overview
-- **[ARCHITECTURE.md](../ARCHITECTURE.md)** - Three-layer decision architecture
+- [overall.md](overall.md) - High-level RDL overview
+- [ARCHITECTURE.md](../ARCHITECTURE.md) - Three-layer decision architecture
 
 ---
 

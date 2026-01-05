@@ -1,5 +1,5 @@
 # CORINT Risk Definition Language (RDL)
-## Ruleset Specification (v0.2)
+## Ruleset Specification (v0.1)
 
 A **Ruleset** is a named collection of rules that can be reused, grouped, and executed as a unit within CORINT's Cognitive Risk Intelligence framework.
 Rulesets enable modular design, separation of concerns, and cleaner pipeline logic.
@@ -172,7 +172,7 @@ Rulesets use the `import` section to declare their rule dependencies explicitly.
 Rulesets use multi-document YAML format with `---` separator:
 
 ```yaml
-version: "0.2"
+version: "0.1"
 
 # First document: Import
 import:
@@ -460,7 +460,7 @@ conclusion:
 ### 8.1 Account Takeover Detection
 
 ```yaml
-version: "0.2"
+version: "0.1"
 
 ruleset:
   id: account_takeover_detection
@@ -560,18 +560,18 @@ conclusion:
 For comprehensive understanding of rulesets and the CORINT ecosystem:
 
 ### Core Concepts
-- **[import.md](import.md)** - Complete module system and dependency management specification
-- **[rule.md](rule.md)** - Individual rule specification and rule library creation
-- **[pipeline.md](pipeline.md)** - Pipeline orchestration that uses rulesets
+- [import.md](import.md) - Complete module system and dependency management specification
+- [rule.md](rule.md) - Individual rule specification and rule library creation
+- [pipeline.md](pipeline.md) - Pipeline orchestration that uses rulesets
 
 ### Advanced Topics
-- **[expression.md](expression.md)** - Expression language for conditions
-- **[context.md](context.md)** - Context management and variable access
-- **[feature.md](feature.md)** - Feature engineering for rule conditions
+- [expression.md](expression.md) - Expression language for conditions
+- [context.md](context.md) - Context management and variable access
+- [feature.md](feature.md) - Feature engineering for rule conditions
 
 ### Architecture
-- **[overall.md](overall.md)** - High-level RDL overview
-- **[ARCHITECTURE.md](../ARCHITECTURE.md)** - Three-layer decision architecture
+- [overall.md](overall.md) - High-level RDL overview
+- [ARCHITECTURE.md](../ARCHITECTURE.md) - Three-layer decision architecture
 
 ---
 

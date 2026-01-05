@@ -18,30 +18,34 @@ version: "0.1"
 registry:
   - pipeline: login_pipeline
     when:
-      event.type: login
+      all:
+        - event.type == "login"
 
   - pipeline: register_pipeline
     when:
-      event.type: register
+      all:
+        - event.type == "register"
 
   - pipeline: payment_br_pipeline
     when:
-      event.type: payment
-      conditions:
+      all:
+        - event.type == "payment"
         - geo.country == "BR"
 
   - pipeline: payment_main_pipeline
     when:
-      event.type: payment
+      all:
+        - event.type == "payment"
 
   - pipeline: loan_pipeline
     when:
-      event.type: loan_application
+      all:
+        - event.type == "loan_application"
 
   - pipeline: payment_shadow_pipeline
     when:
-      event.type: payment
-      conditions:
+      all:
+        - event.type == "payment"
         - event.shadow == true
 ```
 
@@ -75,42 +79,45 @@ registry:
   # ✅ Correct: Specific conditions first
   - pipeline: payment_br_pipeline
     when:
-      event.type: payment
-      conditions:
+      all:
+        - event.type == "payment"
         - geo.country == "BR"
-  
+
   - pipeline: payment_main_pipeline
     when:
-      event.type: payment
+      all:
+        - event.type == "payment"
 
   # ❌ Wrong: General condition first (would always match first)
   - pipeline: payment_main_pipeline
     when:
-      event.type: payment
-  
+      all:
+        - event.type == "payment"
+
   - pipeline: payment_br_pipeline
     when:
-      event.type: payment
-      conditions:
+      all:
+        - event.type == "payment"
         - geo.country == "BR"
 ```
 
 ### 2.3 Default Fallback
 
-To provide a default pipeline when no other conditions match, you can use a catch-all entry at the end. However, since registry `when` blocks use the same format as rules, you cannot use `when: "true"`. Instead, omit the `when` block or use a condition that always evaluates to true:
+To provide a default pipeline when no other conditions match, you can use a catch-all entry at the end:
 
 ```yaml
 registry:
   - pipeline: login_pipeline
     when:
-      event.type: login
-  
+      all:
+        - event.type == "login"
+
   - pipeline: payment_pipeline
     when:
-      event.type: payment
-  
+      all:
+        - event.type == "payment"
+
   # Default fallback - no when block means always matches
-  # Or use: when: { conditions: ["1 == 1"] }
   - pipeline: default_pipeline
 ```
 
@@ -120,98 +127,21 @@ registry:
 
 The `when` field uses the **same structure as rule and pipeline `when` blocks**, ensuring consistency across the DSL.
 
-### 3.1 Basic Structure
+**Basic example:**
 
 ```yaml
 when:
   all:
-    - event.type == "login"      # Event type filter
-    - geo.country == "BR"        # Additional condition
-    - amount > 1000              # Additional condition
-```
-
-### 3.2 Event Field Filtering
-
-You can filter on **any event field** for fast matching. The `when` block supports direct field matching:
-
-```yaml
-# Filter by event type
-when:
-  event.type: login
-
-# Filter by channel
-when:
-  event.channel: stripe
-
-# Filter by nested fields
-when:
-  event.country.city: sao_paulo
-
-# Combine multiple field filters
-when:
-  event.type: payment
-  event.channel: stripe
-  event.currency: BRL
-```
-
-**Note**: All field filters in the `when` block are combined with **AND** logic. All must match for the entry to be selected.
-
-### 3.3 Conditions
-
-The `conditions` array contains expressions that are evaluated with **AND** logic:
-
-```yaml
-when:
-  event.type: payment
-  when:
-    all:
+    - event.type == "login"
     - geo.country == "BR"
     - amount > 1000
-    - user.verified == true
 ```
 
-### 3.4 Supported Operators
+**Logical operators:**
+- `all:` - AND logic (all conditions must match)
+- `any:` - OR logic (at least one condition must match)
 
-Conditions support the same operators as rule conditions:
-
-| Operator | Meaning | Example |
-|----------|---------|---------|
-| `==` | equal | `geo.country == "BR"` |
-| `!=` | not equal | `geo.country != "US"` |
-| `<, >, <=, >=` | numeric comparison | `amount > 1000` |
-| `in` | membership in array | `geo.country in ["BR", "MX"]` |
-| `regex` | regular-expression match | `email regex ".*@example.com"` |
-| `exists` | field exists | `event.shadow exists` |
-| `missing` | field is missing | `event.shadow missing` |
-
-### 3.5 Complex Conditions
-
-You can use logical operators within conditions:
-
-```yaml
-when:
-  event.type: payment
-  when:
-    all:
-    - geo.country == "BR" || geo.country == "MX"
-    - amount > 1000 && amount < 10000
-    - user.verified == true || user.whitelisted == true
-```
-
-### 3.6 Field Access
-
-Fields can be accessed using dot notation:
-
-```yaml
-when:
-  event.type: payment
-  when:
-    all:
-    - geo.country == "US"              # Nested object field
-    - user.profile.tier == "premium"    # Deep nesting
-    - event.shadow == true              # Event data field
-    - event.amount > 1000               # Event data field
-```
+For complete `when` block syntax, supported operators, and expression details, see [expression.md](expression.md) and [rule.md](rule.md).
 
 ---
 
@@ -231,7 +161,8 @@ registry:
 pipeline:
   id: login_pipeline  # Must match the registry reference
   when:
-    event.type: login
+    all:
+      - event.type == "login"
   steps:
     - include:
         ruleset: login_risk_assessment
@@ -256,88 +187,43 @@ registry:
 pipeline:
   id: payment_pipeline
   when:
-    event.channel: stripe              # Final validation
     all:
-      - amount > 0                    # Additional validation
+      - event.channel == "stripe"        # Final validation
+      - amount > 0                       # Additional validation
   steps:
     - include:
         ruleset: payment_rules
 ```
 
----
-
-## 5. Execution Flow
-
-### 5.1 Request Processing
-
+**Execution flow:**
 ```
-Event Request
-    ↓
-Registry Matching (top-to-bottom)
-    ↓
-First Matching Entry Found?
-    ├─ Yes → Execute Referenced Pipeline
-    │         ↓
-    │    Pipeline When Check
-    │         ↓
-    │    Pipeline Steps Execution
-    │         ↓
-    │    Return Decision Result
-    │
-    └─ No → No Pipeline Executed
-            (or default fallback if configured)
+Event Request → Registry Matching (top-to-bottom) → First Match?
+                                                      ├─ Yes → Execute Pipeline
+                                                      └─ No  → No pipeline (or default)
 ```
-
-### 5.2 Example Execution
-
-Given this registry:
-
-```yaml
-registry:
-  - pipeline: payment_br_pipeline
-    when:
-      event.type: payment
-      conditions:
-        - geo.country == "BR"
-  
-  - pipeline: payment_main_pipeline
-    when:
-      event.type: payment
-```
-
-**Event 1**: `{event.type: "payment", geo.country: "BR"}`
-- ✅ Matches first entry → `payment_br_pipeline` executes
-- ❌ Second entry not evaluated
-
-**Event 2**: `{event.type: "payment", geo.country: "US"}`
-- ❌ First entry doesn't match (condition fails)
-- ✅ Matches second entry → `payment_main_pipeline` executes
-
-**Event 3**: `{event.type: "login"}`
-- ❌ No entries match → No pipeline executes
 
 ---
 
-## 6. Best Practices
+## 5. Best Practices
 
-### 6.1 Ordering
+### 5.1 Ordering
 
 - **Place specific conditions before general ones**
 - **Group related pipelines together**
 - **Add default fallback at the end** (if needed)
 
-### 6.2 Naming
+### 5.2 Naming
 
 - Use descriptive pipeline IDs that indicate their purpose
 - Follow consistent naming conventions (e.g., `{event_type}_pipeline`)
 
-### 6.3 Organization
+### 5.3 Organization
 
 - Keep registry file separate from rule files
 - One registry file per environment or domain
 - Document complex matching logic
 
-### 6.4 Performance
+### 5.4 Performance
 
 - Registry matching is fast (expression evaluation)
 - Only the first matching pipeline executes
@@ -345,9 +231,9 @@ registry:
 
 ---
 
-## 7. Complete Example
+## 6. Complete Example
 
-### 7.1 Registry File (`registry.yaml`)
+### 6.1 Registry File (`registry.yaml`)
 
 ```yaml
 version: "0.1"
@@ -356,60 +242,33 @@ registry:
   # Login events
   - pipeline: login_pipeline
     when:
-      event.type: login
+      all:
+        - event.type == "login"
 
-  # Registration events
-  - pipeline: register_pipeline
-    when:
-      event.type: register
-
-  # Stripe payment events
-  - pipeline: stripe_payment_pipeline
-    when:
-      event.type: payment
-      event.channel: stripe
-
-  # Payment events - Brazil specific
+  # Payment events - Brazil specific (more specific condition first)
   - pipeline: payment_br_pipeline
     when:
-      event.type: payment
-      conditions:
+      all:
+        - event.type == "payment"
         - geo.country == "BR"
 
-  # Payment events - Main pipeline
+  # Payment events - Main pipeline (general condition after specific)
   - pipeline: payment_main_pipeline
     when:
-      event.type: payment
+      all:
+        - event.type == "payment"
 
   # Loan application events
   - pipeline: loan_pipeline
     when:
-      event.type: loan_application
+      all:
+        - event.type == "loan_application"
 
-  # High-value transactions (filter by event field)
-  - pipeline: high_value_pipeline
-    when:
-      event.type: transaction
-      conditions:
-        - event.amount > 10000
-
-  # City-specific routing
-  - pipeline: sao_paulo_pipeline
-    when:
-      event.country.city: sao_paulo
-
-  # Shadow mode payments (testing)
-  - pipeline: payment_shadow_pipeline
-    when:
-      event.type: payment
-      conditions:
-        - event.shadow == true
-
-  # Default fallback (no when block = always matches)
+  # Default fallback
   - pipeline: default_pipeline
 ```
 
-### 7.2 Pipeline Definition Example (`payment_rules.yaml`)
+### 6.2 Pipeline Definition Example (`payment_rules.yaml`)
 
 ```yaml
 version: "0.1"
@@ -418,18 +277,18 @@ pipeline:
   id: payment_main_pipeline
   name: Payment Risk Assessment Pipeline
   description: Main payment processing pipeline with risk assessment
-  
+
   when:
-    event.type: payment
     all:
+      - event.type == "payment"
       - amount > 0
-  
+
   steps:
     - include:
         ruleset: payment_risk_assessment
 ```
 
-### 7.3 Integration
+### 6.3 Integration
 
 The registry is loaded at engine startup and used for every decision request:
 
@@ -441,9 +300,9 @@ The registry is loaded at engine startup and used for every decision request:
 
 ---
 
-## 8. Error Handling
+## 7. Error Handling
 
-### 8.1 Missing Pipeline Reference
+### 7.1 Missing Pipeline Reference
 
 If a registry entry references a pipeline that doesn't exist:
 
@@ -451,7 +310,7 @@ If a registry entry references a pipeline that doesn't exist:
 - Registry entry is skipped during matching
 - Request continues to next registry entry
 
-### 8.2 Invalid When Block
+### 7.2 Invalid When Block
 
 If a `when` block is invalid:
 
@@ -459,7 +318,7 @@ If a `when` block is invalid:
 - Registry entry is skipped
 - Request may fail if no valid entries remain
 
-### 8.3 No Matching Entry
+### 7.3 No Matching Entry
 
 If no registry entry matches the event:
 
@@ -469,7 +328,7 @@ If no registry entry matches the event:
 
 ---
 
-## 9. Summary
+## 8. Summary
 
 The Pipeline Registry provides:
 

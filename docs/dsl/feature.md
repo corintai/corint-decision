@@ -731,7 +731,7 @@ device_reputation_score            # Pre-computed
 ## 11. Complete Example
 
 ```yaml
-version: "0.2"
+version: "0.1"
 
 features:
   # Aggregation

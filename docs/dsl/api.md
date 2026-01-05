@@ -87,10 +87,10 @@ endpoints:
                          ( "request_body:" <json_template> )?
                          ( "response:" <response_config> )?
 
-<param_mapping>    ::= ( <param_name> ":" <context_path_or_literal> )+
+<param_mapping>    ::= ( <param_name> ":" <template_value> )+
 
-<context_path_or_literal> ::= <context_path>     // e.g., event.user.id (no ${} in API config)
-                            | <literal>           // e.g., "v2" or 123 or true
+<template_value>   ::= "${" <context_path> "}"  // e.g., ${event.user.id}
+                     | <literal>                // e.g., "v2" or 123 or true
 
 <context_path>     ::= <identifier> ( "." <identifier> )*
 
@@ -141,7 +141,7 @@ endpoints:
 <param_entry>      ::= <identifier> ":" <param_value>
 
 <param_value>      ::= <expression> | <literal>
-<expression>       ::= "${" <context_path> "}"  // e.g., ${event.user.id} (with ${} in pipeline)
+<expression>       ::= "${" <context_path> "}"  // e.g., ${event.user.id}
 <context_path>     ::= <identifier> ( "." <identifier> )*
 
 <variable_path>    ::= <identifier> ( "." <identifier> )*
@@ -174,7 +174,7 @@ CORINT external API integration resolves values at different times:
 auth:
   value: "Bearer ${env.llm.openai.api_key}"    # ← Resolved at compile time
 params:
-  user_id: event.user.id                       # ← Mapping recorded at compile time
+  user_id: ${event.user.id}                    # ← Mapping recorded at compile time
 
 # Runtime execution
 request_body: |
@@ -183,45 +183,45 @@ request_body: |
 
 ### 3.1 Parameter Resolution
 
-Parameters can be defined in two places with different syntax rules:
+Parameters can be defined in two places with the same consistent `${}` syntax:
 
 #### API Configuration `params` (Default Mapping)
 
-Defines default parameter mappings without `${}` syntax:
+Defines default parameter mappings using `${}` syntax for context references:
 
 ```yaml
 # In API config file
 endpoints:
   get_user:
     params:
-      user_id: event.user.id        # Context path (no ${})
-      api_version: "v2"              # String literal (no ${})
-      limit: 100                     # Number literal
-      include_details: true          # Boolean literal
+      user_id: ${event.user.id}      # Context path (with ${})
+      api_version: "v2"               # String literal
+      limit: 100                      # Number literal
+      include_details: true           # Boolean literal
 ```
 
 **Rules**:
-- Context paths are written directly: `event.user.id` (no `${}`)
+- Context paths use `${}`: `${event.user.id}`
 - Literals are written as-is: `"string"`, `123`, `true`
 - These define the default mapping relationship at compile time
 
 #### Pipeline Step `params` (Override)
 
-Overrides default mappings using expression syntax:
+Overrides default mappings using the same `${}` syntax:
 
 ```yaml
 # In pipeline step
 - step:
     type: api
     params:
-      user_id: ${event.user.id}     # Context path (with ${})
-      api_version: "v3"              # String literal (no ${})
-      limit: 200                     # Number literal
-      include_details: false         # Boolean literal
+      user_id: ${event.user.id}      # Context path (with ${})
+      api_version: "v3"               # String literal
+      limit: 200                      # Number literal
+      include_details: false          # Boolean literal
 ```
 
 **Rules**:
-- Context paths must use `${}`: `${event.user.id}`
+- Context paths use `${}`: `${event.user.id}` (same as API config)
 - Literals are written as-is: `"string"`, `123`, `true`
 - These override API config params at runtime
 
@@ -236,7 +236,7 @@ Overrides default mappings using expression syntax:
 ```yaml
 # API config defines defaults
 params:
-  user_id: event.user.id
+  user_id: ${event.user.id}
   limit: 100
 
 # Pipeline overrides only user_id
@@ -265,10 +265,10 @@ For POST/PUT/PATCH requests, `request_body` uses template substitution with `${p
 ```yaml
 # API config
 params:
-  transaction_id: event.transaction_id    # Context path (value: "tx_12345")
-  amount: event.amount                    # Context path (value: 1500.00)
-  currency: "USD"                         # Literal string
-  verified: true                          # Literal boolean
+  transaction_id: ${event.transaction_id}    # Context path (value: "tx_12345")
+  amount: ${event.amount}                    # Context path (value: 1500.00)
+  currency: "USD"                            # Literal string
+  verified: true                             # Literal boolean
 
 request_body: |
   {
@@ -391,7 +391,7 @@ endpoints:
     method: GET
     path: "/{ip}"
     params:
-      ip: event.ip_address          # Read from event
+      ip: ${event.ip_address}        # Read from event
       token: "abc123"                # Literal value
     query_params:
       - token

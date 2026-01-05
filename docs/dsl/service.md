@@ -63,8 +63,8 @@ services:
         path: <string>          # Required: URL path, can include {placeholders}
         timeout_ms: <integer>   # Optional: Override default timeout for this endpoint
         params:                 # Optional: Parameter mapping from context
-          <param_name>: <context_path>  # e.g., user_id: event.user.id (no ${})
-          <param_name>: <literal>       # e.g., api_version: "v1"
+          <param_name>: ${<context_path>}  # e.g., user_id: ${event.user.id}
+          <param_name>: <literal>          # e.g., api_version: "v1"
         query_params:           # Optional: Query parameter names
           - <param_name>
         request_body: <string>  # Optional: JSON template for POST/PUT/PATCH
@@ -94,9 +94,9 @@ services:
         path: /api/v1/verify/identity
         timeout_ms: 10000
         params:
-          user_id: event.user.id
-          document_type: event.kyc.document_type
-          document_number: event.kyc.document_number
+          user_id: ${event.user.id}
+          document_type: ${event.kyc.document_type}
+          document_number: ${event.kyc.document_number}
         request_body: |
           {
             "user_id": "${user_id}",
@@ -118,7 +118,7 @@ services:
         method: GET
         path: /api/v1/status/{user_id}
         params:
-          user_id: event.user.id
+          user_id: ${event.user.id}
         response:
           fallback:
             status: "unknown"
@@ -129,8 +129,8 @@ services:
         method: GET
         path: /api/v1/users/search
         params:
-          email: event.user.email
-          phone: event.user.phone
+          email: ${event.user.email}
+          phone: ${event.user.phone}
           limit: 10
         query_params:
           - email
@@ -214,7 +214,7 @@ services:
         service: <string>     # Required: gRPC service name
         method: <string>      # Required: gRPC method name
         params:               # Optional: Parameter mapping
-          <param_name>: <context_path>
+          <param_name>: ${<context_path>}
         response:             # Optional: Response handling
           mapping:
             <output_field>: <response_field>
@@ -245,9 +245,9 @@ services:
         service: RiskScoringService
         method: CalculateScore
         params:
-          user_id: event.user.id
-          transaction_amount: event.transaction.amount
-          features: features
+          user_id: ${event.user.id}
+          transaction_amount: ${event.transaction.amount}
+          features: ${features}
         response:
           mapping:
             score: risk_score

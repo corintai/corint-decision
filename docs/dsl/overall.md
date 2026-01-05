@@ -1,5 +1,5 @@
 # CORINT Risk Definition Language (RDL)
-## Overall Specification (v0.2)
+## Overall Specification (v0.1)
 
 **RDL is the domain-specific language used by CORINT (Cognitive Risk Intelligence) to define rules, rule groups, and full risk‑processing pipelines.**
 It enables modern hybrid risk engines to combine deterministic logic with external data sources and APIs in a unified, explainable, high‑performance format.
@@ -36,6 +36,8 @@ import:
 
 ---
 
+registry: {...}
+# OR
 rule: {...}
 # OR
 ruleset: {...}
@@ -48,6 +50,7 @@ Components:
 | Component | Purpose |
 |----------|---------|
 | **import** | Declare dependencies on external rules/rulesets (optional) |
+| **registry** | Event-to-pipeline routing with priority-based matching |
 | **rule** | A single risk logic unit |
 | **ruleset** | A group of rules |
 | **pipeline** | The full risk processing DAG |
@@ -93,7 +96,7 @@ Ruleset
 Rule (leaf, no dependencies)
 ```
 
-(See `import.md` for complete specification.)
+(See [import.md](import.md) for complete specification.)
 
 ---
 
@@ -139,7 +142,6 @@ Operators:
 - `<`, `>`, `<=`, `>=`
 - `in`
 - `regex`
-- `exists`, `missing`
 
 ---
 
@@ -231,7 +233,48 @@ A pipeline defines the entire risk‑processing DAG with explicit orchestration 
 - Pipelines map signals to **results** via required `decision` block
 - Same ruleset can be reused across pipelines with different decision mappings
 
-(See `pipeline.md` for full details.)
+(See [pipeline.md](pipeline.md) for full details.)
+
+---
+
+## 3.4 Registry
+
+A registry defines the entry point routing for event processing, determining which pipeline should execute for a given event.
+
+**Basic Structure:**
+
+```yaml
+registry:
+  - pipeline: login_pipeline
+    when:
+      all:
+        - event.type == "login"
+
+  - pipeline: payment_pipeline
+    when:
+      all:
+        - event.type == "payment"
+
+  - pipeline: default_pipeline
+```
+
+**Key Features:**
+- **Top-to-bottom matching** - Evaluates entries in order
+- **First match wins** - Only the first matching pipeline executes
+- **Priority-based routing** - More specific conditions should be placed first
+- **Default fallback** - Last entry without `when` condition catches all unmatched events
+
+**Matching Behavior:**
+
+```
+Event Request → Registry Matching (top-to-bottom) → First Match?
+                                                      ├─ Yes → Execute Pipeline
+                                                      └─ No  → No pipeline (or default)
+```
+
+The registry serves as the centralized entry point for all event processing, enabling clean separation between routing logic and processing logic.
+
+(See [registry.md](registry.md) for complete specification.)
 
 ---
 
@@ -247,11 +290,11 @@ Key features:
 - Built-in functions
 - External API integration
 
-(See `expression.md` for complete specification.)
+(See [expression.md](expression.md) for complete specification.)
 
 ---
 
-## 4.5 Feature Engineering and Statistical Analysis
+## 5. Feature Engineering and Statistical Analysis
 
 RDL includes comprehensive feature engineering capabilities for risk control scenarios.
 
@@ -368,11 +411,11 @@ features:
 - Behavioral velocity tracking
 - Sequence pattern matching
 
-(See `feature.md` for complete specification and examples.)
+(See [feature.md](feature.md) for complete specification and examples.)
 
 ---
 
-## 5. Context and Variable Management
+## 6. Context and Variable Management
 
 CORINT uses a **flattened namespace architecture** with 8 namespaces organized by processing method:
 
@@ -408,7 +451,7 @@ rule:
       - sys.hour >= 22
 ```
 
-(See `context.md` for complete details and BNF grammar.)
+(See [context.md](context.md) for complete details and BNF grammar.)
 
 ---
 
@@ -474,9 +517,9 @@ pipeline:
       reason: "Service calls completed"
 ```
 
-**Note:** For database and cache access, use **Datasources** (see datasources configuration). For third-party HTTP APIs, use **External APIs** (see `api.md`).
+**Note:** For database and cache access, use **Datasources** (see datasources configuration). For third-party HTTP APIs, use **External APIs** (see [api.md](api.md)).
 
-(See `service.md` for complete specification.)
+(See [service.md](service.md) for complete specification.)
 
 ---
 
@@ -492,7 +535,7 @@ Example:
 api.Chainalysis.risk_score > 80
 ```
 
-(See `api.md` for complete specification.)
+(See [api.md](api.md) for complete specification.)
 
 ---
 
@@ -508,10 +551,10 @@ RDL documentation is organized as follows:
 - **rule.md** - Rule specification (including dynamic thresholds and dependencies)
 - **ruleset.md** - Ruleset specification
 - **pipeline.md** - Pipeline orchestration
+- **registry.md** - Pipeline routing and event matching
 - **import.md** - Module system and dependency management (NEW)
 
 ### Data & Context
-- **event.md** - Standard event types and schemas
 - **context.md** - Context and variable management
 
 ### Advanced Features
@@ -579,7 +622,7 @@ rule:
 
 ```
 RDL ::= "version" ":" STRING
-        (RULE | RULESET | PIPELINE)
+        (RULE | RULESET | PIPELINE | REGISTRY)
 
 RULE ::= "rule:" RULE_BODY
 
@@ -610,7 +653,7 @@ EXPRESSION ::= FIELD OP VALUE
 
 FIELD ::= IDENT ("." IDENT)*
 
-OP ::= "==" | "!=" | "<" | ">" | "<=" | ">=" | "in" | "regex" | "exists" | "missing"
+OP ::= "==" | "!=" | "<" | ">" | "<=" | ">=" | "in" | "regex"
 
 MATCH_OP ::= "contains" | "not_contains"
 
@@ -639,6 +682,19 @@ CONCLUSION_RULE ::=
       [ "reason:" STRING ]
 
 PIPELINE ::= defined in pipeline.md
+
+REGISTRY ::= "registry:"
+               REGISTRY_ENTRY_LIST
+
+REGISTRY_ENTRY_LIST ::= "-" REGISTRY_ENTRY { "-" REGISTRY_ENTRY }
+
+REGISTRY_ENTRY ::=
+      "pipeline:" STRING
+      [ "when:" WHEN_BLOCK ]
+
+WHEN_BLOCK ::=
+      "all:" CONDITION_LIST
+    | "any:" CONDITION_LIST
 
 METADATA_MAP ::= KEY ":" VALUE { KEY ":" VALUE }
 

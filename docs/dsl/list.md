@@ -565,8 +565,8 @@ Lists are essential for production fraud detection systems, enabling rapid membe
 
 ## 10. Related Documentation
 
-- **[expression.md](expression.md)** - List operators in expression language
-- **[rule.md](rule.md)** - Using lists in rule conditions
-- **[context.md](context.md)** - Accessing list lookup results in context
+- [expression.md](expression.md) - List operators in expression language
+- [rule.md](rule.md) - Using lists in rule conditions
+- [context.md](context.md) - Accessing list lookup results in context
 
-For implementation details, backend configuration, and API management, see `docs/CUSTOMLIST.md`.
+For implementation details, backend configuration, and API management, see [CUSTOMLIST.md](../CUSTOMLIST.md).
