@@ -68,6 +68,14 @@ FEATURES_DIR="$TEST_REPO/configs/features"
 FEATURES_TEMPLATES="$TEST_REPO/templates/features"
 ACTIVE_FEATURES="$FEATURES_DIR/e2e_features.yaml"
 
+# Pipeline files
+PIPELINES_DIR="$TEST_REPO/pipelines"
+PIPELINES_TEMPLATES="$TEST_REPO/templates/pipelines"
+
+# Registry files
+REGISTRY_FILE="$TEST_REPO/registry.yaml"
+REGISTRY_TEMPLATES="$TEST_REPO/templates/registry"
+
 # Datasource selection
 DATASOURCE=""
 
@@ -272,8 +280,7 @@ setup_test_config() {
             create_clickhouse_config
             ;;
         redis)
-            log_error "Redis datasource not yet implemented"
-            exit 1
+            create_redis_config
             ;;
     esac
 
@@ -352,6 +359,48 @@ llm:
 EOF
 }
 
+create_redis_config() {
+    cat > "$CONFIG_FILE" << 'EOF'
+# CORINT Decision Engine Server Configuration for E2E Tests (Redis)
+host: "127.0.0.1"
+port: 8080
+grpc_port: 50051
+
+repository:
+  type: filesystem
+  path: "tests/e2e_repo"
+
+datasources:
+  redis_e2e:
+    type: feature_store
+    provider: redis
+    connection_string: "${REDIS_URL:-redis://localhost:6379/1}"
+    namespace: "e2e_features"
+    default_ttl: 3600
+    pool_size: 10
+    timeout_ms: 5000
+    pooling_enabled: true
+    options:
+      max_connections: "20"
+      min_idle: "2"
+      connection_timeout: "10"
+
+enable_metrics: true
+enable_tracing: false
+log_level: "error"
+
+llm:
+  default_provider: openai
+  enable_cache: false
+  enable_thinking: false
+  openai:
+    api_key: "${OPENAI_API_KEY:-dummy-key-for-testing}"
+    default_model: "gpt-4o-mini"
+    max_tokens: 100
+    temperature: 0.0
+EOF
+}
+
 setup_features() {
     local datasource=$1
     local template_file="$FEATURES_TEMPLATES/e2e_features_${datasource}.yaml"
@@ -367,11 +416,74 @@ setup_features() {
     fi
 }
 
+setup_pipelines() {
+    local datasource=$1
+
+    log_info "Setting up pipelines for datasource: $datasource"
+
+    # Create pipelines directory if it doesn't exist
+    mkdir -p "$PIPELINES_DIR"
+
+    # Clear existing pipelines
+    rm -f "$PIPELINES_DIR"/*.yaml
+
+    # Copy pipelines based on datasource
+    case $datasource in
+        redis)
+            # Redis only uses redis_test pipeline
+            cp "$PIPELINES_TEMPLATES/redis_test.yaml" "$PIPELINES_DIR/"
+            log_success "Redis pipeline installed"
+            ;;
+        *)
+            # Other datasources use transaction, payment, login, and db_list pipelines
+            cp "$PIPELINES_TEMPLATES/transaction_test.yaml" "$PIPELINES_DIR/"
+            cp "$PIPELINES_TEMPLATES/payment_test.yaml" "$PIPELINES_DIR/"
+            cp "$PIPELINES_TEMPLATES/login_test.yaml" "$PIPELINES_DIR/"
+            cp "$PIPELINES_TEMPLATES/db_list_test.yaml" "$PIPELINES_DIR/"
+            log_success "$datasource pipelines installed"
+            ;;
+    esac
+}
+
+setup_registry() {
+    local datasource=$1
+
+    log_info "Setting up registry for datasource: $datasource"
+
+    # Copy registry based on datasource
+    case $datasource in
+        redis)
+            cp "$REGISTRY_TEMPLATES/registry_redis.yaml" "$REGISTRY_FILE"
+            log_success "Redis registry installed"
+            ;;
+        *)
+            cp "$REGISTRY_TEMPLATES/registry_default.yaml" "$REGISTRY_FILE"
+            log_success "Default registry installed"
+            ;;
+    esac
+}
+
 cleanup_features() {
     # Remove the copied features file
     if [ -f "$ACTIVE_FEATURES" ]; then
         rm -f "$ACTIVE_FEATURES"
         log_info "Features file removed"
+    fi
+}
+
+cleanup_pipelines() {
+    # Remove copied pipeline files
+    if [ -d "$PIPELINES_DIR" ]; then
+        rm -f "$PIPELINES_DIR"/*.yaml
+        log_info "Pipeline files removed"
+    fi
+}
+
+cleanup_registry() {
+    # Remove copied registry file
+    if [ -f "$REGISTRY_FILE" ]; then
+        rm -f "$REGISTRY_FILE"
+        log_info "Registry file removed"
     fi
 }
 
@@ -389,6 +501,9 @@ setup_database() {
             ;;
         clickhouse)
             setup_clickhouse_database
+            ;;
+        redis)
+            setup_redis_database
             ;;
     esac
 }
@@ -587,6 +702,58 @@ setup_clickhouse_database() {
     export CLICKHOUSE_URL="$CLICKHOUSE_URL"
 }
 
+setup_redis_database() {
+    # Check Redis connection
+    REDIS_URL="${REDIS_URL:-redis://localhost:6379/1}"
+
+    log_info "Checking Redis connection..."
+    if ! redis-cli -u "$REDIS_URL" ping > /dev/null 2>&1; then
+        log_warning "Redis not running at: $REDIS_URL"
+
+        # Check if Redis is installed
+        if ! command -v redis-server &> /dev/null; then
+            log_error "Redis not found. Please install Redis:"
+            log_warning "  macOS: brew install redis"
+            log_warning "  Ubuntu: sudo apt-get install redis-server"
+            log_warning "  Docker: docker run -d -p 6379:6379 redis:latest"
+            exit 1
+        fi
+
+        # Start Redis server in background
+        log_info "Starting Redis server..."
+        redis-server --daemonize yes --port 6379 --dir /tmp
+
+        # Wait for Redis to start
+        local max_attempts=10
+        local attempt=0
+        while [ $attempt -lt $max_attempts ]; do
+            if redis-cli -u "$REDIS_URL" ping > /dev/null 2>&1; then
+                log_success "Redis server started!"
+                break
+            fi
+            attempt=$((attempt + 1))
+            sleep 1
+        done
+
+        if [ $attempt -eq $max_attempts ]; then
+            log_error "Redis server failed to start"
+            exit 1
+        fi
+    fi
+
+    # Generate and load test data into Redis
+    log_info "Generating and loading Redis test data..."
+    REDIS_URL="$REDIS_URL" python3 tests/scripts/generate_redis_data.py
+    if [ $? -ne 0 ]; then
+        log_error "Failed to load Redis test data"
+        exit 1
+    fi
+
+    log_success "Redis loaded with test features"
+
+    export REDIS_URL="$REDIS_URL"
+}
+
 cleanup() {
     log_info "Cleaning up..."
 
@@ -612,6 +779,12 @@ cleanup() {
 
     # Remove copied features file
     cleanup_features
+
+    # Remove copied pipeline files
+    cleanup_pipelines
+
+    # Remove copied registry file
+    cleanup_registry
 }
 
 # Trap to ensure cleanup on exit
@@ -741,6 +914,8 @@ run_tests_for_datasource() {
     backup_config
     setup_test_config "$datasource"
     setup_features "$datasource"
+    setup_pipelines "$datasource"
+    setup_registry "$datasource"
     log_success "Configuration ready"
     echo ""
 
@@ -751,7 +926,7 @@ run_tests_for_datasource() {
 
     # Step 3: Build server
     log_info "Step 3: Building server..."
-    cargo build --bin corint-server --quiet
+    cargo build --bin corint-server --features redis --quiet
     if [ $? -ne 0 ]; then
         log_error "Failed to build server"
         return 1
@@ -761,8 +936,13 @@ run_tests_for_datasource() {
 
     # Step 4: Start server
     log_info "Step 4: Starting test server..."
-    # Enable detailed performance logging for feature execution and datasource queries
-    RUST_LOG=error,corint_runtime::feature::executor=debug,corint_runtime::datasource=debug target/debug/corint-server > "$RESULTS_DIR/server_${datasource}.log" 2>&1 &
+    # Enable detailed logging for Redis tests to debug issues
+    if [ "$datasource" = "redis" ]; then
+        RUST_LOG=info target/debug/corint-server > "$RESULTS_DIR/server_${datasource}.log" 2>&1 &
+    else
+        # Enable detailed performance logging for feature execution and datasource queries
+        RUST_LOG=error,corint_runtime::feature::executor=debug,corint_runtime::datasource=debug target/debug/corint-server > "$RESULTS_DIR/server_${datasource}.log" 2>&1 &
+    fi
     SERVER_PID=$!
     echo $SERVER_PID > "$SERVER_PID_FILE"
     log_info "Server started (PID: $SERVER_PID)"
@@ -782,8 +962,15 @@ run_tests_for_datasource() {
 
     CURRENT_TIME=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 
-    # Include the test cases (same as before)
-    source tests/scripts/e2e_test_cases.sh
+    # Include the test cases based on datasource
+    case $datasource in
+        redis)
+            source tests/scripts/e2e_test_cases_redis.sh
+            ;;
+        *)
+            source tests/scripts/e2e_test_cases.sh
+            ;;
+    esac
 
     set -e
 
@@ -872,8 +1059,8 @@ main() {
             TOTAL_FAILED=$?
             ;;
         redis)
-            log_error "Redis datasource not yet implemented"
-            exit 1
+            run_tests_for_datasource "redis"
+            TOTAL_FAILED=$?
             ;;
         all)
             echo ""
@@ -895,6 +1082,14 @@ main() {
             # ClickHouse (auto-install and start if needed)
             run_tests_for_datasource "clickhouse"
             DATASOURCE_RESULTS+=("clickhouse:$FAILED_TESTS")
+
+            # Redis (if available)
+            if redis-cli ping > /dev/null 2>&1 || command -v redis-server &> /dev/null; then
+                run_tests_for_datasource "redis"
+                DATASOURCE_RESULTS+=("redis:$FAILED_TESTS")
+            else
+                log_warning "Redis not available, skipping"
+            fi
 
             # Print overall summary
             echo ""

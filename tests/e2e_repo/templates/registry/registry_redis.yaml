@@ -1,0 +1,13 @@
+version: "0.1"
+
+# E2E Test Registry for Redis Feature Store
+# Routes all events to Redis test pipeline
+
+registry:
+  - pipeline: redis_test_pipeline
+    when:
+      any:
+        - event.type == "transaction"
+        - event.type == "login"
+        - event.type == "payment"
+    description: Redis feature store testing

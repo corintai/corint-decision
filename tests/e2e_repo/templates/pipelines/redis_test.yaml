@@ -1,0 +1,255 @@
+version: "0.1"
+
+# ========================================
+# E2E Test Pipeline - Redis Feature Store
+# ========================================
+
+---
+
+pipeline:
+  id: redis_test_pipeline
+  name: Redis Feature Store Test Pipeline
+  description: Tests lookup features from Redis feature store
+
+  entry: redis_risk_assessment
+
+  when:
+    any:
+      - event.type == "transaction"
+      - event.type == "login"
+      - event.type == "payment"
+
+  steps:
+    - step:
+        id: redis_risk_assessment
+        name: Redis Risk Assessment
+        type: ruleset
+        ruleset: redis_risk_ruleset
+
+  # Final decision based on ruleset signals
+  decision:
+    - when: results.redis_risk_ruleset.signal == "decline"
+      result: decline
+      reason: "{results.redis_risk_ruleset.reason}"
+
+    - when: results.redis_risk_ruleset.signal == "review"
+      result: review
+      reason: "{results.redis_risk_ruleset.reason}"
+
+    - when: results.redis_risk_ruleset.signal == "approve"
+      result: approve
+      reason: "{results.redis_risk_ruleset.reason}"
+
+    - default: true
+      result: approve
+      reason: "Low risk - approved"
+
+---
+
+# ========================================
+# Ruleset
+# ========================================
+
+ruleset:
+  id: redis_risk_ruleset
+  name: Redis Risk Ruleset
+  description: Risk assessment using Redis feature store
+
+  features:
+    - user_risk_score
+    - user_fraud_score
+    - device_reputation
+    - device_fraud_count
+    - ip_reputation
+    - ip_fraud_rate
+    - user_avg_txn_amt
+    - user_txn_count_7d
+    - user_unique_devices
+    - user_account_age
+    - user_total_txns
+    - payment_fraud_rate
+    - merchant_risk
+    - user_login_1h
+    - user_failed_login_24h
+
+  rules:
+    - high_risk_user
+    - medium_risk_user
+    - high_fraud_score
+    - suspicious_device
+    - risky_ip
+    - new_account_high_value
+    - high_velocity_user
+    - multi_device_pattern
+    - risky_payment_method
+    - high_risk_merchant
+    - high_login_frequency
+    - high_failed_logins
+
+  conclusion:
+    - when: total_score >= 200
+      signal: decline
+      reason: "High risk score from feature store (score: {total_score})"
+
+    - when: total_score >= 80
+      signal: review
+      reason: "Medium risk - manual review required (score: {total_score})"
+
+    - default: true
+      signal: approve
+      reason: "Low risk score (score: {total_score})"
+
+---
+
+# ========================================
+# Rules
+# ========================================
+
+# Rule: High Risk User
+rule:
+  id: high_risk_user
+  name: High Risk User
+  description: User has high risk score in feature store
+  when:
+    all:
+      - features.user_risk_score > 80
+  score: 100
+
+---
+
+# Rule: High Fraud Score
+rule:
+  id: high_fraud_score
+  name: High Fraud Score
+  description: User has high fraud probability
+  when:
+    all:
+      - features.user_fraud_score > 70
+  score: 120
+
+---
+
+# Rule: Suspicious Device
+rule:
+  id: suspicious_device
+  name: Suspicious Device
+  description: Device has low reputation or fraud history
+  when:
+    any:
+      - features.device_reputation < 30
+      - features.device_fraud_count > 5
+  score: 80
+
+---
+
+# Rule: Risky IP
+rule:
+  id: risky_ip
+  name: Risky IP Address
+  description: IP has low reputation or high fraud rate
+  when:
+    any:
+      - features.ip_reputation < 30
+      - features.ip_fraud_rate > 0.3
+  score: 80
+
+---
+
+# Rule: New Account High Value
+rule:
+  id: new_account_high_value
+  name: New Account High Value Transaction
+  description: New account with high value transaction
+  when:
+    all:
+      - event.type == "transaction"
+      - event.amount > 1000
+      - features.user_account_age < 7
+      - features.user_total_txns < 5
+  score: 90
+
+---
+
+# Rule: High Velocity User
+rule:
+  id: high_velocity_user
+  name: High Velocity User
+  description: User has high transaction velocity
+  when:
+    all:
+      - features.user_txn_count_7d > 30
+      - features.user_unique_devices > 3
+  score: 60
+
+---
+
+# Rule: Multi-Device Pattern
+rule:
+  id: multi_device_pattern
+  name: Multi-Device Pattern
+  description: User accessing from many devices
+  when:
+    all:
+      - features.user_unique_devices > 7
+  score: 50
+
+---
+
+# Rule: Medium Risk User
+rule:
+  id: medium_risk_user
+  name: Medium Risk User
+  description: User has medium risk score
+  when:
+    all:
+      - features.user_risk_score > 60
+      - features.user_risk_score <= 80
+  score: 60
+
+---
+
+# Rule: Risky Payment Method
+rule:
+  id: risky_payment_method
+  name: Risky Payment Method
+  description: Payment method has high fraud rate
+  when:
+    all:
+      - features.payment_fraud_rate > 0.2
+  score: 80
+
+---
+
+# Rule: High Risk Merchant
+rule:
+  id: high_risk_merchant
+  name: High Risk Merchant
+  description: Merchant has high risk score
+  when:
+    all:
+      - features.merchant_risk > 70
+  score: 80
+
+---
+
+# Rule: High Login Frequency
+rule:
+  id: high_login_frequency
+  name: High Login Frequency
+  description: High number of logins in short time
+  when:
+    all:
+      - features.user_login_1h > 10
+  score: 60
+
+---
+
+# Rule: High Failed Logins
+rule:
+  id: high_failed_logins
+  name: High Failed Login Count
+  description: Many failed login attempts
+  when:
+    all:
+      - features.user_failed_login_24h > 5
+  score: 70

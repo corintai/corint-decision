@@ -380,7 +380,7 @@ pub struct FeatureDefinition {
     pub expression: Option<ExpressionConfig>,
 
     /// Lookup-specific configuration
-    #[serde(flatten, default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub lookup: Option<LookupConfig>,
 
     /// Human-readable description

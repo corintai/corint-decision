@@ -1,0 +1,20 @@
+# Redis Feature Store Configuration for E2E Tests
+# This feature store contains pre-computed user behavioral features
+
+name: redis_e2e
+type: feature_store
+provider: redis
+connection_string: "redis://localhost:6379/1"
+namespace: "e2e_features"
+default_ttl: 3600  # 1 hour
+
+# Connection pool settings
+pool_size: 10
+timeout_ms: 5000
+pooling_enabled: true
+
+# Optional configuration
+options:
+  max_connections: "20"
+  min_idle: "2"
+  connection_timeout: "10"

@@ -4,7 +4,7 @@
 name: clickhouse_events
 type: olap
 provider: clickhouse
-connection_string: "http://localhost:8123"
+connection_string: "http://127.0.0.1:8123"
 database: "risk_events"
 events_table: "user_events"
 
