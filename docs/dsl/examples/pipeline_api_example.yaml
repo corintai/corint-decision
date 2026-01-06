@@ -25,7 +25,7 @@ pipeline:
         api: fraud_detector
         endpoint: check_ip
         # Parameters automatically read from context (defined in API config)
-        # Result automatically stored in: context.fraud_detector.check_ip
+        # Result automatically stored in: api.fraud_detector.check_ip
         next: analyze_transaction
 
     # Example 2: POST request with complex body
@@ -36,7 +36,7 @@ pipeline:
         api: fraud_detector
         endpoint: analyze_transaction
         # Parameters automatically read from context (defined in API config)
-        # Result automatically stored in: context.fraud_detector.analyze_transaction
+        # Result automatically stored in: api.fraud_detector.analyze_transaction
         next: check_high_risk
 
     # Example 3: Conditional API call
@@ -47,12 +47,12 @@ pipeline:
         api: fraud_detector
         endpoint: update_risk
         # Parameters automatically read from context (defined in API config)
-        # Result automatically stored in: context.fraud_detector.update_risk
+        # Result automatically stored in: api.fraud_detector.update_risk
         next: notify_team
 
     # Example 4: Using previous API results
     # Note: To chain API results, define params in API config to read from previous API output
-    # For example: user_email: context.user_service.get_user.email
+    # For example: user_email: api.user_service.get_user.email
     - step:
         id: enhanced_check
         name: Enhanced Risk Check
@@ -61,7 +61,7 @@ pipeline:
         endpoint: analyze_transaction
         # Parameters automatically read from context (defined in API config)
         # Can override output for multiple calls to same endpoint:
-        output: context.enhanced_analysis
+        output: api.enhanced_analysis
         next: end
 
     # Example 5: PATCH request
@@ -72,7 +72,7 @@ pipeline:
         api: fraud_detector
         endpoint: update_status
         # Parameters automatically read from context (defined in API config)
-        # Result automatically stored in: context.fraud_detector.update_status
+        # Result automatically stored in: api.fraud_detector.update_status
         next: end
 
   metadata:

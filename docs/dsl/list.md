@@ -41,7 +41,7 @@ Lists are referenced using `list.<list_id>` with membership operators:
 **Syntax Rules**:
 - **Format**: `list.<list_id>` where `<list_id>` is defined in configuration
 - **Operators**: `in` (membership), `not in` (non-membership)
-- **Field**: Any valid field path (e.g., `user.email`, `event.ip`)
+- **Field**: Any valid field path (e.g., `event.user.email`, `event.ip`)
 
 ### 2.2 Simple Examples
 
@@ -52,7 +52,7 @@ rule:
   name: Email Blocklist Check
   when:
     all:
-      - user.email in list.email_blocklist
+      - event.user.email in list.email_blocklist
   score: 500
 ```
 
@@ -64,8 +64,8 @@ rule:
   name: Untrusted User High Value Transaction
   when:
     all:
-      - user.id not in list.trusted_users
-      - transaction.amount > 10000
+      - event.user.id not in list.trusted_users
+      - event.transaction.amount > 10000
   score: 100
 ```
 
@@ -78,8 +78,8 @@ rule:
   name: Sanctions and High Risk Check
   when:
     any:
-      - user.name in list.ofac_sanctions
-      - user.country in list.high_risk_countries
+      - event.user.name in list.ofac_sanctions
+      - event.user.country in list.high_risk_countries
   score: 200
 ```
 
@@ -90,9 +90,9 @@ rule:
   name: Suspicious New User Pattern
   when:
     all:
-      - user.ip in list.suspicious_ips
-      - user.email not in list.verified_emails
-      - user.account_age_days < 30
+      - event.user.ip in list.suspicious_ips
+      - event.user.email not in list.verified_emails
+      - event.user.account_age_days < 30
   score: 150
 ```
 
@@ -220,7 +220,7 @@ rule:
   name: Known Fraud Device
   when:
     all:
-      - device.fingerprint in list.fraud_devices
+      - event.device.fingerprint in list.fraud_devices
   score: 300
 ```
 
@@ -232,7 +232,7 @@ rule:
   name: Disposable Email Domain
   when:
     all:
-      - user.email_domain in list.disposable_domains
+      - event.user.email_domain in list.disposable_domains
   score: 50
 ```
 
@@ -244,7 +244,7 @@ rule:
   name: VIP User Transaction Bypass
   when:
     all:
-      - user.id in list.vip_users
+      - event.user.id in list.vip_users
   score: -200  # Negative score to reduce total risk score
 ```
 
@@ -256,8 +256,8 @@ rule:
   name: High Risk Country Check
   when:
     all:
-      - geo.country in list.high_risk_countries
-      - user.id not in list.verified_international_users
+      - event.geo.country in list.high_risk_countries
+      - event.user.id not in list.verified_international_users
   score: 100
 ```
 
@@ -269,7 +269,7 @@ rule:
   name: High Risk Card BIN
   when:
     all:
-      - payment.card_bin in list.high_risk_bins
+      - event.payment.card_bin in list.high_risk_bins
   score: 75
 ```
 
@@ -287,10 +287,10 @@ rule:
 
   when:
     any:
-      - user.email in list.email_blocklist
+      - event.user.email in list.email_blocklist
       - event.ip in list.ip_blocklist
-      - device.fingerprint in list.device_blocklist
-      - user.phone in list.phone_blocklist
+      - event.device.fingerprint in list.device_blocklist
+      - event.user.phone in list.phone_blocklist
 
   score: 500
 
@@ -354,14 +354,14 @@ pipeline:
           - next: deny_step
             when:
               any:
-                - user.email in list.email_blocklist
+                - event.user.email in list.email_blocklist
                 - event.ip in list.ip_blocklist
 
           # Bypass for trusted users
           - next: approve_step
             when:
               all:
-                - user.id in list.vip_users
+                - event.user.id in list.vip_users
 
           # Continue to detailed checks
           - next: fraud_rules
@@ -482,7 +482,7 @@ If a rule references a non-existent list, compilation will fail:
 rule:
   when:
     all:
-      - user.email in list.nonexistent_list  # Error: Unknown list
+      - event.user.email in list.nonexistent_list  # Error: Unknown list
 ```
 
 **Compiler Error**:
@@ -542,8 +542,8 @@ backend: file
 rule:
   when:
     any:
-      - user.email in list.email_blocklist
-      - user.ip in list.ip_blocklist
+      - event.user.email in list.email_blocklist
+      - event.ip in list.ip_blocklist
       # Runtime can optimize batch lookups
 ```
 

@@ -18,7 +18,7 @@ base_url: <string>                  # Required: Base URL for all endpoints
 auth:
   type: header                      # Only 'header' supported in MVP
   name: <string>                    # Header name (e.g., "Authorization")
-  value: <string>                   # Header value, supports ${env.x.y.z}
+  value: <string>                   # Header value, supports @{config.path}
 
 # Optional: Default timeout for all endpoints
 timeout_ms: <integer>               # Milliseconds, default: 10000
@@ -31,11 +31,11 @@ endpoints:
     timeout_ms: <integer>           # Optional: Timeout for this endpoint (overrides API default)
     params:                         # Optional: Parameter mapping from context
       <param_name>: <context_path>  # e.g., transaction_id: event.transaction_id
-      <param_name>: <literal>       # e.g., api_version: "v2"
+      <param_name>: <literal>       # e.g., api_version: "v2", limit: 100, enabled: true
     query_params:                   # Optional: Query parameter names
       - <param_name>
     request_body: <string>          # Optional: JSON template for POST/PUT/PATCH
-                                    # Use ${param_name} for substitution
+                                    # Use ${param_name} to reference params keys
     response:                       # Optional: Response handling
       mapping:                      # Optional: Field mapping/renaming
         <output_field>: <response_field>
@@ -89,7 +89,7 @@ endpoints:
 
 <param_mapping>    ::= ( <param_name> ":" <template_value> )+
 
-<template_value>   ::= "${" <context_path> "}"  // e.g., ${event.user.id}
+<template_value>   ::= <context_path>          // e.g., event.user.id
                      | <literal>                // e.g., "v2" or 123 or true
 
 <context_path>     ::= <identifier> ( "." <identifier> )*
@@ -117,10 +117,10 @@ endpoints:
                                   // String values: "${param_name}" (with quotes)
                                   // Number/boolean values: ${param_name} (without quotes)
 
-<env_var_or_string> ::= "${" <env_path> "}"  // env.x.y.z format
+<config_or_string> ::= "@{" <config_path> "}"  // @{x.y.z} format
                       | <string>              // Literal string
 
-<env_path>         ::= "env." <identifier> ( "." <identifier> )*
+<config_path>      ::= <identifier> ( "." <identifier> )*
 ```
 
 ### 2.2 Pipeline API Step
@@ -140,8 +140,7 @@ endpoints:
 
 <param_entry>      ::= <identifier> ":" <param_value>
 
-<param_value>      ::= <expression> | <literal>
-<expression>       ::= "${" <context_path> "}"  // e.g., ${event.user.id}
+<param_value>      ::= <context_path> | <literal>
 <context_path>     ::= <identifier> ( "." <identifier> )*
 
 <variable_path>    ::= <identifier> ( "." <identifier> )*
@@ -160,68 +159,68 @@ endpoints:
 CORINT external API integration resolves values at different times:
 
 **1. Compile Time** (when loading configurations):
-- Environment variables (`${env.x.y.z}`) are resolved from `config/server.yaml`
+- Configuration references (`@{config.path}`) are resolved from `config/server.yaml`
 - API config `params` mappings are registered (not resolved, just recorded)
 
 **2. Runtime** (when executing API call):
 - Pipeline step `params` override API config defaults (if provided)
 - Context paths are resolved to actual values from execution context
-- Request body template placeholders are substituted with param values
+- Request body template placeholders (`${param_name}`) are substituted with param values
 
 **Example**:
 ```yaml
 # API config (compile time)
 auth:
-  value: "Bearer ${env.llm.openai.api_key}"    # ← Resolved at compile time
+  value: "Bearer @{llm.openai.api_key}"    # ← Resolved at compile time
 params:
-  user_id: ${event.user.id}                    # ← Mapping recorded at compile time
+  user_id: event.user.id                   # ← Mapping recorded at compile time
 
 # Runtime execution
 request_body: |
-  {"user_id": "${user_id}"}                    # ← Substituted at runtime
+  {"user_id": "${user_id}"}                # ← Substituted at runtime
 ```
 
 ### 3.1 Parameter Resolution
 
-Parameters can be defined in two places with the same consistent `${}` syntax:
+Parameters can be defined in two places:
 
 #### API Configuration `params` (Default Mapping)
 
-Defines default parameter mappings using `${}` syntax for context references:
+Defines default parameter mappings using direct context paths:
 
 ```yaml
 # In API config file
 endpoints:
   get_user:
     params:
-      user_id: ${event.user.id}      # Context path (with ${})
+      user_id: event.user.id         # Context path (no ${})
       api_version: "v2"               # String literal
       limit: 100                      # Number literal
       include_details: true           # Boolean literal
 ```
 
 **Rules**:
-- Context paths use `${}`: `${event.user.id}`
+- Context paths are written directly: `event.user.id`
 - Literals are written as-is: `"string"`, `123`, `true`
 - These define the default mapping relationship at compile time
 
 #### Pipeline Step `params` (Override)
 
-Overrides default mappings using the same `${}` syntax:
+Overrides default mappings using the same syntax:
 
 ```yaml
 # In pipeline step
 - step:
     type: api
     params:
-      user_id: ${event.user.id}      # Context path (with ${})
+      user_id: event.user.id         # Context path (no ${})
       api_version: "v3"               # String literal
       limit: 200                      # Number literal
       include_details: false          # Boolean literal
 ```
 
 **Rules**:
-- Context paths use `${}`: `${event.user.id}` (same as API config)
+- Context paths are written directly: `event.user.id` (same as API config)
 - Literals are written as-is: `"string"`, `123`, `true`
 - These override API config params at runtime
 
@@ -236,12 +235,12 @@ Overrides default mappings using the same `${}` syntax:
 ```yaml
 # API config defines defaults
 params:
-  user_id: ${event.user.id}
+  user_id: event.user.id
   limit: 100
 
 # Pipeline overrides only user_id
 params:
-  user_id: ${event.different_user}
+  user_id: event.related_user_id
   # limit still uses default (100)
 ```
 
@@ -265,10 +264,10 @@ For POST/PUT/PATCH requests, `request_body` uses template substitution with `${p
 ```yaml
 # API config
 params:
-  transaction_id: ${event.transaction_id}    # Context path (value: "tx_12345")
-  amount: ${event.amount}                    # Context path (value: 1500.00)
-  currency: "USD"                            # Literal string
-  verified: true                             # Literal boolean
+  transaction_id: event.transaction_id         # Context path (value: "tx_12345")
+  amount: event.amount                          # Context path (value: 1500.00)
+  currency: "USD"                               # Literal string
+  verified: true                                # Literal boolean
 
 request_body: |
   {
@@ -391,8 +390,8 @@ endpoints:
     method: GET
     path: "/{ip}"
     params:
-      ip: ${event.ip_address}        # Read from event
-      token: "abc123"                # Literal value
+      ip: event.device.ip               # Read from event
+      token: "abc123"                   # Literal value
     query_params:
       - token
     response:
@@ -434,11 +433,11 @@ rule:
 
 ---
 
-## 5. Environment Variables
+## 5. Configuration References
 
-**Syntax**: `env.x.y.z` (dot notation)
+**Syntax**: `@{config.path}` (config reference)
 
-**Resolution**: At **compile time**, `env.x.y.z` is replaced with values from `config/server.yaml`
+**Resolution**: At **compile time**, `@{config.path}` is replaced with values from `config/server.yaml`
 
 **Example**:
 ```yaml
@@ -451,12 +450,12 @@ llm:
 auth:
   type: header
   name: "Authorization"
-  value: "Bearer ${env.llm.openai.api_key}"  # Compile-time replacement
+  value: "Bearer @{llm.openai.api_key}"  # Compile-time replacement
 ```
 
-**Mapping**: `config/server.yaml` structure maps directly to `env` namespace:
-- `llm.openai.api_key` → `env.llm.openai.api_key`
-- `datasources.postgres_rules.connection_string` → `env.datasources.postgres_rules.connection_string`
+**Mapping**: `config/server.yaml` structure maps to `@{config.path}` references:
+- `llm.openai.api_key` → `@{llm.openai.api_key}`
+- `datasources.postgres_rules.connection_string` → `@{datasources.postgres_rules.connection_string}`
 
 ---
 

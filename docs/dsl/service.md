@@ -63,12 +63,12 @@ services:
         path: <string>          # Required: URL path, can include {placeholders}
         timeout_ms: <integer>   # Optional: Override default timeout for this endpoint
         params:                 # Optional: Parameter mapping from context
-          <param_name>: ${<context_path>}  # e.g., user_id: ${event.user.id}
-          <param_name>: <literal>          # e.g., api_version: "v1"
+          <param_name>: <context_path>  # e.g., user_id: event.user.id
+          <param_name>: <literal>       # e.g., api_version: "v1", limit: 100, enabled: true
         query_params:           # Optional: Query parameter names
           - <param_name>
         request_body: <string>  # Optional: JSON template for POST/PUT/PATCH
-                                # Use ${param_name} for substitution
+                                # Use ${param_name} to reference params keys
         response:               # Optional: Response handling
           mapping:              # Optional: Field mapping/renaming
             <output_field>: <response_field>
@@ -94,9 +94,9 @@ services:
         path: /api/v1/verify/identity
         timeout_ms: 10000
         params:
-          user_id: ${event.user.id}
-          document_type: ${event.kyc.document_type}
-          document_number: ${event.kyc.document_number}
+          user_id: event.user.id
+          document_type: event.kyc.document_type
+          document_number: event.kyc.document_number
         request_body: |
           {
             "user_id": "${user_id}",
@@ -118,7 +118,7 @@ services:
         method: GET
         path: /api/v1/status/{user_id}
         params:
-          user_id: ${event.user.id}
+          user_id: event.user.id
         response:
           fallback:
             status: "unknown"
@@ -129,8 +129,8 @@ services:
         method: GET
         path: /api/v1/users/search
         params:
-          email: ${event.user.email}
-          phone: ${event.user.phone}
+          email: event.user.email
+          phone: event.user.phone
           limit: 10
         query_params:
           - email
@@ -164,7 +164,7 @@ pipeline:
         service: kyc_service
         endpoint: get_status
         params:
-          user_id: ${event.different_user_id}  # Override default mapping
+          user_id: event.related_user_id  # Override default mapping
         output: service.kyc_status  # Custom output location
         next: kyc_check
 
@@ -214,7 +214,8 @@ services:
         service: <string>     # Required: gRPC service name
         method: <string>      # Required: gRPC method name
         params:               # Optional: Parameter mapping
-          <param_name>: ${<context_path>}
+          <param_name>: <context_path>  # e.g., user_id: event.user.id
+          <param_name>: <literal>       # e.g., api_version: "v1", limit: 100
         response:             # Optional: Response handling
           mapping:
             <output_field>: <response_field>
@@ -245,9 +246,10 @@ services:
         service: RiskScoringService
         method: CalculateScore
         params:
-          user_id: ${event.user.id}
-          transaction_amount: ${event.transaction.amount}
-          features: ${features}
+          user_id: event.user.id
+          transaction_amount: event.transaction.amount
+          velocity_score: features.velocity_score
+          transaction_count: features.user_transaction_count_7d
         response:
           mapping:
             score: risk_score
@@ -312,12 +314,15 @@ services:
 
     topics:                   # Required: Topic definitions (topics must already exist)
       <topic_name>:           # Topic identifier (key, not list item)
+        params:               # Optional: Parameter mapping from context
+          <param_name>: <context_path>  # e.g., user_id: event.user.id
+          <param_name>: <literal>       # e.g., version: "v1"
         message:              # Required: Message template
           key: <string>       # Optional: Message key (supports ${} placeholders)
           value: <string>     # Required: JSON template for message payload
-                              # Use ${placeholder} for substitution
-                              # String values: "${placeholder}" (with quotes)
-                              # Number/boolean values: ${placeholder} (without quotes)
+                              # Use ${param_name} to reference params keys
+                              # String values: "${param_name}" (with quotes)
+                              # Number/boolean values: ${param_name} (without quotes)
 ```
 
 ### 4.2 Complete Example (Kafka)
@@ -340,34 +345,48 @@ services:
 
     topics:
       risk_decisions:
+        params:
+          user_id: event.user.id
+          event_type: event.type
+          risk_score: vars.final_risk_score
+          decision: vars.decision
+          timestamp: sys.timestamp
+          request_id: sys.request_id
         message:
-          key: ${event.user.id}
+          key: ${user_id}
           value: |
             {
-              "user_id": "${event.user.id}",
-              "event_type": "${event.type}",
-              "risk_score": ${vars.final_risk_score},
-              "decision": "${vars.decision}",
-              "timestamp": "${sys.timestamp}",
+              "user_id": "${user_id}",
+              "event_type": "${event_type}",
+              "risk_score": ${risk_score},
+              "decision": "${decision}",
+              "timestamp": "${timestamp}",
               "metadata": {
-                "request_id": "${sys.request_id}",
+                "request_id": "${request_id}",
                 "pipeline_version": "v1.0"
               }
             }
 
       fraud_alerts:
+        params:
+          user_id: event.user.id
+          risk_score: vars.risk_score
+          triggered_rules: vars.triggered_rules
+          timestamp: sys.timestamp
+          event_type: event.type
+          amount: event.transaction.amount
         message:
-          key: ${event.user.id}
+          key: ${user_id}
           value: |
             {
               "alert_type": "high_risk",
-              "user_id": "${event.user.id}",
-              "risk_score": ${vars.risk_score},
-              "triggered_rules": ${vars.triggered_rules},
-              "timestamp": "${sys.timestamp}",
+              "user_id": "${user_id}",
+              "risk_score": ${risk_score},
+              "triggered_rules": ${triggered_rules},
+              "timestamp": "${timestamp}",
               "context": {
-                "event_type": "${event.type}",
-                "amount": ${event.transaction.amount}
+                "event_type": "${event_type}",
+                "amount": ${amount}
               }
             }
 ```
@@ -511,7 +530,7 @@ services:
     type: ms_http
     name: KYC Verification Service
     description: Internal identity verification service for user onboarding
-    base_url: ${KYC_SERVICE_URL}  # Use environment variable
+    base_url: "@{kyc_service.base_url}"  # Use config reference
 
     endpoints:
       verify_identity:
@@ -555,7 +574,7 @@ services:
 
 - **Descriptive names**: Use clear service and endpoint names
 - **Documentation**: Add descriptions for all services and endpoints
-- **Environment variables**: Use `${env.port}` for environment-specific configs
+- **Configuration**: Use `@{config.path}` for environment-specific configs
 - **Version control**: Track service configuration changes
 - **Monitoring**: Add logging and monitoring for all service calls
 

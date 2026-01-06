@@ -35,22 +35,18 @@
 #
 # Output Convention (Convention over Configuration):
 #   - router:       no return value, pure routing dispatch, does not affect context
-#   - function:     result automatically stored in function.<function_name>
 #   - api:          result automatically stored in api.<api_name>
 #   - service:      result automatically stored in service.<service_name>
 #   - rule/ruleset: directly affects score/decision, no output needed
 #   - pipeline:     sub-pipeline context changes automatically merged back to main pipeline
-#   - trigger:      no return value, does not affect context
 #
 # StepType (what to execute):
 #   - router   : pure routing judgment (no computation, only dispatch based on routes conditions)
-#   - function : internal pure function computation (result stored in function.<name>, for subsequent steps)
 #   - rule     : execute single rule
 #   - ruleset  : execute ruleset
 #   - pipeline : call sub-pipeline
 #   - service  : internal service call (DB, Redis, internal API)
 #   - api      : external API call (third-party service)
-#   - trigger  : trigger external action (MQ, Webhook, notification)
 #
 # Execution Mode (how to execute - only api/service types support):
 #   - (default)  : execute single target
@@ -89,13 +85,11 @@
 # E005: cannot have circular references forming infinite loops (unless explicitly marked as loop)
 # E006: type-specific required field validation:
 #       - router:   routes (required, routing condition list)
-#       - function: function (required)
 #       - rule:     rule (required)
 #       - ruleset:  ruleset (required)
 #       - pipeline: pipeline or inline (required)
 #       - service:  service (required)
 #       - api:      api or any/all (required)
-#       - trigger:  target (required)
 # E007: terminal nodes must have next: end or no subsequent routes
 #
 # W001: step is not referenced by any other step (except entry)
@@ -268,13 +262,13 @@ pipeline:
 
     # =========================================================================
     # Step: auto_approve
-    # Type: trigger (terminal action)
+    # Type: service (decision action)
     # =========================================================================
     - step:
         id: auto_approve
         name: Auto Approve
-        type: trigger
-        target: approval_service
+        type: service
+        service: approval_service
         params:
           decision: approve
           reason: "Low risk score"
@@ -282,13 +276,13 @@ pipeline:
 
     # =========================================================================
     # Step: auto_reject
-    # Type: trigger (terminal action)
+    # Type: service (decision action)
     # =========================================================================
     - step:
         id: auto_reject
         name: Auto Reject
-        type: trigger
-        target: rejection_service
+        type: service
+        service: rejection_service
         params:
           decision: reject
           reason: "High risk score"
@@ -296,13 +290,13 @@ pipeline:
 
     # =========================================================================
     # Step: manual_review
-    # Type: trigger (terminal action)
+    # Type: service (decision action)
     # =========================================================================
     - step:
         id: manual_review
         name: Send to Manual Review
-        type: trigger
-        target: case_management
+        type: service
+        service: case_management
         params:
           queue: "risk_review"
           priority: sys.total_score < 40 ? "high" : "normal"
@@ -310,13 +304,13 @@ pipeline:
 
     # =========================================================================
     # Step: notify_user
-    # Type: trigger (notification)
+    # Type: service (notification)
     # =========================================================================
     - step:
         id: notify_user
         name: Notify User
-        type: trigger
-        target: notification_service
+        type: service
+        service: notification_service
         params:
           channel: email
           template: "payment_rejected"
@@ -429,12 +423,12 @@ pipeline:
 # ┌──────┐ ┌──────┐ ┌──────┐
 # │auto_ │ │manual│ │auto_ │
 # │approve│ │review│ │reject│
-# │[trigger]│[trigger]│[trigger]│
+# │[service]│[service]│[service]│
 # └──┬───┘ └──┬───┘ └──┬───┘
 #    │        │        │
 #    ▼        ▼        ▼
 #   END      END   notify_user
-#                  │[trigger]│
+#                  │[service]│
 #                  └────┬────┘
 #                       ▼
 #                      END
@@ -482,7 +476,7 @@ pipeline:
 #            all:
 #              - event.amount > 5000
 #              - not:
-#                  - risk.tags contains "proxy"
+#                  - features.risk_tags contains "proxy"
 #
 #    Nested conditions (complex boolean logic):
 #      routes:
@@ -491,26 +485,17 @@ pipeline:
 #            any:
 #              - all:
 #                  - event.amount >= 3000
-#                  - geo.country in ["NG", "PK", "UA"]
+#                  - event.geo.country in ["NG", "PK", "UA"]
 #              - all:
-#                  - device.is_emulator == true
-#                  - risk.login_fail_count_1h >= 3
+#                  - event.device.is_emulator == true
+#                  - features.login_fail_count_1h >= 3
 #
 # 5. Type selection:
 #    - pure conditional dispatch → router (no computation, only select next step based on conditions)
-#    - internal pure computation → function (compute complex values for subsequent reuse, stored in function.<name>)
 #    - execute business rules → rule/ruleset
 #    - call sub-pipeline → pipeline
 #    - query internal data → service (has I/O, stored in service.<name>)
 #    - call external API → api (has I/O, stored in api.<name>)
-#    - send notification/write to queue → trigger
-#
-#    function vs service vs api comparison:
-#    | Type     | I/O | Storage Location      | Purpose                    |
-#    |----------|-----|-----------------------|----------------------------|
-#    | function | No  | function.<name>       | pure computation/feature engineering |
-#    | service  | Yes | service.<name>       | internal service (DB/Redis) |
-#    | api      | Yes | api.<name>           | external third-party service |
 #
 # 6. Visualization friendly:
 #    - maintain top-to-bottom, left-to-right reading order

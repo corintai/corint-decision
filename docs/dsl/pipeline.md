@@ -165,12 +165,12 @@ pipeline:
   decision:
     - when: results.payment_risk_rules.signal == "decline"
       result: decline
-      reason: "{results.payment_risk_rules.reason}"
+      reason: "Payment declined by risk rules"
 
     - when: results.payment_risk_rules.signal == "review"
       result: review
       actions: ["manual_review"]
-      reason: "{results.payment_risk_rules.reason}"
+      reason: "Payment requires manual review"
 
     - default: true
       result: approve
@@ -436,7 +436,7 @@ decision:
 | `default` | bool | No | If true, this is the catch-all rule (no `when` needed) |
 | `result` | string | Yes | Final decision: `approve`, `decline`, `review`, `hold` |
 | `actions` | array | No | Actions to execute (e.g., `["KYC", "2FA"]`) |
-| `reason` | string | No | Human-readable reason (supports templates like `"{results.fraud_check.reason}"`) |
+| `reason` | string | No | Human-readable reason for the decision |
 
 **Important: Sequential Execution and Short-Circuit Logic**
 
@@ -684,12 +684,12 @@ pipeline:
   decision:
     - when: results.comprehensive_risk_check.signal == "decline"
       result: decline
-      reason: "{results.comprehensive_risk_check.reason}"
+      reason: "Risk check failed"
 
     - when: results.comprehensive_risk_check.signal == "review"
       result: review
       actions: ["manual_review", "enhanced_verification"]
-      reason: "{results.comprehensive_risk_check.reason}"
+      reason: "Requires manual review"
 
     - default: true
       result: approve

@@ -32,7 +32,6 @@ api.<api_name>.<field>           # External API results
 service.<service_name>.<field>   # Internal service results
 vars.<variable_name>             # Variables
 sys.<field>                      # System metadata
-env.<config_key>                 # Environment config
 ```
 
 ### Examples
@@ -238,9 +237,9 @@ pipeline:
   decision:
     - when: results.supabase_risk_assessment.signal == "decline"
       result: decline
-      reason: "{results.supabase_risk_assessment.reason}"
-      
-    
+      reason: "Risk assessment failed"
+
+
     - when: results.supabase_risk_assessment.signal == "review"
       result: review
       actions: ["KYC"]
@@ -327,7 +326,6 @@ expression: "numerator / (denominator + 0.0001)"
               | "service"
               | "vars"
               | "sys"
-              | "env"
 
 <field-path> ::= <identifier>
                | <identifier> "." <field-path>
@@ -449,7 +447,7 @@ event.type.                 # ❌ Cannot end with dot
 
 ### ✅ Supported in Rules/Pipelines
 
-- Field access (event, features, results, api, service, vars, sys, env)
+- Field access (event, features, results, api, service, vars, sys)
 - Comparison operators (==, !=, <, >, <=, >=)
 - Logical operators (all/any/not)
 - Membership operators (in, not in, in list)

@@ -87,7 +87,7 @@ when:
     - event.country == "US"
     - features.txn_count_24h < 10
     - not:
-        - risk.tags contains "proxy"
+        - features.risk_tags contains "proxy"
 ```
 
 **any** - At least one condition must be true (OR logic):
@@ -120,9 +120,9 @@ when:
     # Category B: Device/IP Anomaly + High Failure Frequency
     - all:
         - any:
-            - device.is_emulator == true
-            - network.is_proxy == true
-            - network.is_tor == true
+            - event.device.is_emulator == true
+            - api.network_check.is_proxy == true
+            - api.network_check.is_tor == true
         - features.login_fail_count_1h >= 3
 ```
 
@@ -143,7 +143,7 @@ when:
 | `in list` | membership in custom list | `event.user_id in list.blocked_users` |
 | `not in` | not in array | `event.status not in ["blocked", "suspended"]` |
 | `not in list` | not in custom list | `event.email not in list.vip_emails` |
-| `contains` | string/array contains | `event.email contains "@suspicious.com"`, `user.tags contains "vip"` |
+| `contains` | string/array contains | `event.email contains "@suspicious.com"`, `event.user.tags contains "vip"` |
 | `starts_with` | string starts with | `event.phone starts_with "+1"` |
 | `ends_with` | string ends with | `event.email ends_with ".com"` |
 | `regex` | regular expression match | `event.id regex "^TX-[0-9]{8}$"` |
@@ -160,8 +160,8 @@ event.country in ["US", "CA", "UK"]  # Membership check
 event.user_id in list.blocked_users   # Custom list membership
 event.status not in ["blocked", "suspended"]  # Not in array
 event.email not in list.vip_emails    # Not in custom list
-user.tags contains "vip"        # String/array contains
-risk.tags contains "proxy"     # Array contains
+event.user.tags contains "vip"        # String/array contains
+features.risk_tags contains "proxy"   # Array contains
 ```
 
 > **Note:** `exists` and `missing` operators are NOT currently implemented. Check for null/non-null values instead: `event.field == null` or `event.field != null`
@@ -178,7 +178,6 @@ Common context variable prefixes for rule conditions:
 | `service.*` | Internal service results | `service.user_profile.vip_status` |
 | `vars.*` | Pipeline variables | `vars.high_risk_threshold` |
 | `sys.*` | System variables | `sys.hour`, `sys.timestamp` |
-| `env.*` | Environment config | `env.api_timeout_ms` |
 | `results.*` | Ruleset results | `results.fraud_detection.signal` |
 | `list.*` | Custom lists | `list.blocked_users`, `list.vip_emails` |
 
@@ -203,7 +202,7 @@ when:
 when:
   any:
     - event.user_id in list.blocked_users
-    - user.tags contains "fraud"
+    - event.user.tags contains "fraud"
 ```
 
 **Pattern 3: Risk Score Range**
@@ -227,10 +226,10 @@ when:
 when:
   any:
     - all:
-        - device.is_emulator == true
+        - event.device.is_emulator == true
         - features.login_fail_count_1h >= 3
     - all:
-        - network.is_proxy == true
+        - api.network_check.is_proxy == true
         - event.amount > 5000
 ```
 
@@ -285,210 +284,7 @@ Negative scores are useful for modeling low-risk behavior, whitelist conditions,
 
 ---
 
-## 7. Dynamic Thresholds (📋 NOT IMPLEMENTED)
-
-> **⚠️ WARNING:** This entire section documents planned features that are **NOT currently implemented**.
-> The `dynamic_threshold` field does NOT exist in the Rule struct and will cause parse errors.
-
-### 7.1 Overview
-
-Static thresholds may not adapt well to changing patterns. Dynamic thresholds (when implemented) will allow rules to automatically adjust based on historical data.
-
-### 7.2 Dynamic Threshold Definition (📋 Planned)
-
-```yaml
-# ⚠️ NOT YET IMPLEMENTED - This will cause parse errors
-rule:
-  id: adaptive_velocity_check
-  name: Adaptive Transaction Velocity Check
-  description: Detect unusual transaction velocity using adaptive thresholds
-
-  when:
-    all:
-      - event.type == "transaction"
-      - event.velocity > dynamic_threshold.value  # NOT SUPPORTED
-
-  # Dynamic threshold configuration (NOT SUPPORTED)
-  dynamic_threshold:
-    id: user_velocity_threshold
-
-    # Data source
-    source:
-      metric: user.transaction_velocity
-      entity: user.id
-
-    # Calculation method
-    method: percentile              # percentile | stddev | moving_average
-
-    percentile:
-      value: 95                     # 95th percentile
-      window: 30d                   # Historical window
-      min_samples: 100              # Minimum data points
-
-    # Bounds
-    bounds:
-      min: 5                        # Never below 5
-      max: 100                      # Never above 100
-
-    # Refresh frequency
-    refresh:
-      interval: 1h                  # Recalculate hourly
-      cache_ttl: 3600               # Cache for 1 hour
-
-    # Fallback if insufficient data
-    fallback:
-      value: 20
-      reason: "Insufficient historical data"
-
-  score: 60
-```
-
-### 7.3 Threshold Methods
-
-#### Percentile-Based
-
-```yaml
-dynamic_threshold:
-  method: percentile
-  percentile:
-    value: 95                       # Use 95th percentile as threshold
-    window: 30d
-    min_samples: 50
-```
-
-#### Standard Deviation-Based
-
-```yaml
-dynamic_threshold:
-  method: stddev
-  stddev:
-    multiplier: 2                   # Mean + 2 * stddev
-    window: 30d
-    min_samples: 50
-```
-
-#### Moving Average-Based
-
-```yaml
-dynamic_threshold:
-  method: moving_average
-  moving_average:
-    type: exponential               # simple | exponential | weighted
-    window: 7d
-    multiplier: 1.5                 # 1.5x the moving average
-```
-
-### 7.4 Entity-Specific Thresholds
-
-```yaml
-dynamic_threshold:
-  # Per-user threshold
-  entity_level: user
-  entity_key: user.id
-
-  # Global fallback if user has no history
-  global_fallback:
-    enabled: true
-    method: percentile
-    percentile: 95
-```
-
-### 7.5 Time-Aware Thresholds
-
-```yaml
-dynamic_threshold:
-  method: percentile
-
-  # Different thresholds for different times
-  time_segmentation:
-    enabled: true
-    segments:
-      - name: business_hours
-        condition: hour(event.timestamp) >= 9 && hour(event.timestamp) <= 17
-        percentile: 95
-
-      - name: off_hours
-        condition: hour(event.timestamp) < 9 || hour(event.timestamp) > 17
-        percentile: 90               # More sensitive during off-hours
-
-      - name: weekend
-        condition: day_of_week(event.timestamp) in ["saturday", "sunday"]
-        percentile: 90
-```
-
-### 7.6 Complete Dynamic Threshold Example
-
-```yaml
-rule:
-  id: adaptive_amount_anomaly
-  name: Adaptive Transaction Amount Anomaly
-  description: Detect unusual transaction amounts based on user history
-
-  when:
-    all:
-      - event.type == "transaction"
-      # Amount exceeds user's dynamic threshold
-      - event.transaction.amount > dynamic_threshold.high_amount.value
-
-      # Or amount is unusually low (potential testing)
-      - any:
-          - event.transaction.amount > dynamic_threshold.high_amount.value
-          - event.transaction.amount < dynamic_threshold.low_amount.value
-
-  dynamic_thresholds:
-    high_amount:
-      source:
-        metric: transaction.amount
-        entity: user.id
-        filter: transaction.status == "completed"
-      method: percentile
-      percentile:
-        value: 95
-        window: 90d
-        min_samples: 10
-      bounds:
-        min: 100
-        max: 1000000
-      fallback:
-        value: 10000
-
-    low_amount:
-      source:
-        metric: transaction.amount
-        entity: user.id
-      method: percentile
-      percentile:
-        value: 5
-        window: 90d
-        min_samples: 10
-      bounds:
-        min: 0.01
-        max: 100
-      fallback:
-        value: 1
-
-  score: 50
-```
-
-**Current Workaround:** Use feature engineering to compute percentile-based thresholds as features, then reference them in rules:
-```yaml
-# Compute threshold as a feature
-- name: user_txn_p95
-  type: aggregation
-  method: percentile
-  percentile: 95
-  # ...
-
-# Use in rule condition
-rule:
-  when:
-    all:
-      - event.amount > features.user_txn_p95
-```
-
----
-
-## 8. Complete Examples
+## 7. Complete Examples
 
 ```yaml
 version: "0.1"
@@ -510,9 +306,9 @@ rule:
 
 ---
 
-## 9. Summary
+## 8. Summary
 
-### 9.1 Implemented Features (✅)
+### 8.1 Implemented Features (✅)
 
 A CORINT Rule currently supports:
 
@@ -539,7 +335,7 @@ A CORINT Rule currently supports:
 - ✅ **Does not define actions** (actions defined in Ruleset)
 ---
 
-## 9.2. Related Documentation
+## 8.2. Related Documentation
 
 - `import.md` - Module system and code reuse (NEW)
 - `ruleset.md` - Ruleset and decision logic

@@ -30,7 +30,7 @@ registry:
     when:
       all:
         - event.type == "payment"
-        - geo.country == "BR"
+        - event.geo.country == "BR"
 
   - pipeline: payment_main_pipeline
     when:
@@ -81,7 +81,7 @@ registry:
     when:
       all:
         - event.type == "payment"
-        - geo.country == "BR"
+        - event.geo.country == "BR"
 
   - pipeline: payment_main_pipeline
     when:
@@ -98,7 +98,7 @@ registry:
     when:
       all:
         - event.type == "payment"
-        - geo.country == "BR"
+        - event.geo.country == "BR"
 ```
 
 ### 2.3 Default Fallback
@@ -133,7 +133,7 @@ The `when` field uses the **same structure as rule and pipeline `when` blocks**,
 when:
   all:
     - event.type == "login"
-    - geo.country == "BR"
+    - event.geo.country == "BR"
     - amount > 1000
 ```
 
@@ -155,7 +155,9 @@ The `pipeline` field must reference a pipeline defined in your rule files:
 # registry.yaml
 registry:
   - pipeline: login_pipeline
-    when: "event.type == 'login'"
+    when:
+      all:
+        - event.type == "login"
 
 # login_rules.yaml
 pipeline:
@@ -164,7 +166,10 @@ pipeline:
     all:
       - event.type == "login"
   steps:
-    - include:
+    - step:
+        id: login_risk_assessment_step
+        name: Login Risk Assessment
+        type: ruleset
         ruleset: login_risk_assessment
 ```
 
@@ -181,7 +186,9 @@ Both conditions must be satisfied for the pipeline to execute:
 # Registry entry
 registry:
   - pipeline: payment_pipeline
-    when: event.type == 'payment'  # Entry-level check
+    when:
+      all:
+        - event.type == "payment"  # Entry-level check
 
 # Pipeline definition
 pipeline:
@@ -189,9 +196,12 @@ pipeline:
   when:
     all:
       - event.channel == "stripe"        # Final validation
-      - amount > 0                       # Additional validation
+      - event.amount > 0                 # Additional validation
   steps:
-    - include:
+    - step:
+        id: payment_rules_step
+        name: Payment Rules
+        type: ruleset
         ruleset: payment_rules
 ```
 
@@ -250,7 +260,7 @@ registry:
     when:
       all:
         - event.type == "payment"
-        - geo.country == "BR"
+        - event.geo.country == "BR"
 
   # Payment events - Main pipeline (general condition after specific)
   - pipeline: payment_main_pipeline
@@ -281,10 +291,13 @@ pipeline:
   when:
     all:
       - event.type == "payment"
-      - amount > 0
+      - event.amount > 0
 
   steps:
-    - include:
+    - step:
+        id: payment_risk_assessment_step
+        name: Payment Risk Assessment
+        type: ruleset
         ruleset: payment_risk_assessment
 ```
 

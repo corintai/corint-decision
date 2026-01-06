@@ -4,7 +4,7 @@
 
 ## Quick Reference
 
-CORINT uses a **flattened namespace architecture** with 8 namespaces organized by processing method:
+CORINT uses a **flattened namespace architecture** with 7 namespaces organized by processing method:
 
 | Namespace | Mutability | Purpose |
 |-----------|------------|---------|
@@ -14,7 +14,6 @@ CORINT uses a **flattened namespace architecture** with 8 namespaces organized b
 | `service` | Writable | Internal microservice results |
 | `vars` | Writable | Simple variables and calculations |
 | `sys` | Read-only | System auto-generated metadata |
-| `env` | Read-only | Environment configuration |
 | `results` | Read-only | Ruleset execution results (pipeline-level) |
 
 ## Access Pattern
@@ -60,11 +59,6 @@ results.fraud_detection.signal    # Ruleset result
 - **Access**: `sys.<field>`
 - **Common fields**: `sys.request_id`, `sys.timestamp`, `sys.hour`, `sys.environment`, `sys.pipeline_id`
 
-### env - Environment Config
-- **Source**: Environment variables, config files
-- **Access**: `env.<config_key>`
-- **Example**: `env.api_timeout_ms`, `env.feature_flags.new_ml_model`
-
 ### results - Ruleset Results
 - **Source**: Ruleset execution within pipeline
 - **Access**: `results.<ruleset_id>.<field>` or `results.<field>` for final decision
@@ -76,7 +70,6 @@ results.fraud_detection.signal    # Ruleset result
 Data classification:
 ├─ User request data? → event
 ├─ System metadata? → sys
-├─ Environment config? → env
 ├─ Ruleset/pipeline result? → results
 └─ Computed data?
    ├─ Simple calculation? → vars
@@ -99,7 +92,6 @@ Data classification:
               | "service"
               | "vars"
               | "sys"
-              | "env"
               | "results"
 
 <field-path> ::= <identifier>

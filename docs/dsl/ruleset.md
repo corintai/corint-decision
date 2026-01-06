@@ -269,7 +269,10 @@ import:
 pipeline:
   id: fraud_detection_pipeline
   steps:
-    - include:
+    - step:
+        id: fraud_detection_core_step
+        name: Fraud Detection Core
+        type: ruleset
         ruleset: fraud_detection_core  # All rules already loaded
 ```
 
@@ -526,11 +529,11 @@ Always provide clear reasons for audit and explainability:
 conclusion:
   - when: total_score >= 100
     signal: decline
-    reason: "Risk score {total_score} exceeds threshold"  # ✅ Specific
+    reason: "Risk score ${total_score} exceeds threshold"  # ✅ Specific
 
   - when: triggered_count >= 3
     signal: review
-    reason: "Multiple risk indicators: {triggered_rules}"  # ✅ Detailed
+    reason: "Multiple risk indicators: ${triggered_rules}"  # ✅ Detailed
 ```
 
 ### 9.3 Consider Business Context

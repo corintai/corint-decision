@@ -132,8 +132,8 @@ when:
 ```yaml
 when:
   all:
-    - user.age > 60
-    - geo.country in ["RU", "NG"]
+    - event.user.age > 60
+    - event.geo.country in ["RU", "NG"]
 ```
 
 Operators:
@@ -328,13 +328,13 @@ features:
     datasource: postgresql_events
     entity: events
     dimension: user_id
-    dimension_value: "{event.user_id}"
+    dimension_value: "${event.user_id}"
     field: device_id
     window: 5h
     when:
       all:
         - type == "login"
-        - geo.ip == "{event.geo.ip}"
+        - geo.ip == "${event.geo.ip}"
 
   # Basic aggregations
   - name: sum_userid_txn_amt_24h
@@ -344,7 +344,7 @@ features:
     datasource: postgresql_events
     entity: events
     dimension: user_id
-    dimension_value: "{event.user_id}"
+    dimension_value: "${event.user_id}"
     field: amount
     window: 24h
     when: type == "transaction"
@@ -356,7 +356,7 @@ features:
     datasource: postgresql_events
     entity: events
     dimension: user_id
-    dimension_value: "{event.user_id}"
+    dimension_value: "${event.user_id}"
     field: amount
     window: 7d
     when: type == "transaction"
@@ -393,7 +393,7 @@ features:
     type: state
     method: z_score
     field: amount
-    current_value: "{event.amount}"
+    current_value: "${event.amount}"
     window: 90d
 ```
 
@@ -417,7 +417,7 @@ features:
 
 ## 6. Context and Variable Management
 
-CORINT uses a **flattened namespace architecture** with 8 namespaces organized by processing method:
+CORINT uses a **flattened namespace architecture** with 7 namespaces organized by processing method:
 
 | Namespace | Mutability | Purpose |
 |-----------|------------|---------|
@@ -427,7 +427,6 @@ CORINT uses a **flattened namespace architecture** with 8 namespaces organized b
 | `service` | Writable | Internal microservice results |
 | `vars` | Writable | Simple variables and calculations |
 | `sys` | Read-only | System auto-generated metadata |
-| `env` | Read-only | Environment configuration |
 | `results` | Read-only | Ruleset execution results (pipeline-level) |
 
 **Access Pattern:**
@@ -586,9 +585,9 @@ rule:
   when:
     all:
       - event.type == "login"
-      - device.is_new == true
-      - geo.country in ["RU", "UA", "NG"]
-      - user.login_failed_count > 3
+      - event.device.is_new == true
+      - event.geo.country in ["RU", "UA", "NG"]
+      - features.login_failed_count > 3
       - features.device_change_velocity > 0.7
 
   score: +80

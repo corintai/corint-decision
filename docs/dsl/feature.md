@@ -47,7 +47,7 @@ Quick reference for writing feature definitions in CORINT. For detailed implemen
   datasource: datasource_name     # References repository/configs/datasources/
   entity: entity_name             # Table/entity name (for SQL/NoSQL)
   dimension: dimension_field      # Grouping dimension (e.g., user_id)
-  dimension_value: "{event.user_id}"  # Template for dimension value
+  dimension_value: "${event.user_id}"  # Template for dimension value
   field: field_name               # Field to aggregate (optional for count)
   window: time_window             # Time window (1h, 24h, 7d, 30d, 90d)
   when:                           # Optional filter conditions
@@ -70,8 +70,8 @@ When filtering database rows using the `when` field in feature definitions, you 
 - Supports JSON nested fields: `attributes.device.fingerprint`, `metadata.user.tier`
 
 **2. Request Fields (from the incoming API request via context.event)**
-- Use template syntax with curly braces: `{event.field_name}`
-- Examples: `{event.user_id}`, `{event.min_amount}`, `{event.threshold}`
+- Use template syntax with curly braces: `${event.field_name}`
+- Examples: `${event.user_id}`, `${event.min_amount}`, `${event.threshold}`
 - Used for dynamic filtering and template substitution
 
 #### In Rules/Pipelines (for runtime conditions)
@@ -107,14 +107,14 @@ When defining conditions in rules and pipelines, use:
   when:
     all:
       - type == "payment"                      # Database field
-      - amount > {event.threshold}             # Request value (dynamic)
-      - metadata.country == "{event.country}"  # Database JSON field matches request
+      - amount > ${event.threshold}             # Request value (dynamic)
+      - metadata.country == "${event.country}"  # Database JSON field matches request
 
 # Feature definition - Complex nested JSON field
 - name: verified_users
   type: aggregation
   method: count
-  when: user.profile.verification_status == "verified"
+  when: user_profile.verification_status == "verified"
 ```
 
 **SQL Generation Example (Feature Definition):**
@@ -126,12 +126,12 @@ When defining conditions in rules and pipelines, use:
   datasource: postgresql_events
   entity: events
   dimension: user_id
-  dimension_value: "{event.user_id}"
+  dimension_value: "${event.user_id}"
   window: 24h
   when:
     all:
       - type == "transaction"                # Database field
-      - amount > {event.min_amount}          # Request value (template)
+      - amount > ${event.min_amount}          # Request value (template)
       - attributes.device_type == "mobile"   # Database JSON field
 ```
 
@@ -190,7 +190,7 @@ rule:
   datasource: postgresql_events
   entity: events
   dimension: user_id
-  dimension_value: "{event.user_id}"   # Request field (from context.event)
+  dimension_value: "${event.user_id}"   # Request field (from context.event)
   window: 1h
   when:
     all:
@@ -207,7 +207,7 @@ rule:
   datasource: postgresql_events
   entity: events
   dimension: user_id
-  dimension_value: "{event.user_id}"  # Request field (from context.event)
+  dimension_value: "${event.user_id}"  # Request field (from context.event)
   field: amount
   window: 24h
   when: type == "transaction"         # Database field (no prefix)
@@ -222,7 +222,7 @@ rule:
   datasource: postgresql_events
   entity: events
   dimension: user_id
-  dimension_value: "{event.user_id}"  # Request field (from context.event)
+  dimension_value: "${event.user_id}"  # Request field (from context.event)
   field: amount
   window: 30d
   when: type == "order"               # Database field (no prefix)
@@ -237,7 +237,7 @@ rule:
   datasource: postgresql_events
   entity: events
   dimension: user_id
-  dimension_value: "{event.user_id}"  # Request field (from context.event)
+  dimension_value: "${event.user_id}"  # Request field (from context.event)
   field: amount
   window: 90d
   when: type == "transaction"         # Database field (no prefix)
@@ -252,7 +252,7 @@ rule:
   datasource: postgresql_events
   entity: events
   dimension: user_id
-  dimension_value: "{event.user_id}"  # Request field (from context.event)
+  dimension_value: "${event.user_id}"  # Request field (from context.event)
   field: device_id
   window: 24h
 ```
@@ -266,7 +266,7 @@ rule:
   datasource: postgresql_events
   entity: events
   dimension: user_id
-  dimension_value: "{event.user_id}"
+  dimension_value: "${event.user_id}"
   field: amount
   window: 30d
   when: type == "transaction"         # Database field (no prefix)
@@ -286,7 +286,7 @@ rule:
   datasource: postgresql_events
   entity: events
   dimension: user_id
-  dimension_value: "{event.user_id}"
+  dimension_value: "${event.user_id}"
   field: amount
   window: 30d
   when: type == "transaction"         # Database field (no prefix)
@@ -306,7 +306,7 @@ rule:
   datasource: postgresql_events
   entity: events
   dimension: user_id
-  dimension_value: "{event.user_id}"
+  dimension_value: "${event.user_id}"
   field: amount
   percentile: 95
   window: 30d
@@ -329,7 +329,7 @@ rule:
   datasource: postgresql_events
   entity: events
   dimension: user_id
-  dimension_value: "{event.user_id}"
+  dimension_value: "${event.user_id}"
   field: amount
   window: 30d
   when: type == "transaction"         # Database field (no prefix)
@@ -354,9 +354,9 @@ rule:
   datasource: clickhouse_events
   entity: events
   dimension: user_id
-  dimension_value: "{event.user_id}"
+  dimension_value: "${event.user_id}"
   field: amount
-  current_value: "{event.amount}"
+  current_value: "${event.amount}"
   window: 90d
   when: type == "transaction"         # Database field (no prefix)
 ```
@@ -375,9 +375,9 @@ rule:
   datasource: clickhouse_events
   entity: events
   dimension: user_id
-  dimension_value: "{event.user_id}"
+  dimension_value: "${event.user_id}"
   window: 7d
-  expected_timezone: "{user.timezone}"
+  expected_timezone: "${event.user.timezone}"
 ```
 
 > **Note:** Simple time checks (off-hours) should use Expression operators.
@@ -398,7 +398,7 @@ rule:
   datasource: clickhouse_events
   entity: events
   dimension: user_id
-  dimension_value: "{event.user_id}"
+  dimension_value: "${event.user_id}"
   window: 1h
   when:
     all:
@@ -416,7 +416,7 @@ rule:
   datasource: clickhouse_events
   entity: events
   dimension: user_id
-  dimension_value: "{event.user_id}"
+  dimension_value: "${event.user_id}"
   window: 1h
   pattern:
     - type == "password_reset"                     # Database field
@@ -433,7 +433,7 @@ rule:
   datasource: clickhouse_events
   entity: events
   dimension: user_id
-  dimension_value: "{event.user_id}"
+  dimension_value: "${event.user_id}"
   window: 7d
   when: type == "transaction"         # Database field (no prefix)
   aggregation: count
@@ -458,7 +458,7 @@ rule:
   type: aggregation
   method: distinct
   dimension: user_id
-  dimension_value: "{event.user_id}"
+  dimension_value: "${event.user_id}"
   field: session_id
   window: 24h
 
@@ -501,7 +501,7 @@ rule:
   method: graph_centrality
   datasource: neo4j_graph  # Neo4j support planned
   dimension: device_id
-  dimension_value: "{event.device_id}"
+  dimension_value: "${event.device_id}"
   dimension2: user_id
   window: 30d
 ```
@@ -516,8 +516,8 @@ rule:
   method: shared_entity_count
   datasource: neo4j_graph  # Neo4j support planned
   dimension: user_id
-  dimension_value: "{event.user_id}"
-  dimension_value2: "{event.target_user_id}"
+  dimension_value: "${event.user_id}"
+  dimension_value2: "${event.target_user_id}"
   dimension2: device_id
   window: 30d
 ```
@@ -530,8 +530,8 @@ rule:
   method: network_distance
   datasource: neo4j_graph  # Neo4j support planned
   dimension: user_id
-  dimension_value: "{event.user_id}"
-  dimension_value2: "{known_fraud_user_id}"
+  dimension_value: "${event.user_id}"
+  dimension_value2: "${known_fraud_user_id}"
   dimension2: device_id
   window: 90d
 ```
@@ -572,14 +572,14 @@ rule:
   description: "Pre-computed user risk score (90-day window)"
   type: lookup
   datasource: redis_features
-  key: "user_risk_score:{event.user_id}"
+  key: "user_risk_score:${event.user_id}"
   fallback: 50
 
 - name: device_reputation_score
   description: "Device reputation score from feature store"
   type: lookup
   datasource: redis_features
-  key: "device_reputation:{event.device_id}"
+  key: "device_reputation:${event.device_id}"
   fallback: 0
 ```
 
@@ -742,7 +742,7 @@ features:
     datasource: postgresql_events
     entity: events
     dimension: user_id
-    dimension_value: "{event.user_id}"
+    dimension_value: "${event.user_id}"
     window: 24h
     when: type == "login"
 
@@ -753,7 +753,7 @@ features:
     datasource: postgresql_events
     entity: events
     dimension: user_id
-    dimension_value: "{event.user_id}"
+    dimension_value: "${event.user_id}"
     window: 1h
     when:
       all:
@@ -767,7 +767,7 @@ features:
     datasource: postgresql_events
     entity: events
     dimension: user_id
-    dimension_value: "{event.user_id}"
+    dimension_value: "${event.user_id}"
     field: device_id
     window: 24h
 
@@ -783,7 +783,7 @@ features:
     description: "Pre-computed user risk score (90-day)"
     type: lookup
     datasource: redis_features
-    key: "user_risk_score:{event.user_id}"
+    key: "user_risk_score:${event.user_id}"
     fallback: 50
 
 # Usage in rules
