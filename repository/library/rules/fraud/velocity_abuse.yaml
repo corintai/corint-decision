@@ -7,9 +7,11 @@ rule:
   description: Detect abnormally high transaction frequency
 
   when:
-    all:
-      # Too many transactions in 24 hours OR velocity spike
-      - transaction_count_24h > 20 || velocity_ratio > 5.0
+    any:
+      # Too many transactions in 24 hours
+      - features.transaction_count_24h > 10
+      # High transaction sum in 24 hours
+      - features.transaction_sum_24h > 5000
 
   score: 70
 
@@ -23,8 +25,8 @@ rule:
     category: fraud
     severity: high
     tags: [carding, automated_fraud, bot_attacks]
-    description_detail: "Abnormally high transaction frequency"
-    detection: "transaction_count_24h > 20 OR velocity_ratio > 5.0"
+    description_detail: "Abnormally high transaction frequency or volume"
+    detection: "transaction_count_24h > 10 OR transaction_sum_24h > 5000"
     features:
       - transaction_count_24h: "Transactions in 24h"
-      - velocity_ratio: "Current vs 7-day average velocity"
+      - transaction_sum_24h: "Total transaction amount in 24h"

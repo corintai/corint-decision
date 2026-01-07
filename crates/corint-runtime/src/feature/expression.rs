@@ -159,39 +159,62 @@ impl ExpressionEvaluator {
     }
 
     /// Substitute template variables with context values
-    /// Example: "{event.user_id}" -> "user123" from context["user_id"]
+    /// Supports:
+    /// - Direct reference: "event.user_id" -> lookup context["user_id"]
+    /// - String interpolation: "prefix:${event.user_id}:suffix" -> "prefix:value:suffix"
     pub(super) fn substitute_template(template: &str, context: &HashMap<String, Value>) -> Result<String> {
-        // Simple template substitution: {event.user_id} -> context["user_id"]
-        let mut result = template.to_string();
+        // Check for string interpolation: contains "${...}"
+        if template.contains("${") {
+            let mut result = template.to_string();
 
-        // Extract all {xxx} patterns
-        if let Some(start) = result.find('{') {
-            if let Some(end) = result.find('}') {
-                let var_path = &result[start+1..end];
+            // Extract all ${xxx} patterns
+            if let Some(start) = result.find("${") {
+                if let Some(end) = result[start..].find('}') {
+                    let end = start + end;
+                    let var_path = &result[start+2..end];
 
-                // Parse path like "event.user_id" -> ["event", "user_id"]
-                let parts: Vec<&str> = var_path.split('.').collect();
+                    // Parse path like "event.user_id" -> ["event", "user_id"]
+                    let parts: Vec<&str> = var_path.split('.').collect();
 
-                // For now, just use the last part as the key
-                if let Some(key) = parts.last() {
-                    if let Some(value) = context.get(*key) {
-                        let value_str = match value {
-                            Value::String(s) => s.clone(),
-                            Value::Number(n) => n.to_string(),
-                            Value::Bool(b) => b.to_string(),
-                            _ => return Err(anyhow::anyhow!("Unsupported template value type")),
-                        };
-                        result = result.replace(&result[start..=end], &value_str);
-                    } else {
-                        return Err(anyhow::anyhow!(
-                            "Template variable '{}' not found in context. Available keys: {:?}",
-                            key, context.keys().collect::<Vec<_>>()
-                        ));
+                    // For now, just use the last part as the key
+                    if let Some(key) = parts.last() {
+                        if let Some(value) = context.get(*key) {
+                            let value_str = match value {
+                                Value::String(s) => s.clone(),
+                                Value::Number(n) => n.to_string(),
+                                Value::Bool(b) => b.to_string(),
+                                _ => return Err(anyhow::anyhow!("Unsupported template value type")),
+                            };
+                            result = result.replace(&result[start..=end], &value_str);
+                        } else {
+                            return Err(anyhow::anyhow!(
+                                "Template variable '{}' not found in context. Available keys: {:?}",
+                                key, context.keys().collect::<Vec<_>>()
+                            ));
+                        }
                     }
                 }
             }
+
+            return Ok(result);
         }
 
-        Ok(result)
+        // Direct reference: "event.user_id" -> lookup context["user_id"]
+        // Parse path like "event.user_id" -> ["event", "user_id"]
+        let parts: Vec<&str> = template.split('.').collect();
+        if let Some(key) = parts.last() {
+            if let Some(value) = context.get(*key) {
+                let value_str = match value {
+                    Value::String(s) => s.clone(),
+                    Value::Number(n) => n.to_string(),
+                    Value::Bool(b) => b.to_string(),
+                    _ => return Err(anyhow::anyhow!("Unsupported template value type")),
+                };
+                return Ok(value_str);
+            }
+        }
+
+        // Return as-is if not a template
+        Ok(template.to_string())
     }
 }

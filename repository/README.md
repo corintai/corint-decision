@@ -2,54 +2,101 @@
 
 This is the production rule and policy repository for Corint Decision Engine.
 
-## 📁 Directory Structure
+## Directory Structure
 
 ```
 repository/
-├── library/                # Reusable components library
-│   ├── rules/              # Individual rule definitions
-│   │   ├── fraud/          # Fraud detection rules
-│   │   ├── geography/      # Geography-based rules
-│   │   └── payment/        # Payment risk rules
-│   ├── rulesets/           # Reusable ruleset definitions
-│   └── templates/          # Decision logic templates (future)
+├── registry.yaml           # Event-to-pipeline routing (entry point)
 │
-├── pipelines/              # Business scenario orchestration
+├── library/                 # Reusable components library
+│   ├── rules/               # Individual rule definitions
+│   │   ├── account/         # Account security rules
+│   │   ├── device/          # Device fingerprinting rules
+│   │   ├── fraud/           # Fraud detection rules
+│   │   ├── geography/       # Geography-based rules
+│   │   └── payment/         # Payment risk rules
+│   └── rulesets/            # Reusable ruleset definitions
+│
+├── pipelines/               # Business scenario orchestration
 │   ├── fraud_detection.yaml
-│   └── payment_pipeline.yaml
+│   ├── payment_pipeline.yaml
+│   ├── login_risk_pipeline.yaml
+│   └── supabase_feature_ruleset.yaml
 │
-└── configs/                # Runtime configurations
-    ├── apis/               # External API configs
-    ├── datasources/        # Data source configs
-    └── features/           # Feature definitions
+├── configs/                 # Runtime configurations
+│   ├── apis/                # External API configs
+│   ├── datasources/         # Data source configs (PostgreSQL, Redis, ClickHouse, SQLite)
+│   ├── features/            # Feature definitions
+│   ├── lists/               # Custom lists (blocklists, allowlists)
+│   └── services/            # Internal service configs (microservices, message queues)
+│
+└── test_data/               # Test data and scripts
 ```
 
-## 🎯 Design Philosophy
+## Design Philosophy
 
-### Three-Layer Architecture
+### Three-Layer Decision Architecture
+
+RDL uses a three-layer decision architecture with clear separation of concerns:
+
+```
+┌─────────────────────────────────────┐
+│ Layer 1: Rules (Pattern Detectors)  │
+│ - Detect individual risk factors    │
+│ - Produce risk scores (+/-)         │
+│ - No decision-making                │
+└─────────────────────────────────────┘
+              ↓ scores
+┌─────────────────────────────────────┐
+│ Layer 2: Rulesets (Signal Generators)│
+│ - Combine and evaluate rule results │
+│ - Aggregate scores (total_score)    │
+│ - Produce signals via conclusion    │
+│   (approve/decline/review/hold/pass)│
+└─────────────────────────────────────┘
+              ↓ signals
+┌─────────────────────────────────────┐
+│ Layer 3: Pipeline (Final Decision)  │
+│ - Orchestrate execution flow        │
+│ - Make final decisions via decision │
+│ - Map signals to results + actions  │
+└─────────────────────────────────────┘
+```
+
+**Decision Flow:**
+```
+Rules (detect) → Scores → Ruleset (conclude) → Signals → Pipeline (decide) → Results + Actions
+```
+
+### Repository Structure
 
 1. **Library Layer** (`library/`): Reusable rules and rulesets
    - Rules are atomic detection units
    - Rulesets combine rules with decision logic
-   - All dependencies are explicitly declared via `imports`
+   - All dependencies are explicitly declared via `import`
 
 2. **Pipeline Layer** (`pipelines/`): Business scenario orchestration
    - Pipelines import and use rulesets
    - Define event routing and step execution
-   - Focus on business logic, not repetition
+   - Make final decisions via `decision` block
 
 3. **Config Layer** (`configs/`): Runtime configurations
-   - Data sources, features, and external APIs
+   - Data sources, features, lists, and external APIs
    - Separate from business logic for flexibility
+
+4. **Registry** (`registry.yaml`): Event-to-pipeline routing
+   - Top-to-bottom matching (first match wins)
+   - Priority-based routing for event types
 
 ### Key Principles
 
-- **Explicit Dependencies**: Every file declares its dependencies via `imports`
+- **Explicit Dependencies**: Every file declares its dependencies via `import`
 - **No Duplication**: Rules and rulesets defined once, reused everywhere
 - **Compile-Time Merging**: Dependencies resolved during compilation
 - **ID Uniqueness**: All Rule IDs and Ruleset IDs are globally unique
+- **Rulesets Suggest, Pipelines Decide**: Clear separation of concerns
 
-## 📝 Usage Examples
+## Usage Examples
 
 ### Using Existing Pipelines
 
@@ -60,31 +107,9 @@ cargo run --example fraud_detection
 # Run payment pipeline
 cargo run --example payment_pipeline
 
-# Run Supabase feature-based risk assessment (requires feature support)
-cargo run --example supabase_feature_example --features sqlx
+# Run feature-based risk assessment (requires database)
+cargo run --example supabase_feature_example
 ```
-
-### Using Supabase Features
-
-The repository includes a Supabase-based risk assessment pipeline that demonstrates real-time feature calculation from PostgreSQL:
-
-**Files:**
-- `configs/datasources/supabase_events.yaml` - Supabase PostgreSQL connection config
-- `pipelines/supabase_feature_ruleset.yaml` - Risk assessment pipeline with feature-based rules
-
-**Feature Calculation:**
-Rules reference features using the `features.` prefix (e.g., `features.transaction_sum_7d > 5000`), and the engine automatically calculates them from Supabase during rule execution.
-
-**Prerequisites:**
-1. Set up Supabase database with events table
-2. Configure connection string in `configs/datasources/supabase_events.yaml`
-3. Load feature definitions from `configs/features/user_features.yaml`
-
-**Example Rules:**
-- `high_transaction_volume` - Detects `transaction_sum_7d > 5000 AND transaction_count_24h > 10`
-- `high_value_transaction` - Detects `max_transaction_7d > 400`
-- `rapid_transactions` - Detects `transaction_count_24h > 20`
-- `suspicious_device_pattern` - Detects `unique_devices_7d >= 2 AND transaction_sum_7d > 3000`
 
 ### Creating a Custom Pipeline
 
@@ -101,13 +126,25 @@ import:
 pipeline:
   id: my_custom_pipeline
   name: My Custom Risk Pipeline
+  entry: fraud_check
 
   when:
-    event.type: transaction
+    all:
+      - event.type == "transaction"
 
   steps:
-    - include:
+    - step:
+        id: fraud_check
+        type: ruleset
         ruleset: fraud_detection_core
+
+  decision:
+    - when: results.fraud_detection_core.signal == "decline"
+      result: decline
+      reason: "${results.fraud_detection_core.reason}"
+    - default: true
+      result: approve
+      reason: "Low risk"
 ```
 
 ### Creating Custom Rules
@@ -122,7 +159,7 @@ rule:
   description: Detect specific custom pattern
 
   when:
-    conditions:
+    all:
       - custom_field > 100
 
   score: 50
@@ -130,7 +167,7 @@ rule:
   metadata:
     category: custom
     severity: medium
-    rule_version: "1.0.0"
+    version: "1.0.0"
 ```
 
 ### Creating Custom Rulesets
@@ -164,7 +201,26 @@ ruleset:
       reason: "Low risk"
 ```
 
-## 📋 Available Rules
+### Using Features in Rules
+
+```yaml
+# Feature-based rule example
+rule:
+  id: high_velocity_detection
+  name: High Velocity Detection
+
+  when:
+    all:
+      - features.transaction_count_24h > 20
+      - features.transaction_sum_7d > 5000
+      - features.unique_devices_7d >= 3
+
+  score: 80
+```
+
+Features are defined in `configs/features/` and calculated on-demand from datasources during rule execution.
+
+## Available Rules
 
 ### Fraud Detection Rules (`library/rules/fraud/`)
 
@@ -175,6 +231,7 @@ ruleset:
 | `velocity_abuse_pattern` | 70 | Transaction frequency abuse |
 | `amount_outlier_pattern` | 75 | Statistical amount anomaly |
 | `new_user_fraud_pattern` | 50 | New account suspicious behavior |
+| `velocity_pattern` | 60 | General velocity pattern |
 
 ### Payment Risk Rules (`library/rules/payment/`)
 
@@ -185,14 +242,29 @@ ruleset:
 | `new_account_risk` | 60 | New account high-value purchase |
 | `suspicious_email` | 35 | Disposable email detection |
 
+### Account Security Rules (`library/rules/account/`)
+
+| Rule ID | Score | Description |
+|---------|-------|-------------|
+| `impossible_travel_pattern` | 70 | Impossible travel detection |
+| `off_hours_activity` | 40 | Unusual time-based patterns |
+| `password_change_risk` | 55 | Risky password change behavior |
+
+### Device Rules (`library/rules/device/`)
+
+| Rule ID | Score | Description |
+|---------|-------|-------------|
+| `device_emulator` | 90 | Emulator/simulator detection |
+| `device_spoofing` | 85 | Device fingerprint spoofing |
+
 ### Geography Rules (`library/rules/geography/`)
 
 | Rule ID | Score | Description |
 |---------|-------|-------------|
-| `suspicious_geography_pattern` | 60 | Impossible travel detection |
+| `suspicious_geography_pattern` | 60 | Geographic anomaly detection |
 | `suspicious_ip` | 40 | Non-trusted country IP |
 
-## 📦 Available Rulesets
+## Available Rulesets
 
 ### `fraud_detection_core`
 Complete fraud detection with 6 patterns:
@@ -204,29 +276,65 @@ Complete fraud detection with 6 patterns:
 - new_user_fraud_pattern
 
 **Decision Thresholds**:
-- Score >= 200: Deny (critical risk)
-- Score >= 150: Deny (very high risk)
-- Score >= 100: Deny (high risk)
+- Score >= 200: Decline (critical risk)
+- Score >= 150: Decline (very high risk)
+- Score >= 100: Decline (high risk)
 - Score >= 60: Review (medium-high risk)
 - Score >= 30: Review (medium risk)
 - triggered_count >= 3: Review
 
 ### `payment_standard`
 Standard payment risk assessment (<= $1000):
-- Uses all 5 payment/geography rules
-- Balanced thresholds
-- Score >= 100: Deny
+- Uses payment and geography rules
+- Score >= 100: Decline
 - Score >= 60: Challenge (3DS)
 - Score >= 40: Review
 
 ### `payment_high_value`
 High-value payment risk (> $1000):
 - Stricter thresholds than standard
-- Score >= 60: Deny
+- Score >= 60: Decline
 - triggered_count >= 2: Review
 - triggered_count >= 1: Challenge (3DS)
 
-## 🔧 ID Naming Conventions
+### `login_risk`
+Login security assessment:
+- Account takeover detection
+- Device fingerprinting checks
+- Geographic anomaly detection
+
+## Registry Configuration
+
+The `registry.yaml` file defines event-to-pipeline routing:
+
+```yaml
+registry:
+  # Supabase transactions - specific pipeline
+  - pipeline: supabase_transaction_pipeline
+    when:
+      all:
+        - event.type == "transaction"
+        - event.source == "supabase"
+
+  # General transactions - fraud detection
+  - pipeline: fraud_detection_pipeline
+    when: event.type == "transaction"
+
+  # Payment events
+  - pipeline: payment_pipeline
+    when: event.type == "payment"
+
+  # Login events
+  - pipeline: login_risk_pipeline
+    when: event.type == "login"
+```
+
+**Matching Behavior:**
+- Top-to-bottom evaluation
+- First match wins
+- More specific conditions should be placed first
+
+## Naming Conventions
 
 ### Rule IDs
 Format: `<category>_<specific_pattern>`
@@ -244,16 +352,31 @@ Examples:
 - `payment_standard`
 - `payment_high_value`
 
-## 🚀 Next Steps
+## Configuration Files
 
-See [RULE_REFACTOR.md](../RULE_REFACTOR.md) for:
-- Complete architecture documentation
-- Implementation guidelines
-- Advanced features (inheritance, parameters, templates)
-- Repository Pattern for database support
+### Datasources (`configs/datasources/`)
+- `postgres_events.yaml` - PostgreSQL for event storage
+- `sqlite_events.yaml` - SQLite for local development
+- `clickhouse_events.yaml` - ClickHouse for analytics
+- `redis_features.yaml` - Redis for feature cache
+- `supabase_events.yaml` - Supabase PostgreSQL
 
-## 📚 Resources
+### Features (`configs/features/`)
+- `user_features.yaml` - User behavior aggregations
+- `device_features.yaml` - Device fingerprinting features
+- `ip_features.yaml` - IP reputation and geolocation
+- `statistical_features.yaml` - Statistical analysis features
 
-- [Examples Directory](../docs/dsl/examples/): Tutorial and learning resources
-- [Documentation](../docs/): API and usage guides
-- [Tests](../tests/): Integration tests and fixtures
+### Lists (`configs/lists/`)
+- `example.yaml` - Example blocklist/allowlist configuration
+
+### Services (`configs/services/`)
+- `kyc_service.yaml` - KYC verification service
+- `risk_scoring_service.yaml` - Risk scoring gRPC service
+- `event_bus.yaml` - Message queue configuration
+
+## Resources
+
+- [DSL Documentation](../docs/dsl/) - Complete DSL specification
+- [Feature Engineering](../docs/FEATURE_ENGINEERING.md) - Feature definition guide
+- [Examples](../docs/dsl/examples/) - Tutorial and learning resources

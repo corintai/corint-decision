@@ -14,10 +14,10 @@ features:
     datasource: supabase_events    # ← Supabase data source
     entity: user_events              # ← Supabase table
     dimension: user_id
-    dimension_value: "{event.user_id}"
+    dimension_value: event.user_id
     window: 1h
     timestamp_field: event_timestamp
-    when: event.event_type == "login"
+    when: event_type == "login"
 
   - name: user_transaction_sum_24h
     description: "Total transaction amount in last 24 hours from Supabase"
@@ -26,11 +26,11 @@ features:
     datasource: supabase_events
     entity: user_events
     dimension: user_id
-    dimension_value: "{event.user_id}"
+    dimension_value: event.user_id
     field: amount
     window: 24h
     timestamp_field: event_timestamp
-    when: event.event_type == "transaction"
+    when: event_type == "transaction"
 
   - name: device_unique_users_7d
     description: "Number of distinct users on this device in last 7 days"
@@ -39,7 +39,7 @@ features:
     datasource: supabase_events
     entity: user_events
     dimension: device_id
-    dimension_value: "{event.device_id}"
+    dimension_value: event.device_id
     field: user_id
     window: 7d
     timestamp_field: event_timestamp
@@ -54,49 +54,49 @@ features:
     description: "User KYC verification status"
     type: lookup
     datasource: redis_features
-    key: "user_profiles:{event.user_id}:kyc_status"
+    key: "user_profiles:${event.user_id}:kyc_status"
     fallback: "unknown"
 
   - name: user_is_verified
     description: "Is user identity verified?"
     type: lookup
     datasource: redis_features
-    key: "user_profiles:{event.user_id}:is_verified"
+    key: "user_profiles:${event.user_id}:is_verified"
     fallback: false
 
   - name: user_account_type
     description: "User account type (individual/business)"
     type: lookup
     datasource: redis_features
-    key: "user_profiles:{event.user_id}:account_type"
+    key: "user_profiles:${event.user_id}:account_type"
     fallback: "individual"
 
   - name: device_is_suspicious
     description: "Is device marked as suspicious in registry?"
     type: lookup
     datasource: redis_features
-    key: "device_registry:{event.device_id}:is_suspicious"
+    key: "device_registry:${event.device_id}:is_suspicious"
     fallback: false
 
   - name: user_risk_score
     description: "Pre-computed user risk score from feature store"
     type: lookup
     datasource: redis_features
-    key: "user_features:{event.user_id}:risk_score"
+    key: "user_features:${event.user_id}:risk_score"
     fallback: 0.0
 
   - name: user_lifetime_transaction_avg
     description: "User's historical average transaction amount"
     type: lookup
     datasource: redis_features
-    key: "user_stats:{event.user_id}:avg_transaction"
+    key: "user_stats:${event.user_id}:avg_transaction"
     fallback: 0.0
 
   - name: device_trust_score
     description: "Device trust score from feature store"
     type: lookup
     datasource: redis_features
-    key: "device_features:{event.device_id}:trust_score"
+    key: "device_features:${event.device_id}:trust_score"
     fallback: 50.0
 
   # ==========================================================================
@@ -110,7 +110,7 @@ features:
     # datasource not specified, will use "default"
     entity: user_events
     dimension: ip_address
-    dimension_value: "{event.ip_address}"
+    dimension_value: event.ip_address
     window: 1h
     timestamp_field: event_timestamp
 
@@ -125,7 +125,7 @@ features:
   #   datasource: supabase_events
   #   entity: user_events
   #   dimension: user_id
-  #   dimension_value: "{event.user_id}"
+  #   dimension_value: event.user_id
   #   window:
   #     value: 1
   #     unit: hours

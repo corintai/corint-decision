@@ -12,7 +12,7 @@ features:
     datasource: sqlite_e2e
     entity: events
     dimension: user_id
-    dimension_value: "{event.user_id}"
+    dimension_value: event.user_id
     window: 90d
     timestamp_field: timestamp
     when: event_type == "transaction"
@@ -24,7 +24,7 @@ features:
     datasource: sqlite_e2e
     entity: events
     dimension: user_id
-    dimension_value: "{event.user_id}"
+    dimension_value: event.user_id
     window: 1h
     timestamp_field: timestamp
     when: event_type == "transaction"
@@ -36,7 +36,7 @@ features:
     datasource: sqlite_e2e
     entity: events
     dimension: user_id
-    dimension_value: "{event.user_id}"
+    dimension_value: event.user_id
     window: 24h
     timestamp_field: timestamp
     when: event_type == "transaction"
@@ -48,7 +48,7 @@ features:
     datasource: sqlite_e2e
     entity: events
     dimension: user_id
-    dimension_value: "{event.user_id}"
+    dimension_value: event.user_id
     window: 7d
     timestamp_field: timestamp
     when: event_type == "transaction"
@@ -63,7 +63,7 @@ features:
     datasource: sqlite_e2e
     entity: events
     dimension: user_id
-    dimension_value: "{event.user_id}"
+    dimension_value: event.user_id
     field: amount
     window: 90d
     timestamp_field: timestamp
@@ -76,7 +76,7 @@ features:
     datasource: sqlite_e2e
     entity: events
     dimension: user_id
-    dimension_value: "{event.user_id}"
+    dimension_value: event.user_id
     field: amount
     window: 24h
     timestamp_field: timestamp
@@ -92,7 +92,7 @@ features:
     datasource: sqlite_e2e
     entity: events
     dimension: user_id
-    dimension_value: "{event.user_id}"
+    dimension_value: event.user_id
     field: amount
     window: 30d
     timestamp_field: timestamp
@@ -105,7 +105,7 @@ features:
     datasource: sqlite_e2e
     entity: events
     dimension: user_id
-    dimension_value: "{event.user_id}"
+    dimension_value: event.user_id
     field: amount
     window: 30d
     timestamp_field: timestamp
@@ -118,7 +118,7 @@ features:
     datasource: sqlite_e2e
     entity: events
     dimension: user_id
-    dimension_value: "{event.user_id}"
+    dimension_value: event.user_id
     field: amount
     window: 30d
     timestamp_field: timestamp
@@ -131,7 +131,7 @@ features:
     datasource: sqlite_e2e
     entity: events
     dimension: user_id
-    dimension_value: "{event.user_id}"
+    dimension_value: event.user_id
     field: amount
     window: 7d
     timestamp_field: timestamp
@@ -147,7 +147,7 @@ features:
     datasource: sqlite_e2e
     entity: events
     dimension: user_id
-    dimension_value: "{event.user_id}"
+    dimension_value: event.user_id
     window: 24h
     timestamp_field: timestamp
     when:
@@ -162,7 +162,7 @@ features:
     datasource: sqlite_e2e
     entity: events
     dimension: user_id
-    dimension_value: "{event.user_id}"
+    dimension_value: event.user_id
     window: 7d
     timestamp_field: timestamp
     when:
@@ -180,7 +180,7 @@ features:
     datasource: sqlite_e2e
     entity: events
     dimension: user_id
-    dimension_value: "{event.user_id}"
+    dimension_value: event.user_id
     field: device_id
     window: 7d
     timestamp_field: timestamp
@@ -192,7 +192,7 @@ features:
     datasource: sqlite_e2e
     entity: events
     dimension: user_id
-    dimension_value: "{event.user_id}"
+    dimension_value: event.user_id
     field: device_id
     window: 24h
     timestamp_field: timestamp
@@ -204,7 +204,7 @@ features:
     datasource: sqlite_e2e
     entity: events
     dimension: user_id
-    dimension_value: "{event.user_id}"
+    dimension_value: event.user_id
     field: country
     window: 30d
     timestamp_field: timestamp
@@ -216,7 +216,7 @@ features:
     datasource: sqlite_e2e
     entity: events
     dimension: user_id
-    dimension_value: "{event.user_id}"
+    dimension_value: event.user_id
     field: ip_address
     window: 24h
     timestamp_field: timestamp
@@ -231,7 +231,7 @@ features:
     datasource: sqlite_e2e
     entity: events
     dimension: user_id
-    dimension_value: "{event.user_id}"
+    dimension_value: event.user_id
     window: 24h
     timestamp_field: timestamp
     when: event_type == "payment"
@@ -243,7 +243,7 @@ features:
     datasource: sqlite_e2e
     entity: events
     dimension: user_id
-    dimension_value: "{event.user_id}"
+    dimension_value: event.user_id
     field: amount
     window: 7d
     timestamp_field: timestamp
@@ -256,7 +256,7 @@ features:
     datasource: sqlite_e2e
     entity: events
     dimension: user_id
-    dimension_value: "{event.user_id}"
+    dimension_value: event.user_id
     field: amount
     window: 30d
     timestamp_field: timestamp
@@ -272,7 +272,7 @@ features:
     datasource: sqlite_e2e
     entity: events
     dimension: device_id
-    dimension_value: "{event.device_id}"
+    dimension_value: event.device_id
     window: 24h
     timestamp_field: timestamp
     when: event_type == "transaction"
@@ -284,7 +284,7 @@ features:
     datasource: sqlite_e2e
     entity: events
     dimension: device_id
-    dimension_value: "{event.device_id}"
+    dimension_value: event.device_id
     field: user_id
     window: 7d
     timestamp_field: timestamp

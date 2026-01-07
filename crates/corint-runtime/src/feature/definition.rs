@@ -209,7 +209,7 @@ pub struct AggregationConfig {
     /// Grouping dimension (e.g., user_id, device_id)
     pub dimension: String,
 
-    /// Template for dimension value (e.g., "{event.user_id}")
+    /// Template for dimension value (e.g., "${event.user_id}")
     pub dimension_value: String,
 
     /// Field to aggregate (optional for count)
@@ -465,7 +465,7 @@ impl FeatureDefinition {
                         datasource: "default".to_string(),
                         entity: "events".to_string(),
                         dimension: "user_id".to_string(),
-                        dimension_value: "{event.user_id}".to_string(),
+                        dimension_value: "${event.user_id}".to_string(),
                         field: None,
                         window: None,
                         timestamp_field: None,

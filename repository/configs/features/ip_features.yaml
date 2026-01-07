@@ -14,9 +14,9 @@ features:
     datasource: supabase_events
     entity: events
     dimension: ip_address
-    dimension_value: "{event.ip_address}"
+    dimension_value: event.ip_address
     window: 1h
-    timestamp_field: event_timestamp
+    timestamp_field: timestamp
 
   - name: ip_login_count_24h
     description: "Login attempts from this IP in last 24 hours"
@@ -25,10 +25,10 @@ features:
     datasource: supabase_events
     entity: events
     dimension: ip_address
-    dimension_value: "{event.ip_address}"
+    dimension_value: event.ip_address
     window: 24h
-    timestamp_field: event_timestamp
-    when: event.event_type == "login"
+    timestamp_field: timestamp
+    when: event_type == "login"
 
   # ============================================================================
   # Cross-Dimensional Features (Association Analysis)
@@ -43,10 +43,10 @@ features:
     datasource: supabase_events
     entity: events
     dimension: ip_address
-    dimension_value: "{event.ip_address}"
+    dimension_value: event.ip_address
     field: device_id
     window: 5h
-    timestamp_field: event_timestamp
+    timestamp_field: timestamp
 
   - name: devices_per_ip_24h
     description: "Number of distinct devices from this IP in last 24 hours"
@@ -55,10 +55,10 @@ features:
     datasource: supabase_events
     entity: events
     dimension: ip_address
-    dimension_value: "{event.ip_address}"
+    dimension_value: event.ip_address
     field: device_id
     window: 24h
-    timestamp_field: event_timestamp
+    timestamp_field: timestamp
 
   - name: users_per_ip_24h
     description: "Number of distinct users from this IP in last 24 hours"
@@ -67,10 +67,10 @@ features:
     datasource: supabase_events
     entity: events
     dimension: ip_address
-    dimension_value: "{event.ip_address}"
+    dimension_value: event.ip_address
     field: user_id
     window: 24h
-    timestamp_field: event_timestamp
+    timestamp_field: timestamp
 
   - name: cities_per_ip_30d
     description: "Number of distinct cities for this IP in last 30 days"
@@ -79,10 +79,10 @@ features:
     datasource: supabase_events
     entity: events
     dimension: ip_address
-    dimension_value: "{event.ip_address}"
+    dimension_value: event.ip_address
     field: city
     window: 30d
-    timestamp_field: event_timestamp
+    timestamp_field: timestamp
 
   # ============================================================================
   # Velocity Features
@@ -97,7 +97,7 @@ features:
   #   datasource: supabase_events
   #   entity: events
   #   dimension: ip_address
-  #   dimension_value: "{event.ip_address}"
+  #   dimension_value: event.ip_address
   #   window:
   #     value: 1
   #     unit: hours
@@ -117,5 +117,23 @@ features:
     datasource: supabase_events
     entity: events
     dimension: ip_address
-    dimension_value: "{event.ip_address}"
+    dimension_value: event.ip_address
+
+  # ============================================================================
+  # IP Lookup Features
+  # ============================================================================
+
+  - name: ip_risk_score
+    description: "Pre-computed IP risk score from feature store"
+    type: lookup
+    datasource: redis_features
+    key: "ip_features:${event.ip_address}:risk_score"
+    fallback: 0.0
+
+  - name: ip_country
+    description: "Country associated with this IP"
+    type: lookup
+    datasource: redis_features
+    key: "ip_features:${event.ip_address}:country"
+    fallback: "unknown"
 

@@ -9,9 +9,9 @@ rule:
   when:
     all:
       # Multiple devices from same IP (5h window)
-      - ip_device_count > 10
+      - features.devices_per_ip_5h > 10
       # And multiple users from same IP
-      - ip_user_count > 5
+      - features.users_per_ip_24h > 5
 
   score: 100
 
@@ -26,7 +26,7 @@ rule:
     severity: critical
     tags: [organized_fraud, bot_networks, credential_stuffing]
     description_detail: "Multiple devices/users from same IP"
-    detection: "ip_device_count > 10 AND ip_user_count > 5"
+    detection: "devices_per_ip_5h > 10 AND users_per_ip_24h > 5"
     features:
-      - ip_device_count: "Devices from same IP (5h window)"
-      - ip_user_count: "Users from same IP (5h window)"
+      - devices_per_ip_5h: "Devices from same IP (5h window)"
+      - users_per_ip_24h: "Users from same IP (24h window)"

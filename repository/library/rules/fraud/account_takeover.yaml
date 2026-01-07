@@ -2,16 +2,18 @@ version: "0.1"
 
 # Unified account takeover detection rule
 rule:
-  id: account_takeover
+  id: account_takeover_pattern
   name: Account Takeover Detection
   description: Detect unauthorized account access through multiple risk signals
 
   when:
-    all:
-      - any:
-          - features.is_new_device == true
-          - features.failed_login_count_1h >= 3
-          - features.country_changed == true
+    any:
+      # Multiple failed login attempts
+      - features.failed_login_count_1h >= 3
+      # Multiple devices in short time
+      - features.unique_devices_7d >= 5
+      # High user risk score
+      - features.user_risk_score >= 0.7
 
   score: 85
 
@@ -24,10 +26,10 @@ rule:
     # Custom fields
     category: fraud
     severity: high
-    tags: [credential_stuffing, phishing, malware, brute_force, location_anomaly, account_takeover]
-    description_detail: "Detects account takeover attempts via new device, failed logins, or geographic changes"
-    detection: "is_new_device OR failed_login_count_1h >= 3 OR country_changed"
+    tags: [credential_stuffing, phishing, malware, brute_force, account_takeover]
+    description_detail: "Detects account takeover attempts via failed logins, multiple devices, or high risk score"
+    detection: "failed_login_count_1h >= 3 OR unique_devices_7d >= 5 OR user_risk_score >= 0.7"
     features:
-      - is_new_device: "Device never seen before for this account"
       - failed_login_count_1h: "Failed login attempts in last 1 hour"
-      - country_changed: "Login from different country than usual"
+      - unique_devices_7d: "Number of distinct devices in last 7 days"
+      - user_risk_score: "Pre-computed user risk score"

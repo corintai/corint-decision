@@ -2,14 +2,15 @@
 
 This document defines the unified template and reference syntax across all CORINT DSL components.
 
-## Three Syntax Systems
+## Four Syntax Systems
 
-CORINT uses three distinct syntax systems for different purposes:
+CORINT uses four distinct syntax systems for different purposes:
 
 | Syntax | When | Timing | Example |
 |--------|------|--------|---------|
 | **Direct Reference** | `namespace.field` | Runtime evaluation | `event.amount > 100` |
 | **String Interpolation** | `${namespace.field}` | Runtime substitution | `"User: ${event.user.id}"` |
+| **URL Path Parameter** | `{param}` | Runtime substitution | `/users/{user_id}` |
 | **Config Reference** | `@{config.path}` | **Compile-time** substitution | `@{fraud_detector.api_key}` |
 
 ---
@@ -53,27 +54,44 @@ params:
 
 **Examples**:
 
-### Feature Definitions (SQL Generation)
+### Feature Definitions
+
+Feature configurations use **direct reference** for dimension values:
+
 ```yaml
 - name: user_transaction_count
   type: aggregation
   method: count
   dimension: user_id
-  dimension_value: "${event.user_id}"       # ✅ Interpolate into SQL WHERE clause
+  dimension_value: event.user_id            # ✅ Direct reference (no quotes)
   window: 24h
   when:
     all:
-      - type == "transaction"               # Database column (no prefix)
-      - user_id == "${event.user_id}"       # Request value (interpolated)
+      - event_type == "transaction"         # Database column (no prefix)
 ```
 
-**Generated SQL** (conceptual):
-```sql
-SELECT COUNT(*)
-FROM events
-WHERE type = 'transaction'
-  AND user_id = $1                          -- Parameterized with event.user_id value
-  AND timestamp > NOW() - INTERVAL '24 hours'
+**Note**: The `when` clause filters database records, so fields reference database columns directly without namespace prefix.
+
+### Lookup Keys
+
+Lookup features support two key patterns:
+
+**Simple key (direct reference)** - when the key IS the event field value:
+```yaml
+- name: user_risk_score
+  type: lookup
+  datasource: redis_features
+  key: event.user_id                                  # ✅ Direct reference
+  fallback: 0.0
+```
+
+**Composite key (string interpolation)** - when the key includes prefixes/suffixes:
+```yaml
+- name: user_risk_score
+  type: lookup
+  datasource: redis_features
+  key: "user_features:${event.user_id}:risk_score"   # ✅ String interpolation
+  fallback: 0.0
 ```
 
 ### Request Body Templates
@@ -195,6 +213,7 @@ services:
 |--------|--------|-------------|----------|---------|
 | `namespace.field` | Runtime | Context namespaces | Direct evaluation | `event.amount > 100` |
 | `${namespace.field}` | Runtime | Context namespaces | String interpolation | `"User: ${event.user.id}"` |
+| `{param}` | Runtime | `params` mapping | URL path parameters | `/users/{user_id}` |
 | `@{config.path}` | **Compile-time** | `config/server.yaml` | Configuration | `@{fraud_detector.api_key}` |
 
 ---
@@ -212,13 +231,37 @@ service:
     get_user:
       path: /api/v1/users/{user_id}/orders/{order_id}
       params:
-        user_id: event.user.id         # Direct mapping
+        user_id: event.user.id         # Direct mapping provides the value
         order_id: event.order.id
 ```
 
-**Why different from `${}`?**
-- `{placeholder}` in URL paths → HTTP client library standard (OpenAPI/Swagger)
-- `${template}` in strings → CORINT template engine
+**How it works:**
+1. `path` defines the URL template with `{placeholder}` markers
+2. `params` maps each placeholder to a value source (direct reference)
+3. At runtime, `{user_id}` is replaced with the value from `params.user_id`
+
+**Example resolution:**
+```
+Input event: { user: { id: "U123" }, order: { id: "O456" } }
+
+path: /api/v1/users/{user_id}/orders/{order_id}
+params:
+  user_id: event.user.id    → "U123"
+  order_id: event.order.id  → "O456"
+
+Result: /api/v1/users/U123/orders/O456
+```
+
+**Why `{}` instead of `${}`?**
+
+| Syntax | Context | Standard |
+|--------|---------|----------|
+| `{param}` | URL paths | RESTful/OpenAPI/Swagger convention |
+| `${param}` | String templates | CORINT template engine |
+
+This distinction follows industry conventions:
+- HTTP client libraries expect `{placeholder}` in URL paths
+- Template engines use `${variable}` for string interpolation
 
 ---
 
@@ -248,13 +291,22 @@ when:
     - event.amount > 1000
 ```
 
+### ❌ Don't use templates for dimension_value
+```yaml
+# Wrong - uses template syntax for dimension_value
+dimension_value: "${event.user_id}"
+
+# Correct - use direct reference
+dimension_value: event.user_id
+```
+
 ### ❌ Don't forget ${} in string interpolation
 ```yaml
-# Wrong - won't substitute
-dimension_value: "event.user_id"
+# Wrong - won't substitute (literal string)
+key: "user_features:event.user_id:risk"
 
-# Correct
-dimension_value: "${event.user_id}"
+# Correct - string interpolation with ${}
+key: "user_features:${event.user_id}:risk"
 ```
 
 ### ❌ Don't use ${} for config references
@@ -279,19 +331,7 @@ base_url: "${vars.computed_base_url}"
 
 ---
 
-## 7. Migration Guide
-
-| Old Pattern | New Pattern | Reason |
-|-------------|-------------|--------|
-| `${env.fraud_detector.api_key}` | `@{fraud_detector.api_key}` | Config reference uses `@{}` |
-| `params: "${event.x}"` | `params: event.x` | Direct mapping, no template |
-| `dimension_value: "{event.x}"` | `dimension_value: "${event.x}"` | Use `${}` for interpolation |
-| `when: "${event.x}" > 100` | `when: event.x > 100` | Direct evaluation, no template |
-| `reason: "Static only"` | `reason: "Score: ${total_score}"` | Can now interpolate |
-
----
-
-## 8. Quick Decision Tree
+## 7. Quick Decision Tree
 
 ```
 Need to reference a value?
@@ -299,26 +339,44 @@ Need to reference a value?
 ├─ Is it from config/server.yaml? → Use @{config.path}
 │  └─ Examples: API keys, URLs, timeouts
 │
+├─ Is it a dimension_value or params mapping?
+│  └─ Use direct reference: namespace.field (no quotes, no ${})
+│     └─ Examples: dimension_value: event.user_id
+│
+├─ Is it a simple lookup key (key equals event field)?
+│  └─ Use direct reference: namespace.field
+│     └─ Examples: key: event.user_id
+│
 ├─ Is it inside a string that needs substitution?
 │  └─ Use ${namespace.field}
-│     └─ Examples: "User: ${event.user.id}", dimension_value: "${event.user_id}"
+│     └─ Examples: key: "user:${event.user_id}:score"
 │
-└─ Otherwise (direct evaluation/mapping)
+├─ Is it a when clause filtering database records?
+│  └─ Use database column name directly (no namespace)
+│     └─ Examples: when: event_type == "transaction"
+│
+└─ Otherwise (direct evaluation)
    └─ Use namespace.field
-      └─ Examples: event.amount > 100, params: { user_id: event.user.id }
+      └─ Examples: event.amount > 100
 ```
 
 ---
 
-## 9. Summary
+## 8. Syntax Rules Summary
 
-CORINT uses **three syntax systems**:
-
-1. **`namespace.field`** - Direct reference (runtime evaluation)
-2. **`${namespace.field}`** - String interpolation (runtime substitution)
-3. **`@{config.path}`** - Config reference (compile-time substitution)
+| Scenario | Syntax | Example |
+|----------|--------|---------|
+| dimension_value | Direct reference | `dimension_value: event.user_id` |
+| Simple key | Direct reference | `key: event.user_id` |
+| Composite key | String interpolation | `key: "prefix:${event.user_id}:suffix"` |
+| params mapping | Direct reference | `user_id: event.user_id` |
+| Condition evaluation | Direct reference | `event.amount > 100` |
+| Database filter | Column name | `event_type == "transaction"` |
+| URL path parameter | `{}` | `path: /users/{user_id}` |
+| Config reference | `@{}` | `@{fraud_detector.api_key}` |
 
 The key distinction:
 - `@{}` → **Compile-time** from config files (secrets, URLs)
-- `${}` → **Runtime** from context namespaces (user data, computed values)
+- `${}` → **Runtime** string interpolation (composite keys, templates)
+- `{}` → **URL path** parameters (RESTful convention)
 - No wrapper → **Direct** evaluation or mapping

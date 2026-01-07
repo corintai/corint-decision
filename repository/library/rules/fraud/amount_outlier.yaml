@@ -4,16 +4,16 @@ version: "0.1"
 rule:
   id: amount_outlier_pattern
   name: Amount Outlier Detection
-  description: Detect transaction amounts that are statistical outliers
+  description: Detect transaction amounts that are unusually high
 
   when:
     all:
-      # Z-score exceeds 3.0 (statistical outlier)
-      - amount_zscore > 3.0
-      # AND flagged as outlier
-      - is_amount_outlier == true
+      # Current amount significantly exceeds average
+      - event.amount > features.avg_transaction_30d * 3
       # AND exceeds absolute threshold
-      - transaction_amount > 5000
+      - event.amount > 2000
+      # AND exceeds max in past 14 days
+      - event.amount > features.max_transaction_14d
 
   score: 75
 
@@ -27,9 +27,9 @@ rule:
     category: fraud
     severity: high
     tags: [account_takeover, stolen_cards, money_laundering]
-    description_detail: "Transaction amount is statistical outlier"
-    detection: "amount_zscore > 3.0 AND is_amount_outlier AND transaction_amount > 5000"
+    description_detail: "Transaction amount is unusually high compared to history"
+    detection: "event.amount > avg_transaction_30d * 3 AND event.amount > 2000 AND event.amount > max_transaction_14d"
     features:
-      - amount_zscore: "Z-score (standard deviations from mean)"
-      - is_amount_outlier: "Exceeds 95th percentile"
-      - transaction_amount: "Absolute amount threshold"
+      - avg_transaction_30d: "Average transaction in 30 days"
+      - max_transaction_14d: "Maximum transaction in 14 days"
+      - event.amount: "Current transaction amount"

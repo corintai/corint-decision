@@ -1,0 +1,260 @@
+# CORINT Redis Feature Store Test Data
+# ============================================================================
+# This file contains pre-computed feature values for Redis lookup features
+# Use this with redis-cli to load test data for end-to-end testing
+#
+# Usage:
+#   cat redis_features.txt | grep -v '^#' | grep -v '^$' | redis-cli
+#
+# Or use the load script:
+#   ./load_redis_features.sh
+# ============================================================================
+
+# ============================================================================
+# User Risk Scores (user_features:{user_id}:risk_score)
+# Scale: 0.0 (lowest risk) to 1.0 (highest risk)
+# ============================================================================
+
+# Normal users - low risk scores
+SET user_features:normal_user_001:risk_score "0.15"
+SET user_features:normal_user_002:risk_score "0.20"
+
+# High frequency login - moderate risk
+SET user_features:high_freq_001:risk_score "0.45"
+
+# Failed login user - elevated risk
+SET user_features:failed_login_001:risk_score "0.65"
+
+# High transaction volume - moderate-high risk
+SET user_features:high_txn_001:risk_score "0.55"
+
+# Multi-device user - high risk (fraud farm indicator)
+SET user_features:multi_device_001:risk_score "0.75"
+
+# Multi-IP user - high risk (suspicious geography)
+SET user_features:multi_ip_001:risk_score "0.70"
+
+# New user - moderate risk (insufficient history)
+SET user_features:new_user_001:risk_score "0.40"
+
+# VIP user - very low risk
+SET user_features:vip_user_001:risk_score "0.05"
+
+# Suspicious user - very high risk
+SET user_features:suspicious_001:risk_score "0.95"
+
+# Stats user - low risk
+SET user_features:stats_user_001:risk_score "0.18"
+
+# ============================================================================
+# User KYC Status (user_profiles:{user_id}:kyc_status)
+# Values: verified, pending, failed, unknown
+# ============================================================================
+
+SET user_profiles:normal_user_001:kyc_status "verified"
+SET user_profiles:normal_user_002:kyc_status "verified"
+SET user_profiles:high_freq_001:kyc_status "verified"
+SET user_profiles:failed_login_001:kyc_status "verified"
+SET user_profiles:high_txn_001:kyc_status "verified"
+SET user_profiles:multi_device_001:kyc_status "pending"
+SET user_profiles:multi_ip_001:kyc_status "pending"
+SET user_profiles:new_user_001:kyc_status "pending"
+SET user_profiles:vip_user_001:kyc_status "verified"
+SET user_profiles:suspicious_001:kyc_status "failed"
+SET user_profiles:stats_user_001:kyc_status "verified"
+
+# ============================================================================
+# User Verification Status (user_profiles:{user_id}:is_verified)
+# Values: true, false
+# ============================================================================
+
+SET user_profiles:normal_user_001:is_verified "true"
+SET user_profiles:normal_user_002:is_verified "true"
+SET user_profiles:high_freq_001:is_verified "true"
+SET user_profiles:failed_login_001:is_verified "true"
+SET user_profiles:high_txn_001:is_verified "true"
+SET user_profiles:multi_device_001:is_verified "false"
+SET user_profiles:multi_ip_001:is_verified "false"
+SET user_profiles:new_user_001:is_verified "false"
+SET user_profiles:vip_user_001:is_verified "true"
+SET user_profiles:suspicious_001:is_verified "false"
+SET user_profiles:stats_user_001:is_verified "true"
+
+# ============================================================================
+# User Account Type (user_profiles:{user_id}:account_type)
+# Values: standard, premium, vip, business
+# ============================================================================
+
+SET user_profiles:normal_user_001:account_type "standard"
+SET user_profiles:normal_user_002:account_type "standard"
+SET user_profiles:high_freq_001:account_type "standard"
+SET user_profiles:failed_login_001:account_type "standard"
+SET user_profiles:high_txn_001:account_type "premium"
+SET user_profiles:multi_device_001:account_type "standard"
+SET user_profiles:multi_ip_001:account_type "standard"
+SET user_profiles:new_user_001:account_type "standard"
+SET user_profiles:vip_user_001:account_type "vip"
+SET user_profiles:suspicious_001:account_type "standard"
+SET user_profiles:stats_user_001:account_type "standard"
+
+# ============================================================================
+# User Trust Score (user_profiles:{user_id}:trust_score)
+# Scale: 0-100 (higher is more trusted)
+# ============================================================================
+
+SET user_profiles:normal_user_001:trust_score "85"
+SET user_profiles:normal_user_002:trust_score "80"
+SET user_profiles:high_freq_001:trust_score "60"
+SET user_profiles:failed_login_001:trust_score "40"
+SET user_profiles:high_txn_001:trust_score "55"
+SET user_profiles:multi_device_001:trust_score "25"
+SET user_profiles:multi_ip_001:trust_score "30"
+SET user_profiles:new_user_001:trust_score "50"
+SET user_profiles:vip_user_001:trust_score "95"
+SET user_profiles:suspicious_001:trust_score "5"
+SET user_profiles:stats_user_001:trust_score "82"
+
+# ============================================================================
+# Device Risk Scores (device_features:{device_id}:risk_score)
+# Scale: 0.0 (safe) to 1.0 (risky)
+# ============================================================================
+
+# Normal devices - low risk
+SET device_features:device_n001:risk_score "0.10"
+SET device_features:device_n002:risk_score "0.12"
+SET device_features:device_n003:risk_score "0.15"
+
+# High frequency user device
+SET device_features:device_hf01:risk_score "0.30"
+
+# Failed login devices - higher risk (potential attacker devices)
+SET device_features:device_fl01:risk_score "0.20"
+SET device_features:device_fl02:risk_score "0.70"
+SET device_features:device_fl03:risk_score "0.75"
+SET device_features:device_fl04:risk_score "0.80"
+
+# High transaction volume device
+SET device_features:device_ht01:risk_score "0.35"
+
+# Multi-device fraud pattern devices - very high risk
+SET device_features:device_md01:risk_score "0.60"
+SET device_features:device_md02:risk_score "0.65"
+SET device_features:device_md03:risk_score "0.70"
+SET device_features:device_md04:risk_score "0.72"
+SET device_features:device_md05:risk_score "0.75"
+SET device_features:device_md06:risk_score "0.78"
+SET device_features:device_md07:risk_score "0.80"
+SET device_features:device_md08:risk_score "0.85"
+
+# Multi-IP user device
+SET device_features:device_mi01:risk_score "0.55"
+
+# New user device
+SET device_features:device_nu01:risk_score "0.30"
+
+# VIP device - trusted
+SET device_features:device_vip01:risk_score "0.05"
+
+# Suspicious user devices - very high risk
+SET device_features:device_sus01:risk_score "0.85"
+SET device_features:device_sus02:risk_score "0.90"
+SET device_features:device_sus03:risk_score "0.88"
+SET device_features:device_sus04:risk_score "0.92"
+SET device_features:device_sus05:risk_score "0.95"
+
+# Stats user device
+SET device_features:device_st01:risk_score "0.12"
+
+# ============================================================================
+# IP Risk Scores (ip_features:{ip_address}:risk_score)
+# Scale: 0.0 (safe) to 1.0 (risky)
+# Note: Using IP hash or normalized format in real scenario
+# ============================================================================
+
+# Normal IPs - low risk
+SET ip_features:192.168.1.100:risk_score "0.05"
+SET ip_features:192.168.1.101:risk_score "0.05"
+SET ip_features:192.168.1.102:risk_score "0.08"
+
+# Chicago IP
+SET ip_features:10.0.0.50:risk_score "0.15"
+
+# Failed login IPs - higher risk (suspicious regions)
+SET ip_features:172.16.0.10:risk_score "0.10"
+SET ip_features:172.16.0.20:risk_score "0.70"
+SET ip_features:172.16.0.30:risk_score "0.75"
+SET ip_features:172.16.0.40:risk_score "0.80"
+
+# High transaction IP
+SET ip_features:10.10.10.10:risk_score "0.20"
+
+# Multi-device same IP (fraud farm indicator)
+SET ip_features:192.168.100.1:risk_score "0.65"
+
+# Multi-IP user IPs (geographic spread)
+SET ip_features:8.8.8.1:risk_score "0.10"
+SET ip_features:8.8.8.2:risk_score "0.15"
+SET ip_features:8.8.8.3:risk_score "0.12"
+SET ip_features:8.8.8.4:risk_score "0.10"
+SET ip_features:8.8.8.5:risk_score "0.25"
+SET ip_features:8.8.8.6:risk_score "0.08"
+
+# New user IP
+SET ip_features:203.0.113.10:risk_score "0.18"
+
+# VIP IP
+SET ip_features:10.20.30.40:risk_score "0.02"
+
+# Suspicious IPs - very high risk
+SET ip_features:198.51.100.1:risk_score "0.75"
+SET ip_features:198.51.100.2:risk_score "0.85"
+SET ip_features:198.51.100.3:risk_score "0.82"
+SET ip_features:198.51.100.4:risk_score "0.88"
+SET ip_features:198.51.100.5:risk_score "0.90"
+
+# Stats user IP
+SET ip_features:10.100.0.1:risk_score "0.08"
+
+# ============================================================================
+# IP Geolocation Data (ip_features:{ip_address}:country)
+# ============================================================================
+
+SET ip_features:192.168.1.100:country "US"
+SET ip_features:192.168.1.101:country "US"
+SET ip_features:192.168.1.102:country "US"
+SET ip_features:10.0.0.50:country "US"
+SET ip_features:172.16.0.10:country "GB"
+SET ip_features:172.16.0.20:country "RU"
+SET ip_features:172.16.0.30:country "UA"
+SET ip_features:172.16.0.40:country "NG"
+SET ip_features:10.10.10.10:country "US"
+SET ip_features:192.168.100.1:country "CN"
+SET ip_features:8.8.8.1:country "US"
+SET ip_features:8.8.8.2:country "DE"
+SET ip_features:8.8.8.3:country "JP"
+SET ip_features:8.8.8.4:country "AU"
+SET ip_features:8.8.8.5:country "BR"
+SET ip_features:8.8.8.6:country "GB"
+SET ip_features:203.0.113.10:country "US"
+SET ip_features:10.20.30.40:country "US"
+SET ip_features:198.51.100.1:country "NG"
+SET ip_features:198.51.100.2:country "RU"
+SET ip_features:198.51.100.3:country "UA"
+SET ip_features:198.51.100.4:country "CN"
+SET ip_features:198.51.100.5:country "VN"
+SET ip_features:10.100.0.1:country "US"
+
+# ============================================================================
+# Summary
+# ============================================================================
+# Total keys: ~100+
+# Categories:
+#   - user_features:{user_id}:risk_score (11 users)
+#   - user_profiles:{user_id}:kyc_status (11 users)
+#   - user_profiles:{user_id}:is_verified (11 users)
+#   - user_profiles:{user_id}:account_type (11 users)
+#   - user_profiles:{user_id}:trust_score (11 users)
+#   - device_features:{device_id}:risk_score (20+ devices)
+#   - ip_features:{ip_address}:risk_score (25+ IPs)
+#   - ip_features:{ip_address}:country (25+ IPs)
+# ============================================================================

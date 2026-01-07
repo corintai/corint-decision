@@ -75,7 +75,7 @@ pub struct OperatorParams {
     /// Primary dimension (e.g., user_id, device_id)
     pub dimension: String,
 
-    /// Dimension value (supports template like "{event.user_id}")
+    /// Dimension value (supports template like "${event.user_id}")
     pub dimension_value: String,
 
     /// Time window
@@ -789,20 +789,44 @@ impl ExpressionOperator {
 // ============================================================================
 
 /// Resolve template string with context values
+/// Supports:
+/// - Direct reference: "event.user_id" -> lookup context["event.user_id"]
+/// - String interpolation: "prefix:${event.user_id}:suffix" -> "prefix:value:suffix"
 fn resolve_template(template: &str, context: &HashMap<String, Value>) -> Result<String> {
-    if template.starts_with('{') && template.ends_with('}') {
-        let key = &template[1..template.len() - 1];
-        if let Some(value) = context.get(key) {
-            Ok(value_to_string(value))
-        } else {
-            Err(RuntimeError::RuntimeError(format!(
-                "Template variable not found: {}",
-                key
-            )))
+    // Check for string interpolation: contains "${...}"
+    if template.contains("${") {
+        let mut result = template.to_string();
+        let mut search_start = 0;
+
+        while let Some(start) = result[search_start..].find("${") {
+            let start = search_start + start;
+            if let Some(end_offset) = result[start..].find('}') {
+                let end = start + end_offset;
+                let key = &result[start + 2..end];
+                if let Some(value) = context.get(key) {
+                    let replacement = value_to_string(value);
+                    result = format!("{}{}{}", &result[..start], replacement, &result[end + 1..]);
+                    search_start = start + replacement.len();
+                } else {
+                    return Err(RuntimeError::RuntimeError(format!(
+                        "Template variable not found: {}",
+                        key
+                    )));
+                }
+            } else {
+                break;
+            }
         }
-    } else {
-        Ok(template.to_string())
+        return Ok(result);
     }
+
+    // Direct reference: "event.user_id" -> lookup context["event.user_id"]
+    if let Some(value) = context.get(template) {
+        return Ok(value_to_string(value));
+    }
+
+    // Return as-is if not a template
+    Ok(template.to_string())
 }
 
 /// Convert Value to String representation
@@ -821,8 +845,8 @@ fn value_to_string(value: &Value) -> String {
 fn resolve_value(value: &Value, context: &HashMap<String, Value>) -> Result<Value> {
     match value {
         Value::String(s) => {
-            if s.starts_with('{') && s.ends_with('}') {
-                let key = &s[1..s.len() - 1];
+            if s.starts_with("${") && s.ends_with('}') {
+                let key = &s[2..s.len() - 1];
                 context
                     .get(key)
                     .cloned()

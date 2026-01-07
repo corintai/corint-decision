@@ -4,12 +4,16 @@ version: "0.1"
 rule:
   id: suspicious_geography_pattern
   name: Suspicious Geography Detection
-  description: Detect impossible travel or high-risk locations
+  description: Detect suspicious geographic patterns like multiple IPs or cities
 
   when:
-    all:
-      # Impossible travel OR (off-hours AND country changed) OR high-risk country
-      - (geo_distance_km / hours_since_last_login > 800) || (is_off_hours == true && country_changed == true) || country_risk_level == "high"
+    any:
+      # Multiple IPs in 24 hours
+      - features.unique_ips_24h >= 5
+      # Multiple cities in 30 days
+      - features.unique_cities_30d >= 5
+      # High IP risk score
+      - features.ip_risk_score >= 0.7
 
   score: 60
 
@@ -23,10 +27,9 @@ rule:
     category: geography
     severity: medium
     tags: [account_takeover, vpn_abuse, proxy_fraud]
-    description_detail: "Impossible travel or high-risk location"
-    detection: "Impossible travel OR (off_hours AND country_change) OR high_risk_country"
+    description_detail: "Multiple IPs/cities or high-risk IP"
+    detection: "unique_ips_24h >= 5 OR unique_cities_30d >= 5 OR ip_risk_score >= 0.7"
     features:
-      - geo_distance_km: "Distance from last location"
-      - hours_since_last_login: "Time since last access"
-      - is_off_hours: "Unusual time for user"
-      - country_risk_level: "Country risk rating"
+      - unique_ips_24h: "Distinct IPs in 24 hours"
+      - unique_cities_30d: "Distinct cities in 30 days"
+      - ip_risk_score: "Pre-computed IP risk score"

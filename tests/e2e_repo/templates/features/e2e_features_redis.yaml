@@ -13,7 +13,7 @@ features:
     type: lookup
     lookup:
       datasource: redis_e2e
-      key: "{event.user_id}"
+      key: event.user_id
       fallback: 50
 
   - name: user_fraud_score
@@ -21,7 +21,7 @@ features:
     type: lookup
     lookup:
       datasource: redis_e2e
-      key: "{event.user_id}"
+      key: event.user_id
       fallback: 0
 
   # Device reputation
@@ -30,7 +30,7 @@ features:
     type: lookup
     lookup:
       datasource: redis_e2e
-      key: "{event.device_id}"
+      key: event.device_id
       fallback: 50
 
   - name: device_fraud_count
@@ -38,7 +38,7 @@ features:
     type: lookup
     lookup:
       datasource: redis_e2e
-      key: "{event.device_id}"
+      key: event.device_id
       fallback: 0
 
   # IP reputation
@@ -47,7 +47,7 @@ features:
     type: lookup
     lookup:
       datasource: redis_e2e
-      key: "{event.ip_address}"
+      key: event.ip_address
       fallback: 50
 
   - name: ip_fraud_rate
@@ -55,7 +55,7 @@ features:
     type: lookup
     lookup:
       datasource: redis_e2e
-      key: "{event.ip_address}"
+      key: event.ip_address
       fallback: 0.0
 
   # User behavioral features
@@ -64,7 +64,7 @@ features:
     type: lookup
     lookup:
       datasource: redis_e2e
-      key: "{event.user_id}"
+      key: event.user_id
       fallback: 0
 
   - name: user_txn_count_7d
@@ -72,7 +72,7 @@ features:
     type: lookup
     lookup:
       datasource: redis_e2e
-      key: "{event.user_id}"
+      key: event.user_id
       fallback: 0
 
   - name: user_unique_devices
@@ -80,7 +80,7 @@ features:
     type: lookup
     lookup:
       datasource: redis_e2e
-      key: "{event.user_id}"
+      key: event.user_id
       fallback: 1
 
   - name: user_unique_countries
@@ -88,7 +88,7 @@ features:
     type: lookup
     lookup:
       datasource: redis_e2e
-      key: "{event.user_id}"
+      key: event.user_id
       fallback: 1
 
   # Account age and history
@@ -97,7 +97,7 @@ features:
     type: lookup
     lookup:
       datasource: redis_e2e
-      key: "{event.user_id}"
+      key: event.user_id
       fallback: 0
 
   - name: user_total_txns
@@ -105,7 +105,7 @@ features:
     type: lookup
     lookup:
       datasource: redis_e2e
-      key: "{event.user_id}"
+      key: event.user_id
       fallback: 0
 
   # Payment method features
@@ -114,7 +114,7 @@ features:
     type: lookup
     lookup:
       datasource: redis_e2e
-      key: "{event.payment_method}"
+      key: event.payment_method
       fallback: 0.0
 
   # Merchant features
@@ -123,7 +123,7 @@ features:
     type: lookup
     lookup:
       datasource: redis_e2e
-      key: "{event.merchant_id}"
+      key: event.merchant_id
       fallback: 50
 
   # Velocity features (pre-computed)
@@ -132,7 +132,7 @@ features:
     type: lookup
     lookup:
       datasource: redis_e2e
-      key: "{event.user_id}"
+      key: event.user_id
       fallback: 0
 
   - name: user_failed_login_24h
@@ -140,5 +140,5 @@ features:
     type: lookup
     lookup:
       datasource: redis_e2e
-      key: "{event.user_id}"
+      key: event.user_id
       fallback: 0

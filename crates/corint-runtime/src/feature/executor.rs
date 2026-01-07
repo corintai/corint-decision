@@ -1221,33 +1221,47 @@ mod tests {
     }
 
     #[test]
-    fn test_substitute_template() {
+    fn test_substitute_template_direct_reference() {
         let mut context = HashMap::new();
         context.insert("user_id".to_string(), Value::String("user123".to_string()));
         context.insert("device_id".to_string(), Value::String("device456".to_string()));
 
-        // Test user_id substitution
-        let result = ExpressionEvaluator::substitute_template("{event.user_id}", &context).unwrap();
+        // Test direct reference: event.user_id -> lookup context["user_id"]
+        let result = ExpressionEvaluator::substitute_template("event.user_id", &context).unwrap();
         assert_eq!(result, "user123");
 
-        // Test device_id substitution
-        let result = ExpressionEvaluator::substitute_template("{event.device_id}", &context).unwrap();
+        // Test direct reference: event.device_id
+        let result = ExpressionEvaluator::substitute_template("event.device_id", &context).unwrap();
         assert_eq!(result, "device456");
 
         // Test with numeric value
         context.insert("count".to_string(), Value::Number(42.0));
-        let result = ExpressionEvaluator::substitute_template("{event.count}", &context).unwrap();
+        let result = ExpressionEvaluator::substitute_template("event.count", &context).unwrap();
         assert_eq!(result, "42");
     }
 
     #[test]
-    fn test_substitute_template_with_prefix() {
+    fn test_substitute_template_string_interpolation() {
         let mut context = HashMap::new();
-        context.insert("user_id".to_string(), Value::String("123".to_string()));
+        context.insert("user_id".to_string(), Value::String("user123".to_string()));
+        context.insert("device_id".to_string(), Value::String("device456".to_string()));
 
-        // Test with key prefix
-        let result = ExpressionEvaluator::substitute_template("user_risk:{event.user_id}", &context).unwrap();
-        assert_eq!(result, "user_risk:123");
+        // Test string interpolation: ${event.user_id} inside string
+        let result = ExpressionEvaluator::substitute_template("${event.user_id}", &context).unwrap();
+        assert_eq!(result, "user123");
+
+        // Test string interpolation with prefix
+        let result = ExpressionEvaluator::substitute_template("user_risk:${event.user_id}", &context).unwrap();
+        assert_eq!(result, "user_risk:user123");
+
+        // Test string interpolation with prefix and suffix
+        let result = ExpressionEvaluator::substitute_template("prefix:${event.device_id}:suffix", &context).unwrap();
+        assert_eq!(result, "prefix:device456:suffix");
+
+        // Test with numeric value
+        context.insert("count".to_string(), Value::Number(42.0));
+        let result = ExpressionEvaluator::substitute_template("count_${event.count}_value", &context).unwrap();
+        assert_eq!(result, "count_42_value");
     }
 
     #[tokio::test]

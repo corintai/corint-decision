@@ -9,9 +9,11 @@ rule:
   when:
     all:
       # Account created within past 7 days
-      - user_age_days < 7
-      # AND (large amount OR unverified payment)
-      - transaction_amount > 1000 || (new_payment_method == true && user_verified == false)
+      - features.account_age_days < 7
+      # AND (large amount OR unverified user)
+      - any:
+          - event.amount > 1000
+          - features.user_is_verified == false
 
   score: 50
 
@@ -26,9 +28,8 @@ rule:
     severity: medium
     tags: [first_party_fraud, synthetic_identity, fake_accounts]
     description_detail: "New account with immediate high-risk behavior"
-    detection: "user_age_days < 7 AND (high_amount OR unverified_new_payment)"
+    detection: "account_age_days < 7 AND (high_amount OR unverified_user)"
     features:
-      - user_age_days: "Account age in days"
-      - transaction_amount: "Transaction amount"
-      - new_payment_method: "First time using this payment"
-      - user_verified: "Email/phone verification status"
+      - account_age_days: "Account age in days"
+      - event.amount: "Transaction amount"
+      - user_is_verified: "User verification status"

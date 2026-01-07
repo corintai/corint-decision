@@ -15,10 +15,10 @@ features:
     datasource: supabase_events  # Explicitly specify data source
     entity: events
     dimension: user_id
-    dimension_value: "{event.user_id}"
+    dimension_value: event.user_id
     window: 24h
-    timestamp_field: event_timestamp
-    when: event.event_type == "login"
+    timestamp_field: timestamp
+    when: event_type == "login"
 
   - name: login_count_1h
     description: "Number of login events in last 1 hour"
@@ -27,10 +27,10 @@ features:
     datasource: supabase_events
     entity: events
     dimension: user_id
-    dimension_value: "{event.user_id}"
+    dimension_value: event.user_id
     window: 1h
-    timestamp_field: event_timestamp
-    when: event.event_type == "login"
+    timestamp_field: timestamp
+    when: event_type == "login"
 
   - name: failed_login_count_1h
     description: "Number of failed login attempts in last 1 hour"
@@ -39,13 +39,13 @@ features:
     datasource: supabase_events
     entity: events
     dimension: user_id
-    dimension_value: "{event.user_id}"
+    dimension_value: event.user_id
     window: 1h
-    timestamp_field: event_timestamp
+    timestamp_field: timestamp
     when:
       all:
-        - event.event_type == "login"
-        - event.status == "failed"
+        - event_type == "login"
+        - status == "failed"
 
   - name: transaction_count_24h
     description: "Number of transactions in last 24 hours"
@@ -54,10 +54,10 @@ features:
     datasource: supabase_events
     entity: events
     dimension: user_id
-    dimension_value: "{event.user_id}"
+    dimension_value: event.user_id
     window: 24h
-    timestamp_field: event_timestamp
-    when: event.event_type == "transaction"
+    timestamp_field: timestamp
+    when: event_type == "transaction"
 
   # ============================================================================
   # Aggregation Features (Sum, Avg, Max, Min)
@@ -70,11 +70,11 @@ features:
     datasource: supabase_events
     entity: events
     dimension: user_id
-    dimension_value: "{event.user_id}"
+    dimension_value: event.user_id
     field: amount
     window: 24h
-    timestamp_field: event_timestamp
-    when: event.event_type == "transaction"
+    timestamp_field: timestamp
+    when: event_type == "transaction"
 
   - name: transaction_sum_7d
     description: "Total transaction amount in last 7 days"
@@ -83,11 +83,11 @@ features:
     datasource: supabase_events
     entity: events
     dimension: user_id
-    dimension_value: "{event.user_id}"
+    dimension_value: event.user_id
     field: amount
     window: 7d
-    timestamp_field: event_timestamp
-    when: event.event_type == "transaction"
+    timestamp_field: timestamp
+    when: event_type == "transaction"
 
   - name: avg_transaction_30d
     description: "Average transaction amount in last 30 days"
@@ -96,11 +96,11 @@ features:
     datasource: supabase_events
     entity: events
     dimension: user_id
-    dimension_value: "{event.user_id}"
+    dimension_value: event.user_id
     field: amount
     window: 30d
-    timestamp_field: event_timestamp
-    when: event.event_type == "transaction"
+    timestamp_field: timestamp
+    when: event_type == "transaction"
 
   - name: max_transaction_14d
     description: "Maximum transaction amount in last 7 days"
@@ -109,11 +109,11 @@ features:
     datasource: supabase_events
     entity: events
     dimension: user_id
-    dimension_value: "{event.user_id}"
+    dimension_value: event.user_id
     field: amount
     window: 14d
-    timestamp_field: event_timestamp
-    when: event.event_type == "transaction"
+    timestamp_field: timestamp
+    when: event_type == "transaction"
 
   # ============================================================================
   # Count Distinct Features
@@ -126,10 +126,10 @@ features:
     datasource: supabase_events
     entity: events
     dimension: user_id
-    dimension_value: "{event.user_id}"
+    dimension_value: event.user_id
     field: device_id
     window: 7d
-    timestamp_field: event_timestamp
+    timestamp_field: timestamp
 
   - name: unique_devices_30d
     description: "Number of distinct devices used in last 30 days"
@@ -138,10 +138,10 @@ features:
     datasource: supabase_events
     entity: events
     dimension: user_id
-    dimension_value: "{event.user_id}"
+    dimension_value: event.user_id
     field: device_id
     window: 30d
-    timestamp_field: event_timestamp
+    timestamp_field: timestamp
 
   - name: unique_ips_24h
     description: "Number of distinct IP addresses in last 24 hours"
@@ -150,10 +150,10 @@ features:
     datasource: supabase_events
     entity: events
     dimension: user_id
-    dimension_value: "{event.user_id}"
+    dimension_value: event.user_id
     field: ip_address
     window: 24h
-    timestamp_field: event_timestamp
+    timestamp_field: timestamp
 
   - name: unique_cities_30d
     description: "Number of distinct cities accessed from in last 30 days"
@@ -162,10 +162,10 @@ features:
     datasource: supabase_events
     entity: events
     dimension: user_id
-    dimension_value: "{event.user_id}"
+    dimension_value: event.user_id
     field: city
     window: 30d
-    timestamp_field: event_timestamp
+    timestamp_field: timestamp
 
   # ============================================================================
   # Temporal Features
@@ -178,7 +178,7 @@ features:
     datasource: supabase_events
     entity: events
     dimension: user_id
-    dimension_value: "{event.user_id}"
+    dimension_value: event.user_id
 
   - name: last_login_at
     description: "Timestamp of last login"
@@ -187,8 +187,8 @@ features:
     datasource: supabase_events
     entity: events
     dimension: user_id
-    dimension_value: "{event.user_id}"
-    when: event.event_type == "login"
+    dimension_value: event.user_id
+    when: event_type == "login"
 
   - name: account_age_days
     description: "Days since account creation"
@@ -197,8 +197,8 @@ features:
     datasource: supabase_events
     entity: events
     dimension: user_id
-    dimension_value: "{event.user_id}"
-    when: event.event_type == "register"
+    dimension_value: event.user_id
+    when: event_type == "register"
     unit: days
 
   # ============================================================================
@@ -214,7 +214,7 @@ features:
   #   datasource: supabase_events
   #   entity: events
   #   dimension: user_id
-  #   dimension_value: "{event.user_id}"
+  #   dimension_value: event.user_id
   #   window:
   #     value: 1
   #     unit: hours
@@ -234,7 +234,7 @@ features:
   #   datasource: supabase_events
   #   entity: events
   #   dimension: user_id
-  #   dimension_value: "{event.user_id}"
+  #   dimension_value: event.user_id
   #   window:
   #     value: 1
   #     unit: hours
@@ -255,20 +255,20 @@ features:
     description: "Pre-computed user risk score from feature store"
     type: lookup
     datasource: redis_features
-    key: "user_features:{event.user_id}:risk_score"
+    key: "user_features:${event.user_id}:risk_score"
     fallback: 0.0
 
   - name: user_kyc_status
     description: "User KYC status from profile database"
     type: lookup
     datasource: redis_features
-    key: "user_profiles:{event.user_id}:kyc_status"
+    key: "user_profiles:${event.user_id}:kyc_status"
     fallback: "unknown"
 
   - name: user_is_verified
     description: "Is user identity verified?"
     type: lookup
     datasource: redis_features
-    key: "user_profiles:{event.user_id}:is_verified"
+    key: "user_profiles:${event.user_id}:is_verified"
     fallback: false
 

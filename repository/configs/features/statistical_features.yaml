@@ -16,7 +16,7 @@ features:
   #   datasource: supabase_events
   #   entity: events
   #   dimension: user_id
-  #   dimension_value: "{event.user_id}"
+  #   dimension_value: event.user_id
   #   field: amount
   #   window:
   #     value: 30
@@ -36,7 +36,7 @@ features:
   #   datasource: supabase_events
   #   entity: events
   #   dimension: user_id
-  #   dimension_value: "{event.user_id}"
+  #   dimension_value: event.user_id
   #   field: amount
   #   percentile: 95
   #   window:
@@ -57,7 +57,7 @@ features:
   #   datasource: supabase_events
   #   entity: events
   #   dimension: user_id
-  #   dimension_value: "{event.user_id}"
+  #   dimension_value: event.user_id
   #   field: amount
   #   percentile: 99
   #   window:
@@ -81,7 +81,7 @@ features:
   #   datasource: supabase_events
   #   entity: events
   #   dimension: user_id
-  #   dimension_value: "{event.user_id}"
+  #   dimension_value: event.user_id
   #   numerator_window:
   #     value: 24
   #     unit: hours
@@ -104,7 +104,7 @@ features:
   #   datasource: supabase_events
   #   entity: events
   #   dimension: user_id
-  #   dimension_value: "{event.user_id}"
+  #   dimension_value: event.user_id
   #   numerator_window:
   #     value: 24
   #     unit: hours
@@ -150,16 +150,16 @@ features:
     datasource: supabase_events
     entity: events
     dimension: user_id
-    dimension_value: "{event.user_id}"
+    dimension_value: event.user_id
     field: event_timestamp
-    when: event.event_type == "login"
+    when: event_type == "login"
     unit: hours
 
   - name: geo_distance_from_last_login
     description: "Distance (km) from last login location (placeholder)"
     type: expression
     expression: "0"  # Placeholder - always returns 0 (geo_distance not yet implemented)
-    when: event.event_type == "login"
+    when: event_type == "login"
 
   # - name: country_changed
   #   description: "Has user's country changed since last login?"
@@ -168,7 +168,7 @@ features:
   #   datasource: supabase_events
   #   entity: events
   #   dimension: user_id
-  #   dimension_value: "{event.user_id}"
+  #   dimension_value: event.user_id
   #   field: country
   #   when:
   #     - field: event_type
@@ -186,7 +186,7 @@ features:
   #   datasource: supabase_events
   #   entity: events
   #   dimension: user_id
-  #   dimension_value: "{event.user_id}"
+  #   dimension_value: event.user_id
   #   field: device_id
   #   window:
   #     value: 30
@@ -199,7 +199,7 @@ features:
   #   datasource: supabase_events
   #   entity: events
   #   dimension: device_id
-  #   dimension_value: "{event.device_id}"
+  #   dimension_value: event.device_id
   #   field: device_fingerprint
   #   window:
   #     value: 24
@@ -212,10 +212,10 @@ features:
     datasource: supabase_events
     entity: events
     dimension: user_id
-    dimension_value: "{event.user_id}"
+    dimension_value: event.user_id
     window: 1h
     timestamp_field: event_timestamp
-    when: event.event_type == "login_failed"
+    when: event_type == "login_failed"
 
   # ============================================================================
   # Association Analysis Features
@@ -229,7 +229,7 @@ features:
     datasource: supabase_events
     entity: events
     dimension: ip_address
-    dimension_value: "{event.ip_address}"
+    dimension_value: event.ip_address
     field: device_id
     window: 5h
     timestamp_field: event_timestamp
@@ -241,7 +241,7 @@ features:
     datasource: supabase_events
     entity: events
     dimension: ip_address
-    dimension_value: "{event.ip_address}"
+    dimension_value: event.ip_address
     field: user_id
     window: 5h
     timestamp_field: event_timestamp
@@ -253,7 +253,7 @@ features:
     datasource: supabase_events
     entity: events
     dimension: device_id
-    dimension_value: "{event.device_id}"
+    dimension_value: event.device_id
     field: user_id
     window: 24h
     timestamp_field: event_timestamp
@@ -270,7 +270,7 @@ features:
     datasource: supabase_events
     entity: events
     dimension: ip_address
-    dimension_value: "{event.ip_address}"
+    dimension_value: event.ip_address
     field: device_id
     window: 5h
     timestamp_field: event_timestamp
@@ -282,7 +282,7 @@ features:
     datasource: supabase_events
     entity: events
     dimension: ip_address
-    dimension_value: "{event.ip_address}"
+    dimension_value: event.ip_address
     field: user_id
     window: 5h
     timestamp_field: event_timestamp

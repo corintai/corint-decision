@@ -9,10 +9,11 @@
 
 *Part of the **CORINT – Cognitive Risk Intelligence Framework***
 
-[Features](#-key-features) •
+[Overview](#-overview) •
+[Key Features](#-key-features) •
 [Quick Start](#-quick-start) •
-[Documentation](#-documentation) • 
-[Comparison](#-comparison-with-alternatives)
+[Comparison](#-comparison-with-alternatives) • 
+[Documentation](#-documentation) 
 
 </div>
 
@@ -83,7 +84,7 @@ pipeline:
   decision:
     - when: results.fraud_detection.signal == "decline"
       result: decline
-      reason: "{results.fraud_detection.reason}"
+      reason: "${results.fraud_detection.reason}"
 ```
 
 ---
@@ -125,7 +126,7 @@ features:
     datasource: supabase_events
     entity: events
     dimension: user_id
-    dimension_value: "{event.user_id}"
+    dimension_value: "${event.user_id}"
     window: 24h
     timestamp_field: event_timestamp
     when: event.event_type == "login"
@@ -138,7 +139,7 @@ features:
     datasource: supabase_events
     entity: events
     dimension: user_id
-    dimension_value: "{event.user_id}"
+    dimension_value: "${event.user_id}"
     field: device_id
     window: 7d
     timestamp_field: event_timestamp
@@ -151,7 +152,7 @@ features:
     datasource: supabase_events
     entity: events
     dimension: user_id
-    dimension_value: "{event.user_id}"
+    dimension_value: "${event.user_id}"
     field: amount
     window: 7d
     timestamp_field: event_timestamp
@@ -162,7 +163,7 @@ features:
     description: "Pre-computed user risk score from feature store"
     type: lookup
     datasource: redis_features
-    key: "user_features:{event.user_id}:risk_score"
+    key: "user_features:${event.user_id}:risk_score"
     fallback: 0.0
 
   # 📋 Planned: Expression features for complex calculations
@@ -502,207 +503,24 @@ rule:
 The CORINT Decision Engine includes an HTTP/REST API server for production use:
 
 ```bash
-# Run the server locally
-cargo run -p corint-server
+# Clone repository
+git clone https://github.com/corint/corint-decision.git
+cd corint-decision
 
-# Server will start on http://127.0.0.1:8080
-```
+# Install dependencies (Rust)
+cargo build
 
-For detailed server documentation, see [Server Quick Start Guide](crates/corint-server/QUICKSTART.md).
+# Run tests
+cargo test
 
-### Simple Login Risk Detection Example
+# initialize SQLite database
+# if you want to use postgresql/clickhouse/redit as the datasource backend
+# please install them at first, then run the corresponding script init_xxx.sh
+./scripts/init_sqlite.sh
 
-```yaml
-version: "0.1"
+# setup the server config, you can customize it
+cp config/server-example.yaml config/server.yaml
 
-# ========================================
-# STAGE 1: DEFINE RULES
-# ========================================
-# Rules detect risk patterns and produce scores
-
-rule:
-  id: too_many_failures
-  name: Too Many Failed Login Attempts
-  description: Detect excessive failed login attempts
-  when:
-    all:
-      # Features are calculated on-demand when referenced
-      - features.failed_logins_1h > 5
-  score: 60
-
----
-
-rule:
-  id: suspicious_ip
-  name: Suspicious IP Association
-  description: Detect IP addresses associated with multiple devices
-  when:
-    all:
-      # count_distinct feature calculated from data source
-      - features.devices_per_ip_5h > 10
-  score: 80
-
----
-
-# ========================================
-# STAGE 2: DEFINE RULESET
-# ========================================
-# Ruleset evaluates rules and produces signals
-
-ruleset:
-  id: login_risk_assessment
-  name: Login Risk Assessment
-  rules:
-    - too_many_failures
-    - suspicious_ip
-
-  # Conclusion produces signals based on rule scores
-  conclusion:
-    - when: total_score >= 100
-      signal: decline
-      reason: "High risk score detected"
-
-    - when: total_score >= 60
-      signal: review
-      reason: "Medium risk detected"
-
-    - default: true
-      signal: approve
-      reason: "No significant risk"
-
----
-
-# ========================================
-# STAGE 3: DEFINE PIPELINE
-# ========================================
-# Pipeline orchestrates execution and makes final decisions
-
-pipeline:
-  id: login_risk_pipeline
-  name: Login Risk Pipeline
-  entry: risk_check
-
-  # Pipeline-level when condition
-  when:
-    all:
-      - event.type == "login"
-
-  steps:
-    - step:
-        id: risk_check
-        type: ruleset
-        ruleset: login_risk_assessment
-
-  # Final decision based on ruleset signals
-  decision:
-    - when: results.login_risk_assessment.signal == "decline"
-      result: decline
-      reason: "{results.login_risk_assessment.reason}"
-
-    - when: results.login_risk_assessment.signal == "review"
-      result: review
-      actions: ["manual_review", "2FA"]
-      reason: "{results.login_risk_assessment.reason}"
-
-    - default: true
-      result: approve
-      reason: "Login approved"
-```
-
-### Modular Rules with Inheritance (Phase 3)
-
-Build reusable rule libraries with inheritance:
-
-```yaml
-# Base fraud detection ruleset
-ruleset:
-  id: fraud_detection_base
-  name: Base Fraud Detection
-  rules:
-    - velocity_check
-    - geo_mismatch
-  conclusion:
-    - when: total_score >= 150
-      signal: decline
-    - when: total_score >= 75
-      signal: review
-    - default: true
-      signal: approve
-
-# Specialized for payments (inherits base)
-ruleset:
-  id: payment_fraud
-  extends: fraud_detection_base  # Inherits all rules and logic
-  rules:
-    - high_amount_check         # Add payment-specific rules
-    - merchant_risk_check
-
-# Parameterized velocity rule
-rule:
-  id: velocity_check
-  params:
-    time_window_seconds: 3600
-    max_transactions: 10
-  when:
-    conditions:
-      - transaction_count(last_n_seconds: params.time_window_seconds) > params.max_transactions
-  score: 75
-```
-
-**Benefits:**
-- **DRY Principle**: Define once, reuse everywhere
-- **Easy Customization**: Override or extend as needed
-- **Compile-time Configuration**: Parameters resolved during compilation
-- **Version Control Friendly**: Modular files with clear dependencies
-
-### More Examples
-
-See the [`repository/`](repository/) directory for complete, production-ready examples:
-
-#### Complete Pipelines
-
-- [**Supabase Feature Pipeline**](repository/pipelines/supabase_feature_ruleset.yaml) - Full-featured risk assessment with database-backed feature calculation
-- [**Login Risk Pipeline**](repository/pipelines/login_risk_pipeline.yaml) - Account security and login anomaly detection
-- [**Payment Pipeline**](repository/pipelines/payment_pipeline.yaml) - Payment fraud prevention with velocity checks
-- [**Fraud Detection**](repository/pipelines/fraud_detection.yaml) - Comprehensive fraud detection ruleset
-
-#### Rule Library
-
-**Fraud Detection Rules** ([`repository/library/rules/fraud/`](repository/library/rules/fraud/)):
-- [Account Takeover](repository/library/rules/fraud/account_takeover.yaml) - Detect compromised accounts
-- [Velocity Abuse](repository/library/rules/fraud/velocity_abuse.yaml) - High-frequency transaction patterns
-- [Amount Outlier](repository/library/rules/fraud/amount_outlier.yaml) - Unusual transaction amounts
-- [Fraud Farm](repository/library/rules/fraud/fraud_farm.yaml) - Coordinated fraud operations
-
-**Payment Risk Rules** ([`repository/library/rules/payment/`](repository/library/rules/payment/)):
-- [Card Testing](repository/library/rules/payment/card_testing.yaml) - Detect stolen card validation attempts
-- [Velocity Check](repository/library/rules/payment/velocity_check.yaml) - Payment frequency analysis
-
-**Account Security Rules** ([`repository/library/rules/account/`](repository/library/rules/account/)):
-- [Impossible Travel](repository/library/rules/account/impossible_travel.yaml) - Detect physically impossible location changes
-- [Off-Hours Activity](repository/library/rules/account/off_hours_activity.yaml) - Unusual time-based patterns
-
-#### Reusable Rulesets
-
-- [**Fraud Detection Core**](repository/library/rulesets/fraud_detection_core.yaml) - Base fraud detection ruleset
-- [**Login Risk**](repository/library/rulesets/login_risk.yaml) - Login security checks
-- [**Payment Standard**](repository/library/rulesets/payment_standard.yaml) - Standard payment verification
-
-#### Feature Definitions
-
-- [**User Features**](repository/configs/features/user_features.yaml) - User behavior aggregations
-- [**Device Features**](repository/configs/features/device_features.yaml) - Device fingerprinting features
-- [**IP Features**](repository/configs/features/ip_features.yaml) - IP reputation and geolocation
-
----
-
-## 🌐 Server API
-
-CORINT Decision Engine includes a production-ready HTTP/REST and gRPC API server (`corint-server`).
-
-### Quick Start
-
-```bash
 # Start the server
 cargo run -p corint-server
 
@@ -729,8 +547,6 @@ curl -X POST http://localhost:8080/v1/decide \
 **POST** `/v1/decide` - Execute decision rules
 
 **POST** `/v1/repo/reload` - Reload rules and configurations
-
-**GET** `/metrics` - Prometheus metrics (if enabled)
 
 **Request Example:**
 ```json
@@ -767,12 +583,13 @@ curl -X POST http://localhost:8080/v1/decide \
       ]
     },
     "cognition": {
-      "summary": "{results.supabase_risk_assessment.reason}",
+      "summary": "suspicious device pattern matched",
       "reason_codes": []
     }
   }
 }
 ```
+
 
 #### gRPC API
 
@@ -816,44 +633,7 @@ For detailed gRPC documentation, see [crates/corint-server/GRPC.md](crates/corin
 ### Configuration
 
 The server is primarily configured via the `config/server.yaml` file, with environment variables for sensitive credentials.
-
-**Config File Example** (`config/server-example.yaml`):
-```yaml
-# Server configuration
-host: "127.0.0.1"
-port: 8080
-grpc_port: 50051
-
-# Repository configuration
-repository:
-  type: filesystem
-  path: "repository"
-
-# Data sources (for repository storage, not feature calculation)
-datasources:
-  postgres_rules:
-    type: sql
-    provider: postgresql
-    connection_string: "postgresql://user:password@localhost:5432/corint_rules"
-    database: "corint_rules"
-
-# Observability
-enable_metrics: true
-enable_tracing: true
-log_level: "info"
-
-# LLM configuration
-llm:
-  default_provider: deepseek
-  enable_cache: true
-  openai:
-    api_key: "${OPENAI_API_KEY}"
-    default_model: "gpt-4o-mini"
-  anthropic:
-    api_key: "${ANTHROPIC_API_KEY}"
-    default_model: "claude-3-5-sonnet-20241022"
-```
-
+ 
 **Note:** Feature calculation datasources (for runtime feature computation) are configured separately in `repository/configs/datasources/`.
 
 
@@ -864,26 +644,9 @@ llm:
 RUST_LOG=info cargo run -p corint-server      # Info (default)
 RUST_LOG=debug cargo run -p corint-server     # Debug (detailed)
 RUST_LOG=trace cargo run -p corint-server     # Trace (all details)
-
-# Module-level logging
-RUST_LOG=info,corint_server=debug cargo run -p corint-server
-RUST_LOG=corint_runtime::datasource=debug cargo run -p corint-server  # SQL queries
-RUST_LOG=corint_runtime::feature=debug cargo run -p corint-server    # Feature calculation
+ 
 ```
-
-### Production Deployment
-
-For detailed production deployment instructions, including:
-- Step-by-step deployment guide
-- Systemd service configuration
-- Nginx reverse proxy setup
-- HTTPS configuration
-- Monitoring and logging
-- Security recommendations
-- Troubleshooting
-
-See [Server Quick Start Guide](crates/corint-server/QUICKSTART.md).
-
+ 
 ### Troubleshooting
 
 **Server won't start:**
@@ -897,9 +660,9 @@ See [Server Quick Start Guide](crates/corint-server/QUICKSTART.md).
 - View server startup logs for rule loading information
 
 **Feature calculation fails:**
-- Verify Supabase database connection
-- Check data source configuration (`repository/configs/datasources/supabase_events.yaml`)
-- View SQL queries and errors: `RUST_LOG=corint_runtime::datasource=debug cargo run -p corint-server`
+- Verify the database connection
+- Check data source configuration (`repository/configs/datasources/*.yaml`)
+- Check features configuration (`repository/configs/features/*.yaml`)
 - Verify test data exists in database
 
 **API returns 500 error:**
@@ -911,38 +674,41 @@ See [Server Quick Start Guide](crates/corint-server/QUICKSTART.md).
 
 ## 📚 Documentation
 
-### Core Concepts
+### DSL Documentation
+
+#### DSL Overview
 
 | Document | Description |
-|----------|-------------|
-| [**ARCHITECTURE.md**](docs/ARCHITECTURE.md) | Three-layer decision architecture |
+|----------|-------------| 
+| [**overvall.md**](docs/dsl/overall.md) | overall document |
+
+#### DSL Core Concepts
+
+| Document | Description |
+|----------|-------------| 
+| [**expression.md**](docs/dsl/expression.md) | Expression language reference |
 | [**rule.md**](docs/dsl/rule.md) | Rule specification and patterns |
 | [**ruleset.md**](docs/dsl/ruleset.md) | Ruleset and decision logic |
 | [**pipeline.md**](docs/dsl/pipeline.md) | Pipeline orchestration |
+| [**registry.md**](docs/dsl/registry.md) | Pipeline Registry |
 
-### Advanced Features
+#### Advanced Features
 
 | Document | Description |
 |----------|-------------|
-| [**expression.md**](docs/dsl/expression.md) | Expression language reference |
-| [**feature.md**](docs/FEATURE_ENGINEERING.md) ⭐ | **Feature engineering and statistical analysis** |
+| [**import.md**](docs/dsl/import.md) | Import rules or rulesets |
 | [**context.md**](docs/dsl/context.md) | Context and variable management |
-| [**llm.md**](docs/dsl/llm.md) | LLM integration guide |
-| [**schema.md**](docs/dsl/schema.md) | Type system and data schemas |
-| [**list.md**](docs/dsl/list.md) ⭐ | **Custom lists (blocklists/allowlists)** |
+| [**feature.md**](docs/FEATURE_ENGINEERING.md) ⭐ | **Feature engineering and statistical analysis** |
+| [**list.md**](docs/dsl/list.md) ⭐ | **Custom lists (blocklists/allowlists)** | 
+| [**api.md**](docs/dsl/api.md) | External API defination|
+| [**service.md**](docs/dsl/service.md) | Internal services defination |
 
-### Operations & Best Practices
+### Extensible
 
 | Document | Description |
-|----------|-------------|
-| [**CUSTOMLIST.md**](docs/CUSTOMLIST.md) | Custom list implementation details |
-
-### Quick References
-
-- **Feature Engineering**: For statistical analysis like "login count in the past 7 days" or "number of device IDs associated with the same IP", see [**FEATURE_ENGINEERING.md**](docs/FEATURE_ENGINEERING.md)
-- **Custom Lists**: For blocklists, allowlists, and watchlists, see [**list.md**](docs/dsl/list.md)
-- **LLM Integration**: For adding AI reasoning to your rules, see [**llm.md**](docs/dsl/llm.md)
-- **gRPC API**: For high-performance gRPC integration, see [**GRPC.md**](crates/corint-server/GRPC.md)
+|----------|-------------| 
+| [**Architechture**](docs/ARCHITECHTURE.md) | Expression language reference |
+| [**API Request**](docs/API_REQUEST.md) | Rule specification and patterns |
 
 ---
 
@@ -986,116 +752,6 @@ See [Server Quick Start Guide](crates/corint-server/QUICKSTART.md).
 | Data Privacy | ⚠️ Cloud | ✅ On-premise |
 | Vendor Lock-in | ❌ Yes | ✅ Open source |
 | LLM Choice | ❌ Predefined | ✅ Any provider |
-
----
-
-## 🏗️ Architecture
-
-### System Architecture
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│                      CORINT Decision API                     │
-│                    (REST / gRPC / SDK)                       │
-└─────────────────────────────────────────────────────────────┘
-                              ↓
-┌─────────────────────────────────────────────────────────────┐
-│                    Request Processing                        │
-│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐  │
-│  │ Validate │→ │ Feature  │→ │ Rules    │→ │ Decision │  │
-│  │  Input   │  │ Extract  │  │ Engine   │  │  Logic   │  │
-│  └──────────┘  └──────────┘  └──────────┘  └──────────┘  │
-└─────────────────────────────────────────────────────────────┘
-                              ↓
-┌─────────────────────────────────────────────────────────────┐
-│                    Integration Layer                         │
-│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐  │
-│  │ Feature  │  │   LLM    │  │ External │  │  Cache   │  │
-│  │  Store   │  │ Provider │  │   APIs   │  │  Layer   │  │
-│  └──────────┘  └──────────┘  └──────────┘  └──────────┘  │
-└─────────────────────────────────────────────────────────────┘
-                              ↓
-┌─────────────────────────────────────────────────────────────┐
-│                   Observability Stack                        │
-│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐  │
-│  │  Logs    │  │ Metrics  │  │  Traces  │  │  Audit   │  │
-│  │(Loki etc)│  │(Prom etc)│  │(Jaeger)  │  │  Trail   │  │
-│  └──────────┘  └──────────┘  └──────────┘  └──────────┘  │
-└─────────────────────────────────────────────────────────────┘
-```
-
-### Server Architecture
-
-The HTTP server (`corint-server`) architecture:
-
-```
-┌─────────────────────────────────────────┐
-│         HTTP Request                     │
-│  POST /v1/decide                         │
-│  { "event": {...} }                     │
-└─────────────────┬───────────────────────┘
-                  │
-                  ▼
-┌─────────────────────────────────────────┐
-│    Axum Router + Middleware             │
-│    - CORS Layer                         │
-│    - Trace Layer                        │
-└─────────────────┬───────────────────────┘
-                  │
-                  ▼
-┌─────────────────────────────────────────┐
-│       REST API Handler                  │
-│    - Parse JSON                         │
-│    - Convert to DecisionRequest         │
-└─────────────────┬───────────────────────┘
-                  │
-                  ▼
-┌─────────────────────────────────────────┐
-│      Decision Engine (SDK)              │
-│    - Load compiled rules                │
-│    - Execute ruleset                    │
-└─────────────────┬───────────────────────┘
-                  │
-                  ▼
-┌─────────────────────────────────────────┐
-│    Pipeline Executor (Runtime)          │
-│    - Execute IR instructions            │
-│    - LoadField: check event context     │
-└─────────────────┬───────────────────────┘
-                  │
-                  ▼ (field not found)
-┌─────────────────────────────────────────┐
-│      Feature Executor                   │
-│    - Check if registered feature        │
-│    - Build SQL query                    │
-│    - Query Supabase                     │
-│    - Calculate feature value            │
-│    - Cache in event context             │
-└─────────────────┬───────────────────────┘
-                  │
-                  ▼
-┌─────────────────────────────────────────┐
-│         HTTP Response                   │
-│  { "action": "Approve",                 │
-│    "score": 35,                         │
-│    "triggered_rules": [...],            │
-│    "processing_time_ms": 125 }          │
-└─────────────────────────────────────────┘
-```
-
-### Execution Flow
-
-```
-Event → Pipeline → Extract Features → Evaluate Rules → Decision Logic → Response
-           ↓              ↓                  ↓                ↓
-        Validate      [Cache Check]     [Parallel]      [Action]
-           ↓              ↓                  ↓                ↓
-        Context       Aggregations       Scoring         approve/decline/
-                      count_distinct                     review
-                      percentile
-                      velocity
-```
-
 ---
 
 ## 🛣️ Roadmap
@@ -1166,38 +822,11 @@ We welcome contributions! Here's how you can help:
 - 📝 **Improve docs** - Help make our documentation better
 - 🔧 **Submit PRs** - Fix bugs or implement new features
 
-### Development Setup
-
-```bash
-# Clone repository
-git clone https://github.com/corint/corint-decision.git
-cd corint-decision
-
-# Install dependencies (Rust)
-cargo build
-
-# Run tests
-cargo test
-
-# Build documentation
-cargo doc --no-deps --open
-```
-
----
-
 ## 📄 License
 
 This project is licensed under the **Elastic License 2.0**.
 
 
-
----
-
-## 📞 Contact & Community
-
-- **Documentation**: [docs/](docs/)
-- **Issues**: [GitHub Issues](https://github.com/corint/corint-decision/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/corint/corint-decision/discussions)
 
 ---
 
