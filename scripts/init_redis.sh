@@ -2,10 +2,11 @@
 # CORINT Redis Data Initialization Script
 # ============================================================================
 # This script loads pre-computed feature values into Redis for E2E testing
-# Database configuration is read from repository/configs/datasources/redis_features.yaml
+# Database configuration is read from config/server.yaml (datasources.redis_features)
+# For backward compatibility, also supports reading from repository/configs/datasources/redis_features.yaml
 #
 # Usage:
-#   ./init_redis.sh                    # Use config from datasources yaml
+#   ./init_redis.sh                    # Use config from server.yaml or datasources yaml
 #   ./init_redis.sh -c /path/to/config.yaml  # Use custom config file
 # ============================================================================
 

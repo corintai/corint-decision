@@ -638,7 +638,7 @@ INFO corint_server: Loading rule file: "repository/pipelines/simple_rule.yaml"
 psql "postgresql://postgres.PROJECT_REF:PASSWORD@HOST:PORT/postgres" -c "SELECT 1"
 ```
 
-2. Check data source configuration `repository/configs/datasources/supabase_events.yaml`
+2. Check data source configuration in `config/server.yaml` (datasources.supabase_events section)
 
 3. View SQL queries and errors in logs:
 

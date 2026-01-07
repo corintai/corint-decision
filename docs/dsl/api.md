@@ -455,7 +455,7 @@ auth:
 
 **Mapping**: `config/server.yaml` structure maps to `@{config.path}` references:
 - `llm.openai.api_key` → `@{llm.openai.api_key}`
-- `datasources.postgres_rules.connection_string` → `@{datasources.postgres_rules.connection_string}`
+- `datasource.postgres_rules.connection_string` → `@{datasource.postgres_rules.connection_string}`
 
 ---
 

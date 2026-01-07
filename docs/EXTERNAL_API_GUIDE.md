@@ -581,7 +581,7 @@ API configurations support environment variable substitution using `env.x.y.z` f
 **Configuration Source**: Values are read from `config/server.yaml` and mapped to `env` namespace:
 - `llm.openai.api_key` → `env.llm.openai.api_key`
 - `llm.anthropic.api_key` → `env.llm.anthropic.api_key`
-- `datasources.postgres_rules.connection_string` → `env.datasources.postgres_rules.connection_string`
+- `datasource.postgres_rules.connection_string` → `env.datasource.postgres_rules.connection_string`
 
 **Example**:
 ```yaml
@@ -1468,7 +1468,7 @@ Environment variables are resolved at **compile time** from `config/server.yaml`
 **Configuration Source**: Values are read from `config/server.yaml` and mapped to `env` namespace:
 - `llm.openai.api_key` → `env.llm.openai.api_key`
 - `llm.anthropic.api_key` → `env.llm.anthropic.api_key`
-- `datasources.postgres_rules.connection_string` → `env.datasources.postgres_rules.connection_string`
+- `datasource.postgres_rules.connection_string` → `env.datasource.postgres_rules.connection_string`
 
 **Example**:
 ```yaml

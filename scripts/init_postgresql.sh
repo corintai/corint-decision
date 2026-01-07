@@ -2,10 +2,11 @@
 # CORINT PostgreSQL Data Initialization Script
 # ============================================================================
 # This script loads E2E test data from events.json into PostgreSQL
-# Database configuration is read from repository/configs/datasources/postgres_events.yaml
+# Database configuration is read from config/server.yaml (datasources.postgres_events)
+# For backward compatibility, also supports reading from repository/configs/datasources/postgres_events.yaml
 #
 # Usage:
-#   ./init_postgresql.sh                    # Use config from datasources yaml
+#   ./init_postgresql.sh                    # Use config from server.yaml or datasources yaml
 #   ./init_postgresql.sh -c /path/to/config.yaml  # Use custom config file
 # ============================================================================
 

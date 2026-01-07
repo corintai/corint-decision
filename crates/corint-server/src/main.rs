@@ -35,7 +35,7 @@ async fn main() -> Result<()> {
     let app = api::create_router(Arc::new(engine));
 
     // Start HTTP server
-    let http_addr = format!("{}:{}", config.host, config.port);
+    let http_addr = format!("{}:{}", config.server.host, config.server.port);
     info!("Starting HTTP server on {}", http_addr);
 
     let listener = TcpListener::bind(&http_addr).await?;
@@ -45,8 +45,8 @@ async fn main() -> Result<()> {
     info!("  Reload repository: POST http://{}/v1/repo/reload", http_addr);
 
     // Start gRPC server if configured
-    if let Some(grpc_port) = config.grpc_port {
-        let grpc_addr = format!("{}:{}", config.host, grpc_port).parse()?;
+    if let Some(grpc_port) = config.server.grpc_port {
+        let grpc_addr = format!("{}:{}", config.server.host, grpc_port).parse()?;
 
         // Reinitialize engine for gRPC server
         let grpc_engine = engine::init_engine(&config).await?;

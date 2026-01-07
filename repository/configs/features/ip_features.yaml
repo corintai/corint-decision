@@ -11,7 +11,7 @@ features:
     description: "Total events from this IP in last 1 hour"
     type: aggregation
     method: count
-    datasource: sqlite_events
+    datasource: events_datasource
     entity: events
     dimension: ip_address
     dimension_value: event.ip_address
@@ -22,7 +22,7 @@ features:
     description: "Login attempts from this IP in last 24 hours"
     type: aggregation
     method: count
-    datasource: sqlite_events
+    datasource: events_datasource
     entity: events
     dimension: ip_address
     dimension_value: event.ip_address
@@ -40,7 +40,7 @@ features:
     description: "Number of distinct devices from this IP in last 5 hours"
     type: aggregation
     method: distinct
-    datasource: sqlite_events
+    datasource: events_datasource
     entity: events
     dimension: ip_address
     dimension_value: event.ip_address
@@ -52,7 +52,7 @@ features:
     description: "Number of distinct devices from this IP in last 24 hours"
     type: aggregation
     method: distinct
-    datasource: sqlite_events
+    datasource: events_datasource
     entity: events
     dimension: ip_address
     dimension_value: event.ip_address
@@ -64,7 +64,7 @@ features:
     description: "Number of distinct users from this IP in last 24 hours"
     type: aggregation
     method: distinct
-    datasource: sqlite_events
+    datasource: events_datasource
     entity: events
     dimension: ip_address
     dimension_value: event.ip_address
@@ -76,7 +76,7 @@ features:
     description: "Number of distinct cities for this IP in last 30 days"
     type: aggregation
     method: distinct
-    datasource: sqlite_events
+    datasource: events_datasource
     entity: events
     dimension: ip_address
     dimension_value: event.ip_address
@@ -114,7 +114,7 @@ features:
     description: "First time this IP was seen"
     type: state
     method: first_seen
-    datasource: sqlite_events
+    datasource: events_datasource
     entity: events
     dimension: ip_address
     dimension_value: event.ip_address
@@ -126,14 +126,14 @@ features:
   - name: ip_risk_score
     description: "Pre-computed IP risk score from feature store"
     type: lookup
-    datasource: redis_features
+    datasource: lookup_datasource
     key: "ip_features:${event.ip_address}:risk_score"
     fallback: 0.0
 
   - name: ip_country
     description: "Country associated with this IP"
     type: lookup
-    datasource: redis_features
+    datasource: lookup_datasource
     key: "ip_features:${event.ip_address}:country"
     fallback: "unknown"
 

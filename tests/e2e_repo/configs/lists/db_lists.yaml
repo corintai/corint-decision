@@ -1,6 +1,6 @@
 # Database-backed Lists Configuration for E2E Tests
 # These lists use datasource reference to sqlite_e2e
-# The datasource is defined in configs/datasources/sqlite_e2e.yaml
+# The datasource should be defined in config/server.yaml (datasources.sqlite_e2e)
 
 lists:
   # Blocked users list - stored in database with expiration support

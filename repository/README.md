@@ -25,10 +25,11 @@ repository/
 │
 ├── configs/                 # Runtime configurations
 │   ├── apis/                # External API configs
-│   ├── datasources/         # Data source configs (PostgreSQL, Redis, ClickHouse, SQLite)
 │   ├── features/            # Feature definitions
 │   ├── lists/               # Custom lists (blocklists, allowlists)
 │   └── services/            # Internal service configs (microservices, message queues)
+│
+│   Note: Datasources are now defined in config/server.yaml (not in repository/configs/datasources/)
 │
 └── test_data/               # Test data and scripts
 ```
@@ -354,12 +355,15 @@ Examples:
 
 ## Configuration Files
 
-### Datasources (`configs/datasources/`)
-- `postgres_events.yaml` - PostgreSQL for event storage
-- `sqlite_events.yaml` - SQLite for local development
-- `clickhouse_events.yaml` - ClickHouse for analytics
-- `redis_features.yaml` - Redis for feature cache
-- `supabase_events.yaml` - Supabase PostgreSQL
+### Datasources (defined in `config/server.yaml`)
+All datasources are now defined in `config/server.yaml` under the `datasource` section, including:
+- `sqlite_events` - SQLite for local development and testing
+- `postgres_events` - PostgreSQL for event storage (production-ready)
+- `clickhouse_events` - ClickHouse for high-performance OLAP queries
+- `redis_features` - Redis for feature lookups and caching
+- `supabase_events` - Supabase PostgreSQL (with Session Pooler)
+
+**Note:** The `repository/configs/datasources/` directory is deprecated. All datasource configurations should be defined in `config/server.yaml` to avoid duplication and confusion.
 
 ### Features (`configs/features/`)
 - `user_features.yaml` - User behavior aggregations

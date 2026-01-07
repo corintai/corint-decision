@@ -44,7 +44,8 @@ Quick reference for writing feature definitions in CORINT. For detailed implemen
   description: "Feature description"  # Human-readable description
   type: feature_type              # aggregation|state|sequence|graph|expression|lookup
   method: method_name             # Specific method (count, sum, z_score, etc.)
-  datasource: datasource_name     # References repository/configs/datasources/
+  datasource: datasource_name     # Logical datasource name (events_datasource or lookup_datasource)
+                                  # Actual datasources are defined in config/server.yaml
   entity: entity_name             # Table/entity name (for SQL/NoSQL)
   dimension: dimension_field      # Grouping dimension (e.g., user_id)
   dimension_value: "${event.user_id}"  # Template for dimension value
@@ -351,7 +352,7 @@ rule:
 - name: zscore_userid_txn_amt
   type: state
   method: z_score
-  datasource: clickhouse_events
+  datasource: events_datasource
   entity: events
   dimension: user_id
   dimension_value: "${event.user_id}"
@@ -372,7 +373,7 @@ rule:
 - name: timezone_consistency_userid_7d
   type: state
   method: timezone_consistency
-  datasource: clickhouse_events
+  datasource: events_datasource
   entity: events
   dimension: user_id
   dimension_value: "${event.user_id}"
@@ -395,7 +396,7 @@ rule:
 - name: consec_userid_login_1h_failed
   type: sequence
   method: consecutive_count
-  datasource: clickhouse_events
+  datasource: events_datasource
   entity: events
   dimension: user_id
   dimension_value: "${event.user_id}"
@@ -413,7 +414,7 @@ rule:
 - name: seq_userid_account_takeover_pattern
   type: sequence
   method: sequence_match
-  datasource: clickhouse_events
+  datasource: events_datasource
   entity: events
   dimension: user_id
   dimension_value: "${event.user_id}"
@@ -430,7 +431,7 @@ rule:
 - name: pctchg_userid_txn_cnt_week
   type: sequence
   method: percent_change
-  datasource: clickhouse_events
+  datasource: events_datasource
   entity: events
   dimension: user_id
   dimension_value: "${event.user_id}"
@@ -571,14 +572,14 @@ rule:
 - name: user_risk_score_90d
   description: "Pre-computed user risk score (90-day window)"
   type: lookup
-  datasource: redis_features
+  datasource: lookup_datasource
   key: "user_risk_score:${event.user_id}"
   fallback: 50
 
 - name: device_reputation_score
   description: "Device reputation score from feature store"
   type: lookup
-  datasource: redis_features
+  datasource: lookup_datasource
   key: "device_reputation:${event.device_id}"
   fallback: 0
 ```
@@ -600,35 +601,34 @@ rule:
 
 ### 8.2 Configuration Files
 
-**`repository/configs/datasources/postgresql_events.yaml`:**
+**Datasources are defined in `config/server.yaml`:**
+
 ```yaml
-name: postgresql_events
-type: postgresql
-config:
-  host: ${POSTGRES_HOST}
-  port: 5432
-  database: ${POSTGRES_DATABASE}
-  user: ${POSTGRES_USER}
-  password: ${POSTGRES_PASSWORD}
-  sslmode: ${POSTGRES_SSLMODE}
-  max_connections: 20
-  connection_timeout: 30
+datasource:
+  # Events datasource (for aggregation features)
+  postgres_events:
+    type: sql
+    provider: postgresql
+    connection_string: "postgresql://user:password@localhost:5432/corint_risk"
+    database: "corint_risk"
+    events_table: "events"
+    options:
+      max_connections: "20"
+      connection_timeout: "30"
+
+  # Lookup datasource (for feature lookups)
+  redis_features:
+    type: feature_store
+    provider: redis
+    connection_string: "redis://localhost:6379/0"
+    options:
+      namespace: "user_features"
+      default_ttl: "86400"
 ```
 
-**`repository/configs/datasources/redis_features.yaml`:**
-```yaml
-name: redis_features
-type: redis
-config:
-  host: ${REDIS_HOST}
-  port: 6379
-  password: ${REDIS_PASSWORD}
-  db: 0
-  key_prefix: "features:"
-  ttl: 86400
-```
+**Note:** Features use logical datasource names (`events_datasource`, `lookup_datasource`) which are automatically mapped to actual datasources defined in `config/server.yaml`.
 
-**`repository/configs/datasources/neo4j_graph.yaml`:** (🔴 Planned - Not yet implemented)
+**Planned datasource (not yet implemented):** Neo4j graph database support
 ```yaml
 # ⚠️ WARNING: Neo4j support is planned but not yet implemented
 # This configuration is for future reference only
@@ -782,7 +782,7 @@ features:
   - name: user_risk_score_90d
     description: "Pre-computed user risk score (90-day)"
     type: lookup
-    datasource: redis_features
+    datasource: lookup_datasource
     key: "user_risk_score:${event.user_id}"
     fallback: 50
 

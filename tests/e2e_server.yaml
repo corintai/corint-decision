@@ -1,14 +1,25 @@
 # CORINT Decision Engine Server Configuration for E2E Tests
 # This configuration is optimized for automated testing
 
-# Server host (127.0.0.1 for localhost only)
-host: "127.0.0.1"
+# Server configuration
+server:
+  # Server host (127.0.0.1 for localhost only)
+  host: "127.0.0.1"
 
-# Server port
-port: 8080
+  # Server port
+  port: 8080
 
-# gRPC Server port (optional, if not set, gRPC server will not start)
-grpc_port: 50051
+  # gRPC Server port (optional, if not set, gRPC server will not start)
+  grpc_port: 50051
+
+  # Enable metrics collection for testing
+  enable_metrics: true
+
+  # Disable tracing for faster test execution
+  enable_tracing: false
+
+  # Error log level for cleaner test output
+  log_level: "error"
 
 # Repository configuration - points to E2E test repository
 repository:
@@ -18,7 +29,7 @@ repository:
 
 # Data Sources Configuration for E2E Tests
 # SQLite datasource will be configured via environment variable DATABASE_URL
-datasources:
+datasource:
   # SQLite datasource for E2E testing
   sqlite_e2e:
     type: sql
@@ -28,15 +39,6 @@ datasources:
     database: "e2e_test"
     options:
       max_connections: "3"
-
-# Enable metrics collection for testing
-enable_metrics: true
-
-# Disable tracing for faster test execution
-enable_tracing: false
-
-# Error log level for cleaner test output
-log_level: "error"
 
 # LLM Provider Configuration - minimal config for tests
 # (most E2E tests don't use LLM features)

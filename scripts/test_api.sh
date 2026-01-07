@@ -22,14 +22,8 @@ PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 CONFIG_FILE="${PROJECT_ROOT}/config/server.yaml"
 CONFIG_EXAMPLE="${PROJECT_ROOT}/config/server-example.yaml"
 
-# Copy config file from example at script start
-if [ -f "${CONFIG_EXAMPLE}" ]; then
-    cp "${CONFIG_EXAMPLE}" "${CONFIG_FILE}"
-    echo "Config file initialized from ${CONFIG_EXAMPLE}"
-else
-    echo "Error: Config example file not found: ${CONFIG_EXAMPLE}"
-    exit 1
-fi
+# Note: Config file will be copied from scripts/config/ based on datasource selection
+# No need to initialize from example at script start
 
 # Colors for output
 RED='\033[0;31m'
@@ -49,14 +43,14 @@ read_config() {
 
     # Parse configuration using yq or grep/sed fallback
     if command -v yq &> /dev/null; then
-        SERVER_HOST=$(yq -r '.host // "127.0.0.1"' "${CONFIG_FILE}")
-        HTTP_PORT=$(yq -r '.port // 8080' "${CONFIG_FILE}")
-        GRPC_PORT=$(yq -r '.grpc_port // 50051' "${CONFIG_FILE}")
+        SERVER_HOST=$(yq -r '.server.host // "127.0.0.1"' "${CONFIG_FILE}")
+        HTTP_PORT=$(yq -r '.server.port // 8080' "${CONFIG_FILE}")
+        GRPC_PORT=$(yq -r '.server.grpc_port // 50051' "${CONFIG_FILE}")
     else
-        # Fallback to grep/sed - improved regex to handle quoted and unquoted values
-        SERVER_HOST=$(grep '^host:' "${CONFIG_FILE}" | head -1 | sed -E 's/^host:[[:space:]]*"?([^"]+)"?[[:space:]]*$/\1/' | tr -d ' ')
-        HTTP_PORT=$(grep '^port:' "${CONFIG_FILE}" | head -1 | sed -E 's/^port:[[:space:]]*([0-9]+)[[:space:]]*$/\1/' | tr -d ' ')
-        GRPC_PORT=$(grep '^grpc_port:' "${CONFIG_FILE}" | head -1 | sed -E 's/^grpc_port:[[:space:]]*([0-9]+)[[:space:]]*$/\1/' | tr -d ' ')
+        # Fallback to grep/sed - improved regex to handle nested server: structure
+        SERVER_HOST=$(grep -A 10 '^server:' "${CONFIG_FILE}" | grep '^[[:space:]]*host:' | head -1 | sed -E 's/^[[:space:]]*host:[[:space:]]*"?([^"]+)"?[[:space:]]*$/\1/' | tr -d ' ')
+        HTTP_PORT=$(grep -A 10 '^server:' "${CONFIG_FILE}" | grep '^[[:space:]]*port:' | head -1 | sed -E 's/^[[:space:]]*port:[[:space:]]*([0-9]+)[[:space:]]*$/\1/' | tr -d ' ')
+        GRPC_PORT=$(grep -A 10 '^server:' "${CONFIG_FILE}" | grep '^[[:space:]]*grpc_port:' | head -1 | sed -E 's/^[[:space:]]*grpc_port:[[:space:]]*([0-9]+)[[:space:]]*$/\1/' | tr -d ' ')
         SERVER_HOST="${SERVER_HOST:-127.0.0.1}"
         HTTP_PORT="${HTTP_PORT:-8080}"
         GRPC_PORT="${GRPC_PORT:-50051}"
@@ -216,21 +210,26 @@ select_datasource() {
             sqlite|1)
                 DATASOURCE="sqlite"
                 print_success "Selected: SQLite (from TEST_DATASOURCE)"
+                copy_config_file
                 return 0
                 ;;
             postgresql|2)
                 DATASOURCE="postgresql"
                 print_success "Selected: PostgreSQL (from TEST_DATASOURCE)"
+                copy_config_file
                 return 0
                 ;;
             clickhouse|3)
                 DATASOURCE="clickhouse"
                 print_success "Selected: ClickHouse (from TEST_DATASOURCE)"
+                copy_config_file
                 return 0
                 ;;
             redis|4)
                 DATASOURCE="redis"
                 print_success "Selected: Redis (from TEST_DATASOURCE)"
+                # Redis doesn't have a dedicated config file, use SQLite as base
+                copy_config_file
                 return 0
                 ;;
             *)
@@ -243,6 +242,7 @@ select_datasource() {
     if [ ! -t 0 ]; then
         DATASOURCE="${DATASOURCE:-sqlite}"
         print_warn "No TTY detected. Defaulting datasource to ${DATASOURCE}."
+        copy_config_file
         return 0
     fi
 
@@ -268,21 +268,26 @@ select_datasource() {
             1)
                 DATASOURCE="sqlite"
                 print_success "Selected: SQLite"
+                copy_config_file
                 break
                 ;;
             2)
                 DATASOURCE="postgresql"
                 print_success "Selected: PostgreSQL"
+                copy_config_file
                 break
                 ;;
             3)
                 DATASOURCE="clickhouse"
                 print_success "Selected: ClickHouse"
+                copy_config_file
                 break
                 ;;
             4)
                 DATASOURCE="redis"
                 print_success "Selected: Redis"
+                # Redis doesn't have a dedicated config file, use SQLite as base
+                copy_config_file
                 break
                 ;;
             *)
@@ -290,6 +295,41 @@ select_datasource() {
                 ;;
         esac
     done
+}
+
+# Copy datasource-specific config file to config/server.yaml
+copy_config_file() {
+    local config_source=""
+    
+    case $DATASOURCE in
+        sqlite)
+            config_source="${SCRIPT_DIR}/config/server-sqlite.yaml"
+            ;;
+        postgresql)
+            config_source="${SCRIPT_DIR}/config/server-postgresql.yaml"
+            ;;
+        clickhouse)
+            config_source="${SCRIPT_DIR}/config/server-clickhouse.yaml"
+            ;;
+        redis)
+            # Redis doesn't have a dedicated config file, use SQLite as base
+            config_source="${SCRIPT_DIR}/config/server-sqlite.yaml"
+            ;;
+        *)
+            print_warn "Unknown datasource: ${DATASOURCE}, skipping config copy"
+            return 0
+            ;;
+    esac
+    
+    if [ -f "${config_source}" ]; then
+        cp "${config_source}" "${CONFIG_FILE}"
+        print_success "Copied ${config_source} to ${CONFIG_FILE}"
+        # Re-read config after copying
+        read_config
+    else
+        print_error "Config file not found: ${config_source}"
+        return 1
+    fi
 }
 
 # ============================================================================
@@ -348,45 +388,38 @@ initialize_data() {
 start_server() {
     print_section "Starting CORINT Server"
 
-    # Check if server is already running via health check
-    if curl -s "http://${HTTP_HOST}/health" &>/dev/null; then
-        print_warn "Server is already running at ${HTTP_HOST}"
-
-        # Handle read with set +e to avoid script exit on EOF/error
-        local use_existing="Y"
-        if [ -t 0 ]; then
-            set +e
-            read -p "Use existing server? [Y/n]: " use_existing
-            rc=$?
-            set -e
-            if [ $rc -ne 0 ]; then
-                use_existing="Y"
-            fi
-        fi
-
-        use_existing="${use_existing:-Y}"
-        if [ "$use_existing" != "n" ] && [ "$use_existing" != "N" ]; then
-            print_success "Using existing server"
-            return 0
-        fi
-        print_info "Please stop the existing server manually and restart this script"
-        exit 1
-    fi
-
-    # Check if port is occupied by another process (even if not responding to health check)
-    local port_pid=""
-    port_pid=$(lsof -t -i ":${HTTP_PORT}" 2>/dev/null || true)
-    if [ -n "$port_pid" ]; then
-        print_warn "Port ${HTTP_PORT} is occupied by process: $port_pid"
-        print_info "Killing process $port_pid..."
-        kill "$port_pid" 2>/dev/null || true
+    # Check and kill processes occupying HTTP port
+    local http_port_pid=""
+    http_port_pid=$(lsof -t -i ":${HTTP_PORT}" 2>/dev/null || true)
+    if [ -n "$http_port_pid" ]; then
+        print_warn "Port ${HTTP_PORT} is occupied by process: $http_port_pid"
+        print_info "Killing process $http_port_pid..."
+        kill "$http_port_pid" 2>/dev/null || true
         sleep 1
         # Force kill if still running
-        if kill -0 "$port_pid" 2>/dev/null; then
-            kill -9 "$port_pid" 2>/dev/null || true
+        if kill -0 "$http_port_pid" 2>/dev/null; then
+            kill -9 "$http_port_pid" 2>/dev/null || true
             sleep 1
         fi
-        print_success "Process killed"
+        print_success "Process on port ${HTTP_PORT} killed"
+    fi
+
+    # Check and kill processes occupying gRPC port (if configured)
+    if [ -n "${GRPC_PORT:-}" ]; then
+        local grpc_port_pid=""
+        grpc_port_pid=$(lsof -t -i ":${GRPC_PORT}" 2>/dev/null || true)
+        if [ -n "$grpc_port_pid" ]; then
+            print_warn "Port ${GRPC_PORT} is occupied by process: $grpc_port_pid"
+            print_info "Killing process $grpc_port_pid..."
+            kill "$grpc_port_pid" 2>/dev/null || true
+            sleep 1
+            # Force kill if still running
+            if kill -0 "$grpc_port_pid" 2>/dev/null; then
+                kill -9 "$grpc_port_pid" 2>/dev/null || true
+                sleep 1
+            fi
+            print_success "Process on port ${GRPC_PORT} killed"
+        fi
     fi
 
     # Build the server

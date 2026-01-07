@@ -147,7 +147,7 @@ features:
     description: "Hours since user's last login"
     type: state
     method: time_since
-    datasource: sqlite_events
+    datasource: events_datasource
     entity: events
     dimension: user_id
     dimension_value: event.user_id
@@ -217,7 +217,7 @@ features:
     description: "Number of distinct devices from same IP (5h window)"
     type: aggregation
     method: distinct
-    datasource: sqlite_events
+    datasource: events_datasource
     entity: events
     dimension: ip_address
     dimension_value: event.ip_address
@@ -229,7 +229,7 @@ features:
     description: "Number of distinct users from same IP (5h window)"
     type: aggregation
     method: distinct
-    datasource: sqlite_events
+    datasource: events_datasource
     entity: events
     dimension: ip_address
     dimension_value: event.ip_address
@@ -241,7 +241,7 @@ features:
     description: "Number of distinct users on same device (24h window)"
     type: aggregation
     method: distinct
-    datasource: sqlite_events
+    datasource: events_datasource
     entity: events
     dimension: device_id
     dimension_value: event.device_id
@@ -258,7 +258,7 @@ features:
     description: "Devices associated with IP (fraud farm detection)"
     type: aggregation
     method: distinct
-    datasource: sqlite_events
+    datasource: events_datasource
     entity: events
     dimension: ip_address
     dimension_value: event.ip_address
@@ -270,7 +270,7 @@ features:
     description: "Users associated with IP (fraud farm detection)"
     type: aggregation
     method: distinct
-    datasource: sqlite_events
+    datasource: events_datasource
     entity: events
     dimension: ip_address
     dimension_value: event.ip_address

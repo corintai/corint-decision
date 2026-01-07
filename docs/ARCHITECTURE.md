@@ -213,9 +213,7 @@ repository/
 └── configs/
     ├── apis/                        # External API configs
     │   └── ipinfo.yaml
-    ├── datasources/                 # Data source configs
-    │   ├── postgres_events.yaml
-    │   └── redis_feature_store.yaml
+    # Note: Datasources are now defined in config/server.yaml (not in configs/datasources/)
     ├── features/                    # Feature definitions
     │   ├── user_features.yaml
     │   └── transaction_features.yaml

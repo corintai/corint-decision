@@ -69,11 +69,11 @@ The test data covers the following scenarios:
 
 ## Usage
 
-The init scripts read database configuration from `repository/configs/datasources/` YAML files.
+The init scripts read database configuration from `config/server.yaml` datasources section.
 
 ### 1. Load Event Data into PostgreSQL
 
-Config file: `repository/configs/datasources/postgres_events.yaml`
+Datasource configuration is defined in `config/server.yaml` under `datasources.postgres_events`:
 
 ```bash
 # Use default config file
@@ -85,7 +85,7 @@ Config file: `repository/configs/datasources/postgres_events.yaml`
 
 ### 2. Load Event Data into ClickHouse
 
-Config file: `repository/configs/datasources/clickhouse_events.yaml`
+Datasource configuration is defined in `config/server.yaml` under `datasources.clickhouse_events`:
 
 ```bash
 # Use default config file
@@ -97,7 +97,7 @@ Config file: `repository/configs/datasources/clickhouse_events.yaml`
 
 ### 3. Load Event Data into SQLite
 
-Config file: `repository/configs/datasources/sqlite_events.yaml`
+Datasource configuration is defined in `config/server.yaml` under `datasources.sqlite_events`:
 
 ```bash
 # Use default config file
@@ -109,7 +109,7 @@ Config file: `repository/configs/datasources/sqlite_events.yaml`
 
 ### 4. Load Redis Features
 
-Config file: `repository/configs/datasources/redis_features.yaml`
+Datasource configuration is defined in `config/server.yaml` under `datasources.redis_features`:
 
 ```bash
 # Use default config file

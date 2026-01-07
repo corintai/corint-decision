@@ -11,7 +11,7 @@ features:
     description: "Total events from this device in last 24 hours"
     type: aggregation
     method: count
-    datasource: sqlite_events
+    datasource: events_datasource
     entity: events
     dimension: device_id
     dimension_value: event.device_id
@@ -22,7 +22,7 @@ features:
     description: "Transactions from this device in last 3 months"
     type: aggregation
     method: count
-    datasource: sqlite_events
+    datasource: events_datasource
     entity: events
     dimension: device_id
     dimension_value: event.device_id
@@ -38,7 +38,7 @@ features:
     description: "Number of distinct users on this device in last 30 days"
     type: aggregation
     method: distinct
-    datasource: sqlite_events
+    datasource: events_datasource
     entity: events
     dimension: device_id
     dimension_value: event.device_id
@@ -50,7 +50,7 @@ features:
     description: "Number of distinct IPs for this device in last 7 days"
     type: aggregation
     method: distinct
-    datasource: sqlite_events
+    datasource: events_datasource
     entity: events
     dimension: device_id
     dimension_value: event.device_id
@@ -65,14 +65,14 @@ features:
   - name: device_risk_score
     description: "Pre-computed device risk score from feature store"
     type: lookup
-    datasource: redis_features
+    datasource: lookup_datasource
     key: "device_features:${event.device_id}:risk_score"
     fallback: 0.0
 
   - name: devices_per_user_30d
     description: "Number of distinct devices per user in last 30 days"
     type: lookup
-    datasource: redis_features
+    datasource: lookup_datasource
     key: "devices_per_user_30d:${event.user_id}"
     fallback: 0
 

@@ -425,7 +425,7 @@ datasource: postgresql_events
 entity: events                # SELECT * FROM events
 
 # 2. ClickHouse - entity = table name
-datasource: clickhouse_events
+datasource: events_datasource
 entity: events                # SELECT * FROM events
 
 # 3. Neo4j - entity may represent node label (needs design decision)
@@ -434,7 +434,7 @@ entity: events                # MATCH (e:events) or MATCH ()-[r:events]->()
 # Or specify directly in query logic without using entity
 
 # 4. Redis - doesn't need entity
-datasource: redis_features
+datasource: lookup_datasource
 # No entity field, direct access via key
 
 # 5. Expression - doesn't need entity
@@ -594,7 +594,7 @@ impl LookupExecutor {
     - name: zscore_userid_txn_amt
       type: state
       method: z_score
-      datasource: clickhouse_events
+      datasource: events_datasource
       entity: events
       dimension: user_id
       dimension_value: "{event.user_id}"
@@ -615,7 +615,7 @@ impl LookupExecutor {
     - name: deviation_userid_login_freq
       type: state
       method: deviation_from_baseline
-      datasource: clickhouse_events
+      datasource: events_datasource
       entity: events
       dimension: user_id
       dimension_value: "{event.user_id}"
@@ -636,7 +636,7 @@ impl LookupExecutor {
     - name: pctrank_userid_txn_amt
       type: state
       method: percentile_rank
-      datasource: clickhouse_events
+      datasource: events_datasource
       entity: events
       dimension: user_id
       dimension_value: "{event.user_id}"
@@ -657,7 +657,7 @@ impl LookupExecutor {
     - name: outlier_userid_txn_amt
       type: state
       method: is_outlier
-      datasource: clickhouse_events
+      datasource: events_datasource
       entity: events
       dimension: user_id
       dimension_value: "{event.user_id}"
@@ -705,7 +705,7 @@ impl StateExecutor {
     - name: consec_userid_login_1h_failed
       type: sequence
       method: consecutive_count
-      datasource: clickhouse_events
+      datasource: events_datasource
       entity: events
       dimension: user_id
       dimension_value: "{event.user_id}"
@@ -728,7 +728,7 @@ impl StateExecutor {
     - name: streak_userid_daily_txn_30d
       type: sequence
       method: streak
-      datasource: clickhouse_events
+      datasource: events_datasource
       entity: events
       dimension: user_id
       dimension_value: "{event.user_id}"
@@ -749,7 +749,7 @@ impl StateExecutor {
     - name: seq_userid_account_takeover_pattern
       type: sequence
       method: sequence_match
-      datasource: clickhouse_events
+      datasource: events_datasource
       entity: events
       dimension: user_id
       dimension_value: "{event.user_id}"
@@ -772,7 +772,7 @@ impl StateExecutor {
     - name: freq_userid_purchase_pattern_7d
       type: sequence
       method: pattern_frequency
-      datasource: clickhouse_events
+      datasource: events_datasource
       entity: events
       dimension: user_id
       dimension_value: "{event.user_id}"
@@ -796,7 +796,7 @@ impl StateExecutor {
     - name: trend_userid_txn_amt_30d
       type: sequence
       method: trend
-      datasource: clickhouse_events
+      datasource: events_datasource
       entity: events
       dimension: user_id
       dimension_value: "{event.user_id}"
@@ -817,7 +817,7 @@ impl StateExecutor {
     - name: pctchg_userid_txn_cnt_week
       type: sequence
       method: percent_change
-      datasource: clickhouse_events
+      datasource: events_datasource
       entity: events
       dimension: user_id
       dimension_value: "{event.user_id}"
@@ -841,7 +841,7 @@ impl StateExecutor {
     - name: roc_userid_login_freq_7d
       type: sequence
       method: rate_of_change
-      datasource: clickhouse_events
+      datasource: events_datasource
       entity: events
       dimension: user_id
       dimension_value: "{event.user_id}"
@@ -862,7 +862,7 @@ impl StateExecutor {
     - name: anomaly_userid_behavior_score_7d
       type: sequence
       method: anomaly_score
-      datasource: clickhouse_events
+      datasource: events_datasource
       entity: events
       dimension: user_id
       dimension_value: "{event.user_id}"
@@ -883,7 +883,7 @@ impl StateExecutor {
     - name: ma7_userid_txn_amt
       type: sequence
       method: moving_average
-      datasource: clickhouse_events
+      datasource: events_datasource
       entity: events
       dimension: user_id
       dimension_value: "{event.user_id}"
@@ -1138,7 +1138,7 @@ impl ExpressionEngine {
     # Redis lookup
     - name: user_risk_score_90d
       type: lookup
-      datasource: redis_features
+      datasource: lookup_datasource
       key: "user_risk_score:{event.user_id}"
       fallback: 50
     ```
@@ -1175,7 +1175,7 @@ This design provides:
 
 ## Data Source Configuration
 
-Feature definitions reference data sources through the `datasource` field, which points to data source configurations defined in `repository/configs/datasources/`. This design provides:
+Feature definitions reference data sources through the `datasource` field, which uses logical datasource names (`events_datasource` for SQL/OLAP databases, `lookup_datasource` for feature stores). Actual data source configurations are defined in `config/server.yaml`. This design provides:
 
 - **Configuration Separation**: Data source credentials and connection details are managed independently
 - **Environment Isolation**: Different environments (dev/staging/prod) can use different data source configurations
@@ -1199,37 +1199,37 @@ Feature definitions reference data sources through the `datasource` field, which
 
 ### Data Source Configuration Files
 
-Data sources are defined in `repository/configs/datasources/` as YAML files:
+Data sources are defined in `config/server.yaml` under the `datasources` section:
 
-**`repository/configs/datasources/postgresql_events.yaml`**:
+**Example configuration in `config/server.yaml`:**
 ```yaml
-name: postgresql_events
-type: postgresql
-config:
-  host: ${POSTGRES_HOST}
-  port: 5432
-  database: ${POSTGRES_DATABASE}
-  user: ${POSTGRES_USER}
-  password: ${POSTGRES_PASSWORD}
-  sslmode: ${POSTGRES_SSLMODE}  # disable, require, verify-ca, verify-full
-  max_connections: 20
-  connection_timeout: 30
+datasource:
+  # Events datasource (for aggregation features)
+  postgres_events:
+    type: sql
+    provider: postgresql
+    connection_string: "postgresql://user:password@localhost:5432/corint_risk"
+    database: "corint_risk"
+    events_table: "events"
+    options:
+      max_connections: "20"
+      connection_timeout: "30"
+
+  # Lookup datasource (for feature lookups)
+  redis_features:
+    type: feature_store
+    provider: redis
+    connection_string: "redis://localhost:6379/0"
+    options:
+      namespace: "user_features"
+      default_ttl: "86400"
 ```
 
-**`repository/configs/datasources/redis_features.yaml`**:
-```yaml
-name: redis_features
-type: redis
-config:
-  host: ${REDIS_HOST}
-  port: 6379
-  password: ${REDIS_PASSWORD}
-  db: 0
-  key_prefix: "features:"
-  ttl: 86400  # Default TTL in seconds (24 hours)
-```
+**Note:** Features use logical datasource names:
+- `events_datasource` - Automatically mapped to the first SQL/OLAP datasource (PostgreSQL, ClickHouse, SQLite)
+- `lookup_datasource` - Automatically mapped to the first Feature Store datasource (Redis)
 
-**`repository/configs/datasources/neo4j_graph.yaml`**:
+**Planned datasource (not yet implemented):**
 ```yaml
 name: neo4j_graph
 type: neo4j
@@ -1262,7 +1262,7 @@ Features reference data sources by name through the `datasource` field:
 # Lookup feature - retrieves pre-computed value from Redis
 - name: user_risk_score_90d
   type: lookup
-  datasource: redis_features      # References redis_features.yaml
+  datasource: lookup_datasource      # Logical datasource name (mapped to actual datasource in server.yaml)
   key: "user_risk_score_90d:{event.user_id}"
   fallback: 50
 
@@ -1270,7 +1270,7 @@ Features reference data sources by name through the `datasource` field:
 - name: zscore_userid_txn_amt
   type: state
   method: z_score
-  datasource: clickhouse_events    # References clickhouse_events.yaml
+  datasource: events_datasource    # Logical datasource name (mapped to actual datasource in server.yaml)
   dimension: user_id
   dimension_value: "{event.user_id}"
   field: amount
@@ -1302,7 +1302,7 @@ Features reference data sources by name through the `datasource` field:
 ### Implementation Pattern
 
 ```rust
-// Data source configuration loaded from repository/configs/datasources/
+// Data source configuration loaded from config/server.yaml
 pub struct DataSourceConfig {
     pub name: String,
     pub source_type: DataSourceType,
@@ -1336,11 +1336,11 @@ pub struct FeatureDefinition {
 
 // Feature executor with datasource registry
 pub struct FeatureExecutor {
-    datasources: HashMap<String, Box<dyn DataSource>>,
+    datasource: HashMap<String, Box<dyn DataSource>>,
 }
 
 impl FeatureExecutor {
-    // Load datasources from repository/configs/datasources/
+    // Load datasources from config/server.yaml
     pub fn new(datasource_configs: Vec<DataSourceConfig>) -> Result<Self> {
         let mut datasources = HashMap::new();
         for config in datasource_configs {
@@ -1942,7 +1942,7 @@ Temporal pattern features based on time of day/week.
 - name: timezone_consistency_userid_7d
   type: state
   method: timezone_consistency
-  datasource: clickhouse_events
+  datasource: events_datasource
   entity: events
   dimension: user_id
   dimension_value: "{event.user_id}"
@@ -1974,7 +1974,7 @@ Compare current behavior to historical baselines.
 - name: zscore_userid_txn_amt
   type: state
   method: z_score
-  datasource: clickhouse_events
+  datasource: events_datasource
   entity: events
   dimension: user_id
   dimension_value: "{event.user_id}"
@@ -2013,7 +2013,7 @@ Detect sequential patterns and consecutive events.
 - name: consec_userid_login_1h_failed
   type: sequence
   method: consecutive_count
-  datasource: clickhouse_events
+  datasource: events_datasource
   entity: events
   dimension: user_id
   dimension_value: "{event.user_id}"
@@ -2051,7 +2051,7 @@ Detect changes and trends over time.
 - name: pctchg_userid_txn_amt_1h
   type: sequence
   method: percent_change
-  datasource: clickhouse_events
+  datasource: events_datasource
   entity: events
   dimension: user_id
   dimension_value: "{event.user_id}"
@@ -2147,7 +2147,7 @@ Advanced time-series analysis and forecasting.
 - name: movavg_userid_txn_amt_7d
   type: sequence
   method: moving_average
-  datasource: clickhouse_events
+  datasource: events_datasource
   entity: events
   dimension: user_id
   dimension_value: "{event.user_id}"
@@ -2182,7 +2182,7 @@ Stateful event pattern matching and correlation.
 - name: pattern_userid_acct_takeover_1h
   type: sequence
   method: event_pattern_match
-  datasource: clickhouse_events
+  datasource: events_datasource
   entity: events
   dimension: user_id
   dimension_value: "{event.user_id}"
@@ -2340,7 +2340,7 @@ Retrieve pre-computed values from Redis by key.
 
 **Configuration Fields:**
 - `type: lookup` - Feature category
-- `datasource` - Data source name (references `repository/configs/datasources/`)
+- `datasource` - Logical data source name (`events_datasource` or `lookup_datasource`, mapped to actual datasources in `config/server.yaml`)
 - `key` - Key template for retrieval (supports variable interpolation)
 - `fallback` - Optional default value if key not found
 
@@ -2354,19 +2354,19 @@ Retrieve pre-computed values from Redis by key.
 ```yaml
 - name: user_risk_score_90d
   type: lookup
-  datasource: redis_features
+  datasource: lookup_datasource
   key: "user_risk_score:{event.user_id}"
   fallback: 50
 
 - name: user_segment_label
   type: lookup
-  datasource: redis_features
+  datasource: lookup_datasource
   key: "user_segment:{event.user_id}"
   fallback: "unknown"
 
 - name: device_reputation_score
   type: lookup
-  datasource: redis_features
+  datasource: lookup_datasource
   key: "device_reputation:{event.device_id}"
   fallback: 0
 ```
@@ -2590,7 +2590,7 @@ timezone_userid_login_7d           # User timezone consistency check
 # Note: Use Lookup features for pre-computed values:
 - name: user_risk_score_90d
   type: lookup
-  datasource: redis_features
+  datasource: lookup_datasource
   key: "user_risk_score:{event.user_id}"
   fallback: 50
 

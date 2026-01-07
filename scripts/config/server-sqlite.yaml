@@ -31,10 +31,10 @@ repository:
 # Alternative repository configurations (examples):
 
 # Database repository using datasource reference
-# The datasource should be defined in the 'datasource' section below
+# The datasource should be defined in the 'datasources' section below
 # repository:
 #   type: database
-#   datasource: postgres_rules  # References datasource defined in 'datasource' section
+#   datasource: postgres_rules  # References datasource defined in 'datasources' section
 
 # Legacy database repository (still supported for backward compatibility)
 # repository:
@@ -63,14 +63,7 @@ datasource:
   # Repository Storage Datasources
   # ============================================================================
   
-  # PostgreSQL datasource for repository storage (rules, pipelines, etc.)
-  postgres_rules:
-    type: sql
-    provider: postgresql
-    connection_string: "postgresql://user:password@localhost:5432/corint_rules"
-    database: "corint_rules"
-    options:
-      max_connections: "5"
+ 
 
   # SQLite datasource for repository storage (testing/small deployments)
   sqlite_rules:
@@ -95,7 +88,7 @@ datasource:
   # ============================================================================
 
   # SQLite datasource for event storage (development/testing)
-  sqlite_events:
+  events_datasource:
     type: sql
     provider: sqlite
     connection_string: "sqlite://./scripts/data/temp/corint.db"
@@ -104,37 +97,10 @@ datasource:
     options:
       max_connections: "5"
 
-  # PostgreSQL datasource for event storage (production-ready)
-  postgres_events:
-    type: sql
-    provider: postgresql
-    connection_string: "postgresql://postgres:password@localhost:5432/corint_risk"
-    database: "corint_risk"
-    events_table: "events"
-    options:
-      user: "postgres"
-      password: "password"
-      max_connections: "10"
-      min_connections: "2"
-      connection_timeout: "5"
-      idle_timeout: "300"
-      statement_timeout: "30"
-      application_name: "corint_decision_engine"
-
-  # ClickHouse datasource for high-performance OLAP queries
-  clickhouse_events:
-    type: olap
-    provider: clickhouse
-    connection_string: "http://127.0.0.1:8123"
-    database: "risk_events"
-    events_table: "user_events"
-    options:
-      user: "default"
-      compression: "lz4"
-      max_execution_time: "30"
+   
 
   # Redis datasource for feature lookups and caching
-  redis_features:
+  lookup_datasource:
     type: feature_store
     provider: redis
     connection_string: "redis://localhost:6379/0"
@@ -145,23 +111,7 @@ datasource:
       min_idle: "5"
       connection_timeout: "30"
 
-  # Supabase PostgreSQL datasource (with Session Pooler)
-  supabase_events:
-    type: sql
-    provider: postgresql
-    connection_string: "postgresql://postgres.hfsbvqfkwbslcuvokmis:XPRozJ3DZox5KUnh@aws-1-ap-southeast-1.pooler.supabase.com:5432/postgres?sslmode=require"
-    database: "postgres"
-    events_table: "events"
-    options:
-      user: "postgres.hfsbvqfkwbslcuvokmis"
-      password: "XPRozJ3DZox5KUnh"
-      max_connections: "10"
-      min_connections: "2"
-      connection_timeout: "5"
-      idle_timeout: "300"
-      statement_timeout: "30"
-      application_name: "corint_decision_engine"
-      sslmode: "require"
+ 
 
 # LLM Provider Configuration
 # Supports OpenAI (including O1/O3 thinking models), Anthropic (Claude with extended thinking),

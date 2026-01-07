@@ -171,7 +171,7 @@ impl RepositoryLoader {
         Ok(config)
     }
 
-    /// Load datasource configurations from configs/datasources/
+    /// Load datasource configurations from configs/datasources/ (deprecated, datasources should be in server.yaml)
     async fn load_datasource_configs(
         &self,
         configs_path: &Path,

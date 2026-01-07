@@ -45,6 +45,8 @@ pub struct DecisionEngineBuilder {
     database_url: Option<String>,
     // Store repository content for auto-initialization
     repository_content: Option<RepositoryContent>,
+    // Server datasources from server.yaml (takes precedence over repository datasources)
+    server_datasources: Option<std::collections::HashMap<String, corint_runtime::datasource::config::DataSourceConfig>>,
 }
 
 impl DecisionEngineBuilder {
@@ -60,7 +62,20 @@ impl DecisionEngineBuilder {
             #[cfg(feature = "sqlx")]
             database_url: None,
             repository_content: None,
+            server_datasources: None,
         }
+    }
+
+    /// Set server datasources from server.yaml configuration
+    /// 
+    /// These datasources take precedence over datasources defined in
+    /// repository/configs/datasources/ directory (for backward compatibility).
+    pub fn with_server_datasources(
+        mut self,
+        datasources: std::collections::HashMap<String, corint_runtime::datasource::config::DataSourceConfig>,
+    ) -> Self {
+        self.server_datasources = Some(datasources);
+        self
     }
 
     // ========== Repository Configuration (Recommended) ==========
@@ -245,7 +260,7 @@ impl DecisionEngineBuilder {
         // Auto-initialize FeatureExecutor from repository content if not already set
         if self.feature_executor.is_none() {
             if let Some(ref content) = self.repository_content {
-                if let Some(executor) = Self::init_feature_executor_from_content(content, &self.repository_config).await? {
+                if let Some(executor) = Self::init_feature_executor_from_content(content, &self.repository_config, &self.server_datasources).await? {
                     self.feature_executor = Some(Arc::new(executor));
                     tracing::info!("✓ Auto-initialized FeatureExecutor from repository");
                 }
@@ -356,6 +371,7 @@ impl DecisionEngineBuilder {
     async fn init_feature_executor_from_content(
         content: &RepositoryContent,
         repo_config: &Option<RepositoryConfig>,
+        server_datasources: &Option<std::collections::HashMap<String, corint_runtime::datasource::config::DataSourceConfig>>,
     ) -> Result<Option<FeatureExecutor>> {
         use corint_runtime::datasource::{DataSourceClient, DataSourceConfig as RuntimeDataSourceConfig};
         use corint_runtime::feature::registry::FeatureRegistry;
@@ -383,34 +399,115 @@ impl DecisionEngineBuilder {
                 } else {
                     let mut executor = FeatureExecutor::new().with_stats();
 
-                    // Load datasources from files (more reliable than converting)
-                    let datasource_dir = std::path::Path::new(base_path).join("configs/datasources");
-                    if datasource_dir.exists() {
-                        let mut datasource_count = 0;
-                        if let Ok(entries) = std::fs::read_dir(&datasource_dir) {
-                            for entry in entries.flatten() {
-                                let path = entry.path();
-                                if path.extension().and_then(|s| s.to_str()) == Some("yaml") {
-                                    if let Ok(file_content) = std::fs::read_to_string(&path) {
-                                        if let Ok(config) = serde_yaml::from_str::<RuntimeDataSourceConfig>(&file_content) {
-                                            match DataSourceClient::new(config.clone()).await {
-                                                Ok(client) => {
-                                                    executor.add_datasource(&config.name, client);
-                                                    tracing::info!("  ✓ Loaded datasource: {}", config.name);
-                                                    datasource_count += 1;
+                    let mut datasource_count = 0;
 
-                                                    // Also register as "default" if it's the first datasource
-                                                    if datasource_count == 1 {
-                                                        let mut default_config = config.clone();
-                                                        default_config.name = "default".to_string();
-                                                        if let Ok(client_clone) = DataSourceClient::new(default_config).await {
-                                                            executor.add_datasource("default", client_clone);
-                                                            tracing::info!("  ✓ Registered as default datasource");
+                    // Priority 1: Load datasources from server.yaml (if provided)
+                    if let Some(ref server_datasources) = server_datasources {
+                        tracing::info!("Loading datasources from server.yaml configuration...");
+                        
+                        // Track first events datasource (SQL/OLAP) and first lookup datasource (Feature Store)
+                        let mut events_datasource_name: Option<String> = None;
+                        let mut lookup_datasource_name: Option<String> = None;
+                        
+                        // First pass: register all datasources and identify logical datasources
+                        for (name, config) in server_datasources.iter() {
+                            use corint_runtime::datasource::config::DataSourceType;
+                            
+                            // Check if this is an events datasource (SQL or OLAP)
+                            let is_events_ds = matches!(
+                                &config.source_type,
+                                DataSourceType::SQL(_) | DataSourceType::OLAP(_)
+                            );
+                            
+                            // Check if this is a lookup datasource (Feature Store)
+                            let is_lookup_ds = matches!(
+                                &config.source_type,
+                                DataSourceType::FeatureStore(_)
+                            );
+                            
+                            match DataSourceClient::new(config.clone()).await {
+                                Ok(client) => {
+                                    executor.add_datasource(name, client);
+                                    tracing::info!("  ✓ Loaded datasource from server.yaml: {}", name);
+                                    datasource_count += 1;
+
+                                    // Track first events datasource
+                                    if is_events_ds && events_datasource_name.is_none() {
+                                        events_datasource_name = Some(name.clone());
+                                    }
+                                    
+                                    // Track first lookup datasource
+                                    if is_lookup_ds && lookup_datasource_name.is_none() {
+                                        lookup_datasource_name = Some(name.clone());
+                                    }
+
+                                    // Also register as "default" if it's the first datasource
+                                    if datasource_count == 1 {
+                                        let mut default_config = config.clone();
+                                        default_config.name = "default".to_string();
+                                        if let Ok(client_clone) = DataSourceClient::new(default_config).await {
+                                            executor.add_datasource("default", client_clone);
+                                            tracing::info!("  ✓ Registered as default datasource");
+                                        }
+                                    }
+                                }
+                                Err(e) => {
+                                    tracing::warn!("  ✗ Failed to create datasource {}: {}", name, e);
+                                }
+                            }
+                        }
+                        
+                        // Second pass: Create logical datasource mappings
+                        if let Some(events_name) = events_datasource_name {
+                            if let Some(config) = server_datasources.get(&events_name) {
+                                if let Ok(client) = DataSourceClient::new(config.clone()).await {
+                                    executor.add_datasource("events_datasource", client);
+                                    tracing::info!("  ✓ Mapped events_datasource -> {}", events_name);
+                                }
+                            }
+                        }
+                        
+                        if let Some(lookup_name) = lookup_datasource_name {
+                            if let Some(config) = server_datasources.get(&lookup_name) {
+                                if let Ok(client) = DataSourceClient::new(config.clone()).await {
+                                    executor.add_datasource("lookup_datasource", client);
+                                    tracing::info!("  ✓ Mapped lookup_datasource -> {}", lookup_name);
+                                }
+                            }
+                        }
+                    }
+
+                    // Priority 2: Fallback to loading datasources from repository/configs/datasources/
+                    // (only if no server datasources were loaded)
+                    if datasource_count == 0 {
+                        let datasource_dir = std::path::Path::new(base_path).join("configs/datasources");
+                        if datasource_dir.exists() {
+                            tracing::info!("Loading datasources from repository/configs/datasources/...");
+                            if let Ok(entries) = std::fs::read_dir(&datasource_dir) {
+                                for entry in entries.flatten() {
+                                    let path = entry.path();
+                                    if path.extension().and_then(|s| s.to_str()) == Some("yaml") {
+                                        if let Ok(file_content) = std::fs::read_to_string(&path) {
+                                            if let Ok(config) = serde_yaml::from_str::<RuntimeDataSourceConfig>(&file_content) {
+                                                match DataSourceClient::new(config.clone()).await {
+                                                    Ok(client) => {
+                                                        executor.add_datasource(&config.name, client);
+                                                        tracing::info!("  ✓ Loaded datasource from repository: {}", config.name);
+                                                        datasource_count += 1;
+
+                                                        // Also register as "default" if it's the first datasource
+                                                        if datasource_count == 1 {
+                                                            let mut default_config = config.clone();
+                                                            default_config.name = "default".to_string();
+                                                            if let Ok(client_clone) = DataSourceClient::new(default_config).await {
+                                                                executor.add_datasource("default", client_clone);
+                                                                tracing::info!("  ✓ Registered as default datasource");
+                                                            }
                                                         }
                                                     }
-                                                }
-                                                Err(e) => {
-                                                    tracing::warn!("  ✗ Failed to create datasource {}: {}", config.name, e);
+                                                    Err(e) => {
+                                                        tracing::warn!("  ✗ Failed to create datasource {}: {}", config.name, e);
+                                                    }
                                                 }
                                             }
                                         }
@@ -418,23 +515,23 @@ impl DecisionEngineBuilder {
                                 }
                             }
                         }
+                    }
 
-                        if datasource_count > 0 {
-                            // Register features to executor
-                            for feature in registry.all_features() {
-                                if let Err(e) = executor.register_feature(feature.clone()) {
-                                    tracing::warn!("  ✗ Failed to register feature {}: {}", feature.name, e);
-                                }
+                    if datasource_count > 0 {
+                        // Register features to executor
+                        for feature in registry.all_features() {
+                            if let Err(e) = executor.register_feature(feature.clone()) {
+                                tracing::warn!("  ✗ Failed to register feature {}: {}", feature.name, e);
                             }
+                        }
 
-                            let feature_count = registry.count();
-                            if feature_count > 0 {
-                                tracing::info!(
-                                    "✓ Loaded {} datasources, {} features",
-                                    datasource_count, feature_count
-                                );
-                                return Ok(Some(executor));
-                            }
+                        let feature_count = registry.count();
+                        if feature_count > 0 {
+                            tracing::info!(
+                                "✓ Loaded {} datasources, {} features",
+                                datasource_count, feature_count
+                            );
+                            return Ok(Some(executor));
                         }
                     }
                 }

@@ -58,13 +58,11 @@ impl Default for RepositoryType {
 
 /// Data source configuration for server-level usage
 /// 
-/// Server-level datasources are used for:
+/// All datasources are defined here, including:
 /// - Repository storage (rules, pipelines, etc.)
+/// - Feature calculation (events, aggregations, lookups)
 /// - User authentication/authorization
 /// - System-level data storage
-/// 
-/// Note: Feature calculation datasources are defined in repository/configs/datasources/
-/// and are automatically loaded by the SDK.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DatasourceConfig {
     /// Data source type (sql, feature_store, olap)
@@ -90,40 +88,163 @@ pub struct DatasourceConfig {
     pub options: std::collections::HashMap<String, String>,
 }
 
-/// Server configuration
+impl DatasourceConfig {
+    /// Convert server datasource config to runtime datasource config
+    pub fn to_runtime_config(&self, name: &str) -> anyhow::Result<corint_runtime::datasource::config::DataSourceConfig> {
+        use corint_runtime::datasource::config::{
+            DataSourceConfig as RuntimeConfig, DataSourceType,
+            SQLConfig, SQLProvider, OLAPConfig, OLAPProvider,
+            FeatureStoreConfig, FeatureStoreProvider
+        };
+
+        let source_type = match self.source_type.as_str() {
+            "sql" => {
+                let provider = match self.provider.to_lowercase().as_str() {
+                    "postgresql" | "postgres" => SQLProvider::PostgreSQL,
+                    "mysql" => SQLProvider::MySQL,
+                    "sqlite" => SQLProvider::SQLite,
+                    _ => return Err(anyhow::anyhow!("Unsupported SQL provider: {}", self.provider)),
+                };
+
+                let database = self.database.clone().unwrap_or_else(|| "default".to_string());
+                let events_table = self.events_table.clone().unwrap_or_else(|| "events".to_string());
+
+                DataSourceType::SQL(SQLConfig {
+                    provider,
+                    connection_string: self.connection_string.clone(),
+                    database,
+                    events_table,
+                    options: self.options.clone(),
+                })
+            }
+            "olap" => {
+                let provider = match self.provider.to_lowercase().as_str() {
+                    "clickhouse" => OLAPProvider::ClickHouse,
+                    "druid" => OLAPProvider::Druid,
+                    "timescaledb" => OLAPProvider::TimescaleDB,
+                    "influxdb" => OLAPProvider::InfluxDB,
+                    _ => return Err(anyhow::anyhow!("Unsupported OLAP provider: {}", self.provider)),
+                };
+
+                let database = self.database.clone().unwrap_or_else(|| "default".to_string());
+                let events_table = self.events_table.clone().unwrap_or_else(|| "events".to_string());
+
+                DataSourceType::OLAP(OLAPConfig {
+                    provider,
+                    connection_string: self.connection_string.clone(),
+                    database,
+                    events_table,
+                    options: self.options.clone(),
+                })
+            }
+            "feature_store" => {
+                let provider = match self.provider.to_lowercase().as_str() {
+                    "redis" => FeatureStoreProvider::Redis,
+                    "feast" => FeatureStoreProvider::Feast,
+                    "http" => FeatureStoreProvider::Http,
+                    _ => return Err(anyhow::anyhow!("Unsupported feature store provider: {}", self.provider)),
+                };
+
+                let namespace = self.options.get("namespace")
+                    .cloned()
+                    .unwrap_or_else(|| "default".to_string());
+                let default_ttl = self.options.get("default_ttl")
+                    .and_then(|v| v.parse::<u64>().ok())
+                    .unwrap_or(3600);
+
+                DataSourceType::FeatureStore(FeatureStoreConfig {
+                    provider,
+                    connection_string: self.connection_string.clone(),
+                    namespace,
+                    default_ttl,
+                    options: self.options.clone(),
+                })
+            }
+            _ => return Err(anyhow::anyhow!("Unsupported datasource type: {}", self.source_type)),
+        };
+
+        // Extract pool_size and timeout_ms from options if available
+        let pool_size = self.options.get("max_connections")
+            .and_then(|v| v.parse::<u32>().ok())
+            .unwrap_or(10);
+        let timeout_ms = self.options.get("connection_timeout")
+            .and_then(|v| v.parse::<u64>().ok())
+            .map(|v| v * 1000) // Convert seconds to milliseconds
+            .unwrap_or(5000);
+
+        Ok(RuntimeConfig {
+            name: name.to_string(),
+            source_type,
+            pool_size,
+            timeout_ms,
+            pooling_enabled: true,
+        })
+    }
+}
+
+/// Server settings (nested in server: section)
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ServerConfig {
-    /// Server host
+pub struct ServerSettings {
+    /// Server host (127.0.0.1 for localhost only, 0.0.0.0 for all interfaces)
+    #[serde(default = "default_host")]
     pub host: String,
 
     /// Server port (HTTP)
+    #[serde(default = "default_port")]
     pub port: u16,
 
     /// gRPC server port (optional, if not set, gRPC server will not start)
     #[serde(default)]
     pub grpc_port: Option<u16>,
 
+    /// Enable metrics collection
+    #[serde(default = "default_true")]
+    pub enable_metrics: bool,
+
+    /// Enable distributed tracing
+    #[serde(default = "default_true")]
+    pub enable_tracing: bool,
+
+    /// Log level (trace, debug, info, warn, error)
+    #[serde(default = "default_log_level")]
+    pub log_level: String,
+}
+
+fn default_host() -> String {
+    "127.0.0.1".to_string()
+}
+
+fn default_port() -> u16 {
+    8080
+}
+
+fn default_true() -> bool {
+    true
+}
+
+fn default_log_level() -> String {
+    "info".to_string()
+}
+
+/// Server configuration
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ServerConfig {
+    /// Server settings (host, port, metrics, tracing, logging)
+    #[serde(default, flatten)]
+    pub server: ServerSettings,
+
     /// Repository configuration for loading rules
     #[serde(default)]
     pub repository: RepositoryType,
 
-    /// Data sources configuration (similar to llm configuration)
+    /// Data source configuration (similar to llm configuration)
     /// Key is the datasource name, value is the datasource configuration
     #[serde(default)]
-    pub datasources: std::collections::HashMap<String, DatasourceConfig>,
+    pub datasource: std::collections::HashMap<String, DatasourceConfig>,
 
     /// Default datasource name (optional)
     #[serde(default)]
     pub default_datasource: Option<String>,
-
-    /// Enable metrics
-    pub enable_metrics: bool,
-
-    /// Enable tracing
-    pub enable_tracing: bool,
-
-    /// Log level
-    pub log_level: String,
 
     /// Database URL for decision result persistence (optional)
     /// If not set, decision results will not be persisted to database
@@ -131,18 +252,26 @@ pub struct ServerConfig {
     pub database_url: Option<String>,
 }
 
+impl Default for ServerSettings {
+    fn default() -> Self {
+        Self {
+            host: default_host(),
+            port: default_port(),
+            grpc_port: None,
+            enable_metrics: default_true(),
+            enable_tracing: default_true(),
+            log_level: default_log_level(),
+        }
+    }
+}
+
 impl Default for ServerConfig {
     fn default() -> Self {
         Self {
-            host: "127.0.0.1".to_string(),
-            port: 8080,
-            grpc_port: None,
+            server: ServerSettings::default(),
             repository: RepositoryType::default(),
-            datasources: std::collections::HashMap::new(),
+            datasource: std::collections::HashMap::new(),
             default_datasource: None,
-            enable_metrics: true,
-            enable_tracing: true,
-            log_level: "info".to_string(),
             database_url: None,
         }
     }
@@ -181,13 +310,13 @@ mod tests {
     fn test_server_config_default() {
         let config = ServerConfig::default();
 
-        assert_eq!(config.host, "127.0.0.1");
-        assert_eq!(config.port, 8080);
-        assert!(config.enable_metrics);
-        assert!(config.enable_tracing);
-        assert_eq!(config.log_level, "info");
+        assert_eq!(config.server.host, "127.0.0.1");
+        assert_eq!(config.server.port, 8080);
+        assert!(config.server.enable_metrics);
+        assert!(config.server.enable_tracing);
+        assert_eq!(config.server.log_level, "info");
         assert!(config.database_url.is_none());
-        assert!(config.datasources.is_empty());
+        assert!(config.datasource.is_empty());
         assert!(config.default_datasource.is_none());
     }
 
@@ -295,19 +424,25 @@ mod tests {
             port: 3000,
             grpc_port: None,
             repository: RepositoryType::default(),
-            datasources: std::collections::HashMap::new(),
+            datasource: std::collections::HashMap::new(),
             default_datasource: None,
             enable_metrics: true,
-            enable_tracing: false,
-            log_level: "debug".to_string(),
+            server: ServerSettings {
+                host: "0.0.0.0".to_string(),
+                port: 3000,
+                grpc_port: None,
+                enable_metrics: true,
+                enable_tracing: false,
+                log_level: "debug".to_string(),
+            },
             database_url: Some("postgresql://localhost/test".to_string()),
         };
 
-        assert_eq!(config.host, "0.0.0.0");
-        assert_eq!(config.port, 3000);
-        assert!(config.enable_metrics);
-        assert!(!config.enable_tracing);
-        assert_eq!(config.log_level, "debug");
+        assert_eq!(config.server.host, "0.0.0.0");
+        assert_eq!(config.server.port, 3000);
+        assert!(config.server.enable_metrics);
+        assert!(!config.server.enable_tracing);
+        assert_eq!(config.server.log_level, "debug");
         assert_eq!(
             config.database_url,
             Some("postgresql://localhost/test".to_string())
@@ -325,9 +460,9 @@ mod tests {
         let config = ServerConfig::default();
         let cloned = config.clone();
 
-        assert_eq!(config.host, cloned.host);
-        assert_eq!(config.port, cloned.port);
-        assert_eq!(config.enable_metrics, cloned.enable_metrics);
+        assert_eq!(config.server.host, cloned.server.host);
+        assert_eq!(config.server.port, cloned.server.port);
+        assert_eq!(config.server.enable_metrics, cloned.server.enable_metrics);
     }
 
     #[test]

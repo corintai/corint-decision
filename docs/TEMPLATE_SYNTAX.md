@@ -80,7 +80,7 @@ Lookup features support two key patterns:
 ```yaml
 - name: user_risk_score
   type: lookup
-  datasource: redis_features
+  datasource: lookup_datasource
   key: event.user_id                                  # ✅ Direct reference
   fallback: 0.0
 ```
@@ -89,7 +89,7 @@ Lookup features support two key patterns:
 ```yaml
 - name: user_risk_score
   type: lookup
-  datasource: redis_features
+  datasource: lookup_datasource
   key: "user_features:${event.user_id}:risk_score"   # ✅ String interpolation
   fallback: 0.0
 ```

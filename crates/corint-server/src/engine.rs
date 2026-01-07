@@ -24,13 +24,13 @@ pub async fn init_engine(config: &ServerConfig) -> Result<corint_sdk::DecisionEn
         RepositoryType::Database { datasource, url, db_type: _ } => {
             // If datasource name is provided, look it up in server.yaml datasources
             if let Some(ds_name) = datasource {
-                if let Some(ds_config) = config.datasources.get(ds_name) {
+                if let Some(ds_config) = config.datasource.get(ds_name) {
                     // Use connection string from server.yaml datasource config
                     RepositoryConfig::database(ds_config.connection_string.clone())
                 } else {
                     return Err(anyhow::anyhow!(
-                        "Datasource '{}' not found in server.yaml datasources section. \
-                        Please define it in the 'datasources' section of server.yaml.",
+                        "Datasource '{}' not found in server.yaml datasource section. \
+                        Please define it in the 'datasource' section of server.yaml.",
                         ds_name
                     ));
                 }
@@ -53,10 +53,29 @@ pub async fn init_engine(config: &ServerConfig) -> Result<corint_sdk::DecisionEn
         }
     };
 
+    // Convert server datasources to runtime datasource configs
+    let mut server_datasources = std::collections::HashMap::new();
+    for (name, ds_config) in &config.datasource {
+        match ds_config.to_runtime_config(name) {
+            Ok(runtime_config) => {
+                server_datasources.insert(name.clone(), runtime_config);
+            }
+            Err(e) => {
+                warn!("Failed to convert datasource '{}': {}", name, e);
+            }
+        }
+    }
+
     let mut builder = DecisionEngineBuilder::new()
         .with_repository(repo_config)
-        .enable_metrics(config.enable_metrics)
-        .enable_tracing(config.enable_tracing);
+        .enable_metrics(config.server.enable_metrics)
+        .enable_tracing(config.server.enable_tracing);
+
+    // Set server datasources (takes precedence over repository datasources)
+    if !server_datasources.is_empty() {
+        builder = builder.with_server_datasources(server_datasources);
+        info!("✓ Loaded {} datasources from server.yaml", config.datasource.len());
+    }
 
     // Set database URL for automatic ResultWriter initialization
     #[cfg(feature = "sqlx")]
@@ -75,7 +94,7 @@ pub async fn init_engine(config: &ServerConfig) -> Result<corint_sdk::DecisionEn
     }
 
     // Build engine - SDK will automatically initialize:
-    // - FeatureExecutor from repository/configs/datasources and repository/configs/features
+    // - FeatureExecutor from server.yaml datasources (or repository/configs/datasources) and repository/configs/features
     // - ListService from repository/configs/lists
     // - ResultWriter from database_url (if configured)
     let engine = builder.build().await?;

@@ -12,7 +12,7 @@ features:
     description: "Number of login events in last 24 hours"
     type: aggregation
     method: count
-    datasource: sqlite_events  # Explicitly specify data source
+    datasource: events_datasource  # Explicitly specify data source
     entity: events
     dimension: user_id
     dimension_value: event.user_id
@@ -24,7 +24,7 @@ features:
     description: "Number of login events in last 1 hour"
     type: aggregation
     method: count
-    datasource: sqlite_events
+    datasource: events_datasource
     entity: events
     dimension: user_id
     dimension_value: event.user_id
@@ -36,7 +36,7 @@ features:
     description: "Number of failed login attempts in last 1 hour"
     type: aggregation
     method: count
-    datasource: sqlite_events
+    datasource: events_datasource
     entity: events
     dimension: user_id
     dimension_value: event.user_id
@@ -51,7 +51,7 @@ features:
     description: "Number of transactions in last 24 hours"
     type: aggregation
     method: count
-    datasource: sqlite_events
+    datasource: events_datasource
     entity: events
     dimension: user_id
     dimension_value: event.user_id
@@ -67,7 +67,7 @@ features:
     description: "Total transaction amount in last 24 hours"
     type: aggregation
     method: sum
-    datasource: sqlite_events
+    datasource: events_datasource
     entity: events
     dimension: user_id
     dimension_value: event.user_id
@@ -80,7 +80,7 @@ features:
     description: "Total transaction amount in last 7 days"
     type: aggregation
     method: sum
-    datasource: sqlite_events
+    datasource: events_datasource
     entity: events
     dimension: user_id
     dimension_value: event.user_id
@@ -93,7 +93,7 @@ features:
     description: "Average transaction amount in last 30 days"
     type: aggregation
     method: avg
-    datasource: sqlite_events
+    datasource: events_datasource
     entity: events
     dimension: user_id
     dimension_value: event.user_id
@@ -106,7 +106,7 @@ features:
     description: "Maximum transaction amount in last 7 days"
     type: aggregation
     method: max
-    datasource: sqlite_events
+    datasource: events_datasource
     entity: events
     dimension: user_id
     dimension_value: event.user_id
@@ -123,7 +123,7 @@ features:
     description: "Number of distinct devices used in last 7 days"
     type: aggregation
     method: distinct
-    datasource: sqlite_events
+    datasource: events_datasource
     entity: events
     dimension: user_id
     dimension_value: event.user_id
@@ -135,7 +135,7 @@ features:
     description: "Number of distinct devices used in last 30 days"
     type: aggregation
     method: distinct
-    datasource: sqlite_events
+    datasource: events_datasource
     entity: events
     dimension: user_id
     dimension_value: event.user_id
@@ -147,7 +147,7 @@ features:
     description: "Number of distinct IP addresses in last 24 hours"
     type: aggregation
     method: distinct
-    datasource: sqlite_events
+    datasource: events_datasource
     entity: events
     dimension: user_id
     dimension_value: event.user_id
@@ -159,7 +159,7 @@ features:
     description: "Number of distinct cities accessed from in last 30 days"
     type: aggregation
     method: distinct
-    datasource: sqlite_events
+    datasource: events_datasource
     entity: events
     dimension: user_id
     dimension_value: event.user_id
@@ -175,7 +175,7 @@ features:
     description: "Timestamp of first user event"
     type: state
     method: first_seen
-    datasource: sqlite_events
+    datasource: events_datasource
     entity: events
     dimension: user_id
     dimension_value: event.user_id
@@ -184,7 +184,7 @@ features:
     description: "Timestamp of last login"
     type: state
     method: last_seen
-    datasource: sqlite_events
+    datasource: events_datasource
     entity: events
     dimension: user_id
     dimension_value: event.user_id
@@ -194,7 +194,7 @@ features:
     description: "Days since account creation"
     type: state
     method: time_since
-    datasource: sqlite_events
+    datasource: events_datasource
     entity: events
     dimension: user_id
     dimension_value: event.user_id
@@ -254,21 +254,21 @@ features:
   - name: user_risk_score
     description: "Pre-computed user risk score from feature store"
     type: lookup
-    datasource: redis_features
+    datasource: lookup_datasource
     key: "user_features:${event.user_id}:risk_score"
     fallback: 0.0
 
   - name: user_kyc_status
     description: "User KYC status from profile database"
     type: lookup
-    datasource: redis_features
+    datasource: lookup_datasource
     key: "user_profiles:${event.user_id}:kyc_status"
     fallback: "unknown"
 
   - name: user_is_verified
     description: "Is user identity verified?"
     type: lookup
-    datasource: redis_features
+    datasource: lookup_datasource
     key: "user_profiles:${event.user_id}:is_verified"
     fallback: false
 

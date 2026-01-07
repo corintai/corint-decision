@@ -8,10 +8,10 @@ features:
   # ==========================================================================
 
   - name: user_login_count_1h
-    description: "User login count in last 1 hour from Supabase"
+    description: "User login count in last 1 hour"
     type: aggregation
     method: count
-    datasource: sqlite_events    # ← Supabase data source
+    datasource: events_datasource    # ← Logical datasource name (maps to actual datasource in server.yaml)
     entity: user_events              # ← Supabase table
     dimension: user_id
     dimension_value: event.user_id
@@ -20,10 +20,10 @@ features:
     when: event_type == "login"
 
   - name: user_transaction_sum_24h
-    description: "Total transaction amount in last 24 hours from Supabase"
+    description: "Total transaction amount in last 24 hours"
     type: aggregation
     method: sum
-    datasource: sqlite_events
+    datasource: events_datasource
     entity: user_events
     dimension: user_id
     dimension_value: event.user_id
@@ -36,7 +36,7 @@ features:
     description: "Number of distinct users on this device in last 7 days"
     type: aggregation
     method: distinct
-    datasource: sqlite_events
+    datasource: events_datasource
     entity: user_events
     dimension: device_id
     dimension_value: event.device_id
@@ -48,54 +48,54 @@ features:
   # Lookup Features (Pre-computed values from feature store)
   # ==========================================================================
   # Note: Lookup features retrieve pre-computed values only; no computation
-  # All lookups use redis_features datasource for fast key-value retrieval
+  # All lookups use lookup_datasource (logical name, mapped to actual datasource in server.yaml)
 
   - name: user_kyc_status
     description: "User KYC verification status"
     type: lookup
-    datasource: redis_features
+    datasource: lookup_datasource
     key: "user_profiles:${event.user_id}:kyc_status"
     fallback: "unknown"
 
   - name: user_is_verified
     description: "Is user identity verified?"
     type: lookup
-    datasource: redis_features
+    datasource: lookup_datasource
     key: "user_profiles:${event.user_id}:is_verified"
     fallback: false
 
   - name: user_account_type
     description: "User account type (individual/business)"
     type: lookup
-    datasource: redis_features
+    datasource: lookup_datasource
     key: "user_profiles:${event.user_id}:account_type"
     fallback: "individual"
 
   - name: device_is_suspicious
     description: "Is device marked as suspicious in registry?"
     type: lookup
-    datasource: redis_features
+    datasource: lookup_datasource
     key: "device_registry:${event.device_id}:is_suspicious"
     fallback: false
 
   - name: user_risk_score
     description: "Pre-computed user risk score from feature store"
     type: lookup
-    datasource: redis_features
+    datasource: lookup_datasource
     key: "user_features:${event.user_id}:risk_score"
     fallback: 0.0
 
   - name: user_lifetime_transaction_avg
     description: "User's historical average transaction amount"
     type: lookup
-    datasource: redis_features
+    datasource: lookup_datasource
     key: "user_stats:${event.user_id}:avg_transaction"
     fallback: 0.0
 
   - name: device_trust_score
     description: "Device trust score from feature store"
     type: lookup
-    datasource: redis_features
+    datasource: lookup_datasource
     key: "device_features:${event.device_id}:trust_score"
     fallback: 50.0
 

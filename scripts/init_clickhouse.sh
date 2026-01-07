@@ -2,10 +2,11 @@
 # CORINT ClickHouse Data Initialization Script
 # ============================================================================
 # This script loads E2E test data from events.json into ClickHouse
-# Database configuration is read from repository/configs/datasources/clickhouse_events.yaml
+# Database configuration is read from config/server.yaml (datasources.clickhouse_events)
+# For backward compatibility, also supports reading from repository/configs/datasources/clickhouse_events.yaml
 #
 # Usage:
-#   ./init_clickhouse.sh                    # Use config from datasources yaml
+#   ./init_clickhouse.sh                    # Use config from server.yaml or datasources yaml
 #   ./init_clickhouse.sh -c /path/to/config.yaml  # Use custom config file
 # ============================================================================
 

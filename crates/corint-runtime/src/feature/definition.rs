@@ -200,7 +200,7 @@ pub enum WhenCondition {
 /// Aggregation feature configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AggregationConfig {
-    /// Data source name (references repository/configs/datasources/)
+    /// Data source name (logical name like events_datasource or lookup_datasource, mapped to actual datasources in config/server.yaml)
     pub datasource: String,
 
     /// Table/entity name

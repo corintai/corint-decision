@@ -634,7 +634,7 @@ For detailed gRPC documentation, see [crates/corint-server/GRPC.md](crates/corin
 
 The server is primarily configured via the `config/server.yaml` file, with environment variables for sensitive credentials.
  
-**Note:** Feature calculation datasources (for runtime feature computation) are configured separately in `repository/configs/datasources/`.
+**Note:** All datasources (including feature calculation datasources) are configured in `config/server.yaml` under the `datasource` section. Features use logical datasource names (`events_datasource`, `lookup_datasource`) which are automatically mapped to actual datasources.
 
 
 ### Logging
@@ -661,9 +661,10 @@ RUST_LOG=trace cargo run -p corint-server     # Trace (all details)
 
 **Feature calculation fails:**
 - Verify the database connection
-- Check data source configuration (`repository/configs/datasources/*.yaml`)
+- Check data source configuration in `config/server.yaml` (datasource section)
 - Check features configuration (`repository/configs/features/*.yaml`)
 - Verify test data exists in database
+- Ensure logical datasource names (`events_datasource`, `lookup_datasource`) are properly mapped
 
 **API returns 500 error:**
 - Check server logs for error stack traces
