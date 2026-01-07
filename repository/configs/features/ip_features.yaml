@@ -11,23 +11,23 @@ features:
     description: "Total events from this IP in last 1 hour"
     type: aggregation
     method: count
-    datasource: supabase_events
+    datasource: sqlite_events
     entity: events
     dimension: ip_address
     dimension_value: event.ip_address
     window: 1h
-    timestamp_field: timestamp
+    timestamp_field: event_timestamp
 
   - name: ip_login_count_24h
     description: "Login attempts from this IP in last 24 hours"
     type: aggregation
     method: count
-    datasource: supabase_events
+    datasource: sqlite_events
     entity: events
     dimension: ip_address
     dimension_value: event.ip_address
     window: 24h
-    timestamp_field: timestamp
+    timestamp_field: event_timestamp
     when: event_type == "login"
 
   # ============================================================================
@@ -40,49 +40,49 @@ features:
     description: "Number of distinct devices from this IP in last 5 hours"
     type: aggregation
     method: distinct
-    datasource: supabase_events
+    datasource: sqlite_events
     entity: events
     dimension: ip_address
     dimension_value: event.ip_address
     field: device_id
     window: 5h
-    timestamp_field: timestamp
+    timestamp_field: event_timestamp
 
   - name: devices_per_ip_24h
     description: "Number of distinct devices from this IP in last 24 hours"
     type: aggregation
     method: distinct
-    datasource: supabase_events
+    datasource: sqlite_events
     entity: events
     dimension: ip_address
     dimension_value: event.ip_address
     field: device_id
     window: 24h
-    timestamp_field: timestamp
+    timestamp_field: event_timestamp
 
   - name: users_per_ip_24h
     description: "Number of distinct users from this IP in last 24 hours"
     type: aggregation
     method: distinct
-    datasource: supabase_events
+    datasource: sqlite_events
     entity: events
     dimension: ip_address
     dimension_value: event.ip_address
     field: user_id
     window: 24h
-    timestamp_field: timestamp
+    timestamp_field: event_timestamp
 
   - name: cities_per_ip_30d
     description: "Number of distinct cities for this IP in last 30 days"
     type: aggregation
     method: distinct
-    datasource: supabase_events
+    datasource: sqlite_events
     entity: events
     dimension: ip_address
     dimension_value: event.ip_address
     field: city
     window: 30d
-    timestamp_field: timestamp
+    timestamp_field: event_timestamp
 
   # ============================================================================
   # Velocity Features
@@ -94,7 +94,7 @@ features:
   #   description: "Does IP exceed event velocity (> 100 per hour)?"
   #   type: Expression  # Not yet implemented
   #   method: velocity
-  #   datasource: supabase_events
+  #   datasource: sqlite_events
   #   entity: events
   #   dimension: ip_address
   #   dimension_value: event.ip_address
@@ -114,7 +114,7 @@ features:
     description: "First time this IP was seen"
     type: state
     method: first_seen
-    datasource: supabase_events
+    datasource: sqlite_events
     entity: events
     dimension: ip_address
     dimension_value: event.ip_address

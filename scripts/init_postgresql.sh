@@ -95,7 +95,7 @@ CREATE TABLE IF NOT EXISTS ${EVENTS_TABLE} (
     id SERIAL PRIMARY KEY,
     event_type VARCHAR(50) NOT NULL,
     user_id VARCHAR(100) NOT NULL,
-    timestamp TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    event_timestamp TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     status VARCHAR(50),
     amount DECIMAL(15, 2),
     currency VARCHAR(10),
@@ -111,9 +111,9 @@ CREATE TABLE IF NOT EXISTS ${EVENTS_TABLE} (
 );
 
 CREATE INDEX IF NOT EXISTS idx_${EVENTS_TABLE}_user_id ON ${EVENTS_TABLE}(user_id);
-CREATE INDEX IF NOT EXISTS idx_${EVENTS_TABLE}_timestamp ON ${EVENTS_TABLE}(timestamp);
+CREATE INDEX IF NOT EXISTS idx_${EVENTS_TABLE}_event_timestamp ON ${EVENTS_TABLE}(event_timestamp);
 CREATE INDEX IF NOT EXISTS idx_${EVENTS_TABLE}_event_type ON ${EVENTS_TABLE}(event_type);
-CREATE INDEX IF NOT EXISTS idx_${EVENTS_TABLE}_user_timestamp ON ${EVENTS_TABLE}(user_id, timestamp);
+CREATE INDEX IF NOT EXISTS idx_${EVENTS_TABLE}_user_timestamp ON ${EVENTS_TABLE}(user_id, event_timestamp);
 EOF
 echo "Table created successfully!"
 echo ""
@@ -166,7 +166,7 @@ jq -c '.events[]' "${DATA_FILE}" | while read -r event; do
 
     # Build INSERT statement
     cat >> "${SQL_FILE}" <<EOSQL
-INSERT INTO ${EVENTS_TABLE} (event_type, user_id, timestamp, status, amount, currency, merchant_id, device_id, ip_address, country, city, email, phone, metadata)
+INSERT INTO ${EVENTS_TABLE} (event_type, user_id, event_timestamp, status, amount, currency, merchant_id, device_id, ip_address, country, city, email, phone, metadata)
 VALUES (
     '${event_type}',
     '${user_id}',

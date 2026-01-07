@@ -2,11 +2,10 @@
 # CORINT SQLite Data Initialization Script
 # ============================================================================
 # This script loads E2E test data from events.json into SQLite
-# Database configuration is read from repository/configs/datasources/sqlite_events.yaml
+# Database file is created in scripts/data/temp/corint.db
 #
 # Usage:
-#   ./init_sqlite.sh                    # Use config from datasources yaml
-#   ./init_sqlite.sh -c /path/to/config.yaml  # Use custom config file
+#   ./init_sqlite.sh
 # ============================================================================
 
 set -e
@@ -14,15 +13,9 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 DATA_FILE="${SCRIPT_DIR}/data/events.json"
-CONFIG_FILE="${PROJECT_ROOT}/repository/configs/datasources/sqlite_events.yaml"
-
-# Parse command line arguments
-while getopts "c:" opt; do
-    case $opt in
-        c) CONFIG_FILE="$OPTARG" ;;
-        *) echo "Usage: $0 [-c config_file]" && exit 1 ;;
-    esac
-done
+TEMP_DIR="${SCRIPT_DIR}/data/temp"
+SQLITE_DB="${TEMP_DIR}/corint.db"
+EVENTS_TABLE="events"
 
 # Check for required tools
 if ! command -v jq &> /dev/null; then
@@ -41,56 +34,19 @@ if [ ! -f "${DATA_FILE}" ]; then
     exit 1
 fi
 
-# Check if config file exists
-if [ ! -f "${CONFIG_FILE}" ]; then
-    echo "Error: Config file not found: ${CONFIG_FILE}"
-    exit 1
-fi
-
 echo "=============================================="
 echo "CORINT SQLite Data Initialization"
 echo "=============================================="
-echo "Config file: ${CONFIG_FILE}"
 
-# Parse configuration from YAML
-if command -v yq &> /dev/null; then
-    CONNECTION_STRING=$(yq -r '.connection_string // empty' "${CONFIG_FILE}")
-    EVENTS_TABLE=$(yq -r '.events_table // "events"' "${CONFIG_FILE}")
-else
-    # Fallback to grep/sed for simple YAML parsing
-    CONNECTION_STRING=$(grep '^connection_string:' "${CONFIG_FILE}" | sed 's/^connection_string:[[:space:]]*"\?\([^"]*\)"\?/\1/')
-    EVENTS_TABLE=$(grep '^events_table:' "${CONFIG_FILE}" | sed 's/^events_table:[[:space:]]*"\?\([^"]*\)"\?/\1/')
-    EVENTS_TABLE="${EVENTS_TABLE:-events}"
-fi
-
-if [ -z "${CONNECTION_STRING}" ]; then
-    echo "Error: connection_string not found in config file"
-    exit 1
-fi
-
-# Parse database path from connection string
-# Supports formats: "sqlite://./path/to/db" or "./path/to/db"
-if [[ "${CONNECTION_STRING}" == sqlite://* ]]; then
-    SQLITE_DB="${CONNECTION_STRING#sqlite://}"
-else
-    SQLITE_DB="${CONNECTION_STRING}"
-fi
-
-# Handle relative paths - make them relative to project root
-if [[ "${SQLITE_DB}" == ./* ]]; then
-    SQLITE_DB="${PROJECT_ROOT}/${SQLITE_DB#./}"
+# Create temp directory if not exists
+if [ ! -d "${TEMP_DIR}" ]; then
+    echo "Creating temp directory: ${TEMP_DIR}"
+    mkdir -p "${TEMP_DIR}"
 fi
 
 echo "Database: ${SQLITE_DB}"
 echo "Events table: ${EVENTS_TABLE}"
 echo ""
-
-# Create directory if not exists
-DB_DIR=$(dirname "${SQLITE_DB}")
-if [ ! -d "${DB_DIR}" ]; then
-    echo "Creating database directory: ${DB_DIR}"
-    mkdir -p "${DB_DIR}"
-fi
 
 # Create events table if not exists
 echo "Creating events table..."
@@ -99,7 +55,7 @@ CREATE TABLE IF NOT EXISTS ${EVENTS_TABLE} (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     event_type TEXT NOT NULL,
     user_id TEXT NOT NULL,
-    timestamp TEXT NOT NULL DEFAULT (datetime('now')),
+    event_timestamp TEXT NOT NULL DEFAULT (datetime('now')),
     status TEXT,
     amount REAL,
     currency TEXT,
@@ -115,9 +71,9 @@ CREATE TABLE IF NOT EXISTS ${EVENTS_TABLE} (
 );
 
 CREATE INDEX IF NOT EXISTS idx_${EVENTS_TABLE}_user_id ON ${EVENTS_TABLE}(user_id);
-CREATE INDEX IF NOT EXISTS idx_${EVENTS_TABLE}_timestamp ON ${EVENTS_TABLE}(timestamp);
+CREATE INDEX IF NOT EXISTS idx_${EVENTS_TABLE}_event_timestamp ON ${EVENTS_TABLE}(event_timestamp);
 CREATE INDEX IF NOT EXISTS idx_${EVENTS_TABLE}_event_type ON ${EVENTS_TABLE}(event_type);
-CREATE INDEX IF NOT EXISTS idx_${EVENTS_TABLE}_user_timestamp ON ${EVENTS_TABLE}(user_id, timestamp);
+CREATE INDEX IF NOT EXISTS idx_${EVENTS_TABLE}_user_timestamp ON ${EVENTS_TABLE}(user_id, event_timestamp);
 EOF
 echo "Table created successfully!"
 echo ""
@@ -171,7 +127,7 @@ jq -c '.events[]' "${DATA_FILE}" | while read -r event; do
 
     # Build INSERT statement
     cat >> "${SQL_FILE}" <<EOSQL
-INSERT INTO ${EVENTS_TABLE} (event_type, user_id, timestamp, status, amount, currency, merchant_id, device_id, ip_address, country, city, email, phone, metadata)
+INSERT INTO ${EVENTS_TABLE} (event_type, user_id, event_timestamp, status, amount, currency, merchant_id, device_id, ip_address, country, city, email, phone, metadata)
 VALUES (
     '${event_type}',
     '${user_id}',

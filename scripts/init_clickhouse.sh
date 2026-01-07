@@ -109,7 +109,7 @@ CREATE TABLE IF NOT EXISTS ${EVENTS_TABLE} (
     id UInt64,
     event_type String,
     user_id String,
-    timestamp DateTime64(3),
+    event_timestamp DateTime64(3),
     status Nullable(String),
     amount Nullable(Decimal(15, 2)),
     currency Nullable(String),
@@ -123,8 +123,8 @@ CREATE TABLE IF NOT EXISTS ${EVENTS_TABLE} (
     metadata Nullable(String),
     created_at DateTime64(3) DEFAULT now64()
 ) ENGINE = MergeTree()
-ORDER BY (user_id, timestamp)
-PARTITION BY toYYYYMM(timestamp);
+ORDER BY (user_id, event_timestamp)
+PARTITION BY toYYYYMM(event_timestamp);
 EOF
 echo "Table created successfully!"
 echo ""
@@ -180,7 +180,7 @@ jq -c '.events[]' "${DATA_FILE}" | while read -r event; do
 
     # Build INSERT statement
     cat >> "${SQL_FILE}" <<EOSQL
-INSERT INTO ${EVENTS_TABLE} (id, event_type, user_id, timestamp, status, amount, currency, merchant_id, device_id, ip_address, country, city, email, phone, metadata)
+INSERT INTO ${EVENTS_TABLE} (id, event_type, user_id, event_timestamp, status, amount, currency, merchant_id, device_id, ip_address, country, city, email, phone, metadata)
 VALUES (
     ${ID},
     '${event_type}',

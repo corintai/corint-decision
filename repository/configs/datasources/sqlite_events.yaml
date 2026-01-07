@@ -12,10 +12,10 @@
 name: sqlite_events
 type: sql
 provider: sqlite
-connection_string: "sqlite://./data/events.db"
+connection_string: "sqlite://./scripts/data/temp/corint.db"
 # Alternative: use file path directly
-# connection_string: "./data/events.db"
-database: "events"
+# connection_string: "./scripts/data/temp/corint.db"
+database: "corint"
 events_table: "events"
 options:
   max_connections: 5

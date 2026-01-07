@@ -19,6 +19,17 @@ set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+CONFIG_FILE="${PROJECT_ROOT}/config/server.yaml"
+CONFIG_EXAMPLE="${PROJECT_ROOT}/config/server-example.yaml"
+
+# Copy config file from example at script start
+if [ -f "${CONFIG_EXAMPLE}" ]; then
+    cp "${CONFIG_EXAMPLE}" "${CONFIG_FILE}"
+    echo "Config file initialized from ${CONFIG_EXAMPLE}"
+else
+    echo "Error: Config example file not found: ${CONFIG_EXAMPLE}"
+    exit 1
+fi
 
 # Colors for output
 RED='\033[0;31m'
@@ -29,9 +40,35 @@ CYAN='\033[0;36m'
 NC='\033[0m' # No Color
 BOLD='\033[1m'
 
-# Configuration
-HTTP_HOST="localhost:8080"
-GRPC_HOST="localhost:50051"
+# Read server configuration from config/server.yaml
+read_config() {
+    if [ ! -f "${CONFIG_FILE}" ]; then
+        print_error "Config file not found: ${CONFIG_FILE}"
+        exit 1
+    fi
+
+    # Parse configuration using yq or grep/sed fallback
+    if command -v yq &> /dev/null; then
+        SERVER_HOST=$(yq -r '.host // "127.0.0.1"' "${CONFIG_FILE}")
+        HTTP_PORT=$(yq -r '.port // 8080' "${CONFIG_FILE}")
+        GRPC_PORT=$(yq -r '.grpc_port // 50051' "${CONFIG_FILE}")
+    else
+        # Fallback to grep/sed - improved regex to handle quoted and unquoted values
+        SERVER_HOST=$(grep '^host:' "${CONFIG_FILE}" | head -1 | sed -E 's/^host:[[:space:]]*"?([^"]+)"?[[:space:]]*$/\1/' | tr -d ' ')
+        HTTP_PORT=$(grep '^port:' "${CONFIG_FILE}" | head -1 | sed -E 's/^port:[[:space:]]*([0-9]+)[[:space:]]*$/\1/' | tr -d ' ')
+        GRPC_PORT=$(grep '^grpc_port:' "${CONFIG_FILE}" | head -1 | sed -E 's/^grpc_port:[[:space:]]*([0-9]+)[[:space:]]*$/\1/' | tr -d ' ')
+        SERVER_HOST="${SERVER_HOST:-127.0.0.1}"
+        HTTP_PORT="${HTTP_PORT:-8080}"
+        GRPC_PORT="${GRPC_PORT:-50051}"
+    fi
+
+    HTTP_HOST="${SERVER_HOST}:${HTTP_PORT}"
+    GRPC_HOST="${SERVER_HOST}:${GRPC_PORT}"
+}
+
+# Configuration (will be populated by read_config)
+HTTP_HOST=""
+GRPC_HOST=""
 PROTOCOL=""
 DATASOURCE=""
 SERVER_PID=""
@@ -73,6 +110,11 @@ print_warn() {
 }
 
 cleanup() {
+    # Allow keeping the server alive by setting KEEP_SERVER_RUNNING=true
+    if [ "${KEEP_SERVER_RUNNING:-}" = "true" ]; then
+        print_warn "KEEP_SERVER_RUNNING=true set. Skipping server shutdown."
+        return 0
+    fi
     if [ -n "$SERVER_PID" ] && kill -0 "$SERVER_PID" 2>/dev/null; then
         print_info "Stopping server (PID: $SERVER_PID)..."
         kill "$SERVER_PID" 2>/dev/null || true
@@ -89,14 +131,54 @@ trap cleanup EXIT
 select_protocol() {
     print_section "Protocol Selection"
 
+    # Check for environment variable first
+    if [ -n "${TEST_PROTOCOL:-}" ]; then
+        case "${TEST_PROTOCOL}" in
+            http|1)
+                PROTOCOL="http"
+                print_success "Selected: HTTP protocol (from TEST_PROTOCOL)"
+                return 0
+                ;;
+            grpc|2)
+                PROTOCOL="grpc"
+                # Check if grpcurl is available
+                if ! command -v grpcurl &> /dev/null; then
+                    print_error "grpcurl is required for gRPC testing but not found"
+                    print_info "Install via: brew install grpcurl (macOS) or go install github.com/fullstorydev/grpcurl/cmd/grpcurl@latest"
+                    exit 1
+                fi
+                print_success "Selected: gRPC protocol (from TEST_PROTOCOL)"
+                return 0
+                ;;
+            *)
+                print_warn "Invalid TEST_PROTOCOL value: ${TEST_PROTOCOL}, falling back to interactive mode"
+                ;;
+        esac
+    fi
+
+    # Non-interactive fallback
+    if [ ! -t 0 ]; then
+        PROTOCOL="http"
+        print_warn "No TTY detected. Defaulting protocol to HTTP."
+        return 0
+    fi
+
     echo "Select test protocol:"
     echo ""
-    echo "  1) HTTP (REST API)"
+    echo "  1) HTTP (REST API) [default]"
     echo "  2) gRPC"
     echo ""
 
     while true; do
-        read -p "Enter choice [1-2]: " choice
+        # Avoid exiting the whole script on read error with set -e
+        set +e
+        read -p "Enter choice [1-2] (default: 1): " choice
+        rc=$?
+        set -e
+        if [ $rc -ne 0 ]; then
+            choice="1"
+        fi
+        choice="${choice:-1}"  # Default to 1 if empty
         case $choice in
             1)
                 PROTOCOL="http"
@@ -128,16 +210,60 @@ select_protocol() {
 select_datasource() {
     print_section "Data Source Selection"
 
+    # Check for environment variable first
+    if [ -n "${TEST_DATASOURCE:-}" ]; then
+        case "${TEST_DATASOURCE}" in
+            sqlite|1)
+                DATASOURCE="sqlite"
+                print_success "Selected: SQLite (from TEST_DATASOURCE)"
+                return 0
+                ;;
+            postgresql|2)
+                DATASOURCE="postgresql"
+                print_success "Selected: PostgreSQL (from TEST_DATASOURCE)"
+                return 0
+                ;;
+            clickhouse|3)
+                DATASOURCE="clickhouse"
+                print_success "Selected: ClickHouse (from TEST_DATASOURCE)"
+                return 0
+                ;;
+            redis|4)
+                DATASOURCE="redis"
+                print_success "Selected: Redis (from TEST_DATASOURCE)"
+                return 0
+                ;;
+            *)
+                print_warn "Invalid TEST_DATASOURCE value: ${TEST_DATASOURCE}, falling back to interactive mode"
+                ;;
+        esac
+    fi
+
+    # Non-interactive fallback
+    if [ ! -t 0 ]; then
+        DATASOURCE="${DATASOURCE:-sqlite}"
+        print_warn "No TTY detected. Defaulting datasource to ${DATASOURCE}."
+        return 0
+    fi
+
     echo "Select event data source for aggregation features:"
     echo ""
-    echo "  1) SQLite      - Lightweight file-based database (Recommended for quick start)"
+    echo "  1) SQLite      - Lightweight file-based database [default]"
     echo "  2) PostgreSQL  - Production-grade RDBMS"
     echo "  3) ClickHouse  - High-performance OLAP database"
     echo "  4) Redis       - In-memory data store (lookup features only)"
     echo ""
 
     while true; do
-        read -p "Enter choice [1-4]: " choice
+        # Avoid exiting the whole script on read error with set -e
+        set +e
+        read -p "Enter choice [1-4] (default: 1): " choice
+        rc=$?
+        set -e
+        if [ $rc -ne 0 ]; then
+            choice="1"
+        fi
+        choice="${choice:-1}"  # Default to 1 if empty
         case $choice in
             1)
                 DATASOURCE="sqlite"
@@ -222,11 +348,24 @@ initialize_data() {
 start_server() {
     print_section "Starting CORINT Server"
 
-    # Check if server is already running
+    # Check if server is already running via health check
     if curl -s "http://${HTTP_HOST}/health" &>/dev/null; then
         print_warn "Server is already running at ${HTTP_HOST}"
-        read -p "Use existing server? [Y/n]: " use_existing
-        if [[ "${use_existing,,}" != "n" ]]; then
+
+        # Handle read with set +e to avoid script exit on EOF/error
+        local use_existing="Y"
+        if [ -t 0 ]; then
+            set +e
+            read -p "Use existing server? [Y/n]: " use_existing
+            rc=$?
+            set -e
+            if [ $rc -ne 0 ]; then
+                use_existing="Y"
+            fi
+        fi
+
+        use_existing="${use_existing:-Y}"
+        if [ "$use_existing" != "n" ] && [ "$use_existing" != "N" ]; then
             print_success "Using existing server"
             return 0
         fi
@@ -234,48 +373,75 @@ start_server() {
         exit 1
     fi
 
+    # Check if port is occupied by another process (even if not responding to health check)
+    local port_pid=""
+    port_pid=$(lsof -t -i ":${HTTP_PORT}" 2>/dev/null || true)
+    if [ -n "$port_pid" ]; then
+        print_warn "Port ${HTTP_PORT} is occupied by process: $port_pid"
+        print_info "Killing process $port_pid..."
+        kill "$port_pid" 2>/dev/null || true
+        sleep 1
+        # Force kill if still running
+        if kill -0 "$port_pid" 2>/dev/null; then
+            kill -9 "$port_pid" 2>/dev/null || true
+            sleep 1
+        fi
+        print_success "Process killed"
+    fi
+
     # Build the server
     print_info "Building server (release mode)..."
     cd "$PROJECT_ROOT"
-    cargo build --release -p corint-server 2>&1 | tail -5
+    if ! cargo build --release -p corint-server 2>&1 | tail -10; then
+        print_error "Failed to build server"
+        exit 1
+    fi
 
-    # Set environment variables based on datasource
-    local db_url=""
-    case $DATASOURCE in
-        postgresql)
-            # Read from config or use default
-            db_url="${DATABASE_URL:-postgresql://postgres@localhost/corint}"
-            ;;
-        clickhouse)
-            db_url="${DATABASE_URL:-http://localhost:8123}"
-            ;;
-        sqlite)
-            db_url="${DATABASE_URL:-sqlite://./data/corint.db}"
-            ;;
-    esac
+    # Create log file
+    local log_file="${PROJECT_ROOT}/server.log"
 
-    # Start server in background
-    print_info "Starting server..."
+    # Start server in background with log output
+    print_info "Starting server (log: ${log_file})..."
     export RUST_LOG="${RUST_LOG:-info}"
-    export DATABASE_URL="$db_url"
 
-    "${PROJECT_ROOT}/target/release/corint-server" &
+    "${PROJECT_ROOT}/target/release/corint-server" < /dev/null > "${log_file}" 2>&1 &
     SERVER_PID=$!
 
     # Wait for server to start
     print_info "Waiting for server to be ready..."
-    local max_wait=30
+    local max_wait=60
     local waited=0
-    while ! curl -s "http://${HTTP_HOST}/health" &>/dev/null; do
+
+    # Disable set -e temporarily for health check loop
+    set +e
+    while true; do
+        if curl -s "http://${HTTP_HOST}/health" &>/dev/null; then
+            break
+        fi
+
+        # Check if process is still running
+        if ! kill -0 "$SERVER_PID" 2>/dev/null; then
+            print_error "Server process exited unexpectedly"
+            echo ""
+            echo -e "${YELLOW}Last 20 lines of server log:${NC}"
+            tail -20 "${log_file}" 2>/dev/null || echo "(no log available)"
+            exit 1
+        fi
+
         sleep 1
         waited=$((waited + 1))
         if [ $waited -ge $max_wait ]; then
             print_error "Server failed to start within ${max_wait} seconds"
+            echo ""
+            echo -e "${YELLOW}Last 20 lines of server log:${NC}"
+            tail -20 "${log_file}" 2>/dev/null || echo "(no log available)"
             exit 1
         fi
     done
+    set -e
 
     print_success "Server started successfully (PID: $SERVER_PID)"
+    echo "[DEBUG] start_server function completed"
 }
 
 # ============================================================================
@@ -370,13 +536,53 @@ run_test() {
     echo ""
 
     local response=""
+    local request=""
     if [ "$PROTOCOL" = "http" ]; then
-        response=$(http_decide "$user_id" "$event_type" "$amount" "$device_id" "$ip_address" "$country" "$city" "true" "true")
+        request=$(cat <<EOF
+{
+  "event": {
+    "type": "${event_type}",
+    "user_id": "${user_id}",
+    "amount": ${amount},
+    "currency": "USD",
+    "device_id": "${device_id}",
+    "ip_address": "${ip_address}",
+    "country": "${country}",
+    "city": "${city}",
+    "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  },
+  "options": {
+    "enable_trace": true,
+    "return_features": true
+  }
+}
+EOF
+)
+        echo -e "${CYAN}Request:${NC}"
+        echo "$request" | jq . 2>/dev/null || echo "$request"
+        echo ""
+
+        response=$(curl -s -X POST "http://${HTTP_HOST}/v1/decide" \
+            -H "Content-Type: application/json" \
+            -d "$request")
     else
+        request="{
+  \"event\": {
+    \"user_id\": {\"string_value\": \"${user_id}\"},
+    \"type\": {\"string_value\": \"${event_type}\"},
+    \"amount\": {\"double_value\": ${amount}},
+    \"device_id\": {\"string_value\": \"${device_id}\"},
+    \"ip_address\": {\"string_value\": \"${ip_address}\"}
+  }
+}"
+        echo -e "${CYAN}Request:${NC}"
+        echo "$request" | jq . 2>/dev/null || echo "$request"
+        echo ""
+
         response=$(grpc_decide "$user_id" "$event_type" "$amount" "$device_id" "$ip_address")
     fi
 
-    echo "Response:"
+    echo -e "${CYAN}Response:${NC}"
     if command -v jq &> /dev/null; then
         echo "$response" | jq '{
             request_id: .request_id,
@@ -522,7 +728,7 @@ show_test_menu() {
 
     echo "Select a test scenario to run:"
     echo ""
-    echo "  ${BOLD}Individual Scenarios:${NC}"
+    echo -e "  ${BOLD}Individual Scenarios:${NC}"
     echo "   1) Normal User (Low Risk)            - Expected: APPROVE"
     echo "   2) Normal User with Moderate Activity - Expected: APPROVE"
     echo "   3) High Frequency Login              - Expected: REVIEW (velocity)"
@@ -535,7 +741,7 @@ show_test_menu() {
     echo "  10) Highly Suspicious User            - Expected: DECLINE"
     echo "  11) Statistical Feature Testing       - Expected: APPROVE"
     echo ""
-    echo "  ${BOLD}Batch Operations:${NC}"
+    echo -e "  ${BOLD}Batch Operations:${NC}"
     echo "  12) Run ALL scenarios"
     echo "  13) Run only APPROVE scenarios (1, 2, 9, 11)"
     echo "  14) Run only DECLINE scenarios (6, 10)"
@@ -593,28 +799,38 @@ run_review_scenarios() {
 # ============================================================================
 
 main() {
+    echo "[DEBUG] main() started"
     print_header "CORINT Decision Engine - Interactive Test"
 
-    # Step 1: Select data source
-    select_datasource
+    # Read configuration from config/server.yaml
+    echo "[DEBUG] calling read_config..."
+    read_config
+    echo "[DEBUG] read_config done: HTTP=${HTTP_HOST}, gRPC=${GRPC_HOST}"
+    print_info "Config: HTTP=${HTTP_HOST}, gRPC=${GRPC_HOST}"
 
-    # Show what will happen next
-    echo ""
-    echo -e "${BOLD}Next steps (automatic):${NC}"
-    echo "  1. Initialize test data (cleanup + insert)"
-    echo "  2. Build and start server"
-    echo ""
-    read -p "Press Enter to continue or Ctrl+C to cancel..."
+    # Step 1: Select data source
+    echo "[DEBUG] calling select_datasource..."
+    select_datasource
+    echo "[DEBUG] select_datasource done: DATASOURCE=${DATASOURCE}"
 
     # Step 2: Initialize data (automatic)
+    echo "[DEBUG] calling initialize_data..."
+    print_info "Step 2/5: Initializing test data..."
     initialize_data
+    echo "[DEBUG] initialize_data done"
 
     # Step 3: Start server (automatic)
+    echo "[DEBUG] calling start_server..."
+    print_info "Step 3/5: Starting server..."
     start_server
+    echo "[DEBUG] start_server done"
 
     # Step 4: Health check
+    print_info "Step 4/5: Running health check..."
     print_section "Health Check"
-    local health=$(http_health_check)
+    local health
+    health=$(http_health_check) || true
+    echo "[DEBUG] Health response: $health"
     if echo "$health" | grep -q "healthy\|ok"; then
         print_success "Server is healthy"
         echo "$health" | jq . 2>/dev/null || echo "$health"
@@ -624,13 +840,81 @@ main() {
         exit 1
     fi
 
+    echo "[DEBUG] Health check passed, proceeding to protocol selection..."
+
+    # Clear any buffered input before interactive prompts
+    read -t 0.1 -n 10000 discard 2>/dev/null || true
+
+    echo "[DEBUG] About to call select_protocol..."
+
     # Step 5: Select protocol
+    print_info "Step 5/5: Ready for testing"
     select_protocol
 
-    # Step 6: Test menu loop
+    echo "[DEBUG] Protocol selected: $PROTOCOL"
+    echo "[DEBUG] Entering test menu loop..."
+
+    # Check for auto-run environment variable
+    if [ -n "${TEST_AUTO_RUN:-}" ]; then
+        print_section "Auto-Run Mode"
+        print_info "TEST_AUTO_RUN is set, running all test scenarios..."
+
+        # Run all test scenarios
+        run_all_scenarios
+
+        print_section "Auto-Run Complete"
+        print_success "All test scenarios completed!"
+
+        # Keep server running if requested
+        if [ "${KEEP_SERVER_RUNNING:-}" = "true" ]; then
+            print_info "KEEP_SERVER_RUNNING=true, server will continue running (PID: $SERVER_PID)"
+            print_info "Press Ctrl+C to exit and stop the server"
+            trap 'print_info "Exiting..."; exit 0' INT TERM
+            while true; do
+                sleep 1
+            done
+        else
+            print_info "Exiting (server will be stopped)..."
+            return 0
+        fi
+    fi
+
+    # Check if running in non-interactive mode
+    if [ ! -t 0 ]; then
+        print_warn "Running in non-interactive mode. Server is running."
+        print_info "You can test the API manually or run this script in an interactive terminal."
+        print_info "Server PID: $SERVER_PID"
+        print_info "HTTP endpoint: http://${HTTP_HOST}/v1/decide"
+        print_info ""
+        print_info "To keep the server running, press Ctrl+C to exit this script."
+        print_info "The server will continue running in the background."
+        print_info ""
+        print_info "Waiting for manual termination (Ctrl+C)..."
+        # Wait indefinitely until interrupted
+        trap 'print_info "Exiting..."; exit 0' INT TERM
+        while true; do
+            sleep 1
+        done
+    fi
+
+    # Test menu loop (interactive mode only)
     while true; do
         show_test_menu
+
+        # Handle read with set +e to avoid script exit on EOF/error
+        set +e
         read -p "Enter choice [0-15]: " choice
+        rc=$?
+        set -e
+
+        # Exit gracefully on read error (e.g., EOF, no TTY)
+        if [ $rc -ne 0 ]; then
+            echo ""
+            print_info "Input closed, exiting..."
+            break
+        fi
+
+        echo "[DEBUG] User choice: '$choice'"
 
         case $choice in
             0)
@@ -657,10 +941,6 @@ main() {
                 ;;
         esac
 
-        if [ "$choice" != "0" ]; then
-            echo ""
-            read -p "Press Enter to continue..."
-        fi
     done
 
     print_header "Test Session Completed"

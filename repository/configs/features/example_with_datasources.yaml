@@ -11,7 +11,7 @@ features:
     description: "User login count in last 1 hour from Supabase"
     type: aggregation
     method: count
-    datasource: supabase_events    # ← Supabase data source
+    datasource: sqlite_events    # ← Supabase data source
     entity: user_events              # ← Supabase table
     dimension: user_id
     dimension_value: event.user_id
@@ -23,7 +23,7 @@ features:
     description: "Total transaction amount in last 24 hours from Supabase"
     type: aggregation
     method: sum
-    datasource: supabase_events
+    datasource: sqlite_events
     entity: user_events
     dimension: user_id
     dimension_value: event.user_id
@@ -36,7 +36,7 @@ features:
     description: "Number of distinct users on this device in last 7 days"
     type: aggregation
     method: distinct
-    datasource: supabase_events
+    datasource: sqlite_events
     entity: user_events
     dimension: device_id
     dimension_value: event.device_id
@@ -122,7 +122,7 @@ features:
   #   description: "Does user exceed login velocity threshold?"
   #   type: Expression  # Not yet implemented
   #   method: velocity
-  #   datasource: supabase_events
+  #   datasource: sqlite_events
   #   entity: user_events
   #   dimension: user_id
   #   dimension_value: event.user_id

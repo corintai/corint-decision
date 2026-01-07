@@ -11,23 +11,23 @@ features:
     description: "Total events from this device in last 24 hours"
     type: aggregation
     method: count
-    datasource: supabase_events
+    datasource: sqlite_events
     entity: events
     dimension: device_id
     dimension_value: event.device_id
     window: 3mo
-    timestamp_field: timestamp
+    timestamp_field: event_timestamp
 
   - name: device_transaction_count_6mo
     description: "Transactions from this device in last 3 months"
     type: aggregation
     method: count
-    datasource: supabase_events
+    datasource: sqlite_events
     entity: events
     dimension: device_id
     dimension_value: event.device_id
     window: 6mo
-    timestamp_field: timestamp
+    timestamp_field: event_timestamp
     when: event_type == "transaction"
 
   # ============================================================================
@@ -38,25 +38,25 @@ features:
     description: "Number of distinct users on this device in last 30 days"
     type: aggregation
     method: distinct
-    datasource: supabase_events
+    datasource: sqlite_events
     entity: events
     dimension: device_id
     dimension_value: event.device_id
     field: user_id
     window: 30d
-    timestamp_field: timestamp
+    timestamp_field: event_timestamp
 
   - name: ips_per_device_7d
     description: "Number of distinct IPs for this device in last 7 days"
     type: aggregation
     method: distinct
-    datasource: supabase_events
+    datasource: sqlite_events
     entity: events
     dimension: device_id
     dimension_value: event.device_id
     field: ip_address
     window: 7d
-    timestamp_field: timestamp
+    timestamp_field: event_timestamp
 
   # ============================================================================
   # Device Profile Lookups
