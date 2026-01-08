@@ -426,7 +426,7 @@ git add repository/library/rules/fraud/
 git commit -m "Add LLM-generated fraud detection rules"
 
 # 5. Deploy
-./scripts/deploy_to_staging.sh
+./quickstart/deploy_to_staging.sh
 ```
 
 ---

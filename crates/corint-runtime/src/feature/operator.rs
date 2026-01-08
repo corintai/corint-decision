@@ -656,6 +656,13 @@ pub struct TimeSinceOperator {
     #[serde(default)]
     pub filters: Vec<FilterConfig>,
     pub unit: WindowUnit,
+    /// Timestamp field name (defaults to "event_timestamp")
+    #[serde(default = "default_timestamp_field")]
+    pub timestamp_field: String,
+}
+
+fn default_timestamp_field() -> String {
+    "event_timestamp".to_string()
 }
 
 impl TimeSinceOperator {
@@ -664,18 +671,85 @@ impl TimeSinceOperator {
         datasource: &DataSourceClient,
         context: &HashMap<String, Value>,
     ) -> Result<Value> {
-        // Get first seen timestamp
-        let first_seen_op = FirstSeenOperator {
+        let dimension_value = resolve_template(&self.dimension_value, context)?;
+
+        // Build filters from config
+        let mut filters = vec![Filter {
+            field: self.dimension.clone(),
+            operator: FilterOperator::Eq,
+            value: Value::String(dimension_value),
+        }];
+
+        // Add additional filters from config
+        for filter_config in &self.filters {
+            filters.push(Filter {
+                field: filter_config.field.clone(),
+                operator: filter_config.operator.to_filter_operator(),
+                value: filter_config.value.clone(),
+            });
+        }
+
+        // Query for the earliest timestamp matching the filters
+        let query = Query {
+            query_type: QueryType::Aggregate,
             entity: self.entity.clone(),
-            dimension: self.dimension.clone(),
-            dimension_value: self.dimension_value.clone(),
+            filters,
+            time_window: None,
+            aggregations: vec![Aggregation {
+                agg_type: AggregationType::Min,
+                field: Some(self.timestamp_field.clone()),
+                output_name: "first_timestamp".to_string(),
+            }],
+            group_by: vec![],
+            limit: None,
         };
 
-        let _first_seen = first_seen_op.execute(datasource, context).await?;
+        let result = datasource.query(query).await?;
 
-        // TODO: Calculate elapsed time
-        // For now, return placeholder
-        Ok(Value::Number(0.0))
+        if let Some(row) = result.rows.first() {
+            if let Some(Value::String(timestamp_str)) = row.get("first_timestamp") {
+                // Parse the timestamp and calculate elapsed time
+                use chrono::{DateTime, NaiveDateTime, Utc};
+
+                // Try parsing as ISO 8601 with timezone first
+                let first_time = if let Ok(dt) = timestamp_str.parse::<DateTime<Utc>>() {
+                    dt
+                } else if let Ok(naive_dt) = NaiveDateTime::parse_from_str(timestamp_str, "%Y-%m-%d %H:%M:%S") {
+                    // SQLite returns format: "YYYY-MM-DD HH:MM:SS" (no timezone)
+                    // Assume UTC timezone
+                    DateTime::from_naive_utc_and_offset(naive_dt, Utc)
+                } else if let Ok(naive_dt) = NaiveDateTime::parse_from_str(timestamp_str, "%Y-%m-%dT%H:%M:%S") {
+                    // ISO format without timezone
+                    DateTime::from_naive_utc_and_offset(naive_dt, Utc)
+                } else {
+                    return Err(RuntimeError::InvalidValue(format!(
+                        "Failed to parse timestamp '{}' as DateTime<Utc> or NaiveDateTime",
+                        timestamp_str
+                    )));
+                };
+
+                let now = Utc::now();
+                let duration = now.signed_duration_since(first_time);
+
+                // Convert to requested unit
+                let elapsed = match self.unit {
+                    WindowUnit::Minutes => duration.num_minutes() as f64,
+                    WindowUnit::Hours => duration.num_hours() as f64,
+                    WindowUnit::Days => duration.num_days() as f64,
+                };
+
+                return Ok(Value::Number(elapsed));
+            } else {
+                return Err(RuntimeError::InvalidValue(
+                    "Query result missing 'first_timestamp' field or field is not a string".to_string()
+                ));
+            }
+        }
+
+        // No matching records found - return error so fallback can be used
+        Err(RuntimeError::RuntimeError(
+            "No matching records found for time_since calculation".to_string()
+        ))
     }
 }
 
@@ -790,7 +864,7 @@ impl ExpressionOperator {
 
 /// Resolve template string with context values
 /// Supports:
-/// - Direct reference: "event.user_id" -> lookup context["event.user_id"]
+/// - Direct reference: "event.user_id" -> lookup context["user_id"] (extracts last part of path)
 /// - String interpolation: "prefix:${event.user_id}:suffix" -> "prefix:value:suffix"
 fn resolve_template(template: &str, context: &HashMap<String, Value>) -> Result<String> {
     // Check for string interpolation: contains "${...}"
@@ -802,15 +876,21 @@ fn resolve_template(template: &str, context: &HashMap<String, Value>) -> Result<
             let start = search_start + start;
             if let Some(end_offset) = result[start..].find('}') {
                 let end = start + end_offset;
-                let key = &result[start + 2..end];
+                let key_path = &result[start + 2..end];
+                // Parse path like "event.user_id" -> extract "user_id"
+                let key = if key_path.contains('.') {
+                    key_path.split('.').last().unwrap_or(key_path)
+                } else {
+                    key_path
+                };
                 if let Some(value) = context.get(key) {
                     let replacement = value_to_string(value);
                     result = format!("{}{}{}", &result[..start], replacement, &result[end + 1..]);
                     search_start = start + replacement.len();
                 } else {
                     return Err(RuntimeError::RuntimeError(format!(
-                        "Template variable not found: {}",
-                        key
+                        "Template variable not found: {} (searched for key: {})",
+                        key_path, key
                     )));
                 }
             } else {
@@ -820,9 +900,18 @@ fn resolve_template(template: &str, context: &HashMap<String, Value>) -> Result<
         return Ok(result);
     }
 
-    // Direct reference: "event.user_id" -> lookup context["event.user_id"]
+    // Direct reference: "event.user_id" -> lookup context["user_id"] (extract last part)
+    // First try exact match
     if let Some(value) = context.get(template) {
         return Ok(value_to_string(value));
+    }
+
+    // If not found and contains '.', try extracting the last part
+    if template.contains('.') {
+        let key = template.split('.').last().unwrap_or(template);
+        if let Some(value) = context.get(key) {
+            return Ok(value_to_string(value));
+        }
     }
 
     // Return as-is if not a template

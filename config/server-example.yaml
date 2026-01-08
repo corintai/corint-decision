@@ -98,7 +98,7 @@ datasource:
   sqlite_events:
     type: sql
     provider: sqlite
-    connection_string: "sqlite://./scripts/data/temp/corint.db"
+    connection_string: "sqlite://corint.db"
     database: "corint"
     events_table: "events"
     options:

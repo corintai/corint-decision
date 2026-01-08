@@ -44,6 +44,10 @@ impl FeatureRegistry {
         let content = std::fs::read_to_string(path)
             .with_context(|| format!("Failed to read feature file: {}", path.display()))?;
 
+        // Parse YAML to get raw values for post-processing lookup features
+        let yaml_value: serde_yaml::Value = serde_yaml::from_str(&content)
+            .with_context(|| format!("Failed to parse YAML file: {}", path.display()))?;
+
         let collection: FeatureCollection = serde_yaml::from_str(&content)
             .map_err(|e| {
                 warn!("Detailed parse error: {:?}", e);
@@ -63,8 +67,20 @@ impl FeatureRegistry {
         let file_key = path.to_string_lossy().to_string();
         let mut feature_names = Vec::new();
 
+        // Get features array from YAML for post-processing
+        let empty_vec = vec![];
+        let features_yaml = yaml_value.get("features")
+            .and_then(|v| v.as_sequence())
+            .unwrap_or(&empty_vec);
+
         // Register each feature
-        for mut feature in collection.features {
+        for (idx, mut feature) in collection.features.into_iter().enumerate() {
+            // Post-process lookup features to populate lookup config from YAML
+            if feature.feature_type == crate::feature::definition::FeatureType::Lookup {
+                if let Some(feature_yaml) = features_yaml.get(idx) {
+                    feature.fixup_lookup_from_yaml(feature_yaml);
+                }
+            }
             let name = feature.name.clone();
             feature_names.push(name.clone());
 

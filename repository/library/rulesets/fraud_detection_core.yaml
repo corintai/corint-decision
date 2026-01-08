@@ -11,6 +11,7 @@ import:
     - library/rules/fraud/amount_outlier.yaml
     - library/rules/geography/suspicious_geography.yaml
     - library/rules/fraud/new_user_fraud.yaml
+    - library/rules/fraud/login_velocity.yaml
 
 ---
 
@@ -18,7 +19,7 @@ ruleset:
   id: fraud_detection_core
   name: Core Fraud Detection Ruleset
   description: |
-    Reusable fraud detection ruleset with 6 common fraud patterns.
+    Reusable fraud detection ruleset with 7 common fraud patterns.
 
     Each rule detects a specific fraud pattern and contributes a score:
     1. Fraud Farm (100pts) - High IP/device association
@@ -27,6 +28,7 @@ ruleset:
     4. Amount Outlier (75pts) - Statistical anomaly
     5. Suspicious Geography (60pts) - Impossible travel
     6. New User Fraud (50pts) - Recent account + suspicious behavior
+    7. Login Velocity (40pts) - High login frequency
 
     Decision logic uses pattern combinations and score thresholds.
 
@@ -38,9 +40,22 @@ ruleset:
     - amount_outlier_pattern
     - suspicious_geography_pattern
     - new_user_fraud_pattern
+    - login_velocity_pattern
 
   # Multi-layer decision logic
   conclusion:
+    # ==========================================
+    # Priority 0: VIP Whitelist (Bypass all checks)
+    # ==========================================
+
+    # VIP users with old accounts bypass fraud checks
+    # Check by user_id (supports both vip001 and vip_user_001 formats)
+    - when: |
+        event.user_id == "vip001" ||
+        event.user_id == "vip_user_001"
+      signal: approve
+      reason: "Trusted VIP user - bypass fraud checks"
+
     # ==========================================
     # Priority 1: Critical Patterns
     # ==========================================

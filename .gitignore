@@ -36,5 +36,9 @@ node_modules
 config/server.yaml
 config/server.yaml.*
 
+# SQLite database files
+corint.db
+*.db
+
 temp
 clickhouse

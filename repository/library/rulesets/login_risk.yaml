@@ -12,7 +12,8 @@ import:
     - library/rules/device/device_emulator.yaml
     # Disabled: requires unimplemented features (device_fingerprint_changed_24h)
     # - library/rules/device/device_spoofing.yaml
-    - library/rules/fraud/account_takeover.yaml 
+    - library/rules/fraud/account_takeover.yaml
+    - library/rules/fraud/login_velocity.yaml 
 
 ---
 
@@ -24,23 +25,18 @@ ruleset:
 
     Covers multiple risk dimensions:
     1. Device Trust (80-85pts) - Emulators, spoofing, rooted devices
-    2. Location Anomalies (75pts) - Impossible travel patterns
-    3. Account Takeover (85pts) - Combined takeover indicators
-    4. Password Security (70pts) - High-risk password changes
+    2. Account Takeover (85pts) - Combined takeover indicators
+    3. Password Security (70pts) - High-risk password changes
+    4. Login Velocity (40pts) - High login frequency
 
     Total risk scoring with multi-layer decision logic.
 
   # Reference imported rules by their IDs
   rules:
-    # Disabled: requires unimplemented features
-    # - impossible_travel_detection
     - device_emulator_detection
-    # Disabled: requires unimplemented features
-    # - device_spoofing_detection
-    - account_takeover_new_device
-    - account_takeover_failed_logins
-    - account_takeover_geo_change
+    - account_takeover_pattern
     - password_change_risk
+    - login_velocity_pattern
 
   # Multi-layer decision logic
   conclusion:
@@ -73,9 +69,7 @@ ruleset:
 
     # Account takeover with password change
     - when: |
-        (triggered_rules contains "account_takeover_new_device" ||
-         triggered_rules contains "account_takeover_failed_logins" ||
-         triggered_rules contains "account_takeover_geo_change") &&
+        triggered_rules contains "account_takeover_pattern" &&
         triggered_rules contains "password_change_risk"
       signal: decline
       reason: "Critical: Account takeover with password change attempt"
@@ -99,10 +93,15 @@ ruleset:
       signal: review
       reason: "High risk login - requires MFA or manual review (score: {total_score})"
 
-    # Medium Risk >= 50 - Enhanced monitoring
-    - when: total_score >= 50
+    # Medium Risk >= 40 - Enhanced monitoring (aligned with login_velocity score)
+    - when: total_score >= 40
       signal: review
       reason: "Medium risk - enhanced monitoring required (score: {total_score})"
+
+    # Low-Medium Risk >= 30 - Basic monitoring
+    - when: total_score >= 30
+      signal: review
+      reason: "Low-medium risk - basic monitoring required (score: {total_score})"
 
     # ==========================================
     # Priority 4: Multiple Indicators

@@ -8,12 +8,15 @@ rule:
 
   when:
     all:
-      # Account created within past 7 days
-      - features.account_age_days < 7
-      # AND (large amount OR unverified user)
+      # Account created within past 7 days (with null-safe check)
+      - any:
+          - features.account_age_days < 7
+          - features.account_age_days == null  # If unavailable, assume potential new user risk
+      # AND (large amount OR unverified user OR unverified status unavailable)
       - any:
           - event.amount > 1000
           - features.user_is_verified == false
+          - features.user_is_verified == null  # If verification status unavailable, treat as unverified
 
   score: 50
 

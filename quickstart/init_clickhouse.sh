@@ -15,6 +15,10 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 DATA_FILE="${SCRIPT_DIR}/data/events.json"
+TEMP_DIR="${PROJECT_ROOT}/temp"
+
+# Ensure temp directory exists
+mkdir -p "${TEMP_DIR}"
 CONFIG_FILE="${PROJECT_ROOT}/repository/configs/datasources/clickhouse_events.yaml"
 
 # Parse command line arguments
@@ -157,7 +161,7 @@ convert_offset_to_seconds() {
 echo "Loading events from ${DATA_FILE}..."
 
 # Generate SQL for all events
-SQL_FILE=$(mktemp)
+SQL_FILE=$(mktemp "${TEMP_DIR}/clickhouse_init_XXXXXX.sql")
 ID=1
 
 jq -c '.events[]' "${DATA_FILE}" | while read -r event; do

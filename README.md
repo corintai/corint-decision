@@ -516,7 +516,7 @@ cargo test
 # initialize SQLite database
 # if you want to use postgresql/clickhouse/redit as the datasource backend
 # please install them at first, then run the corresponding script init_xxx.sh
-./scripts/init_sqlite.sh
+./quickstart/init_sqlite.sh
 
 # setup the server config, you can customize it
 cp config/server-example.yaml config/server.yaml

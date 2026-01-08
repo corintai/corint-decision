@@ -258,26 +258,47 @@ impl SQLClient {
             || field.starts_with("attributes"));
 
         // Build field expression with type cast if needed
+        // Field path syntax:
+        // - Direct column: "amount" -> "amount"
+        // - JSON field with dot notation: "attributes.amount" -> "attributes->>'amount'" (PostgreSQL) or "json_extract(attributes, '$.amount')" (SQLite)
+        // - JSON field with explicit syntax: "attributes->>'amount'" -> keep as is (PostgreSQL) or convert to SQLite
+        // - Nested JSON: "attributes.device.fingerprint" -> "attributes->'device'->>'fingerprint'" (PostgreSQL) or "json_extract(attributes, '$.device.fingerprint')" (SQLite)
         let field_expr = if needs_numeric_cast {
             match self.config.provider {
                 SQLProvider::PostgreSQL => {
-                    if field.contains("->>") {
-                        // Already has JSONB access, just add cast
+                    if field.contains("->>") || field.contains("->") {
+                        // Already has JSONB access syntax, just add cast
                         format!("({})::numeric", field)
-                    } else if field == "amount" {
-                        // Common case: amount field in attributes JSONB
-                        "(attributes->>'amount')::numeric".to_string()
-                    } else if field.starts_with("attributes") {
-                        // Already has attributes prefix
-                        format!("({})::numeric", field)
+                    } else if field.contains('.') && !field.starts_with("${") {
+                        // Dot notation for JSON fields: "attributes.amount" -> "attributes->>'amount'"
+                        // Nested: "attributes.device.fingerprint" -> "attributes->'device'->>'fingerprint'"
+                        let parts: Vec<&str> = field.split('.').collect();
+                        if parts.len() == 2 {
+                            // Simple: attributes.amount
+                            format!("(attributes->>'{}')::numeric", parts[1])
+                        } else if parts.len() > 2 {
+                            // Nested: attributes.device.fingerprint
+                            let mut expr = parts[0].to_string();
+                            for (idx, part) in parts.iter().enumerate().skip(1) {
+                                if idx == parts.len() - 1 {
+                                    // Last part uses ->> for text extraction
+                                    expr = format!("{}->>'{}'", expr, part);
+                                } else {
+                                    // Intermediate parts use -> for JSON object access
+                                    expr = format!("{}->'{}'", expr, part);
+                                }
+                            }
+                            format!("({})::numeric", expr)
+                        } else {
+                            field.to_string()
+                        }
                     } else {
-                        // Assume it's a JSONB field access pattern
-                        format!("(attributes->>'{}')::numeric", field)
+                        // Plain field name - assume direct column (no JSON access)
+                        format!("CAST({} AS numeric)", field)
                     }
                 }
                 SQLProvider::SQLite => {
-                    // SQLite uses json_extract() function
-                    if field.contains("->>") {
+                    if field.contains("->>") || field.contains("->") {
                         // Convert PostgreSQL JSONB syntax to SQLite
                         // Example: "attributes->>'amount'" -> "json_extract(attributes, '$.amount')"
                         let parts: Vec<&str> = field.split("->>").collect();
@@ -289,21 +310,102 @@ impl SQLClient {
                                 json_field, json_key
                             )
                         } else {
+                            // Handle -> syntax for nested JSON
+                            let parts: Vec<&str> = field.split("->").collect();
+                            if parts.len() > 1 {
+                                // Build JSON path
+                                let json_field = parts[0].trim();
+                                let mut json_path = String::new();
+                                for (idx, part) in parts.iter().enumerate().skip(1) {
+                                    if idx > 1 {
+                                        json_path.push('.');
+                                    }
+                                    json_path.push_str(part.trim_matches('"').trim_matches('\'').trim());
+                                }
+                                format!(
+                                    "CAST(json_extract({}, '$.{}') AS REAL)",
+                                    json_field, json_path
+                                )
+                            } else {
+                                field.to_string()
+                            }
+                        }
+                    } else if field.contains('.') && !field.starts_with("${") {
+                        // Dot notation for JSON fields: "attributes.amount" -> "json_extract(attributes, '$.amount')"
+                        // Nested: "attributes.device.fingerprint" -> "json_extract(attributes, '$.device.fingerprint')"
+                        let parts: Vec<&str> = field.split('.').collect();
+                        if parts.len() >= 2 {
+                            let json_field = parts[0];
+                            let json_path = parts[1..].join(".");
+                            format!("CAST(json_extract({}, '$.{}') AS REAL)", json_field, json_path)
+                        } else {
                             field.to_string()
                         }
-                    } else if field == "amount" {
-                        "CAST(json_extract(attributes, '$.amount') AS REAL)".to_string()
-                    } else if field.starts_with("attributes") {
-                        // Try to extract JSON path
-                        format!("CAST(json_extract({}, '$') AS REAL)", field)
                     } else {
-                        format!("CAST(json_extract(attributes, '$.{}') AS REAL)", field)
+                        // Plain field name - assume direct column (no JSON access)
+                        format!("CAST({} AS REAL)", field)
                     }
                 }
                 _ => field.to_string(),
             }
         } else {
-            field.to_string()
+            // No numeric cast needed, but still handle field path syntax
+            match self.config.provider {
+                SQLProvider::PostgreSQL => {
+                    if field.contains("->>") || field.contains("->") {
+                        // Already has JSONB access syntax
+                        field.to_string()
+                    } else if field.contains('.') && !field.starts_with("${") {
+                        // Dot notation for JSON fields
+                        let parts: Vec<&str> = field.split('.').collect();
+                        if parts.len() == 2 {
+                            format!("attributes->>'{}'", parts[1])
+                        } else if parts.len() > 2 {
+                            let mut expr = parts[0].to_string();
+                            for (idx, part) in parts.iter().enumerate().skip(1) {
+                                if idx == parts.len() - 1 {
+                                    expr = format!("{}->>'{}'", expr, part);
+                                } else {
+                                    expr = format!("{}->'{}'", expr, part);
+                                }
+                            }
+                            expr
+                        } else {
+                            field.to_string()
+                        }
+                    } else {
+                        // Direct column
+                        field.to_string()
+                    }
+                }
+                SQLProvider::SQLite => {
+                    if field.contains("->>") || field.contains("->") {
+                        // Convert PostgreSQL syntax to SQLite
+                        let parts: Vec<&str> = field.split("->>").collect();
+                        if parts.len() == 2 {
+                            let json_field = parts[0].trim();
+                            let json_key = parts[1].trim_matches('"').trim_matches('\'');
+                            format!("json_extract({}, '$.{}')", json_field, json_key)
+                        } else {
+                            field.to_string()
+                        }
+                    } else if field.contains('.') && !field.starts_with("${") {
+                        // Dot notation: convert to json_extract
+                        let parts: Vec<&str> = field.split('.').collect();
+                        if parts.len() >= 2 {
+                            let json_field = parts[0];
+                            let json_path = parts[1..].join(".");
+                            format!("json_extract({}, '$.{}')", json_field, json_path)
+                        } else {
+                            field.to_string()
+                        }
+                    } else {
+                        // Direct column
+                        field.to_string()
+                    }
+                }
+                _ => field.to_string(),
+            }
         };
 
         let expr = match agg.agg_type {

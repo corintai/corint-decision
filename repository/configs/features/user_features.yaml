@@ -103,7 +103,7 @@ features:
     when: event_type == "transaction"
 
   - name: max_transaction_14d
-    description: "Maximum transaction amount in last 7 days"
+    description: "Maximum transaction amount in last 14 days"
     type: aggregation
     method: max
     datasource: events_datasource
@@ -198,54 +198,12 @@ features:
     entity: events
     dimension: user_id
     dimension_value: event.user_id
+    timestamp_field: event_timestamp
     when: event_type == "register"
     unit: days
+    fallback: 2  # Default to 2 days if time calculation fails, to ensure new user detection
 
-  # ============================================================================
-  # Velocity Features
-  # NOTE: These features use operators not yet implemented in the DSL
-  # They are commented out until the feature DSL supports them
-  # ============================================================================
 
-  # - name: exceeds_login_velocity
-  #   description: "Does user exceed maximum login velocity (> 10 per hour)?"
-  #   type: Expression  # Not yet implemented
-  #   method: velocity
-  #   datasource: sqlite_events
-  #   entity: events
-  #   dimension: user_id
-  #   dimension_value: event.user_id
-  #   window:
-  #     value: 1
-  #     unit: hours
-  #   threshold: 10
-  #   when:
-  #     - field: event_type
-  #       operator: eq
-  #       value: "login"
-  #   cache:
-  #     enabled: true
-  #     ttl: 60
-
-  # - name: exceeds_transaction_velocity
-  #   description: "Does user exceed transaction velocity (> 5 per hour)?"
-  #   type: Expression  # Not yet implemented
-  #   method: velocity
-  #   datasource: sqlite_events
-  #   entity: events
-  #   dimension: user_id
-  #   dimension_value: event.user_id
-  #   window:
-  #     value: 1
-  #     unit: hours
-  #   threshold: 5
-  #   when:
-  #     - field: event_type
-  #       operator: eq
-  #       value: "transaction"
-  #   cache:
-  #     enabled: true
-  #     ttl: 60
 
   # ============================================================================
   # Lookup Features (from Feature Store / Database)
@@ -271,4 +229,3 @@ features:
     datasource: lookup_datasource
     key: "user_profiles:${event.user_id}:is_verified"
     fallback: false
-

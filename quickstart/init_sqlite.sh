@@ -2,7 +2,7 @@
 # CORINT SQLite Data Initialization Script
 # ============================================================================
 # This script loads E2E test data from events.json into SQLite
-# Database file is created in scripts/data/temp/corint.db
+# Database file is created in project root directory: corint.db
 #
 # Usage:
 #   ./init_sqlite.sh
@@ -13,8 +13,11 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 DATA_FILE="${SCRIPT_DIR}/data/events.json"
-TEMP_DIR="${SCRIPT_DIR}/data/temp"
-SQLITE_DB="${TEMP_DIR}/corint.db"
+SQLITE_DB="${PROJECT_ROOT}/corint.db"
+TEMP_DIR="${PROJECT_ROOT}/temp"
+
+# Ensure temp directory exists
+mkdir -p "${TEMP_DIR}"
 EVENTS_TABLE="events"
 
 # Check for required tools
@@ -37,12 +40,6 @@ fi
 echo "=============================================="
 echo "CORINT SQLite Data Initialization"
 echo "=============================================="
-
-# Create temp directory if not exists
-if [ ! -d "${TEMP_DIR}" ]; then
-    echo "Creating temp directory: ${TEMP_DIR}"
-    mkdir -p "${TEMP_DIR}"
-fi
 
 echo "Database: ${SQLITE_DB}"
 echo "Events table: ${EVENTS_TABLE}"
@@ -103,7 +100,7 @@ convert_offset_to_modifier() {
 echo "Loading events from ${DATA_FILE}..."
 
 # Generate SQL for all events
-SQL_FILE=$(mktemp)
+SQL_FILE=$(mktemp "${TEMP_DIR}/sqlite_init_XXXXXX.sql")
 echo "BEGIN TRANSACTION;" > "${SQL_FILE}"
 
 jq -c '.events[]' "${DATA_FILE}" | while read -r event; do

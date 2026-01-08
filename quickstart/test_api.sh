@@ -21,8 +21,12 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 CONFIG_FILE="${PROJECT_ROOT}/config/server.yaml"
 CONFIG_EXAMPLE="${PROJECT_ROOT}/config/server-example.yaml"
+TEMP_DIR="${PROJECT_ROOT}/temp"
 
-# Note: Config file will be copied from scripts/config/ based on datasource selection
+# Ensure temp directory exists
+mkdir -p "${TEMP_DIR}"
+
+# Note: Config file will be copied from quickstart/config/ based on datasource selection
 # No need to initialize from example at script start
 
 # Colors for output
@@ -431,7 +435,7 @@ start_server() {
     fi
 
     # Create log file
-    local log_file="${PROJECT_ROOT}/server.log"
+    local log_file="${TEMP_DIR}/server.log"
 
     # Start server in background with log output
     print_info "Starting server (log: ${log_file})..."
@@ -617,15 +621,43 @@ EOF
 
     echo -e "${CYAN}Response:${NC}"
     if command -v jq &> /dev/null; then
+        # Show simplified response
         echo "$response" | jq '{
             request_id: .request_id,
+            pipeline_id: .pipeline_id,
             status: .status,
             decision: .decision,
             process_time_ms: .process_time_ms
         }' 2>/dev/null || echo "$response"
+        
+        # Extract the actual decision from response - get the result field from the decision object
+        actual_decision=$(echo "$response" | jq -r '.decision.result // .decision // empty' 2>/dev/null)
     else
-        echo "$response"
+        # Simple extraction without jq - try to get the result field from decision object
+        actual_decision=$(echo "$response" | sed -n 's/.*"result"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)
+        if [ -z "$actual_decision" ]; then
+            actual_decision=$(echo "$response" | sed -n 's/.*"decision"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)
+        fi
     fi
+    
+    # Compare actual vs expected decision
+    if [ -n "$expected" ] && [ -n "$actual_decision" ]; then
+        # Extract just the decision type (APPROVE, DECLINE, REVIEW) from expected string
+        expected_decision=$(echo "$expected" | cut -d' ' -f1)
+        
+        # Convert both to uppercase for case-insensitive comparison
+        upper_actual=$(echo "$actual_decision" | tr '[:lower:]' '[:upper:]')
+        upper_expected=$(echo "$expected_decision" | tr '[:lower:]' '[:upper:]')
+        
+        if [ "$upper_actual" = "$upper_expected" ]; then
+            echo -e "${GREEN}RESULT: PASS - Expected '${expected_decision}', got '${actual_decision}'${NC}"
+        else
+            echo -e "${RED}RESULT: FAIL - Expected '${expected_decision}', got '${actual_decision}'${NC}"
+        fi
+    else
+        echo -e "${YELLOW}WARNING: Could not compare decisions (expected: '$expected', actual: '$actual_decision')${NC}"
+    fi
+    
     echo ""
     echo "───────────────────────────────────────────────────────────"
     echo ""
@@ -665,14 +697,14 @@ test_high_frequency_login() {
 }
 
 test_failed_login() {
-    print_section "Scenario 4: Multiple Failed Logins"
-    echo "Description: User with 6 failed logins in 1 hour - account takeover attempt"
+    print_section "Scenario 4: Account Takeover with Fraudulent Transactions"
+    echo "Description: 6 failed logins + 11 rapid transactions ($5500) - account compromised"
     echo ""
 
-    run_test "Failed login user (transaction after failures)" \
+    run_test "Account takeover with fraud" \
         "failed_login_001" "transaction" "500" \
-        "device_fl02" "172.16.0.20" "RU" "Moscow" \
-        "REVIEW/DECLINE (account takeover)"
+        "device_fl05" "172.16.0.50" "CN" "Beijing" \
+        "DECLINE (account takeover + velocity abuse)"
 }
 
 test_high_transaction_volume() {
@@ -699,13 +731,13 @@ test_multi_device() {
 
 test_multi_ip() {
     print_section "Scenario 7: Multiple IPs (Suspicious Geography)"
-    echo "Description: User from 5 different IPs/24h, 6 cities/30d - impossible travel"
+    echo "Description: User from 5 different IPs/24h, 6 cities/30d"
     echo ""
 
     run_test "Multi-IP user" \
         "multi_ip_001" "transaction" "2500" \
         "device_mi01" "8.8.8.5" "BR" "Sao Paulo" \
-        "REVIEW/DECLINE (impossible travel)"
+        "REVIEW (suspicious geography)"
 }
 
 test_new_user() {
@@ -765,20 +797,20 @@ show_test_menu() {
     echo "   1) Normal User (Low Risk)            - Expected: APPROVE"
     echo "   2) Normal User with Moderate Activity - Expected: APPROVE"
     echo "   3) High Frequency Login              - Expected: REVIEW (velocity)"
-    echo "   4) Multiple Failed Logins            - Expected: REVIEW/DECLINE (account takeover)"
+    echo "   4) Multiple Failed Logins            - Expected: DECLINE (account takeover + velocity)"
     echo "   5) High Transaction Volume           - Expected: REVIEW (velocity abuse)"
-    echo "   6) Multiple Devices (Fraud Farm)     - Expected: DECLINE"
-    echo "   7) Multiple IPs (Suspicious Geo)     - Expected: REVIEW/DECLINE"
-    echo "   8) New User High Value Transaction   - Expected: REVIEW"
-    echo "   9) VIP Verified User                 - Expected: APPROVE (bypass)"
-    echo "  10) Highly Suspicious User            - Expected: DECLINE"
+    echo "   6) Multiple Devices (Fraud Farm)     - Expected: DECLINE (fraud farm)"
+    echo "   7) Multiple IPs (Suspicious Geo)     - Expected: REVIEW (suspicious geography)"
+    echo "   8) New User High Value Transaction   - Expected: REVIEW (new account risk)"
+    echo "   9) VIP Verified User                 - Expected: APPROVE (VIP bypass)"
+    echo "  10) Highly Suspicious User            - Expected: DECLINE (multiple patterns)"
     echo "  11) Statistical Feature Testing       - Expected: APPROVE"
     echo ""
     echo -e "  ${BOLD}Batch Operations:${NC}"
     echo "  12) Run ALL scenarios"
     echo "  13) Run only APPROVE scenarios (1, 2, 9, 11)"
-    echo "  14) Run only DECLINE scenarios (6, 10)"
-    echo "  15) Run only REVIEW scenarios (3, 4, 5, 7, 8)"
+    echo "  14) Run only DECLINE scenarios (4, 6, 10)"
+    echo "  15) Run only REVIEW scenarios (3, 5, 7, 8)"
     echo ""
     echo "   0) Exit"
     echo ""
@@ -811,6 +843,7 @@ run_approve_scenarios() {
 }
 
 run_decline_scenarios() {
+    test_failed_login
     test_multi_device
     test_suspicious_user
 
@@ -819,7 +852,6 @@ run_decline_scenarios() {
 
 run_review_scenarios() {
     test_high_frequency_login
-    test_failed_login
     test_high_transaction_volume
     test_multi_ip
     test_new_user

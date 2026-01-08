@@ -9,7 +9,7 @@ rule:
   when:
     all:
       # Multiple devices from same IP (5h window)
-      - features.devices_per_ip_5h > 10
+      - features.devices_per_ip_5h >= 10
       # And multiple users from same IP
       - features.users_per_ip_24h > 5
 

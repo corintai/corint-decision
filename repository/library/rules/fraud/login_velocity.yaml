@@ -1,0 +1,32 @@
+version: "0.1"
+
+# Reusable login velocity detection rule
+rule:
+  id: login_velocity_pattern
+  name: Login Velocity Detection
+  description: Detect abnormally high login frequency
+
+  when:
+    any:
+      # Too many logins in 1 hour
+      - features.login_count_1h >= 5
+      # Too many logins in 24 hours
+      - features.login_count_24h >= 15
+
+  score: 40
+
+  metadata:
+    # Required fields
+    version: "1.0.0"
+    author: "Fraud Prevention Team"
+    updated: "2026-01-08 10:00:00"
+
+    # Custom fields
+    category: fraud
+    severity: medium
+    tags: [credential_stuffing, bot_attacks, automated_access]
+    description_detail: "Abnormally high login frequency"
+    detection: "login_count_1h >= 5 OR login_count_24h >= 15"
+    features:
+      - login_count_1h: "Logins in 1h"
+      - login_count_24h: "Logins in 24h"

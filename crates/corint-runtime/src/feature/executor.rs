@@ -631,14 +631,104 @@ impl FeatureExecutor {
         }
     }
 
-    /// Execute state feature (stub)
+    /// Execute state feature
     async fn execute_state(
         &self,
         feature: &FeatureDefinition,
-        _datasource: &DataSourceClient,
-        _context: &HashMap<String, Value>,
+        datasource: &DataSourceClient,
+        context: &HashMap<String, Value>,
     ) -> Result<Value> {
-        Err(anyhow::anyhow!("State features not yet implemented: {}", feature.name))
+        debug!("execute_state called for feature '{}', type: {:?}, method: {:?}, state config present: {}",
+               feature.name, feature.feature_type, feature.method, feature.state.is_some());
+
+        let config = feature.state.as_ref()
+            .ok_or_else(|| anyhow::anyhow!("Missing state config for feature '{}'", feature.name))?;
+
+        let method = feature.method.as_ref()
+            .ok_or_else(|| anyhow::anyhow!("Missing method for state feature '{}'", feature.name))?;
+
+        debug!("State feature '{}': method='{}', config.entity='{}', config.dimension='{}', config.unit='{:?}'",
+               feature.name, method, config.entity, config.dimension, config.unit);
+
+        match method.as_str() {
+            "time_since" => {
+                // Build TimeSinceOperator
+                use crate::feature::operator::{TimeSinceOperator, WindowUnit, FilterConfig, FilterOp};
+
+                // Parse unit
+                let unit_str = config.unit.as_ref()
+                    .ok_or_else(|| anyhow::anyhow!("Missing unit for time_since feature '{}'", feature.name))?;
+
+                let unit = match unit_str.as_str() {
+                    "minutes" => WindowUnit::Minutes,
+                    "hours" => WindowUnit::Hours,
+                    "days" => WindowUnit::Days,
+                    _ => return Err(anyhow::anyhow!("Invalid unit '{}' for time_since feature", unit_str)),
+                };
+
+                // Build filters from when conditions
+                let filters_query = self.build_filters(&config.when, context)?;
+
+                // Convert datasource filters to operator FilterConfig format
+                let filters: Vec<FilterConfig> = filters_query.iter().map(|f| {
+                    let operator = match f.operator {
+                        crate::datasource::query::FilterOperator::Eq => FilterOp::Eq,
+                        crate::datasource::query::FilterOperator::Ne => FilterOp::Ne,
+                        crate::datasource::query::FilterOperator::Gt => FilterOp::Gt,
+                        crate::datasource::query::FilterOperator::Ge => FilterOp::Gte,
+                        crate::datasource::query::FilterOperator::Lt => FilterOp::Lt,
+                        crate::datasource::query::FilterOperator::Le => FilterOp::Lte,
+                        crate::datasource::query::FilterOperator::In => FilterOp::In,
+                        crate::datasource::query::FilterOperator::NotIn => FilterOp::NotIn,
+                        _ => FilterOp::Eq, // Default for unsupported operators
+                    };
+
+                    FilterConfig {
+                        field: f.field.clone(),
+                        operator,
+                        value: f.value.clone(),
+                    }
+                }).collect();
+
+                let timestamp_field = config.timestamp_field.clone()
+                    .unwrap_or_else(|| "event_timestamp".to_string());
+
+                let operator = TimeSinceOperator {
+                    entity: config.entity.clone(),
+                    dimension: config.dimension.clone(),
+                    dimension_value: config.dimension_value.clone(),
+                    filters,
+                    unit,
+                    timestamp_field,
+                };
+
+                match operator.execute(datasource, context).await {
+                    Ok(value) => Ok(value),
+                    Err(e) => {
+                        // If execution fails and fallback is available, use fallback
+                        if let Some(fallback) = &config.fallback {
+                            warn!("TimeSinceOperator execution failed for feature '{}': {}. Using fallback value: {:?}", 
+                                  feature.name, e, fallback);
+                            Ok(fallback.clone())
+                        } else {
+                            Err(anyhow::anyhow!("TimeSinceOperator execution failed: {}", e))
+                        }
+                    }
+                }
+            }
+            _ => {
+                warn!("State feature '{}' has method '{}' which is not yet implemented. Available methods: time_since. State config: {:?}", 
+                      feature.name, method, config);
+                // If fallback is available, use it instead of failing
+                if let Some(fallback) = &config.fallback {
+                    warn!("Using fallback value {:?} for state feature '{}' with unsupported method '{}'", 
+                          fallback, feature.name, method);
+                    Ok(fallback.clone())
+                } else {
+                    Err(anyhow::anyhow!("State method '{}' not yet implemented for feature '{}'. Supported methods: time_since", method, feature.name))
+                }
+            }
+        }
     }
 
     /// Execute sequence feature (stub)
