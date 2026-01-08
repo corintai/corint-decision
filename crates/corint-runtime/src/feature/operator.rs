@@ -714,9 +714,29 @@ impl TimeSinceOperator {
                 // Try parsing as ISO 8601 with timezone first
                 let first_time = if let Ok(dt) = timestamp_str.parse::<DateTime<Utc>>() {
                     dt
+                } else if let Ok(dt) = DateTime::parse_from_str(timestamp_str, "%Y-%m-%d %H:%M:%S%.f%:z") {
+                    // PostgreSQL timestamptz: "YYYY-MM-DD HH:MM:SS.mmm+00:00"
+                    dt.with_timezone(&Utc)
+                } else if let Ok(dt) = DateTime::parse_from_str(timestamp_str, "%Y-%m-%d %H:%M:%S%.f%z") {
+                    // PostgreSQL timestamptz: "YYYY-MM-DD HH:MM:SS.mmm+00"
+                    dt.with_timezone(&Utc)
+                } else if let Ok(dt) = DateTime::parse_from_str(timestamp_str, "%Y-%m-%d %H:%M:%S%:z") {
+                    // PostgreSQL timestamptz: "YYYY-MM-DD HH:MM:SS+00:00"
+                    dt.with_timezone(&Utc)
+                } else if let Ok(dt) = DateTime::parse_from_str(timestamp_str, "%Y-%m-%d %H:%M:%S%z") {
+                    // PostgreSQL timestamptz: "YYYY-MM-DD HH:MM:SS+00"
+                    dt.with_timezone(&Utc)
+                } else if let Ok(naive_dt) = NaiveDateTime::parse_from_str(timestamp_str, "%Y-%m-%d %H:%M:%S%.f") {
+                    // ClickHouse DateTime64 format: "YYYY-MM-DD HH:MM:SS.mmm" (no timezone)
+                    // Also matches SQLite format: "YYYY-MM-DD HH:MM:SS"
+                    // Assume UTC timezone
+                    DateTime::from_naive_utc_and_offset(naive_dt, Utc)
                 } else if let Ok(naive_dt) = NaiveDateTime::parse_from_str(timestamp_str, "%Y-%m-%d %H:%M:%S") {
                     // SQLite returns format: "YYYY-MM-DD HH:MM:SS" (no timezone)
                     // Assume UTC timezone
+                    DateTime::from_naive_utc_and_offset(naive_dt, Utc)
+                } else if let Ok(naive_dt) = NaiveDateTime::parse_from_str(timestamp_str, "%Y-%m-%dT%H:%M:%S%.f") {
+                    // ISO format with milliseconds but no timezone
                     DateTime::from_naive_utc_and_offset(naive_dt, Utc)
                 } else if let Ok(naive_dt) = NaiveDateTime::parse_from_str(timestamp_str, "%Y-%m-%dT%H:%M:%S") {
                     // ISO format without timezone

@@ -12,6 +12,8 @@ use std::collections::HashMap;
 use std::time::Instant;
 
 #[cfg(feature = "sqlx")]
+use chrono::{DateTime, FixedOffset, NaiveDateTime, Utc};
+#[cfg(feature = "sqlx")]
 use sqlx::{Column, Row};
 
 // Import the DataSourceImpl trait from client module
@@ -584,6 +586,28 @@ impl SQLClient {
                                 } else {
                                     Value::Null
                                 }
+                            } else if let Ok(v) = row.try_get::<Option<DateTime<Utc>>, _>(idx) {
+                                v.map(|dt| Value::String(dt.to_rfc3339())).unwrap_or(Value::Null)
+                            } else if let Ok(v) = row.try_get::<DateTime<Utc>, _>(idx) {
+                                Value::String(v.to_rfc3339())
+                            } else if let Ok(v) = row.try_get::<Option<DateTime<FixedOffset>>, _>(idx) {
+                                v.map(|dt| Value::String(dt.with_timezone(&Utc).to_rfc3339()))
+                                    .unwrap_or(Value::Null)
+                            } else if let Ok(v) = row.try_get::<DateTime<FixedOffset>, _>(idx) {
+                                Value::String(v.with_timezone(&Utc).to_rfc3339())
+                            } else if let Ok(v) = row.try_get::<Option<NaiveDateTime>, _>(idx) {
+                                v.map(|dt| {
+                                    Value::String(
+                                        DateTime::<Utc>::from_naive_utc_and_offset(dt, Utc)
+                                            .to_rfc3339(),
+                                    )
+                                })
+                                .unwrap_or(Value::Null)
+                            } else if let Ok(v) = row.try_get::<NaiveDateTime, _>(idx) {
+                                Value::String(
+                                    DateTime::<Utc>::from_naive_utc_and_offset(v, Utc)
+                                        .to_rfc3339(),
+                                )
                             } else if let Ok(v) = row.try_get::<Option<String>, _>(idx) {
                                 // Try String for numeric type (PostgreSQL numeric can be read as String)
                                 if let Some(s) = v {

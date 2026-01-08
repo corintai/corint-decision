@@ -97,7 +97,21 @@ impl OLAPClient {
         }
 
         // FROM clause
-        sql.push_str(&format!(" FROM {}", query.entity));
+        // Use query.entity if provided, otherwise fall back to configured events_table
+        // Format: database.table_name (e.g., risk_events.user_events)
+        let table_name = if query.entity.is_empty() {
+            // Use configured table name when entity is not specified
+            format!("{}.{}", self.config.database, self.config.events_table)
+        } else {
+            // Use query.entity if specified
+            // Prefix with database if it doesn't already contain a dot
+            if query.entity.contains('.') {
+                query.entity.clone()
+            } else {
+                format!("{}.{}", self.config.database, query.entity)
+            }
+        };
+        sql.push_str(&format!(" FROM {}", table_name));
 
         // WHERE clause
         if !query.filters.is_empty() {

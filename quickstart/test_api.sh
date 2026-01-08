@@ -337,6 +337,249 @@ copy_config_file() {
 }
 
 # ============================================================================
+# Database Availability Check
+# ============================================================================
+
+check_database_availability() {
+    print_section "Database Availability Check"
+    
+    case $DATASOURCE in
+        sqlite)
+            # SQLite is file-based, no need to check
+            print_success "SQLite is file-based, no server required"
+            return 0
+            ;;
+        postgresql)
+            check_postgresql_availability
+            ;;
+        clickhouse)
+            check_clickhouse_availability
+            ;;
+        redis)
+            check_redis_availability
+            ;;
+        *)
+            print_warn "Unknown datasource: ${DATASOURCE}, skipping availability check"
+            return 0
+            ;;
+    esac
+}
+
+check_postgresql_availability() {
+    print_info "Checking PostgreSQL availability..."
+    
+    # Check if psql command exists
+    if ! command -v psql &> /dev/null; then
+        print_error "PostgreSQL client (psql) is not installed"
+        echo ""
+        echo "Please install PostgreSQL client:"
+        echo "  macOS:   brew install postgresql"
+        echo "  Ubuntu:  sudo apt-get install postgresql-client"
+        echo "  CentOS:  sudo yum install postgresql"
+        echo ""
+        exit 1
+    fi
+    
+    # Try to read connection info from config
+    local pg_host="localhost"
+    local pg_port="5432"
+    local pg_user="user"
+    local pg_db="corint"
+    local pg_password=""
+    local conn_str=""
+    
+    if [ -f "${CONFIG_FILE}" ]; then
+        if command -v yq &> /dev/null; then
+            conn_str=$(yq -r '.datasource.events_datasource.connection_string // empty' "${CONFIG_FILE}" 2>/dev/null)
+        else
+            conn_str=$(awk '/events_datasource:/{flag=1; next} /^[a-zA-Z_][a-zA-Z0-9_]*:/ && flag {exit} flag && /connection_string:/ {gsub(/^[[:space:]]*connection_string:[[:space:]]*"?|"$/, "", $0); gsub(/^"|"$/, "", $0); print; exit}' "${CONFIG_FILE}")
+        fi
+        if [ -n "$conn_str" ]; then
+            # Parse postgresql://user:password@host:port/database
+            pg_host=$(echo "$conn_str" | sed -n 's|.*@\([^:]*\):.*|\1|p')
+            pg_port=$(echo "$conn_str" | sed -n 's|.*:\([0-9]*\)/.*|\1|p')
+            pg_user=$(echo "$conn_str" | sed -n 's|postgresql://\([^:]*\):.*|\1|p')
+            pg_password=$(echo "$conn_str" | sed -n 's|postgresql://[^:]*:\([^@]*\)@.*|\1|p')
+            pg_db=$(echo "$conn_str" | sed -n 's|.*/\([^?]*\).*|\1|p')
+            pg_host="${pg_host:-localhost}"
+            pg_port="${pg_port:-5432}"
+            pg_user="${pg_user:-user}"
+            pg_db="${pg_db:-corint}"
+        fi
+    fi
+    
+    # Try to connect
+    if [ -n "$conn_str" ]; then
+        if PGPASSWORD="${pg_password:-${PGPASSWORD:-}}" psql "$conn_str" -c "SELECT 1;" &> /dev/null; then
+            print_success "PostgreSQL is available at ${pg_host}:${pg_port}"
+            return 0
+        fi
+    fi
+
+    if PGPASSWORD="${pg_password:-${PGPASSWORD:-}}" psql -h "${pg_host}" -p "${pg_port}" -U "${pg_user}" -d "${pg_db}" -c "SELECT 1;" &> /dev/null; then
+        print_success "PostgreSQL is available at ${pg_host}:${pg_port}"
+        return 0
+    elif PGPASSWORD="${pg_password:-${PGPASSWORD:-}}" psql -h "${pg_host}" -p "${pg_port}" -U "${pg_user}" -d "postgres" -c "SELECT 1;" &> /dev/null 2>&1; then
+        print_success "PostgreSQL server is running (connection to 'postgres' database successful)"
+        return 0
+    else
+        print_error "Cannot connect to PostgreSQL at ${pg_host}:${pg_port}"
+        echo ""
+        echo "Please ensure PostgreSQL is installed and running:"
+        echo "  macOS:   brew services start postgresql"
+        echo "  Ubuntu:  sudo systemctl start postgresql"
+        echo "  CentOS:  sudo systemctl start postgresql"
+        echo ""
+        echo "Or set environment variables:"
+        echo "  export PGPASSWORD=your_password"
+        echo ""
+        exit 1
+    fi
+}
+
+check_clickhouse_availability() {
+    print_info "Checking ClickHouse availability..."
+    
+    # Try to read connection info from config first
+    local ch_host="127.0.0.1"
+    local ch_http_port="8123"
+    local ch_tcp_port="9000"
+    local ch_user="default"
+    
+    if [ -f "${CONFIG_FILE}" ]; then
+        if command -v yq &> /dev/null; then
+            local conn_str=$(yq -r '.datasource.events_datasource.connection_string // empty' "${CONFIG_FILE}" 2>/dev/null)
+            if [ -n "$conn_str" ]; then
+                # Parse http://host:port (HTTP port, but we need TCP port for clickhouse-client)
+                ch_host=$(echo "$conn_str" | sed -n 's|http://\([^:]*\):.*|\1|p')
+                ch_http_port=$(echo "$conn_str" | sed -n 's|http://[^:]*:\([0-9]*\)|\1|p')
+                ch_user=$(yq -r '.datasource.events_datasource.options.user // "default"' "${CONFIG_FILE}" 2>/dev/null)
+                ch_host="${ch_host:-127.0.0.1}"
+                ch_http_port="${ch_http_port:-8123}"
+                # clickhouse-client uses TCP port (default 9000), not HTTP port
+                ch_tcp_port="9000"
+                ch_user="${ch_user:-default}"
+            fi
+        fi
+    fi
+    
+    # First, try to connect using clickhouse-client if available
+    local client_cmd=""
+    if command -v clickhouse-client &> /dev/null; then
+        client_cmd="clickhouse-client"
+    elif command -v clickhouse &> /dev/null; then
+        # Some installations have 'clickhouse' command that can act as client
+        if clickhouse client --help &> /dev/null; then
+            client_cmd="clickhouse client"
+        fi
+    fi
+    
+    # Try to connect using HTTP interface as fallback (works even without client)
+    local http_available=false
+    if command -v curl &> /dev/null; then
+        if curl -s "http://${ch_host}:${ch_http_port}/ping" &> /dev/null; then
+            http_available=true
+        fi
+    fi
+    
+    # If we have a client command, try TCP connection
+    if [ -n "$client_cmd" ]; then
+        if $client_cmd --host "${ch_host}" --port "${ch_tcp_port}" --user "${ch_user}" -q "SELECT 1;" &> /dev/null 2>&1; then
+            print_success "ClickHouse is available at ${ch_host}:${ch_tcp_port} (TCP) / ${ch_http_port} (HTTP)"
+            return 0
+        fi
+    fi
+    
+    # If HTTP interface is available, server is running
+    if [ "$http_available" = true ]; then
+        print_success "ClickHouse server is running (HTTP interface available at ${ch_host}:${ch_http_port})"
+        if [ -z "$client_cmd" ]; then
+            print_warn "ClickHouse client is not in PATH, but server is running"
+            echo ""
+            echo "Note: You may need to install clickhouse-client for full functionality:"
+            echo "  macOS:   brew install clickhouse"
+            echo "  Ubuntu:  sudo apt-get install clickhouse-client"
+        fi
+        return 0
+    fi
+    
+    # If we get here, server is not accessible
+    print_error "Cannot connect to ClickHouse at ${ch_host}:${ch_tcp_port} (TCP) or ${ch_host}:${ch_http_port} (HTTP)"
+    echo ""
+    
+    if [ -z "$client_cmd" ]; then
+        echo "ClickHouse client is not found in PATH."
+        echo ""
+    fi
+    
+    echo "Please ensure ClickHouse server is running:"
+    echo "  - If you started it with './clickhouse', make sure it's still running"
+    echo "  - Check if ClickHouse is listening on ports ${ch_tcp_port} (TCP) and ${ch_http_port} (HTTP)"
+    echo ""
+    echo "To verify ClickHouse is running, try:"
+    echo "  curl http://${ch_host}:${ch_http_port}/ping"
+    echo "  (should return 'Ok' if server is running)"
+    echo ""
+    echo "To start ClickHouse:"
+    echo "  ./clickhouse server"
+    echo "  or"
+    echo "  clickhouse-server"
+    echo ""
+    exit 1
+}
+
+check_redis_availability() {
+    print_info "Checking Redis availability..."
+    
+    # Check if redis-cli command exists
+    if ! command -v redis-cli &> /dev/null; then
+        print_error "Redis client is not installed"
+        echo ""
+        echo "Please install Redis client:"
+        echo "  macOS:   brew install redis"
+        echo "  Ubuntu:  sudo apt-get install redis-tools"
+        echo "  CentOS:  sudo yum install redis"
+        echo ""
+        exit 1
+    fi
+    
+    # Try to read connection info from config
+    local redis_host="localhost"
+    local redis_port="6379"
+    
+    if [ -f "${CONFIG_FILE}" ]; then
+        if command -v yq &> /dev/null; then
+            local conn_str=$(yq -r '.datasource.lookup_datasource.connection_string // empty' "${CONFIG_FILE}" 2>/dev/null)
+            if [ -n "$conn_str" ]; then
+                # Parse redis://host:port/db
+                redis_host=$(echo "$conn_str" | sed -n 's|redis://\([^:]*\):.*|\1|p')
+                redis_port=$(echo "$conn_str" | sed -n 's|redis://[^:]*:\([0-9]*\)/.*|\1|p')
+                redis_host="${redis_host:-localhost}"
+                redis_port="${redis_port:-6379}"
+            fi
+        fi
+    fi
+    
+    # Try to connect
+    if redis-cli -h "${redis_host}" -p "${redis_port}" ping &> /dev/null; then
+        print_success "Redis is available at ${redis_host}:${redis_port}"
+        return 0
+    else
+        print_error "Cannot connect to Redis at ${redis_host}:${redis_port}"
+        echo ""
+        echo "Please ensure Redis is installed and running:"
+        echo "  macOS:   brew services start redis"
+        echo "  Ubuntu:  sudo systemctl start redis-server"
+        echo "  CentOS:  sudo systemctl start redis"
+        echo ""
+        echo "To start Redis manually:"
+        echo "  redis-server"
+        echo ""
+        exit 1
+    fi
+}
+
+# ============================================================================
 # Data Initialization
 # ============================================================================
 
@@ -478,7 +721,6 @@ start_server() {
     set -e
 
     print_success "Server started successfully (PID: $SERVER_PID)"
-    echo "[DEBUG] start_server function completed"
 }
 
 # ============================================================================
@@ -864,38 +1106,31 @@ run_review_scenarios() {
 # ============================================================================
 
 main() {
-    echo "[DEBUG] main() started"
     print_header "CORINT Decision Engine - Interactive Test"
 
     # Read configuration from config/server.yaml
-    echo "[DEBUG] calling read_config..."
     read_config
-    echo "[DEBUG] read_config done: HTTP=${HTTP_HOST}, gRPC=${GRPC_HOST}"
     print_info "Config: HTTP=${HTTP_HOST}, gRPC=${GRPC_HOST}"
 
     # Step 1: Select data source
-    echo "[DEBUG] calling select_datasource..."
     select_datasource
-    echo "[DEBUG] select_datasource done: DATASOURCE=${DATASOURCE}"
+
+    # Step 1.5: Check database availability (if not SQLite)
+    check_database_availability
 
     # Step 2: Initialize data (automatic)
-    echo "[DEBUG] calling initialize_data..."
     print_info "Step 2/5: Initializing test data..."
     initialize_data
-    echo "[DEBUG] initialize_data done"
 
     # Step 3: Start server (automatic)
-    echo "[DEBUG] calling start_server..."
     print_info "Step 3/5: Starting server..."
     start_server
-    echo "[DEBUG] start_server done"
 
     # Step 4: Health check
     print_info "Step 4/5: Running health check..."
     print_section "Health Check"
     local health
     health=$(http_health_check) || true
-    echo "[DEBUG] Health response: $health"
     if echo "$health" | grep -q "healthy\|ok"; then
         print_success "Server is healthy"
         echo "$health" | jq . 2>/dev/null || echo "$health"
@@ -905,19 +1140,12 @@ main() {
         exit 1
     fi
 
-    echo "[DEBUG] Health check passed, proceeding to protocol selection..."
-
     # Clear any buffered input before interactive prompts
     read -t 0.1 -n 10000 discard 2>/dev/null || true
-
-    echo "[DEBUG] About to call select_protocol..."
 
     # Step 5: Select protocol
     print_info "Step 5/5: Ready for testing"
     select_protocol
-
-    echo "[DEBUG] Protocol selected: $PROTOCOL"
-    echo "[DEBUG] Entering test menu loop..."
 
     # Check for auto-run environment variable
     if [ -n "${TEST_AUTO_RUN:-}" ]; then
@@ -978,8 +1206,6 @@ main() {
             print_info "Input closed, exiting..."
             break
         fi
-
-        echo "[DEBUG] User choice: '$choice'"
 
         case $choice in
             0)

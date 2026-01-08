@@ -95,7 +95,7 @@ datasource:
     provider: clickhouse
     connection_string: "http://127.0.0.1:8123"
     database: "risk_events"
-    events_table: "user_events"
+    events_table: "events"
     options:
       user: "default"
       compression: "lz4"

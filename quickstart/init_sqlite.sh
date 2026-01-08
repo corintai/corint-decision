@@ -100,7 +100,10 @@ convert_offset_to_modifier() {
 echo "Loading events from ${DATA_FILE}..."
 
 # Generate SQL for all events
-SQL_FILE=$(mktemp "${TEMP_DIR}/sqlite_init_XXXXXX.sql")
+SQL_FILE=$(mktemp "${TEMP_DIR}/sqlite_init_XXXXXX") || {
+    echo "Error: Failed to create temp SQL file in ${TEMP_DIR}"
+    exit 1
+}
 echo "BEGIN TRANSACTION;" > "${SQL_FILE}"
 
 jq -c '.events[]' "${DATA_FILE}" | while read -r event; do
