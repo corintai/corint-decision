@@ -542,6 +542,7 @@ cargo test
 # Initialize SQLite database
 # If you want to use PostgreSQL/ClickHouse/Redis as the datasource backend,
 # please install them first, then run the corresponding script init_xxx.sh
+# If PostgreSQL, please set your passowrd in init_postgresql.yaml
 ./quickstart/init_sqlite.sh
 
 # Setup the server config (customize as needed)
@@ -791,9 +792,7 @@ RUST_LOG=trace cargo run -p corint-server     # Trace (all details)
 - ✅ LLM integration framework
 - ✅ Type system and schema validation
 - ✅ Basic error handling (advanced retry strategies planned)
-- ✅ Basic observability (metrics and tracing)
 - ✅ Testing framework
-- ✅ Performance optimization (caching, parallelization)
 - ✅ Comprehensive documentation
 - ✅ HTTP/REST API server (`corint-server`)
 - ✅ gRPC API server
@@ -802,43 +801,23 @@ RUST_LOG=trace cargo run -p corint-server     # Trace (all details)
 - ✅ Decision result persistence
 - ✅ Custom lists (blocklists/allowlists/watchlists)
 - ✅ Multiple list backends (PostgreSQL, Redis, File, Memory, SQLite)
-- ✅ Hot reload (repository reload endpoint)
 - ✅ Modular architecture with inheritance
 - ✅ Flexible storage backend (File System, PostgreSQL)
 - ✅ FFI bindings for C/C++ integration
 
-### In Progress 🚧
-
-- 🚧 Feature Store integration (Feast compatibility)
-- 🚧 Visual rule editor
-- 🚧 Advanced statistical features (z_score, percentile, outlier detection)
-
 ### Planned 📋
 
+- 📋 Request event and decision result persistence
 - 📋 Python/TypeScript/Go client SDKs
 - 📋 Web UI for rule management
 - 📋 A/B testing framework
 - 📋 Machine learning model integration
+- 📋 Automatic rule generation
 - 📋 Prebuilt rule libraries for common scenarios
-- 📋 Compliance templates (PCI-DSS, GDPR)
-- 📋 Multi-region deployment support
-- 📋 GraphQL API
-- 📋 Kubernetes operator
-- 📋 Advanced caching strategies (distributed cache)
-- 📋 Streaming support (Kafka, Kinesis)
+- 📋 Standalone Risk Agent
 
 ---
  
-
-## 🔒 Security
-
-- **Input Validation**: Schema-based validation for all inputs
-- **Sandboxed Execution**: (Planned) Safe execution of custom expressions
-- **Audit Logging**: Complete audit trail of all decisions
-- **Rate Limiting**: Built-in rate limiting for external API calls
-- **Secret Management**: Secure handling of API keys and credentials
-
----
 
 ## 🤝 Contributing
 

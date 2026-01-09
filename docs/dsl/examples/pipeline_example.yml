@@ -2,9 +2,9 @@
 # CORINT Decision Engine - Complete DSL Example
 # =============================================================================
 #
-# This comprehensive example demonstrates all DSL concepts in one file:
+# This comprehensive example demonstrates core pipeline DSL concepts in one file:
 #   - Pipeline structure and orchestration
-#   - API integration (GET, POST, PUT, PATCH, DELETE)
+#   - API integration (GET, POST, PUT, PATCH)
 #   - Condition syntax (all/any/not with arbitrary nesting)
 #   - Step types (router, api, service, ruleset, pipeline)
 #   - Conditional routing and decision logic
@@ -117,7 +117,11 @@ version: "0.1"
 #       mapping:
 #         risk_score: analysis.riskScore
 #         recommendation: analysis.recommendation
+#         confidence: analysis.confidence
+#         reason_codes: analysis.reasonCodes
 # =============================================================================
+# Additional API configs (maxmind_api, ipinfo_api, ip2location_api, credit_bureau_api,
+# identity_verification_api, device_fingerprint_api) follow the same pattern.
 
 import:
   rulesets:
@@ -134,8 +138,8 @@ pipeline:
   id: comprehensive_fraud_pipeline
   name: Comprehensive Fraud Detection Pipeline
   description: |
-    Complete example demonstrating all DSL features:
-    - API integration (GET, POST, PUT, PATCH, DELETE)
+    Complete pipeline example demonstrating core DSL features:
+    - API integration (GET, POST, PUT, PATCH)
     - Complex conditional routing with nested all/any/not
     - Multiple step types (router, api, service, ruleset, pipeline)
     - Context variable usage across different namespaces
@@ -187,19 +191,47 @@ pipeline:
         default: enhanced_ip_check
 
     # ========================================================================
-    # Step 2: Enhanced IP Check (fallback API with any mode)
-    # Demonstrates: Fallback API pattern
+    # Step 2a: Enhanced IP Check (Primary Provider)
+    # Demonstrates: Fallback API pattern without parallel fan-out
     # ========================================================================
     - step:
         id: enhanced_ip_check
-        name: Enhanced IP Check (Multiple Providers)
+        name: Enhanced IP Check (Primary Provider)
         type: api
-        any:
-          - maxmind_api         # Primary provider
-          - ipinfo_api          # Fallback 1
-          - ip2location_api     # Fallback 2
-        # Uses first successful API response
-        # Result stored in: api.{provider_name}.{endpoint}
+        api: maxmind_api
+        endpoint: ip_lookup
+        routes:
+          # Fallback if primary provider errors
+          - next: ipinfo_ip_check
+            when: api.maxmind_api.ip_lookup.error == true
+        default: amount_router
+
+    # ========================================================================
+    # Step 2b: Enhanced IP Check (Fallback 1)
+    # Demonstrates: Sequential fallback to secondary provider
+    # ========================================================================
+    - step:
+        id: ipinfo_ip_check
+        name: Enhanced IP Check (Fallback 1)
+        type: api
+        api: ipinfo_api
+        endpoint: ip_lookup
+        routes:
+          # Fallback if first fallback errors
+          - next: ip2location_ip_check
+            when: api.ipinfo_api.ip_lookup.error == true
+        default: amount_router
+
+    # ========================================================================
+    # Step 2c: Enhanced IP Check (Fallback 2)
+    # Demonstrates: Final fallback before resuming flow
+    # ========================================================================
+    - step:
+        id: ip2location_ip_check
+        name: Enhanced IP Check (Fallback 2)
+        type: api
+        api: ip2location_api
+        endpoint: ip_lookup
         next: amount_router
 
     # ========================================================================
@@ -221,8 +253,8 @@ pipeline:
                 - event.amount > 10000
                 - event.user.vip_status == true
                 - not:
-                    - event.user.tags contains "fraud"
-                    - event.user.tags contains "suspicious"
+                    - "fraud" in event.user.tags
+                    - "suspicious" in event.user.tags
 
           # ----------------------------------------------------------------
           # Route 2: High Value with Enhanced Verification
@@ -308,7 +340,7 @@ pipeline:
                 - api.fraud_detector.analyze_transaction.risk_score >= 90
                 - api.fraud_detector.analyze_transaction.recommendation == "DECLINE"
           # High risk but not critical
-          - next: enhanced_analysis
+          - next: credit_bureau_check
             when:
               any:
                 - api.fraud_detector.analyze_transaction.risk_score >= 70
@@ -316,42 +348,62 @@ pipeline:
         default: standard_scoring
 
     # ========================================================================
-    # Step 8: Enhanced Analysis (Parallel API Calls)
-    # Demonstrates: all mode - parallel execution
+    # Step 8a: Credit Bureau Check (API)
+    # Demonstrates: Multi-source analysis with explicit steps
     # ========================================================================
     - step:
-        id: enhanced_analysis
-        name: Enhanced Multi-Source Analysis
+        id: credit_bureau_check
+        name: Credit Bureau Check
         type: api
-        all:
-          - credit_bureau_api
-          - identity_verification_api
-          - device_fingerprint_api
-        timeout: 5000              # Total timeout for all APIs
-        on_error: partial          # Continue with partial results
-        min_success: 2             # Minimum 2 APIs must succeed
+        api: credit_bureau_api
+        endpoint: credit_score
+        next: identity_verification
+
+    # ========================================================================
+    # Step 8b: Identity Verification (API)
+    # ========================================================================
+    - step:
+        id: identity_verification
+        name: Identity Verification
+        type: api
+        api: identity_verification_api
+        endpoint: verify_identity
+        next: device_fingerprint
+
+    # ========================================================================
+    # Step 8c: Device Fingerprint Check (API)
+    # ========================================================================
+    - step:
+        id: device_fingerprint
+        name: Device Fingerprint Check
+        type: api
+        api: device_fingerprint_api
+        endpoint: fingerprint
         # Results stored in: api.{api_name}.{endpoint}
         next: aggregate_scores
 
     # ========================================================================
     # Step 9: Aggregate Scores (Service Call)
-    # Demonstrates: Internal service call, complex conditions
+    # Demonstrates: Internal service call, weighted aggregation
     # ========================================================================
     - step:
         id: aggregate_scores
         name: Aggregate Risk Scores
         type: service
         service: risk_aggregator
+        endpoint: aggregate_scores
         params:
           api_scores:
             - api.fraud_detector.analyze_transaction.risk_score
-            - api.credit_bureau_api.score
-            - api.identity_verification_api.trust_score
+            - api.credit_bureau_api.credit_score.score
+            - api.identity_verification_api.verify_identity.trust_score
+            - api.device_fingerprint_api.fingerprint.risk_score
           weights:
             fraud_detector: 0.4
-            credit_bureau: 0.3
-            identity_verification: 0.3
-        # Result stored in: service.risk_aggregator
+            credit_bureau: 0.2
+            identity_verification: 0.2
+            device_fingerprint: 0.2
+        # Result stored in: service.risk_aggregator.aggregate_scores
         next: standard_scoring
 
     # ========================================================================
@@ -386,17 +438,22 @@ pipeline:
         type: router
         routes:
           # ----------------------------------------------------------------
-          # Auto Approve: Low risk + good history + clean checks
+          # Auto Approve: VIP fast-track or clean approvals
           # ----------------------------------------------------------------
           - next: auto_approve
             when:
-              all:
-                - sys.total_score >= 80
-                - not:
+              any:
+                - results.vip_fast_rules.signal == "approve"
+                - all:
                     - any:
-                        - features.fraud_history_count > 0
-                        - api.fraud_detector.check_ip.is_vpn == true
-                        - api.fraud_detector.check_ip.is_proxy == true
+                        - results.payment_standard.signal == "approve"
+                        - results.payment_high_value.signal == "approve"
+                    - api.fraud_detector.analyze_transaction.risk_score < 50
+                    - not:
+                        - any:
+                            - features.fraud_history_count > 0
+                            - api.fraud_detector.check_ip.is_vpn == true
+                            - api.fraud_detector.check_ip.is_proxy == true
 
           # ----------------------------------------------------------------
           # Auto Reject: Multiple high-risk indicators
@@ -404,27 +461,24 @@ pipeline:
           - next: auto_reject
             when:
               any:
-                # Very low score
-                - sys.total_score <= 20
-                # Multiple risk factors present
-                - all:
-                    - sys.total_score <= 50
-                    - any:
-                        - features.failed_login_count_24h >= 5
-                        - features.device_count_7d >= 8
-                        - api.fraud_detector.analyze_transaction.risk_score >= 85
+                - results.vip_fast_rules.signal == "decline"
+                - results.payment_standard.signal == "decline"
+                - results.payment_high_value.signal == "decline"
+                - results.cn_region_rules.signal == "decline"
+                - api.fraud_detector.analyze_transaction.risk_score >= 90
+                - api.fraud_detector.check_ip.risk_score >= 80
 
           # ----------------------------------------------------------------
-          # High Priority Review: Medium-high risk
+          # High Priority Review: Elevated risk or mixed signals
           # ----------------------------------------------------------------
           - next: priority_review
             when:
-              all:
-                - sys.total_score > 20
-                - sys.total_score < 50
-                - any:
-                    - event.amount >= 3000
-                    - features.fraud_history_count > 0
+              any:
+                - results.vip_fast_rules.signal == "review"
+                - results.payment_standard.signal == "review"
+                - results.payment_high_value.signal == "review"
+                - results.cn_region_rules.signal == "review"
+                - api.fraud_detector.analyze_transaction.risk_score >= 50
 
         # Default: Standard manual review
         default: manual_review
@@ -438,10 +492,11 @@ pipeline:
         name: Auto Approve Transaction
         type: service
         service: approval_service
+        endpoint: approve_transaction
         params:
           decision: approve
           reason: "Low risk score"
-          confidence: sys.total_score
+          confidence: api.fraud_detector.analyze_transaction.confidence
         next: update_success_metrics
 
     # ========================================================================
@@ -453,6 +508,7 @@ pipeline:
         name: Auto Reject Transaction
         type: service
         service: rejection_service
+        endpoint: reject_transaction
         params:
           decision: reject
           reason: "High risk score"
@@ -468,12 +524,13 @@ pipeline:
         name: Send to Priority Review Queue
         type: service
         service: case_management
+        endpoint: enqueue_case
         params:
           queue: "high_priority_review"
           priority: "high"
           assignee: "risk_team_lead"
           context:
-            total_score: sys.total_score
+            risk_score: api.fraud_detector.analyze_transaction.risk_score
             amount: event.amount
             risk_factors: api.fraud_detector.analyze_transaction.reason_codes
         next: end
@@ -487,11 +544,13 @@ pipeline:
         name: Send to Manual Review
         type: service
         service: case_management
+        endpoint: enqueue_case
         params:
           queue: "standard_review"
-          priority: sys.total_score < 40 ? "high" : "normal"
+          priority: "normal"
           context:
-            total_score: sys.total_score
+            risk_score: api.fraud_detector.analyze_transaction.risk_score
+            is_high_amount: event.amount >= 3000
             amount: event.amount
         next: end
 
@@ -534,26 +593,28 @@ pipeline:
         name: Update Success Metrics
         type: service
         service: metrics_service
+        endpoint: increment_metric
         params:
           metric_name: "approved_transactions"
           increment: 1
           tags:
-            amount_range: event.amount >= 1000 ? "high" : "standard"
+            is_high_amount: event.amount >= 1000
             channel: event.channel
         next: notify_user
 
     # ========================================================================
     # Step 20: Notify User (Service)
-    # Demonstrates: Notification service with templating
+    # Demonstrates: Notification service
     # ========================================================================
     - step:
         id: notify_user
         name: Send User Notification
         type: service
         service: notification_service
+        endpoint: send_notification
         params:
           channel: email
-          template: results.decision == "approve" ? "payment_approved" : "payment_rejected"
+          template: "payment_status_update"
           user_id: event.user_id
           variables:
             amount: event.amount
@@ -568,41 +629,47 @@ pipeline:
     # Rule 1: Critical risk - immediate decline
     - when:
         any:
-          - results.fraud_detection.signal == "decline"
-          - results.high_value_verification.signal == "decline"
+          - results.vip_fast_rules.signal == "decline"
+          - results.payment_high_value.signal == "decline"
+          - results.payment_standard.signal == "decline"
+          - results.cn_region_rules.signal == "decline"
+          - api.fraud_detector.analyze_transaction.risk_score >= 90
       result: decline
-      reason: "High risk detected: ${results.fraud_detection.reason}"
+      reason: "High risk detected"
       actions: ["BLOCK_USER", "NOTIFY_SECURITY_TEAM"]
 
     # Rule 2: Manual review required
     - when:
         any:
-          - results.fraud_detection.signal == "review"
-          - results.high_value_verification.signal == "review"
-          - sys.total_score >= 50
+          - results.vip_fast_rules.signal == "review"
+          - results.payment_high_value.signal == "review"
+          - results.payment_standard.signal == "review"
+          - results.cn_region_rules.signal == "review"
+          - api.fraud_detector.analyze_transaction.risk_score >= 50
       result: review
-      reason: "Manual review required: ${results.fraud_detection.reason}"
+      reason: "Manual review required"
       actions: ["QUEUE_MANUAL_REVIEW", "REQUEST_ADDITIONAL_VERIFICATION"]
 
     # Rule 3: VIP fast track approval
     - when:
-        all:
+        any:
           - results.vip_fast_rules.signal == "approve"
-          - sys.total_score < 20
       result: approve
-      reason: "VIP user with low risk"
+      reason: "VIP user approved"
       actions: ["FAST_TRACK_APPROVAL", "SEND_NOTIFICATION"]
 
     # Rule 4: Standard approval
     - when:
         all:
-          - sys.total_score < 30
+          - any:
+              - results.payment_high_value.signal == "approve"
+              - results.payment_standard.signal == "approve"
           - not:
               - any:
                   - api.fraud_detector.check_ip.is_vpn == true
                   - api.fraud_detector.check_ip.is_proxy == true
       result: approve
-      reason: "Low risk transaction"
+      reason: "Risk checks passed"
       actions: ["APPROVE_TRANSACTION", "UPDATE_METRICS"]
 
     # Default: Hold for further investigation
@@ -626,10 +693,10 @@ pipeline:
       - production_ready
     description: |
       Comprehensive fraud detection pipeline demonstrating:
-      - All API methods (GET, POST, PUT, PATCH, DELETE)
+      - API methods (GET, POST, PUT, PATCH)
       - Complex conditional routing with nested all/any/not
       - All step types (router, api, service, ruleset, pipeline)
-      - Parallel API execution with fallback handling
+      - Sequential API fallback and multi-step enrichment
       - Complete decision flow from IP check to user notification
       - Final decision logic with multiple rules and actions
 
@@ -659,7 +726,7 @@ pipeline:
 #      all:
 #        - event.amount > 5000
 #        - not:
-#            - features.risk_tags contains "proxy"
+#            - "proxy" in features.risk_tags
 #
 # 5. Complex Nested Conditions:
 #    when:
@@ -669,7 +736,7 @@ pipeline:
 #            - event.amount >= 3000
 #            - event.geo.country in ["NG", "PK", "UA", "RU"]
 #            - not:
-#                - event.user.tags contains "vip"
+#                - "vip" in event.user.tags
 #        # Category B: Device/IP anomaly
 #        - all:
 #            - any:

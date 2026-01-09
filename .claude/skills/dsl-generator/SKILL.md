@@ -58,7 +58,7 @@ Based on what the user wants to create, read the corresponding detailed document
 
 After understanding the documentation:
 1. Generate syntactically correct YAML
-2. Include all required metadata fields
+2. Include recommended metadata fields when appropriate
 3. Add descriptive comments
 4. Use proper indentation (2 spaces)
 5. Follow naming conventions (snake_case for IDs)
@@ -69,25 +69,27 @@ Before saving, validate your generated YAML against the comprehensive reference:
 
 **Reference File**: [`docs/dsl/examples/pipeline_example.yml`](docs/dsl/examples/pipeline_example.yml)
 
-This comprehensive example demonstrates all DSL concepts in a complete, production-ready pipeline:
+This comprehensive example demonstrates core pipeline DSL concepts in a complete, production-ready pipeline:
 
 **What it covers:**
-- ✅ All HTTP methods (GET, POST, PUT, PATCH, DELETE)
+- ✅ HTTP methods (GET, POST, PUT, PATCH)
 - ✅ Complex nested conditions (all/any/not with arbitrary nesting)
 - ✅ All step types (router, api, service, ruleset, pipeline)
 - ✅ Conditional routing and decision logic
 - ✅ Context variables and data flow
-- ✅ API integration patterns (parallel, fallback)
+- ✅ API integration patterns (sequential fallback, multi-step)
 - ✅ Complete metadata and documentation
 
-**Use it to verify:**
+**Use it to verify (primarily for pipelines):**
 - Syntax correctness (indentation, YAML structure)
 - Required fields (id, name, type, version, etc.)
 - Naming conventions (snake_case IDs, Title Case names)
 - Condition syntax (proper all/any/not nesting)
 - Context variable usage (event.*, features.*, api.*, etc.)
-- Metadata completeness (version, author, description, tags)
+- Metadata completeness (version, author, updated, tags)
 - Best practices (comments, documentation, structure)
+
+For non-pipeline DSL, validate against the specific component documentation and schemas.
 
 **Validation checklist:**
 1. ✅ YAML syntax is valid (proper indentation, quotes)
@@ -95,7 +97,7 @@ This comprehensive example demonstrates all DSL concepts in a complete, producti
 3. ✅ IDs use snake_case naming
 4. ✅ Conditions use correct all/any/not structure
 5. ✅ Context variables follow namespace conventions
-6. ✅ Metadata includes version, description, timestamps
+6. ✅ Metadata includes version, author, updated timestamps
 7. ✅ File structure matches examples in pipeline_example.yml
 
 ### Step 5: Confirm Save Location and Save File
@@ -146,7 +148,7 @@ repository/                                 # Default base directory
 
 ### Comprehensive Example
 
-- **[pipeline_example.yml](docs/dsl/examples/pipeline_example.yml)** ⭐⭐ - Complete reference example covering all DSL concepts (783 lines, production-ready)
+- **[pipeline_example.yml](docs/dsl/examples/pipeline_example.yml)** ⭐⭐ - Complete pipeline reference example covering core pipeline DSL concepts (production-ready)
 
 ### Advanced Features
 
@@ -283,7 +285,7 @@ Assistant Actions:
 
 ### Metadata
 - Always include: version, author, updated
-- Use ISO date format: "2026-01-09 10:00:00"
+- Use `YYYY-MM-DD HH:mm:ss` format: "2026-01-09 10:00:00"
 - Add tags for searchability
 - Include category and severity
 

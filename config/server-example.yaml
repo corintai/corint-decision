@@ -112,14 +112,9 @@ datasource:
     database: "corint_risk"
     events_table: "events"
     options:
-      user: "postgres"
-      password: "password"
+      # Only max_connections is actually used by the code
+      # Other connection parameters (user, password, sslmode, etc.) should be in connection_string
       max_connections: "10"
-      min_connections: "2"
-      connection_timeout: "5"
-      idle_timeout: "300"
-      statement_timeout: "30"
-      application_name: "corint_decision_engine"
 
   # ClickHouse datasource for high-performance OLAP queries
   clickhouse_events:
@@ -128,40 +123,32 @@ datasource:
     connection_string: "http://127.0.0.1:8123"
     database: "risk_events"
     events_table: "user_events"
-    options:
-      user: "default"
-      compression: "lz4"
-      max_execution_time: "30"
+    # Note: options are not currently used by ClickHouse client
+    # Connection parameters should be in connection_string if needed
+    options: {}
 
   # Redis datasource for feature lookups and caching
   redis_features:
     type: feature_store
     provider: redis
     connection_string: "redis://localhost:6379/0"
-    options:
-      namespace: "user_features"
-      default_ttl: "3600"
-      max_connections: "50"
-      min_idle: "5"
-      connection_timeout: "30"
+    # Note: namespace and default_ttl are top-level fields, not in options
+    namespace: "user_features"
+    default_ttl: 3600
+    # Note: options are not currently used by Redis client
+    options: {}
 
   # Supabase PostgreSQL datasource (with Session Pooler)
   supabase_events:
     type: sql
     provider: postgresql
-    connection_string: "postgresql://postgres.hfsbvqfkwbslcuvokmis:XPRozJ3DZox5KUnh@aws-1-ap-southeast-1.pooler.supabase.com:5432/postgres?sslmode=require"
+    connection_string: "postgresql://postgres.hfsbvqfkwbslcuvokmis:password@aws-1-ap-southeast-1.pooler.supabase.com:5432/postgres?sslmode=require"
     database: "postgres"
     events_table: "events"
     options:
-      user: "postgres.hfsbvqfkwbslcuvokmis"
-      password: "XPRozJ3DZox5KUnh"
+      # Only max_connections is actually used by the code
+      # Other connection parameters (user, password, sslmode, etc.) should be in connection_string
       max_connections: "10"
-      min_connections: "2"
-      connection_timeout: "5"
-      idle_timeout: "300"
-      statement_timeout: "30"
-      application_name: "corint_decision_engine"
-      sslmode: "require"
 
 # LLM Provider Configuration
 # Supports OpenAI (including O1/O3 thinking models), Anthropic (Claude with extended thinking),
@@ -246,4 +233,4 @@ llm:
 # external api configuration
 api:
   ipinfo:
-    token: "a63066c9a63590"
+    token: "${token}"

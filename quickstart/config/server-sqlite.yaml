@@ -106,12 +106,11 @@ datasource:
     type: feature_store
     provider: redis
     connection_string: "redis://localhost:6379/0"
-    options:
-      namespace: "user_features"
-      default_ttl: "3600"
-      max_connections: "50"
-      min_idle: "5"
-      connection_timeout: "30"
+    # Note: namespace and default_ttl are top-level fields, not in options
+    namespace: "user_features"
+    default_ttl: 3600
+    # Note: options are not currently used by Redis client
+    options: {}
 
  
 
