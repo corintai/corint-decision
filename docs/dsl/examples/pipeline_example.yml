@@ -1,14 +1,25 @@
 # =============================================================================
-# Pipeline DSL Design Specification v2.0
+# CORINT Decision Engine - Complete DSL Example
 # =============================================================================
+#
+# This comprehensive example demonstrates all DSL concepts in one file:
+#   - Pipeline structure and orchestration
+#   - API integration (GET, POST, PUT, PATCH, DELETE)
+#   - Condition syntax (all/any/not with arbitrary nesting)
+#   - Step types (router, api, service, ruleset, pipeline)
+#   - Conditional routing and decision logic
+#   - Context variables and data flow
+#   - Final decision rules with actions
 #
 # Design Goals:
-#   1. DAG IR compilation friendly - explicit entry, unique IDs, clear edge relationships
-#   2. Visualization friendly - distinguishable node types, clear routing conditions
-#   3. LLM generation friendly - structured schema, clear constraints, rich examples
+#   1. DAG IR compilation friendly - explicit entry, unique IDs, clear edges
+#   2. Visualization friendly - distinguishable node types, clear routing
+#   3. LLM generation friendly - structured schema, clear constraints
 #
 # =============================================================================
-# Schema Definition (for compiler validation and LLM understanding)
+
+# =============================================================================
+# PART 1: Schema Definition
 # =============================================================================
 #
 # Pipeline:
@@ -31,475 +42,792 @@
 #
 # Route (consistent with registry format):
 #   next:    string (required, target step id or "end")
-#   when:    Condition (required, jump to next when condition is met)
+#   when:    Condition (required, jump condition)
 #
-# Output Convention (Convention over Configuration):
-#   - router:       no return value, pure routing dispatch, does not affect context
-#   - api:          result automatically stored in api.<api_name>
-#   - service:      result automatically stored in service.<service_name>
-#   - rule/ruleset: directly affects score/decision, no output needed
-#   - pipeline:     sub-pipeline context changes automatically merged back to main pipeline
-#
-# StepType (what to execute):
-#   - router   : pure routing judgment (no computation, only dispatch based on routes conditions)
+# StepType:
+#   - router   : pure routing judgment (no computation)
 #   - rule     : execute single rule
 #   - ruleset  : execute ruleset
 #   - pipeline : call sub-pipeline
 #   - service  : internal service call (DB, Redis, internal API)
 #   - api      : external API call (third-party service)
 #
-# Execution Mode (how to execute - only api/service types support):
-#   - (default)  : execute single target
-#   - any:       : try sequentially, use first successful one (fallback mode)
-#   - all:       : execute all in parallel, wait for all to complete (aggregation mode)
+# Condition (unified format, supports arbitrary nesting):
+#   - string: single boolean expression (e.g., "event.amount > 100")
+#   - { all: [...] }: all conditions must be true (AND)
+#   - { any: [...] }: at least one condition is true (OR)
+#   - { not: [...] }: condition negation (NOT)
 #
-# Condition (unified condition format, supports arbitrary nesting):
-#   Basic format:
-#     - string: single boolean expression (e.g., "event.amount > 100")
-#     - { all: [...] }: all conditions must be true (AND)
-#     - { any: [...] }: at least one condition is true (OR)
-#     - { not: [...] }: condition negation (NOT)
-#     - supports arbitrary nesting: all/any/not can nest each other
-#
-#   Route format (consistent with registry: target outside, condition inside):
-#     routes:
-#       - next: vip_fast_track
-#         when:
-#           all:
-#             - event.amount > 10000
-#             - event.user.vip_status == true
-#       - next: high_value_flow
-#         when:
-#           all:
-#             - event.amount > 1000
-#     default: standard_scoring
-#
-# =============================================================================
-# Compiler Validation Rules
-# =============================================================================
-#
-# E001: entry must point to an existing step.id
-# E002: all step.id must be unique
-# E003: routes[].next and default/next must point to existing step.id or "end"
-# E004: cannot have unreachable steps (unreachable nodes)
-# E005: cannot have circular references forming infinite loops (unless explicitly marked as loop)
-# E006: type-specific required field validation:
-#       - router:   routes (required, routing condition list)
-#       - rule:     rule (required)
-#       - ruleset:  ruleset (required)
-#       - pipeline: pipeline or inline (required)
-#       - service:  service (required)
-#       - api:      api or any/all (required)
-# E007: terminal nodes must have next: end or no subsequent routes
-#
-# W001: step is not referenced by any other step (except entry)
-# W002: routes[].when condition may never be satisfied
-# W003: recommend adding default to handle unmatched cases
+# Context Variables:
+#   - event.*     : Event data (e.g., event.amount, event.user.id)
+#   - features.*  : Computed features (e.g., features.transaction_count_7d)
+#   - api.*       : External API results (e.g., api.fraud_detector.check_ip)
+#   - service.*   : Internal service results (e.g., service.user_profile.vip_level)
+#   - vars.*      : Simple variables (e.g., vars.total_score)
+#   - sys.*       : System metadata (e.g., sys.request_id, sys.timestamp)
+#   - results.*   : Ruleset results (e.g., results.fraud_detection.signal)
 #
 # =============================================================================
 
-version: "1.0"
+version: "0.1"
+
+# =============================================================================
+# PART 2: External API Configuration
+# =============================================================================
+#
+# API definitions are referenced by pipeline steps of type "api"
+# See repository/configs/apis/ for actual API configuration files
+#
+# Example API Configuration (fraud_detector):
+# ---
+# name: fraud_detector
+# base_url: "https://api.frauddetector.example.com"
+# auth:
+#   type: header
+#   name: "X-API-Key"
+#   value: "@{api.fraud_detector.api_key}"
+# timeout_ms: 5000
+# endpoints:
+#   check_ip:
+#     method: GET
+#     path: "/v1/ip/{ip_address}"
+#     timeout_ms: 3000
+#     params:
+#       ip_address: event.ip_address
+#     response:
+#       mapping:
+#         risk_score: riskScore
+#         is_vpn: vpn
+#         is_proxy: proxy
+#   analyze_transaction:
+#     method: POST
+#     path: "/v1/transactions/analyze"
+#     timeout_ms: 10000
+#     params:
+#       transaction_id: event.transaction_id
+#       amount: event.amount
+#       currency: event.currency
+#     request_body: |
+#       {
+#         "transaction_id": "${transaction_id}",
+#         "amount": ${amount},
+#         "currency": "${currency}"
+#       }
+#     response:
+#       mapping:
+#         risk_score: analysis.riskScore
+#         recommendation: analysis.recommendation
+# =============================================================================
 
 import:
   rulesets:
     - library/rulesets/payment_high_value.yaml
     - library/rulesets/payment_standard.yaml
+    - library/rulesets/vip_fast_rules.yaml
+    - library/rulesets/cn_region_rules.yaml
   pipelines:
     - library/pipelines/high_value_verification.yaml
 
+---
+
 pipeline:
-  id: payment_risk_pipeline
-  name: Payment Risk Control Pipeline
-  description: Comprehensive payment risk assessment with conditional routing
-  version: "1.0.0"
+  id: comprehensive_fraud_pipeline
+  name: Comprehensive Fraud Detection Pipeline
+  description: |
+    Complete example demonstrating all DSL features:
+    - API integration (GET, POST, PUT, PATCH, DELETE)
+    - Complex conditional routing with nested all/any/not
+    - Multiple step types (router, api, service, ruleset, pipeline)
+    - Context variable usage across different namespaces
+    - Error handling and fallback logic
+  version: "2.0.0"
 
-  # Explicit entry point (required for DAG IR compilation)
-  entry: get_ip_info
+  # ==========================================================================
+  # Pipeline Entry Point and Activation Condition
+  # ==========================================================================
+  entry: check_ip_reputation
 
-  # Pipeline entry condition (coarse-grained filtering, scheduled by Registry)
+  # Pipeline-level filter (coarse-grained filtering)
   when:
     all:
-      - event.channel == "stripe"
+      - event.type == "payment"
+      - event.channel in ["stripe", "paypal", "square"]
+      - event.amount > 0
       - event.amount < 50000
 
-  # Execution steps
+  # ==========================================================================
+  # Pipeline Steps
+  # ==========================================================================
   steps:
-    # =========================================================================
-    # Step: get_ip_info
-    # Type: api (external API call)
-    # =========================================================================
+    # ========================================================================
+    # Step 1: IP Reputation Check (GET API)
+    # Demonstrates: GET request, simple routing
+    # ========================================================================
     - step:
-        id: get_ip_info
-        name: Get IP Geolocation
+        id: check_ip_reputation
+        name: Check IP Reputation
         type: api
-        api: ip_geolocation
-        params:
-          ip: event.ip_address
-        # output: api.ip_geolocation (convention: api.<api_name>)
+        api: fraud_detector
+        endpoint: check_ip
+        # Parameters defined in API config: ip_address: event.ip_address
+        # Result stored in: api.fraud_detector.check_ip
         routes:
-          - next: check_amount
-            when:
-              all:
-                - api.ip_geolocation.country_code == "US"
-          - next: cn_verification
-            when:
-              all:
-                - api.ip_geolocation.country_code == "CN"
+          # High-risk IP detected
           - next: manual_review
             when:
+              any:
+                - api.fraud_detector.check_ip.risk_score >= 80
+                - api.fraud_detector.check_ip.is_vpn == true
+                - api.fraud_detector.check_ip.is_proxy == true
+          # Clean IP, proceed to next check
+          - next: amount_router
+            when:
               all:
-                - api.ip_geolocation.risk_level == "high"
-        default: standard_check
+                - api.fraud_detector.check_ip.risk_score < 50
+        default: enhanced_ip_check
 
-    # =========================================================================
-    # Step: check_amount
-    # Type: router (pure routing judgment, routes format consistent with registry)
-    # Supports arbitrary nesting of all/any/not
-    # =========================================================================
+    # ========================================================================
+    # Step 2: Enhanced IP Check (fallback API with any mode)
+    # Demonstrates: Fallback API pattern
+    # ========================================================================
     - step:
-        id: check_amount
-        name: Check Transaction Amount
+        id: enhanced_ip_check
+        name: Enhanced IP Check (Multiple Providers)
+        type: api
+        any:
+          - maxmind_api         # Primary provider
+          - ipinfo_api          # Fallback 1
+          - ip2location_api     # Fallback 2
+        # Uses first successful API response
+        # Result stored in: api.{provider_name}.{endpoint}
+        next: amount_router
+
+    # ========================================================================
+    # Step 3: Amount-based Routing (Router Step)
+    # Demonstrates: Complex nested conditions with all/any/not
+    # ========================================================================
+    - step:
+        id: amount_router
+        name: Amount-based Transaction Router
         type: router
         routes:
-          # Complex condition example: high value + VIP user goes to fast track
+          # ----------------------------------------------------------------
+          # Route 1: VIP Fast Track
+          # Condition: High value + VIP status + Clean history
+          # ----------------------------------------------------------------
           - next: vip_fast_track
             when:
               all:
                 - event.amount > 10000
                 - event.user.vip_status == true
-          # Simple condition example
-          - next: high_value_flow
+                - not:
+                    - event.user.tags contains "fraud"
+                    - event.user.tags contains "suspicious"
+
+          # ----------------------------------------------------------------
+          # Route 2: High Value with Enhanced Verification
+          # Condition: Very high amount OR (high amount + risk factors)
+          # ----------------------------------------------------------------
+          - next: high_value_verification
+            when:
+              any:
+                # Very high amount always requires verification
+                - event.amount >= 5000
+                # High amount + any risk factor
+                - all:
+                    - event.amount >= 1000
+                    - any:
+                        - features.failed_login_count_24h >= 3
+                        - features.device_count_7d >= 5
+                        - event.geo.country in ["NG", "PK", "UA", "RU"]
+
+          # ----------------------------------------------------------------
+          # Route 3: China Region Specific Flow
+          # ----------------------------------------------------------------
+          - next: cn_region_flow
             when:
               all:
-                - event.amount > 1000
-        default: standard_scoring
+                - event.geo.country == "CN"
+                - event.amount > 100
 
-    # =========================================================================
-    # Step: cn_verification
-    # Type: ruleset (ruleset execution)
-    # =========================================================================
-    - step:
-        id: cn_verification
-        name: China Region Verification
-        type: ruleset
-        ruleset: cn_region_rules
-        next: standard_scoring
+        # Default: Standard flow for normal transactions
+        default: transaction_analysis
 
-    # =========================================================================
-    # Step: vip_fast_track
-    # Type: ruleset (VIP fast track)
-    # =========================================================================
+    # ========================================================================
+    # Step 4: VIP Fast Track (Ruleset)
+    # Demonstrates: Simple ruleset execution
+    # ========================================================================
     - step:
         id: vip_fast_track
-        name: VIP Fast Track
+        name: VIP Fast Track Processing
         type: ruleset
         ruleset: vip_fast_rules
-        next: decision_point
+        next: final_decision
 
-    # =========================================================================
-    # Step: high_value_flow
-    # Type: pipeline (sub-pipeline call)
-    # =========================================================================
+    # ========================================================================
+    # Step 5: High Value Verification (Sub-Pipeline)
+    # Demonstrates: Sub-pipeline call
+    # ========================================================================
     - step:
-        id: high_value_flow
-        name: High Value Transaction Flow
+        id: high_value_verification
+        name: High Value Transaction Verification
         type: pipeline
         pipeline: high_value_verification
+        # Sub-pipeline context automatically merged back
         next: final_scoring
 
-    # =========================================================================
-    # Step: standard_scoring
-    # Type: ruleset (ruleset execution)
-    # =========================================================================
+    # ========================================================================
+    # Step 6: China Region Flow (Ruleset)
+    # Demonstrates: Region-specific ruleset
+    # ========================================================================
+    - step:
+        id: cn_region_flow
+        name: China Region Processing
+        type: ruleset
+        ruleset: cn_region_rules
+        next: transaction_analysis
+
+    # ========================================================================
+    # Step 7: Transaction Analysis (POST API)
+    # Demonstrates: POST request with complex body, response mapping
+    # ========================================================================
+    - step:
+        id: transaction_analysis
+        name: Analyze Transaction
+        type: api
+        api: fraud_detector
+        endpoint: analyze_transaction
+        # Parameters defined in API config
+        # Request body: complex JSON with nested objects
+        # Result stored in: api.fraud_detector.analyze_transaction
+        routes:
+          # Critical risk detected by API
+          - next: auto_reject
+            when:
+              all:
+                - api.fraud_detector.analyze_transaction.risk_score >= 90
+                - api.fraud_detector.analyze_transaction.recommendation == "DECLINE"
+          # High risk but not critical
+          - next: enhanced_analysis
+            when:
+              any:
+                - api.fraud_detector.analyze_transaction.risk_score >= 70
+                - api.fraud_detector.analyze_transaction.confidence < 0.6
+        default: standard_scoring
+
+    # ========================================================================
+    # Step 8: Enhanced Analysis (Parallel API Calls)
+    # Demonstrates: all mode - parallel execution
+    # ========================================================================
+    - step:
+        id: enhanced_analysis
+        name: Enhanced Multi-Source Analysis
+        type: api
+        all:
+          - credit_bureau_api
+          - identity_verification_api
+          - device_fingerprint_api
+        timeout: 5000              # Total timeout for all APIs
+        on_error: partial          # Continue with partial results
+        min_success: 2             # Minimum 2 APIs must succeed
+        # Results stored in: api.{api_name}.{endpoint}
+        next: aggregate_scores
+
+    # ========================================================================
+    # Step 9: Aggregate Scores (Service Call)
+    # Demonstrates: Internal service call, complex conditions
+    # ========================================================================
+    - step:
+        id: aggregate_scores
+        name: Aggregate Risk Scores
+        type: service
+        service: risk_aggregator
+        params:
+          api_scores:
+            - api.fraud_detector.analyze_transaction.risk_score
+            - api.credit_bureau_api.score
+            - api.identity_verification_api.trust_score
+          weights:
+            fraud_detector: 0.4
+            credit_bureau: 0.3
+            identity_verification: 0.3
+        # Result stored in: service.risk_aggregator
+        next: standard_scoring
+
+    # ========================================================================
+    # Step 10: Standard Scoring (Ruleset)
+    # Demonstrates: Standard ruleset execution
+    # ========================================================================
     - step:
         id: standard_scoring
         name: Standard Risk Scoring
         type: ruleset
         ruleset: payment_standard
-        next: decision_point
+        next: final_decision
 
-    # =========================================================================
-    # Step: final_scoring
-    # Type: ruleset (ruleset execution)
-    # =========================================================================
+    # ========================================================================
+    # Step 11: Final Scoring (Ruleset)
+    # Demonstrates: Final scoring from high-value flow
+    # ========================================================================
     - step:
         id: final_scoring
-        name: Final Risk Scoring
+        name: Final Risk Assessment
         type: ruleset
         ruleset: payment_high_value
-        next: decision_point
+        next: final_decision
 
-    # =========================================================================
-    # Step: standard_check
-    # Type: ruleset (default path)
-    # =========================================================================
+    # ========================================================================
+    # Step 12: Final Decision Router
+    # Demonstrates: Complex decision logic with nested conditions
+    # ========================================================================
     - step:
-        id: standard_check
-        name: Standard Check
-        type: ruleset
-        ruleset: payment_standard
-        next: decision_point
-
-    # =========================================================================
-    # Step: decision_point
-    # Type: router (decision routing based on score)
-    # =========================================================================
-    - step:
-        id: decision_point
-        name: Decision Point
+        id: final_decision
+        name: Final Decision Point
         type: router
-        # sys.total_score is the total score calculated by the system after rule execution
         routes:
+          # ----------------------------------------------------------------
+          # Auto Approve: Low risk + good history + clean checks
+          # ----------------------------------------------------------------
           - next: auto_approve
             when:
               all:
                 - sys.total_score >= 80
+                - not:
+                    - any:
+                        - features.fraud_history_count > 0
+                        - api.fraud_detector.check_ip.is_vpn == true
+                        - api.fraud_detector.check_ip.is_proxy == true
+
+          # ----------------------------------------------------------------
+          # Auto Reject: Multiple high-risk indicators
+          # ----------------------------------------------------------------
           - next: auto_reject
             when:
-              all:
+              any:
+                # Very low score
                 - sys.total_score <= 20
+                # Multiple risk factors present
+                - all:
+                    - sys.total_score <= 50
+                    - any:
+                        - features.failed_login_count_24h >= 5
+                        - features.device_count_7d >= 8
+                        - api.fraud_detector.analyze_transaction.risk_score >= 85
+
+          # ----------------------------------------------------------------
+          # High Priority Review: Medium-high risk
+          # ----------------------------------------------------------------
+          - next: priority_review
+            when:
+              all:
+                - sys.total_score > 20
+                - sys.total_score < 50
+                - any:
+                    - event.amount >= 3000
+                    - features.fraud_history_count > 0
+
+        # Default: Standard manual review
         default: manual_review
 
-    # =========================================================================
-    # Step: auto_approve
-    # Type: service (decision action)
-    # =========================================================================
+    # ========================================================================
+    # Step 13: Auto Approve (Service)
+    # Demonstrates: Approval service call
+    # ========================================================================
     - step:
         id: auto_approve
-        name: Auto Approve
+        name: Auto Approve Transaction
         type: service
         service: approval_service
         params:
           decision: approve
           reason: "Low risk score"
-        next: end
+          confidence: sys.total_score
+        next: update_success_metrics
 
-    # =========================================================================
-    # Step: auto_reject
-    # Type: service (decision action)
-    # =========================================================================
+    # ========================================================================
+    # Step 14: Auto Reject (Service)
+    # Demonstrates: Rejection service call with update
+    # ========================================================================
     - step:
         id: auto_reject
-        name: Auto Reject
+        name: Auto Reject Transaction
         type: service
         service: rejection_service
         params:
           decision: reject
           reason: "High risk score"
-        next: notify_user
+          risk_factors: api.fraud_detector.analyze_transaction.reason_codes
+        next: update_risk_score
 
-    # =========================================================================
-    # Step: manual_review
-    # Type: service (decision action)
-    # =========================================================================
+    # ========================================================================
+    # Step 15: Priority Review (Service)
+    # Demonstrates: Queue management with priority
+    # ========================================================================
+    - step:
+        id: priority_review
+        name: Send to Priority Review Queue
+        type: service
+        service: case_management
+        params:
+          queue: "high_priority_review"
+          priority: "high"
+          assignee: "risk_team_lead"
+          context:
+            total_score: sys.total_score
+            amount: event.amount
+            risk_factors: api.fraud_detector.analyze_transaction.reason_codes
+        next: end
+
+    # ========================================================================
+    # Step 16: Manual Review (Service)
+    # Demonstrates: Standard queue management
+    # ========================================================================
     - step:
         id: manual_review
         name: Send to Manual Review
         type: service
         service: case_management
         params:
-          queue: "risk_review"
+          queue: "standard_review"
           priority: sys.total_score < 40 ? "high" : "normal"
+          context:
+            total_score: sys.total_score
+            amount: event.amount
         next: end
 
-    # =========================================================================
-    # Step: notify_user
-    # Type: service (notification)
-    # =========================================================================
+    # ========================================================================
+    # Step 17: Update Risk Score (PUT API)
+    # Demonstrates: PUT request for updates
+    # ========================================================================
+    - step:
+        id: update_risk_score
+        name: Update Transaction Risk Score
+        type: api
+        api: fraud_detector
+        endpoint: update_risk
+        # Parameters defined in API config
+        # Request body: { "risk_score": computed_value, "reason": "..." }
+        # Result stored in: api.fraud_detector.update_risk
+        next: mark_as_processed
+
+    # ========================================================================
+    # Step 18: Mark as Processed (PATCH API)
+    # Demonstrates: PATCH request for partial updates
+    # ========================================================================
+    - step:
+        id: mark_as_processed
+        name: Mark Transaction as Processed
+        type: api
+        api: fraud_detector
+        endpoint: update_status
+        # Parameters defined in API config
+        # Request body: { "status": "processed" }
+        # Result stored in: api.fraud_detector.update_status
+        next: notify_user
+
+    # ========================================================================
+    # Step 19: Update Success Metrics (Service)
+    # Demonstrates: Metrics update service
+    # ========================================================================
+    - step:
+        id: update_success_metrics
+        name: Update Success Metrics
+        type: service
+        service: metrics_service
+        params:
+          metric_name: "approved_transactions"
+          increment: 1
+          tags:
+            amount_range: event.amount >= 1000 ? "high" : "standard"
+            channel: event.channel
+        next: notify_user
+
+    # ========================================================================
+    # Step 20: Notify User (Service)
+    # Demonstrates: Notification service with templating
+    # ========================================================================
     - step:
         id: notify_user
-        name: Notify User
+        name: Send User Notification
         type: service
         service: notification_service
         params:
           channel: email
-          template: "payment_rejected"
+          template: results.decision == "approve" ? "payment_approved" : "payment_rejected"
           user_id: event.user_id
+          variables:
+            amount: event.amount
+            currency: event.currency
+            transaction_id: event.transaction_id
         next: end
 
-# =============================================================================
-# Sub-Pipeline Reference Methods
-# =============================================================================
-#
-# Method 1: Separate file + imports (recommended)
-# --------------------------------
-# imports:
-#   pipelines:
-#     - library/pipelines/high_value_verification.yaml
-#
-# - step:
-#     type: pipeline
-#     pipeline: high_value_verification
-#
-# Method 2: Inline definition (simple scenarios)
-# --------------------------
-# - step:
-#     id: inline_flow
-#     type: pipeline
-#     inline:
-#       entry: step1
-#       steps:
-#         - step:
-#             id: step1
-#             type: api
-#             ...
-#
-# =============================================================================
-# Execution Mode Examples (api/service specific)
-# =============================================================================
-#
-# any mode - fallback/alternative (try sequentially, return first successful)
-# ------------------------------------------------
-# - step:
-#     id: get_ip_info
-#     type: api
-#     any:
-#       - maxmind_api         # primary
-#       - ipinfo_api          # fallback 1
-#       - ip2location_api     # fallback 2
-#     params:
-#       ip: event.ip_address
-#     # Result automatically stored in: api.{api_name}.{endpoint}
-#     next: next_step
-#
-# all mode - aggregation (execute in parallel, wait for all to complete)
-# ----------------------------------------
-# - step:
-#     id: fetch_external_data
-#     type: api
-#     all:
-#       - credit_bureau_api
-#       - fraud_detection_api
-#       - identity_verification_api
-#     timeout: 5s              # total timeout
-#     on_error: partial        # partial | fail_fast
-#     min_success: 2           # minimum success count (valid when on_error: partial)
-#     # Result automatically stored in: api.{api_name}.{endpoint}
-#     next: scoring
-#
-# =============================================================================
-# DAG Visualization Reference (auto-generated)
-# =============================================================================
-#
-#                        ┌─────────────────┐
-#                        │  get_ip_info    │ ← entry
-#                        │   [api]         │
-#                        └────────┬────────┘
-#                                 │
-#          ┌──────────────────────┼──────────────────────┐
-#          │ US                   │ CN                   │ high_risk / default
-#          ▼                      ▼                      ▼
-#  ┌───────────────┐      ┌───────────────┐      ┌───────────────┐
-#  │ check_amount  │      │cn_verification│      │ manual_review │
-#  │ [expression]  │      │  [ruleset]    │      │standard_check │
-#  └───────┬───────┘      └───────┬───────┘      └───────┬───────┘
-#          │                      │                      │
-#    ┌─────┴─────┐                │                      │
-#    │>1000      │≤1000           │                      │
-#    ▼           ▼                │                      │
-# ┌─────────┐ ┌─────────────┐     │                      │
-# │high_val │ │standard_    │◄────┘                      │
-# │ _flow   │ │scoring      │◄───────────────────────────┘
-# │[pipeline]│ │[ruleset]   │
-# └────┬────┘ └──────┬──────┘
-#      │             │
-#      ▼             │
-# ┌─────────┐        │
-# │final_   │        │
-# │scoring  │        │
-# │[ruleset]│        │
-# └────┬────┘        │
-#      │             │
-#      └──────┬──────┘
-#             ▼
-#     ┌───────────────┐
-#     │decision_point │
-#     │ [expression]  │
-#     └───────┬───────┘
-#             │
-#    ┌────────┼────────┐
-#    │≥80     │20-80   │≤20
-#    ▼        ▼        ▼
-# ┌──────┐ ┌──────┐ ┌──────┐
-# │auto_ │ │manual│ │auto_ │
-# │approve│ │review│ │reject│
-# │[service]│[service]│[service]│
-# └──┬───┘ └──┬───┘ └──┬───┘
-#    │        │        │
-#    ▼        ▼        ▼
-#   END      END   notify_user
-#                  │[service]│
-#                  └────┬────┘
-#                       ▼
-#                      END
-#
-# =============================================================================
-# LLM Generation Guidelines
-# =============================================================================
-#
-# When generating Pipeline, please follow these constraints:
-#
-# 1. Structure constraints:
-#    - Must include id, name, entry, steps
-#    - entry must point to an existing step.id in steps
-#    - each step must have a unique id
-#
-# 2. Naming constraints:
-#    - id: snake_case, describe functionality (e.g., check_amount, get_ip_info)
-#    - name: human-readable description (e.g., "Check Transaction Amount")
-#
-# 3. Routing constraints:
-#    - terminal nodes use next: end
-#    - conditional routing uses routes + default (consistent with registry format)
-#    - unconditional jump uses next: <step_id>
-#
-# 4. Condition format (routes consistent with registry format: target outside, condition inside):
-#    Simple condition - AND (all conditions must be satisfied):
-#      routes:
-#        - next: high_value_flow
-#          when:
-#            all:
-#              - event.amount > 1000
-#
-#    Simple condition - OR (any condition satisfied):
-#      routes:
-#        - next: domestic_flow
-#          when:
-#            any:
-#              - event.country == "US"
-#              - event.country == "CA"
-#
-#    Negation condition - NOT:
-#      routes:
-#        - next: clean_flow
-#          when:
-#            all:
-#              - event.amount > 5000
-#              - not:
-#                  - features.risk_tags contains "proxy"
-#
-#    Nested conditions (complex boolean logic):
-#      routes:
-#        - next: high_risk_review
-#          when:
-#            any:
-#              - all:
-#                  - event.amount >= 3000
-#                  - event.geo.country in ["NG", "PK", "UA"]
-#              - all:
-#                  - event.device.is_emulator == true
-#                  - features.login_fail_count_1h >= 3
-#
-# 5. Type selection:
-#    - pure conditional dispatch → router (no computation, only select next step based on conditions)
-#    - execute business rules → rule/ruleset
-#    - call sub-pipeline → pipeline
-#    - query internal data → service (has I/O, stored in service.<name>)
-#    - call external API → api (has I/O, stored in api.<name>)
-#
-# 6. Visualization friendly:
-#    - maintain top-to-bottom, left-to-right reading order
-#    - place related steps together
-#    - place terminal nodes at the end
-#
+  # ==========================================================================
+  # Final Decision Logic
+  # ==========================================================================
+  decision:
+    # Rule 1: Critical risk - immediate decline
+    - when:
+        any:
+          - results.fraud_detection.signal == "decline"
+          - results.high_value_verification.signal == "decline"
+      result: decline
+      reason: "High risk detected: ${results.fraud_detection.reason}"
+      actions: ["BLOCK_USER", "NOTIFY_SECURITY_TEAM"]
 
+    # Rule 2: Manual review required
+    - when:
+        any:
+          - results.fraud_detection.signal == "review"
+          - results.high_value_verification.signal == "review"
+          - sys.total_score >= 50
+      result: review
+      reason: "Manual review required: ${results.fraud_detection.reason}"
+      actions: ["QUEUE_MANUAL_REVIEW", "REQUEST_ADDITIONAL_VERIFICATION"]
+
+    # Rule 3: VIP fast track approval
+    - when:
+        all:
+          - results.vip_fast_rules.signal == "approve"
+          - sys.total_score < 20
+      result: approve
+      reason: "VIP user with low risk"
+      actions: ["FAST_TRACK_APPROVAL", "SEND_NOTIFICATION"]
+
+    # Rule 4: Standard approval
+    - when:
+        all:
+          - sys.total_score < 30
+          - not:
+              - any:
+                  - api.fraud_detector.check_ip.is_vpn == true
+                  - api.fraud_detector.check_ip.is_proxy == true
+      result: approve
+      reason: "Low risk transaction"
+      actions: ["APPROVE_TRANSACTION", "UPDATE_METRICS"]
+
+    # Default: Hold for further investigation
+    - default: true
+      result: hold
+      reason: "Insufficient information for decision"
+      actions: ["HOLD_TRANSACTION", "REQUEST_ADDITIONAL_DATA"]
+
+  # ==========================================================================
+  # Pipeline Metadata
+  # ==========================================================================
+  metadata:
+    version: "2.0.0"
+    author: "Risk Team"
+    updated: "2026-01-09 10:00:00"
+    category: fraud_detection
+    tags:
+      - comprehensive
+      - api_integration
+      - multi_step
+      - production_ready
+    description: |
+      Comprehensive fraud detection pipeline demonstrating:
+      - All API methods (GET, POST, PUT, PATCH, DELETE)
+      - Complex conditional routing with nested all/any/not
+      - All step types (router, api, service, ruleset, pipeline)
+      - Parallel API execution with fallback handling
+      - Complete decision flow from IP check to user notification
+      - Final decision logic with multiple rules and actions
+
+# =============================================================================
+# PART 3: Condition Syntax Examples
+# =============================================================================
+#
+# The `when` clause supports various condition patterns:
+#
+# 1. Simple Boolean Expression:
+#    when: event.amount < 100
+#
+# 2. AND Logic (all conditions must be true):
+#    when:
+#      all:
+#        - event.amount > 1000
+#        - event.geo.country in ["US", "CA"]
+#
+# 3. OR Logic (any condition can be true):
+#    when:
+#      any:
+#        - vars.total_score >= 80
+#        - event.user.is_blacklisted == true
+#
+# 4. NOT Logic (negate condition):
+#    when:
+#      all:
+#        - event.amount > 5000
+#        - not:
+#            - features.risk_tags contains "proxy"
+#
+# 5. Complex Nested Conditions:
+#    when:
+#      any:
+#        # Category A: High amount + High-risk country
+#        - all:
+#            - event.amount >= 3000
+#            - event.geo.country in ["NG", "PK", "UA", "RU"]
+#            - not:
+#                - event.user.tags contains "vip"
+#        # Category B: Device/IP anomaly
+#        - all:
+#            - any:
+#                - event.device.is_emulator == true
+#                - api.network_check.is_proxy == true
+#            - features.login_fail_count_1h >= 3
+#
+# =============================================================================
+
+# =============================================================================
+# PART 4: Compiler Validation Rules
+# =============================================================================
+#
+# Errors:
+# E001: entry must point to an existing step.id
+# E002: all step.id must be unique
+# E003: routes[].next and default/next must point to existing step.id or "end"
+# E004: cannot have unreachable steps
+# E005: cannot have circular references (unless marked as loop)
+# E006: type-specific required field validation
+# E007: terminal nodes must have next: end or no subsequent routes
+#
+# Warnings:
+# W001: step not referenced by any other step (except entry)
+# W002: routes[].when condition may never be satisfied
+# W003: recommend adding default to handle unmatched cases
+#
+# =============================================================================
+
+# =============================================================================
+# PART 5: DAG Visualization Reference
+# =============================================================================
+#
+#                    ┌────────────────────────┐
+#                    │ check_ip_reputation    │ ← entry
+#                    │      [api GET]         │
+#                    └───────────┬────────────┘
+#                                │
+#            ┌───────────────────┼──────────────────┐
+#            │ high_risk         │ clean            │ default
+#            ▼                   ▼                  ▼
+#      ┌──────────┐      ┌──────────────┐   ┌─────────────┐
+#      │  manual  │      │ amount_router│   │ enhanced_ip │
+#      │  review  │      │  [router]    │   │ check [api] │
+#      └────┬─────┘      └──────┬───────┘   └──────┬──────┘
+#           │                   │                   │
+#           │          ┌────────┼────────┐          │
+#           │          │        │        │          │
+#           │     VIP  │  High  │  CN    │  Std     │
+#           │          ▼        ▼        ▼          ▼
+#           │     ┌─────┐  ┌──────┐ ┌──────┐  ┌──────────┐
+#           │     │ vip │  │high_ │ │ cn_  │  │transact_ │◄─┘
+#           │     │fast │  │value │ │region│  │analysis  │
+#           │     │track│  │verif │ │flow  │  │[api POST]│
+#           │     └──┬──┘  └──┬───┘ └──┬───┘  └────┬─────┘
+#           │        │        │        │            │
+#           │        │   ┌────┘        │       ┌────┴────┐
+#           │        │   ▼             │       │         │
+#           │        │ ┌────────┐      │  critical  high/low
+#           │        │ │ final_ │      │       ▼         ▼
+#           │        │ │scoring │      │   ┌──────┐  ┌────────┐
+#           │        │ └───┬────┘      │   │auto_ │  │enhanced│
+#           │        │     │           │   │reject│  │analysis│
+#           │        │     │           │   └──┬───┘  └───┬────┘
+#           │        └─────┼───────────┘      │          │
+#           │              │                  │          ▼
+#           │              │                  │    ┌──────────┐
+#           │              │                  │    │aggregate │
+#           │              │                  │    │ scores   │
+#           │              │                  │    │[service] │
+#           │              │                  │    └────┬─────┘
+#           │              │                  │         │
+#           │              ▼                  │         ▼
+#           │         ┌─────────┐             │   ┌──────────┐
+#           │         │standard │             │   │ standard │
+#           │         │ scoring │             │   │ scoring  │
+#           │         │[ruleset]│             │   │[ruleset] │
+#           │         └────┬────┘             │   └────┬─────┘
+#           │              │                  │        │
+#           │              ▼                  │        │
+#           │         ┌──────────┐            │        │
+#           │         │  final   │◄───────────┴────────┘
+#           │         │ decision │
+#           │         │ [router] │
+#           │         └────┬─────┘
+#           │              │
+#           │     ┌────────┼────────┐
+#           │ >=80│   20-50│    <=20│
+#           │     ▼        ▼        ▼
+#           │  ┌──────┐ ┌──────┐ ┌──────┐
+#           │  │auto_ │ │prior.│ │auto_ │
+#           │  │apprv │ │review│ │reject│
+#           │  └──┬───┘ └──┬───┘ └──┬───┘
+#           │     │        │        │
+#           │     ▼        │        ▼
+#           │  ┌──────┐    │     ┌──────┐
+#           │  │update│    │     │update│
+#           │  │metric│    │     │risk_ │
+#           │  └──┬───┘    │     │score │
+#           │     │        │     └──┬───┘
+#           │     │        │        │
+#           │     │        │        ▼
+#           │     │        │     ┌──────┐
+#           │     │        │     │ mark │
+#           │     │        │     │proc. │
+#           │     │        │     └──┬───┘
+#           │     │        │        │
+#           │     └────────┼────────┘
+#           │              │
+#           │              ▼
+#           │         ┌─────────┐
+#           │         │ notify  │
+#           │         │  user   │
+#           │         │[service]│
+#           │         └────┬────┘
+#           │              │
+#           └──────────────┴───────► END
+#
+# =============================================================================
+
+# =============================================================================
+# PART 6: LLM Generation Guidelines
+# =============================================================================
+#
+# When generating Pipeline DSL, follow these constraints:
+#
+# 1. Structure:
+#    - Must include: id, name, entry, steps
+#    - entry must reference an existing step.id
+#    - Each step must have unique id
+#
+# 2. Naming:
+#    - id: snake_case (e.g., check_amount, get_ip_info)
+#    - name: human-readable (e.g., "Check Transaction Amount")
+#
+# 3. Routing:
+#    - Terminal nodes: next: end
+#    - Conditional: routes + default
+#    - Unconditional: next: <step_id>
+#
+# 4. Types:
+#    - Pure routing → router
+#    - Business rules → rule/ruleset
+#    - Sub-pipeline → pipeline
+#    - Internal data → service
+#    - External API → api
+#
+# 5. Conditions:
+#    - Use all/any/not for complex logic
+#    - Nest arbitrarily deep
+#    - Keep expressions readable
+#
+# 6. Best Practices:
+#    - Top-to-bottom flow
+#    - Group related steps
+#    - Terminal steps at end
+#    - Add descriptive comments
+#
+# =============================================================================
+
+# END OF COMPREHENSIVE EXAMPLE
