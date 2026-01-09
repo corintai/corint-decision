@@ -1,5 +1,5 @@
 #!/bin/bash
-# CORINT Decision Engine Interactive Test Script
+# CORINT Decision Engine Interactive Demo Script
 # ============================================================================
 # This script provides an interactive way to test the CORINT Decision Engine
 # with various scenarios and data sources.
@@ -12,7 +12,7 @@
 #   - Multiple test scenarios covering various fraud patterns
 #
 # Usage:
-#   ./test_api.sh
+#   ./decide_demo.sh
 # ============================================================================
 
 set -e

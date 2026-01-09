@@ -498,9 +498,35 @@ rule:
 
 ## 🚀 Quick Start
 
-### Running the Server
+CORINT Decision Engine provides two ways to get started quickly:
 
-The CORINT Decision Engine includes an HTTP/REST API server for production use:
+### Option 1: Interactive Demo (Recommended)
+
+The quickest way to see CORINT in action is using the interactive demo script:
+
+```bash
+# Clone repository
+git clone https://github.com/corint/corint-decision.git
+cd corint-decision
+
+# Install dependencies (Rust)
+cargo build
+
+# Run the interactive demo
+./quickstart/decide_demo.sh
+```
+
+**The demo script will:**
+- ✅ Let you choose data source (SQLite/PostgreSQL/ClickHouse/Redis)
+- ✅ Automatically initialize test data
+- ✅ Build and start the server
+- ✅ Provide an interactive menu with 11 pre-configured fraud detection scenarios
+- ✅ Show request/response for each test case
+- ✅ Validate expected vs actual decisions
+
+### Option 2: Manual Setup
+
+For manual control and custom configuration:
 
 ```bash
 # Clone repository
@@ -513,13 +539,13 @@ cargo build
 # Run tests
 cargo test
 
-# initialize SQLite database
-# if you want to use postgresql/clickhouse/redit as the datasource backend
-# please install them at first, then run the corresponding script init_xxx.sh
+# Initialize SQLite database
+# If you want to use PostgreSQL/ClickHouse/Redis as the datasource backend,
+# please install them first, then run the corresponding script init_xxx.sh
 ./quickstart/init_sqlite.sh
 
-# setup the server config, you can customize it
-cp config/server-example.yaml config/server.yaml
+# Setup the server config (customize as needed)
+cp quickstart/config/server-sqlite.yaml config/server.yaml
 
 # Start the server
 cargo run -p corint-server

@@ -342,28 +342,6 @@ Cache in event_data
 - `corint-runtime` - Runtime execution engine
 - `corint-core` - Core type definitions
 
-## File Structure
-
-```
-crates/corint-server/
-├── Cargo.toml              # Dependencies configuration
-├── src/
-│   ├── main.rs             # Server entry point
-│   ├── config.rs           # Configuration management
-│   ├── error.rs            # Error handling
-│   └── api/
-│       ├── mod.rs          # API module exports
-│       └── rest.rs         # REST API implementation
-├── examples/
-│   ├── test_api.sh         # Bash test script
-│   └── test_api.py         # Python test script
-├── README.md               # This file
-├── QUICKSTART.md           # Quick start guide
-└── DEPLOYMENT.md           # Deployment guide
-
-config/
-└── server.yaml             # Server configuration example
-```
 
 ## Performance
 
