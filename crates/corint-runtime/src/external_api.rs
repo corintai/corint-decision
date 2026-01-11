@@ -5,8 +5,10 @@
 use crate::context::ExecutionContext;
 use crate::error::{Result, RuntimeError};
 use corint_core::Value;
+use reqwest::header::HeaderMap;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::time::Duration;
 
 /// External API configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -123,15 +125,57 @@ pub struct ExternalApiClient {
     client: reqwest::Client,
 }
 
+fn build_http_client(
+    timeout: Duration,
+    headers: Option<HeaderMap>,
+) -> std::result::Result<reqwest::Client, RuntimeError> {
+    let build = |disable_proxy: bool| {
+        let mut builder = reqwest::Client::builder().timeout(timeout);
+        if disable_proxy {
+            builder = builder.no_proxy();
+        }
+        if let Some(ref headers) = headers {
+            builder = builder.default_headers(headers.clone());
+        }
+        builder.build()
+    };
+
+    match std::panic::catch_unwind(|| build(false)) {
+        Ok(Ok(client)) => Ok(client),
+        Ok(Err(err)) => {
+            tracing::warn!(
+                "Failed to build HTTP client with system proxy: {}. Retrying without system proxy.",
+                err
+            );
+            build(true).map_err(|fallback_err| {
+                RuntimeError::ExternalCallFailed(format!(
+                    "Failed to create HTTP client: {}",
+                    fallback_err
+                ))
+            })
+        }
+        Err(_) => {
+            tracing::warn!(
+                "HTTP client build panicked when using system proxy. Retrying without system proxy."
+            );
+            build(true).map_err(|fallback_err| {
+                RuntimeError::ExternalCallFailed(format!(
+                    "Failed to create HTTP client: {}",
+                    fallback_err
+                ))
+            })
+        }
+    }
+}
+
 impl ExternalApiClient {
     /// Create a new external API client with default timeout
     pub fn new() -> Self {
         Self {
             configs: HashMap::new(),
-            client: reqwest::Client::builder()
-                .timeout(std::time::Duration::from_secs(10))
-                .build()
-                .unwrap(),
+            client: build_http_client(Duration::from_secs(10), None).unwrap_or_else(|err| {
+                panic!("Failed to create HTTP client: {}", err);
+            }),
         }
     }
 
@@ -172,10 +216,6 @@ impl ExternalApiClient {
 
         tracing::debug!("Calling external API: {} (timeout: {}ms)", url, effective_timeout);
 
-        // Create HTTP client with effective timeout
-        let client_builder = reqwest::Client::builder()
-            .timeout(std::time::Duration::from_millis(effective_timeout));
-
         // Add authentication headers if configured
         let mut headers = reqwest::header::HeaderMap::new();
         if let Some(auth) = &api_config.auth {
@@ -192,12 +232,10 @@ impl ExternalApiClient {
             }
         }
 
-        let client = client_builder
-            .default_headers(headers)
-            .build()
-            .map_err(|e| {
-                RuntimeError::ExternalCallFailed(format!("Failed to create HTTP client: {}", e))
-            })?;
+        let client = build_http_client(
+            Duration::from_millis(effective_timeout),
+            Some(headers),
+        )?;
 
         // Parse HTTP method
         let method = HttpMethod::from_str(&endpoint.method).ok_or_else(|| {

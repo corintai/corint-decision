@@ -31,14 +31,43 @@ impl OLAPClient {
             // - Request timeout: 30 seconds (already set)
             // - TCP nodelay: enabled (reduce latency)
             // - Connection pool: default (connection reuse)
-            let http_client = reqwest::Client::builder()
-                .connect_timeout(std::time::Duration::from_secs(5))
-                .timeout(std::time::Duration::from_secs(30))
-                .tcp_nodelay(true)
-                .build()
-                .map_err(|e| {
-                    RuntimeError::RuntimeError(format!("Failed to create HTTP client: {}", e))
-                })?;
+            let build_client = |disable_proxy: bool| {
+                let mut builder = reqwest::Client::builder()
+                    .connect_timeout(std::time::Duration::from_secs(5))
+                    .timeout(std::time::Duration::from_secs(30))
+                    .tcp_nodelay(true);
+                if disable_proxy {
+                    builder = builder.no_proxy();
+                }
+                builder.build()
+            };
+
+            let http_client = match std::panic::catch_unwind(|| build_client(false)) {
+                Ok(Ok(client)) => client,
+                Ok(Err(err)) => {
+                    tracing::warn!(
+                        "Failed to build HTTP client with system proxy: {}. Retrying without system proxy.",
+                        err
+                    );
+                    build_client(true).map_err(|fallback_err| {
+                        RuntimeError::RuntimeError(format!(
+                            "Failed to create HTTP client: {}",
+                            fallback_err
+                        ))
+                    })?
+                }
+                Err(_) => {
+                    tracing::warn!(
+                        "HTTP client build panicked when using system proxy. Retrying without system proxy."
+                    );
+                    build_client(true).map_err(|fallback_err| {
+                        RuntimeError::RuntimeError(format!(
+                            "Failed to create HTTP client: {}",
+                            fallback_err
+                        ))
+                    })?
+                }
+            };
 
             Ok(Self {
                 config,

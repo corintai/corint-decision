@@ -118,15 +118,31 @@ class DecisionResponse:
     def __init__(self, data: Dict[str, Any]):
         self._data = data
 
+    def _result(self) -> Dict[str, Any]:
+        result = self._data.get("result")
+        return result if isinstance(result, dict) else {}
+
     @property
     def decision(self) -> str:
         """Get the final decision"""
-        return self._data.get("decision", "")
+        if "decision" in self._data:
+            return self._data.get("decision", "")
+        result = self._result()
+        signal = result.get("signal")
+        if isinstance(signal, dict):
+            return signal.get("type", "") or ""
+        if isinstance(signal, str):
+            return signal
+        return ""
 
     @property
     def actions(self) -> list:
         """Get the list of actions"""
-        return self._data.get("actions", [])
+        if "actions" in self._data:
+            return self._data.get("actions", [])
+        result = self._result()
+        actions = result.get("actions", [])
+        return actions if isinstance(actions, list) else []
 
     @property
     def trace(self) -> Optional[Dict[str, Any]]:
@@ -137,6 +153,11 @@ class DecisionResponse:
     def metadata(self) -> Dict[str, Any]:
         """Get response metadata"""
         return self._data.get("metadata", {})
+
+    @property
+    def result(self) -> Dict[str, Any]:
+        """Get raw result payload"""
+        return self._result()
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary"""

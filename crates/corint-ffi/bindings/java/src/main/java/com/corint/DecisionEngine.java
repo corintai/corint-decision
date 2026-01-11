@@ -57,11 +57,14 @@ public class DecisionEngine implements AutoCloseable {
         String requestJson = gson.toJson(request);
 
         // Call FFI function
-        String resultJson = CorintNative.INSTANCE.corint_engine_decide(this.handle, requestJson);
+        Pointer resultPtr = CorintNative.INSTANCE.corint_engine_decide(this.handle, requestJson);
 
-        if (resultJson == null) {
+        if (resultPtr == null) {
             throw new RuntimeException("Decision execution failed");
         }
+
+        String resultJson = resultPtr.getString(0);
+        CorintNative.INSTANCE.corint_string_free(resultPtr);
 
         // Parse response
         JsonObject result = gson.fromJson(resultJson, JsonObject.class);
@@ -91,7 +94,13 @@ public class DecisionEngine implements AutoCloseable {
      * @return Version string
      */
     public static String version() {
-        return CorintNative.INSTANCE.corint_version();
+        Pointer versionPtr = CorintNative.INSTANCE.corint_version();
+        if (versionPtr == null) {
+            return "unknown";
+        }
+        String version = versionPtr.getString(0);
+        CorintNative.INSTANCE.corint_string_free(versionPtr);
+        return version;
     }
 
     /**

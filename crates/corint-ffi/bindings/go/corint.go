@@ -1,9 +1,9 @@
 package corint
 
 /*
-#cgo LDFLAGS: -L../../target/release -lcorint_ffi
-#cgo darwin LDFLAGS: -Wl,-rpath,@loader_path/../../target/release
-#cgo linux LDFLAGS: -Wl,-rpath,$ORIGIN/../../target/release
+#cgo LDFLAGS: -L${SRCDIR}/../../../../target/release -lcorint_ffi
+#cgo darwin LDFLAGS: -Wl,-rpath,${SRCDIR}/../../../../target/release
+#cgo linux LDFLAGS: -Wl,-rpath,${SRCDIR}/../../../../target/release
 
 #include <stdlib.h>
 
@@ -28,6 +28,21 @@ type DecisionOptions struct {
 	EnableTrace bool `json:"enable_trace"`
 }
 
+// DecisionSignal represents the decision signal
+type DecisionSignal struct {
+	Type string `json:"type"`
+}
+
+// DecisionResult represents the decision result payload
+type DecisionResult struct {
+	Signal         *DecisionSignal       `json:"signal"`
+	Actions        []string              `json:"actions"`
+	Score          int                   `json:"score"`
+	TriggeredRules []string              `json:"triggered_rules"`
+	Explanation    string                `json:"explanation"`
+	Context        map[string]interface{} `json:"context"`
+}
+
 // DecisionRequest represents a decision request
 type DecisionRequest struct {
 	EventData map[string]interface{}   `json:"event_data"`
@@ -42,10 +57,15 @@ type DecisionRequest struct {
 
 // DecisionResponse represents a decision response
 type DecisionResponse struct {
-	Decision string                 `json:"decision"`
-	Actions  []interface{}          `json:"actions"`
-	Trace    map[string]interface{} `json:"trace,omitempty"`
-	Metadata map[string]interface{} `json:"metadata,omitempty"`
+	RequestID        string                 `json:"request_id"`
+	PipelineID       *string                `json:"pipeline_id,omitempty"`
+	Result           DecisionResult         `json:"result"`
+	ProcessingTimeMs uint64                 `json:"processing_time_ms"`
+	Metadata         map[string]string      `json:"metadata,omitempty"`
+	Trace            map[string]interface{} `json:"trace,omitempty"`
+
+	Decision string   `json:"-"`
+	Actions  []string `json:"-"`
 }
 
 // DecisionEngine represents a CORINT decision engine
@@ -104,19 +124,24 @@ func (e *DecisionEngine) Decide(request *DecisionRequest) (*DecisionResponse, er
 	// Convert result to string
 	resultJSON := C.GoString(resultPtr)
 
+	var errorResp struct {
+		Error   string `json:"error"`
+		Success bool   `json:"success"`
+	}
+	if json.Unmarshal([]byte(resultJSON), &errorResp) == nil && errorResp.Error != "" {
+		return nil, errors.New(errorResp.Error)
+	}
+
 	// Parse response
 	var response DecisionResponse
 	if err := json.Unmarshal([]byte(resultJSON), &response); err != nil {
-		// Check if it's an error response
-		var errorResp struct {
-			Error   string `json:"error"`
-			Success bool   `json:"success"`
-		}
-		if json.Unmarshal([]byte(resultJSON), &errorResp) == nil && errorResp.Error != "" {
-			return nil, errors.New(errorResp.Error)
-		}
 		return nil, err
 	}
+
+	if response.Result.Signal != nil {
+		response.Decision = response.Result.Signal.Type
+	}
+	response.Actions = response.Result.Actions
 
 	return &response, nil
 }
