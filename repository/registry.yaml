@@ -5,6 +5,10 @@ version: "0.1"
 # Pipelines are evaluated in order - first match wins
 
 registry:
+  - pipeline: german_credit_admission_risk_pipeline_executes_risk_assessment_ruleset_for_credit_a_0fe6aec7e79c
+    when: event.type == "credit_application"
+    description: German credit admission risk assessment for loan application events
+
   # Transaction events with Supabase features - Supabase Feature-Based Pipeline
   - pipeline: supabase_transaction_pipeline
     when:

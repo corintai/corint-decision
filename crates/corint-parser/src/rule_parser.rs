@@ -96,6 +96,16 @@ impl RuleParser {
                 field: "when".to_string(),
             })?;
 
+        // Support direct scalar expressions like:
+        // when: event.duration > 36
+        if let Some(expr_str) = when_obj.as_str() {
+            return Ok(WhenBlock {
+                event_type: None,
+                condition_group: None,
+                conditions: Some(vec![ExpressionParser::parse(expr_str)?]),
+            });
+        }
+
         // Parse event type (optional)
         // Try three formats: 1) flat "event.type" key, 2) "event_type" key, 3) nested path
         let event_type = YamlParser::get_optional_string(when_obj, "event.type")
@@ -378,6 +388,23 @@ rule:
         let rule = RuleParser::parse(yaml).unwrap();
 
         assert_eq!(rule.id, "generic_rule");
+        assert_eq!(rule.when.event_type, None);
+        assert_eq!(rule.when.conditions.as_ref().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn test_parse_rule_with_scalar_when_expression() {
+        let yaml = r#"
+rule:
+  id: very_long_duration
+  name: Very Long Duration
+  when: event.duration > 36
+  score: 60
+"#;
+
+        let rule = RuleParser::parse(yaml).unwrap();
+
+        assert_eq!(rule.id, "very_long_duration");
         assert_eq!(rule.when.event_type, None);
         assert_eq!(rule.when.conditions.as_ref().unwrap().len(), 1);
     }

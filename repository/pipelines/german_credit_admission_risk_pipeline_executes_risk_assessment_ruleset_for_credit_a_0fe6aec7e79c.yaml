@@ -1,0 +1,33 @@
+version: '0.1'
+import:
+  rulesets:
+  - library/rulesets/german_credit_admission_risk_ruleset_comprehensive_risk_assessment_for_credit_admis_534c9dc19a3d.yaml
+---
+pipeline:
+  id: german_credit_admission_risk_pipeline_executes_risk_assessment_ruleset_for_credit_a_0fe6aec7e79c
+  name: German Credit Admission Risk Pipeline - executes risk assessment ruleset for credit admission decisions
+  description: German Credit Admission Risk Pipeline - executes risk assessment ruleset for credit admission decisions
+  entry: german_credit_admission_risk_ruleset_comprehensive_risk_assessment_for_credit_admis_534c9dc19a3d_step_1
+  when: event.type == "credit_application"
+  steps:
+  - step:
+      id: german_credit_admission_risk_ruleset_comprehensive_risk_assessment_for_credit_admis_534c9dc19a3d_step_1
+      name: German Credit Admission Risk Ruleset Comprehensive Risk Assessment For Credit Admis 534c9dc19a3d
+      type: ruleset
+      ruleset: german_credit_admission_risk_ruleset_comprehensive_risk_assessment_for_credit_admis_534c9dc19a3d
+  decision:
+  - when: results.german_credit_admission_risk_ruleset_comprehensive_risk_assessment_for_credit_admis_534c9dc19a3d.signal == "decline"
+    result: decline
+    reason: german_credit_admission_risk_ruleset_comprehensive_risk_assessment_for_credit_admis_534c9dc19a3d declined the request
+  - when: results.german_credit_admission_risk_ruleset_comprehensive_risk_assessment_for_credit_admis_534c9dc19a3d.signal == "review"
+    result: review
+    actions:
+    - manual_review
+    reason: german_credit_admission_risk_ruleset_comprehensive_risk_assessment_for_credit_admis_534c9dc19a3d requested manual review
+  - default: true
+    result: approve
+    reason: No ruleset produced a blocking signal
+  metadata:
+    version: 1.0.0
+    author: ComposeRDL
+    updated: 2026-03-26 10:11:27

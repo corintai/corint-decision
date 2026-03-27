@@ -1,0 +1,11 @@
+version: '0.1'
+rule:
+  id: very_long_loan_duration_credit_terms_exceeding_36_months_have_higher_default_probab_660348d19f4a
+  name: Very long loan duration - credit terms exceeding 36 months have higher default probability due to extended exposure period
+  description: Very long loan duration - credit terms exceeding 36 months have higher default probability due to extended exposure period
+  when: event.duration > 36
+  score: 60
+  metadata:
+    version: 1.0.0
+    author: ComposeRDL
+    updated: 2026-03-26 10:10:52

@@ -1,0 +1,14 @@
+version: '0.1'
+rule:
+  id: low_financial_reserves_applicants_with_little_or_no_savings_and_little_checking_bal_6e59b7f65e13
+  name: Low financial reserves - applicants with little or no savings and little checking balance have elevated liquidity risk
+  description: Low financial reserves - applicants with little or no savings and little checking balance have elevated liquidity risk
+  when:
+    all:
+    - event.saving_accounts in ["little", "NA"]
+    - event.checking_account == "little"
+  score: 70
+  metadata:
+    version: 1.0.0
+    author: ComposeRDL
+    updated: 2026-03-26 10:09:51

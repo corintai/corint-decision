@@ -1,0 +1,14 @@
+version: '0.1'
+rule:
+  id: stable_applicant_profile_applicants_with_own_housing_and_rich_savings_demonstrate_s_f12ddba82678
+  name: Stable applicant profile - applicants with own housing and rich savings demonstrate strong financial stability
+  description: Stable applicant profile - applicants with own housing and rich savings demonstrate strong financial stability
+  when:
+    all:
+    - event.housing == "own"
+    - event.saving_accounts == "rich"
+  score: -50
+  metadata:
+    version: 1.0.0
+    author: ComposeRDL
+    updated: 2026-03-26 10:10:58

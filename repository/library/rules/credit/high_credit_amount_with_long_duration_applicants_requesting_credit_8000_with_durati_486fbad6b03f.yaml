@@ -1,0 +1,14 @@
+version: '0.1'
+rule:
+  id: high_credit_amount_with_long_duration_applicants_requesting_credit_8000_with_durati_486fbad6b03f
+  name: High credit amount with long duration - applicants requesting credit > 8000 with duration > 24 months represent elevated default risk
+  description: High credit amount with long duration - applicants requesting credit > 8000 with duration > 24 months represent elevated default risk
+  when:
+    all:
+    - event.credit_amount > 8000
+    - event.duration > 24
+  score: 85
+  metadata:
+    version: 1.0.0
+    author: ComposeRDL
+    updated: 2026-03-26 10:09:41

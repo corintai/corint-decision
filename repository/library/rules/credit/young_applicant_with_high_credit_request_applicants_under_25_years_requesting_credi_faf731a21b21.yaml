@@ -1,0 +1,14 @@
+version: '0.1'
+rule:
+  id: young_applicant_with_high_credit_request_applicants_under_25_years_requesting_credi_faf731a21b21
+  name: Young applicant with high credit request - applicants under 25 years requesting credit > 3000 have limited credit history risk
+  description: Young applicant with high credit request - applicants under 25 years requesting credit > 3000 have limited credit history risk
+  when:
+    all:
+    - event.age < 25
+    - event.credit_amount > 3000
+  score: 65
+  metadata:
+    version: 1.0.0
+    author: ComposeRDL
+    updated: 2026-03-26 10:10:42

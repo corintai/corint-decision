@@ -1,0 +1,33 @@
+version: '0.1'
+import:
+  rules:
+  - library/rules/credit/high_credit_amount_with_long_duration_applicants_requesting_credit_8000_with_durati_486fbad6b03f.yaml
+  - library/rules/credit/low_financial_reserves_applicants_with_little_or_no_savings_and_little_checking_bal_6e59b7f65e13.yaml
+  - library/rules/credit/young_applicant_with_high_credit_request_applicants_under_25_years_requesting_credi_faf731a21b21.yaml
+  - library/rules/credit/very_long_loan_duration_credit_terms_exceeding_36_months_have_higher_default_probab_660348d19f4a.yaml
+  - library/rules/credit/stable_applicant_profile_applicants_with_own_housing_and_rich_savings_demonstrate_s_f12ddba82678.yaml
+---
+ruleset:
+  id: german_credit_admission_risk_ruleset_comprehensive_risk_assessment_for_credit_admis_534c9dc19a3d
+  name: German Credit Admission Risk Ruleset - comprehensive risk assessment for credit admission decisions
+  description: German Credit Admission Risk Ruleset - comprehensive risk assessment for credit admission decisions
+  rules:
+  - high_credit_amount_with_long_duration_applicants_requesting_credit_8000_with_durati_486fbad6b03f
+  - low_financial_reserves_applicants_with_little_or_no_savings_and_little_checking_bal_6e59b7f65e13
+  - young_applicant_with_high_credit_request_applicants_under_25_years_requesting_credi_faf731a21b21
+  - very_long_loan_duration_credit_terms_exceeding_36_months_have_higher_default_probab_660348d19f4a
+  - stable_applicant_profile_applicants_with_own_housing_and_rich_savings_demonstrate_s_f12ddba82678
+  conclusion:
+  - when: total_score >= 100
+    signal: decline
+    reason: High risk score detected
+  - when: total_score >= 50
+    signal: review
+    reason: Manual review required
+  - default: true
+    signal: approve
+    reason: No significant risk
+  metadata:
+    version: 1.0.0
+    author: ComposeRDL
+    updated: 2026-03-26 10:11:10
