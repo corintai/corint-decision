@@ -1,0 +1,15 @@
+[package]
+name = "corint-decision-dsl-parser"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+description = "YAML parser for CORINT Decision Engine"
+
+[dependencies]
+corint-decision-model = { path = "../corint-decision-model" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+serde_yaml = { workspace = true }
+thiserror = { workspace = true }
+anyhow = { workspace = true }
+log = { workspace = true }

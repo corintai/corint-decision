@@ -301,7 +301,7 @@ createdb corint_test
 for file in docs/schema/*.sql; do psql $DATABASE_URL < "$file"; done
 
 # Run tests
-cargo test --package corint-repository --features postgres
+cargo test --package corint-decision-repository --features postgres
 ```
 
 ## Cleanup

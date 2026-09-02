@@ -222,7 +222,7 @@ path: "repository/configs/lists/data/disposable_domains.txt"
                                     │
                                     ▼
 ┌─────────────────────────────────────────────────────────────────────┐
-│                         Parser (corint-parser)                       │
+│                         Parser (corint-decision-dsl-parser)                       │
 │  - Recognizes list.xxx as ListReference expression                  │
 │  - Parses "in list.xxx" as InList operator                          │
 │  - Creates Expression::Binary with Operator::InList                 │
@@ -230,14 +230,14 @@ path: "repository/configs/lists/data/disposable_domains.txt"
                                     │
                                     ▼
 ┌─────────────────────────────────────────────────────────────────────┐
-│                       Compiler (corint-compiler)                     │
+│                       Compiler (corint-decision-compiler)                     │
 │  - Compiles InList expression to IR::ListLookup instruction         │
 │  - Validates list names exist in configuration                       │
 └─────────────────────────────────────────────────────────────────────┘
                                     │
                                     ▼
 ┌─────────────────────────────────────────────────────────────────────┐
-│                        Runtime (corint-runtime)                      │
+│                        Runtime (corint-decision-runtime)                      │
 │  ┌─────────────┐    ┌─────────────┐    ┌─────────────┐             │
 │  │ ListService │───▶│ ListBackend │───▶│   Cache     │             │
 │  └─────────────┘    └─────────────┘    └─────────────┘             │
@@ -252,7 +252,7 @@ path: "repository/configs/lists/data/disposable_domains.txt"
 ### AST Changes
 
 ```rust
-// crates/corint-core/src/ast/expression.rs
+// crates/corint-decision-model/src/ast/expression.rs
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum Expression {
@@ -279,7 +279,7 @@ pub enum Operator {
 ### New IR Instruction
 
 ```rust
-// crates/corint-core/src/ir/instruction.rs
+// crates/corint-decision-model/src/ir/instruction.rs
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum Instruction {
@@ -299,7 +299,7 @@ pub enum Instruction {
 ### List Service Interface
 
 ```rust
-// crates/corint-runtime/src/list/mod.rs
+// crates/corint-decision-runtime/src/list/mod.rs
 
 use async_trait::async_trait;
 use std::collections::HashSet;
@@ -379,7 +379,7 @@ pub struct ListInfo {
 ## Parser Implementation
 
 ```rust
-// crates/corint-parser/src/expression_parser.rs
+// crates/corint-decision-dsl-parser/src/expression_parser.rs
 
 impl ExpressionParser {
     /// Parse a primary expression
@@ -452,7 +452,7 @@ impl ExpressionParser {
 ## Compiler Implementation
 
 ```rust
-// crates/corint-compiler/src/codegen/expression_codegen.rs
+// crates/corint-decision-compiler/src/codegen/expression_codegen.rs
 
 impl ExpressionCompiler {
     pub fn compile(expr: &Expression) -> Result<Vec<Instruction>> {
@@ -508,7 +508,7 @@ impl ExpressionCompiler {
 ## VM Execution
 
 ```rust
-// crates/corint-runtime/src/engine/pipeline_executor.rs
+// crates/corint-decision-runtime/src/engine/pipeline_executor.rs
 
 impl PipelineExecutor {
     async fn execute_instruction(

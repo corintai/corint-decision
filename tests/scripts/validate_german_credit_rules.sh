@@ -37,11 +37,11 @@ fi
 
 cp "${TEST_CONFIG}" "${ACTIVE_CONFIG}"
 
-echo "[1/4] Building corint-server..."
-cargo build --release -p corint-server >/dev/null
+echo "[1/4] Building corint-decision-server..."
+cargo build --release -p corint-decision-server >/dev/null
 
-echo "[2/4] Starting corint-server on ${SERVER_URL}..."
-"${PROJECT_ROOT}/target/release/corint-server" >"${SERVER_LOG}" 2>&1 &
+echo "[2/4] Starting corint-decision-server on ${SERVER_URL}..."
+"${PROJECT_ROOT}/target/release/corint-decision-server" >"${SERVER_LOG}" 2>&1 &
 SERVER_PID=$!
 
 for _ in $(seq 1 30); do

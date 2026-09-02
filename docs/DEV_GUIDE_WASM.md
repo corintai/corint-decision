@@ -15,7 +15,7 @@ This document outlines the architecture and implementation plan for compiling th
 
 **Implementation has been postponed** due to the following technical blockers:
 
-1. **Tokio Incompatibility**: `corint-runtime` has a hard dependency on `tokio`, which cannot run in WASM environments due to missing OS-level I/O primitives (epoll, kqueue, IOCP).
+1. **Tokio Incompatibility**: `corint-decision-runtime` has a hard dependency on `tokio`, which cannot run in WASM environments due to missing OS-level I/O primitives (epoll, kqueue, IOCP).
 
 2. **Architecture Mismatch**: The async runtime architecture is deeply integrated throughout the codebase and cannot be easily adapted for WASM's synchronous execution model.
 
@@ -26,7 +26,7 @@ This document outlines the architecture and implementation plan for compiling th
 #### Primary Blocker: Tokio + WASM Incompatibility
 
 ```
-corint-runtime
+corint-decision-runtime
     └── tokio (async runtime)
         └── mio (I/O polling)
             └── OS system calls (epoll, kqueue, IOCP)
@@ -56,11 +56,11 @@ corint-runtime
 During implementation, the following approaches were explored:
 
 **Approach 1: Direct SDK Usage** (Original Plan)
-- Use `corint-sdk` as unified entry point
+- Use `corint-decision-sdk` as unified entry point
 - **Blocker**: SDK depends on runtime which depends on tokio
 
 **Approach 2: Use Lower-Level Components**
-- Depend directly on `corint-core`, `corint-parser`, `corint-compiler`
+- Depend directly on `corint-decision-model`, `corint-decision-dsl-parser`, `corint-decision-compiler`
 - Implement simple synchronous VM for IR execution
 - **Blocker**: Would need to reimplement significant runtime functionality
 - **Status**: Partially implemented but abandoned due to complexity
@@ -96,9 +96,9 @@ For now, consider these alternatives:
 
 ### Key Design Decision: Reuse Existing Runtime
 
-**Instead of creating a separate WASM-specific runtime**, we reuse the existing `corint-runtime` with the following approach:
+**Instead of creating a separate WASM-specific runtime**, we reuse the existing `corint-decision-runtime` with the following approach:
 
-1. **Reuse `corint-runtime`**: The existing `PipelineExecutor` already uses optional dependencies (`Option<Arc<...>>`), making it perfect for WASM deployment
+1. **Reuse `corint-decision-runtime`**: The existing `PipelineExecutor` already uses optional dependencies (`Option<Arc<...>>`), making it perfect for WASM deployment
 2. **No Data Sources**: Simply don't configure `feature_extractor` - rules that require data sources (PostgreSQL/Redis) won't be used in browser
 3. **No Internal Services**: Simply don't configure `service_client` - rules that require internal services won't be used in browser
 4. **External API via JS Bridge**: Create a WASM-compatible `ExternalApiClient` that uses JavaScript `fetch()` through a callback
@@ -142,20 +142,20 @@ This approach is **simpler, more maintainable, and leverages existing code** rat
 ### 2.2 Component Breakdown
 
 #### WASM Module Components
-1. **corint-core** (Pure Rust, no I/O)
+1. **corint-decision-model** (Pure Rust, no I/O)
    - AST definitions
    - Expression evaluator
    - Type system
 
-2. **corint-parser** (Pure Rust, WASM-compatible)
+2. **corint-decision-dsl-parser** (Pure Rust, WASM-compatible)
    - YAML parsing (using pure Rust libs)
    - Rule/Pipeline/Registry parsing
 
-3. **corint-compiler** (Pure Rust, WASM-compatible)
+3. **corint-decision-compiler** (Pure Rust, WASM-compatible)
    - IR generation
    - Optimization passes
 
-4. **corint-runtime** (Reused, with WASM adaptations)
+4. **corint-decision-runtime** (Reused, with WASM adaptations)
    - ✅ Reuse existing `PipelineExecutor`
    - ✅ Optional dependencies (feature_extractor, llm_client, service_client)
    - ⚠️ External API client needs JS bridge (via callback)
@@ -174,16 +174,16 @@ This approach is **simpler, more maintainable, and leverages existing code** rat
 
 ```
 crates/
-├── corint-core/              # ✅ Already WASM-compatible
-├── corint-parser/            # ✅ Already WASM-compatible
-├── corint-compiler/          # ✅ Already WASM-compatible
-├── corint-runtime/           # ✅ Reused with WASM adaptations
+├── corint-decision-model/              # ✅ Already WASM-compatible
+├── corint-decision-dsl-parser/            # ✅ Already WASM-compatible
+├── corint-decision-compiler/          # ✅ Already WASM-compatible
+├── corint-decision-runtime/           # ✅ Reused with WASM adaptations
 └── corint-wasm/               # 🆕 JS/TS bindings + WASM ExternalApiClient
 ```
 
-#### 3.1.1 Reusing Existing `corint-runtime`
+#### 3.1.1 Reusing Existing `corint-decision-runtime`
 
-**Key Insight**: The existing `corint-runtime` is already designed with optional dependencies, making it suitable for WASM deployment.
+**Key Insight**: The existing `corint-decision-runtime` is already designed with optional dependencies, making it suitable for WASM deployment.
 
 **Current Architecture**:
 - `PipelineExecutor` uses `Option<Arc<...>>` for most dependencies
@@ -223,8 +223,8 @@ let executor = PipelineExecutor::new()  // No storage, no services
 use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::JsFuture;
 use js_sys::Promise;
-use corint_runtime::external_api::{ApiConfig, EndpointConfig};
-use corint_core::Value;
+use corint_decision_runtime::external_api::{ApiConfig, EndpointConfig};
+use corint_decision_model::Value;
 use std::collections::HashMap;
 
 /// WASM-compatible External API Client using JS fetch()
@@ -275,10 +275,10 @@ impl WasmExternalApiClient {
 ```rust
 // crates/corint-wasm/src/lib.rs
 use wasm_bindgen::prelude::*;
-use corint_runtime::engine::PipelineExecutor;
-use corint_runtime::external_api::ExternalApiClient;
-use corint_compiler::Compiler;
-use corint_parser::*;
+use corint_decision_runtime::engine::PipelineExecutor;
+use corint_decision_runtime::external_api::ExternalApiClient;
+use corint_decision_compiler::Compiler;
+use corint_decision_dsl_parser::*;
 use std::sync::Arc;
 
 #[wasm_bindgen]
@@ -749,7 +749,7 @@ export class CorintEngine {
 
 ```rust
 // Server-side verification endpoint
-// crates/corint-server/src/api/rest.rs
+// crates/corint-decision-server/src/api/rest.rs
 
 #[derive(Debug, Deserialize)]
 pub struct VerifyRequest {
@@ -1460,7 +1460,7 @@ export class CorintEngine {
 ❌ LLM calls → Optional, can be bridged via JS if needed
 
 **Key Design Decision**: Instead of creating a separate runtime, we:
-1. Reuse existing `corint-runtime` with optional dependencies
+1. Reuse existing `corint-decision-runtime` with optional dependencies
 2. Don't configure data sources or internal services in browser rules
 3. Provide JS bridge for External API calls (which are still needed)
 4. Rules that require unavailable features simply won't be used in browser context
@@ -1551,10 +1551,10 @@ edition = "2021"
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-corint-core = { path = "../corint-core" }
-corint-parser = { path = "../corint-parser" }
-corint-compiler = { path = "../corint-compiler" }
-corint-runtime = { path = "../corint-runtime", default-features = false }
+corint-decision-model = { path = "../corint-decision-model" }
+corint-decision-dsl-parser = { path = "../corint-decision-dsl-parser" }
+corint-decision-compiler = { path = "../corint-decision-compiler" }
+corint-decision-runtime = { path = "../corint-decision-runtime", default-features = false }
 # Note: Exclude sqlx feature to avoid database dependencies
 
 wasm-bindgen = "0.2"
@@ -1583,7 +1583,7 @@ lto = true          # Link-time optimization
 codegen-units = 1   # Better optimization
 ```
 
-**Note on `corint-runtime` dependencies**:
+**Note on `corint-decision-runtime` dependencies**:
 - `reqwest` is used by `ExternalApiClient`, but we'll replace it with JS fetch in WASM
 - `sqlx` is optional (via feature flag), so we exclude it
 - `tokio` async runtime works in WASM via `wasm-bindgen-futures`

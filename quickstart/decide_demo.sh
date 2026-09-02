@@ -672,7 +672,7 @@ start_server() {
     # Build the server
     print_info "Building server (release mode)..."
     cd "$PROJECT_ROOT"
-    if ! cargo build --release -p corint-server 2>&1 | tail -10; then
+    if ! cargo build --release -p corint-decision-server 2>&1 | tail -10; then
         print_error "Failed to build server"
         exit 1
     fi
@@ -684,7 +684,7 @@ start_server() {
     print_info "Starting server (log: ${log_file})..."
     export RUST_LOG="${RUST_LOG:-info}"
 
-    "${PROJECT_ROOT}/target/release/corint-server" < /dev/null > "${log_file}" 2>&1 &
+    "${PROJECT_ROOT}/target/release/corint-decision-server" < /dev/null > "${log_file}" 2>&1 &
     SERVER_PID=$!
 
     # Wait for server to start

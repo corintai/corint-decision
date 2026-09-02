@@ -2,7 +2,7 @@
 
 **⚠️ IMPORTANT: LLM is NO LONGER a runtime step type in CORINT pipelines.**
 
-This document describes the `corint-llm` crate, which provides **development-time code generation** capabilities. LLM is used to generate YAML configurations from natural language descriptions, not for real-time decision execution.
+This document describes the `corint-decision-llm` crate, which provides **development-time code generation** capabilities. LLM is used to generate YAML configurations from natural language descriptions, not for real-time decision execution.
 
 ---
 
@@ -38,7 +38,7 @@ Instead of using LLM at runtime, CORINT now uses LLM for **development-time code
 │                                                            │
 │  Natural Language Description                             │
 │         ↓                                                  │
-│  corint-llm (LLM-powered generator)                       │
+│  corint-decision-llm (LLM-powered generator)                       │
 │         ↓                                                  │
 │  Generated YAML Configurations                            │
 │  - Rules                                                   │
@@ -70,13 +70,13 @@ Instead of using LLM at runtime, CORINT now uses LLM for **development-time code
 
 ---
 
-## The `corint-llm` Crate
+## The `corint-decision-llm` Crate
 
 ### Overview
 
-`corint-llm` is a standalone Rust crate that generates CORINT YAML configurations from natural language descriptions.
+`corint-decision-llm` is a standalone Rust crate that generates CORINT YAML configurations from natural language descriptions.
 
-**Location**: `crates/corint-llm/`
+**Location**: `crates/corint-decision-llm/`
 
 **Purpose**: Development-time code generation, NOT runtime execution
 
@@ -92,7 +92,7 @@ Instead of using LLM at runtime, CORINT now uses LLM for **development-time code
 
 ```toml
 [dependencies]
-corint-llm = { path = "../corint-llm" }
+corint-decision-llm = { path = "../corint-decision-llm" }
 tokio = { version = "1.0", features = ["full"] }
 ```
 
@@ -103,7 +103,7 @@ tokio = { version = "1.0", features = ["full"] }
 ### 1. Generate a Single Rule
 
 ```rust
-use corint_llm::{RuleGenerator, OpenAIProvider};
+use corint_decision_llm::{RuleGenerator, OpenAIProvider};
 use std::sync::Arc;
 
 #[tokio::main]
@@ -148,7 +148,7 @@ rule:
 ### 2. Generate a Ruleset
 
 ```rust
-use corint_llm::{RulesetGenerator, AnthropicProvider};
+use corint_decision_llm::{RulesetGenerator, AnthropicProvider};
 use std::sync::Arc;
 
 #[tokio::main]
@@ -178,7 +178,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 ### 3. Generate a Complete Decision Flow
 
 ```rust
-use corint_llm::{DecisionFlowGenerator, GeminiProvider};
+use corint_decision_llm::{DecisionFlowGenerator, GeminiProvider};
 use std::sync::Arc;
 
 #[tokio::main]
@@ -245,12 +245,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 ## Supported LLM Providers
 
-The `corint-llm` crate supports multiple LLM providers:
+The `corint-decision-llm` crate supports multiple LLM providers:
 
 ### 1. OpenAI
 
 ```rust
-use corint_llm::OpenAIProvider;
+use corint_decision_llm::OpenAIProvider;
 
 let provider = OpenAIProvider::new(api_key)
     .with_model("gpt-4-turbo")
@@ -262,7 +262,7 @@ let provider = OpenAIProvider::new(api_key)
 ### 2. Anthropic
 
 ```rust
-use corint_llm::AnthropicProvider;
+use corint_decision_llm::AnthropicProvider;
 
 let provider = AnthropicProvider::new(api_key)
     .with_model("claude-3-5-sonnet-20241022");
@@ -273,7 +273,7 @@ let provider = AnthropicProvider::new(api_key)
 ### 3. Google Gemini
 
 ```rust
-use corint_llm::GeminiProvider;
+use corint_decision_llm::GeminiProvider;
 
 let provider = GeminiProvider::new(api_key)
     .with_model("gemini-1.5-pro");
@@ -284,7 +284,7 @@ let provider = GeminiProvider::new(api_key)
 ### 4. DeepSeek
 
 ```rust
-use corint_llm::DeepSeekProvider;
+use corint_decision_llm::DeepSeekProvider;
 
 let provider = DeepSeekProvider::new(api_key);
 ```
@@ -294,7 +294,7 @@ let provider = DeepSeekProvider::new(api_key);
 ### 5. Mock Provider (for Testing)
 
 ```rust
-use corint_llm::MockProvider;
+use corint_decision_llm::MockProvider;
 
 let provider = MockProvider::with_response(r#"
 rule:
@@ -314,7 +314,7 @@ rule:
 ### Generator Configuration
 
 ```rust
-use corint_llm::{RuleGenerator, RuleGeneratorConfig};
+use corint_decision_llm::{RuleGenerator, RuleGeneratorConfig};
 
 let config = RuleGeneratorConfig {
     model: Some("gpt-4-turbo".to_string()),
@@ -402,7 +402,7 @@ assert_eq!(result.score, 75);
 ### Recommended Process
 
 1. **Describe Requirements** in natural language
-2. **Generate YAML** using `corint-llm`
+2. **Generate YAML** using `corint-decision-llm`
 3. **Review Output** for correctness
 4. **Test Configuration** with sample events
 5. **Refine Description** if needed and regenerate
@@ -433,7 +433,7 @@ git commit -m "Add LLM-generated fraud detection rules"
 
 ## Examples
 
-See the `crates/corint-llm/examples/` directory for complete examples:
+See the `crates/corint-decision-llm/examples/` directory for complete examples:
 
 - **generate_rule.rs**: Simple rule generation
 - **generate_ruleset.rs**: Ruleset creation
@@ -444,7 +444,7 @@ See the `crates/corint-llm/examples/` directory for complete examples:
 Run an example:
 
 ```bash
-cd crates/corint-llm
+cd crates/corint-decision-llm
 export OPENAI_API_KEY="sk-..."
 cargo run --example generate_decision_flow
 ```
@@ -468,7 +468,7 @@ pipeline:
 
 **NEW** (Generate rules instead):
 ```rust
-// Use corint-llm to generate a rule
+// Use corint-decision-llm to generate a rule
 let description = "Analyze transaction patterns and flag suspicious behavior";
 let rule_yaml = generator.generate(description).await?;
 
@@ -480,13 +480,13 @@ let rule_yaml = generator.generate(description).await?;
 
 ## Summary
 
-**corint-llm provides**:
+**corint-decision-llm provides**:
 - Fast YAML generation from natural language
 - Support for multiple LLM providers
 - Type-safe integration with CORINT DSL
 - Development-time code generation only
 
-**corint-llm does NOT**:
+**corint-decision-llm does NOT**:
 - Execute at runtime
 - Affect production decision latency
 - Require LLM API access in production

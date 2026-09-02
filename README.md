@@ -233,13 +233,13 @@ Clean separation of concerns with independent, reusable crates:
 
 ```
 ┌─────────────────────────────────────────────────────────┐
-│ corint-server (HTTP/gRPC API Server)                   │
+│ corint-decision-server (HTTP/gRPC API Server)                   │
 │   ├─ REST API endpoints                                │
 │   └─ gRPC service implementation                       │
 └────────────────────┬────────────────────────────────────┘
                      │
 ┌────────────────────▼────────────────────────────────────┐
-│ corint-sdk (High-level Decision API)                   │
+│ corint-decision-sdk (High-level Decision API)                   │
 │   ├─ Decision engine interface                         │
 │   ├─ Feature calculation                               │
 │   └─ FFI bindings (C/C++/Python/Node.js)              │
@@ -263,7 +263,7 @@ Clean separation of concerns with independent, reusable crates:
 └──────┬───────┘
        │
 ┌──────▼───────┐
-│ corint-core  │
+│ corint-decision-model  │
 │ - Types      │
 │ - IR         │
 └──────────────┘
@@ -549,7 +549,7 @@ cargo test
 cp quickstart/config/server-sqlite.yaml config/server.yaml
 
 # Start the server
-cargo run -p corint-server
+cargo run -p corint-decision-server
 
 # Health check
 curl http://localhost:8080/health
@@ -642,7 +642,7 @@ grpcurl -plaintext -d '{
 }' localhost:50051 corint.decision.v1.DecisionService/Decide
 ```
 
-For detailed gRPC documentation, see [crates/corint-server/GRPC.md](crates/corint-server/GRPC.md).
+For detailed gRPC documentation, see [crates/corint-decision-server/GRPC.md](crates/corint-decision-server/GRPC.md).
 
 ### Server Features
 
@@ -668,9 +668,9 @@ The server is primarily configured via the `config/server.yaml` file, with envir
 
 ```bash
 # Basic log levels
-RUST_LOG=info cargo run -p corint-server      # Info (default)
-RUST_LOG=debug cargo run -p corint-server     # Debug (detailed)
-RUST_LOG=trace cargo run -p corint-server     # Trace (all details)
+RUST_LOG=info cargo run -p corint-decision-server      # Info (default)
+RUST_LOG=debug cargo run -p corint-decision-server     # Debug (detailed)
+RUST_LOG=trace cargo run -p corint-decision-server     # Trace (all details)
  
 ```
  
@@ -679,7 +679,7 @@ RUST_LOG=trace cargo run -p corint-server     # Trace (all details)
 **Server won't start:**
 - Check if port is in use: `lsof -i :8080`
 - Verify rules directory exists: `ls -la repository`
-- View detailed logs: `RUST_LOG=debug cargo run -p corint-server`
+- View detailed logs: `RUST_LOG=debug cargo run -p corint-decision-server`
 
 **Rules not loading:**
 - Ensure rule files have `.yaml` or `.yml` extension
@@ -794,7 +794,7 @@ RUST_LOG=trace cargo run -p corint-server     # Trace (all details)
 - ✅ Basic error handling (advanced retry strategies planned)
 - ✅ Testing framework
 - ✅ Comprehensive documentation
-- ✅ HTTP/REST API server (`corint-server`)
+- ✅ HTTP/REST API server (`corint-decision-server`)
 - ✅ gRPC API server
 - ✅ Supabase PostgreSQL integration
 - ✅ Lazy feature calculation

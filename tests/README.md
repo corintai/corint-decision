@@ -424,7 +424,7 @@ export CONFIG_PATH="tests/e2e_repo"
 
 # Build and run
 cargo build --release
-target/release/corint-server
+target/release/corint-decision-server
 ```
 
 ### 5. Manual API Testing
@@ -472,7 +472,7 @@ grep -c "INSERT INTO" tests/data/test_data.sql
 lsof -i :8080
 
 # Kill existing process
-pkill corint-server
+pkill corint-decision-server
 
 # Check server logs
 tail -f tests/results/server.log

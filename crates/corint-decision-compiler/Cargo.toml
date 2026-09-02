@@ -1,0 +1,15 @@
+[package]
+name = "corint-decision-compiler"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+description = "AST to IR compiler for CORINT Decision Engine"
+
+[dependencies]
+corint-decision-model = { path = "../corint-decision-model" }
+corint-decision-dsl-parser = { path = "../corint-decision-dsl-parser" }
+thiserror = { workspace = true }
+anyhow = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+serde_yaml = { workspace = true }

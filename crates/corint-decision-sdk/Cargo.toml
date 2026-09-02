@@ -1,0 +1,21 @@
+[package]
+name = "corint-decision-sdk"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+description = "Developer SDK for CORINT Decision Engine"
+
+[dependencies]
+corint-decision-engine = { path = "../corint-decision-engine" }
+
+[features]
+default = []
+sqlx = ["corint-decision-engine/sqlx"]
+postgres = ["corint-decision-engine/postgres"]
+mysql = ["corint-decision-engine/mysql"]
+api = ["corint-decision-engine/api"]
+clickhouse = ["corint-decision-engine/clickhouse"]
+redis = ["corint-decision-engine/redis"]
+
+[dev-dependencies]
+tokio = { version = "1.0", features = ["full", "test-util"] }

@@ -1,0 +1,64 @@
+[package]
+name = "corint-decision-server"
+version = "0.1.0"
+edition = "2021"
+license = "Elastic-2.0"
+
+[dependencies]
+# Core orchestration layer
+corint-decision-engine = { path = "../corint-decision-engine", features = ["sqlx", "clickhouse", "api"] }
+
+# Async runtime
+tokio = { version = "1.35", features = ["full"] }
+async-trait = "0.1"
+
+# Web framework
+axum = { version = "0.7", features = ["macros"] }
+tower = { version = "0.4", features = ["full"] }
+tower-http = { version = "0.5", features = ["cors", "trace"] }
+
+# gRPC
+tonic = "0.12"
+tonic-reflection = "0.12"
+prost = "0.13"
+
+# Serialization
+serde = { workspace = true }
+serde_json = { workspace = true }
+serde_yaml = { workspace = true }
+
+# Error handling
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+
+# Logging & Observability
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+
+# Configuration
+config = "0.14"
+dotenvy = "0.15"
+
+# Other
+uuid = { version = "1.6", features = ["v4", "serde"] }
+chrono = { version = "0.4", features = ["serde"] }
+rand = "0.8"
+
+[build-dependencies]
+tonic-build = "0.12"
+
+[dev-dependencies]
+tokio-test = "0.4"
+tempfile = "3.8"
+tower = { version = "0.4", features = ["util"] }
+http-body-util = "0.1"
+hyper = { version = "1.0", features = ["full"] }
+
+[features]
+default = ["sqlx"]
+sqlx = ["corint-decision-engine/sqlx"]
+postgres = ["corint-decision-engine/postgres"]
+
+[[bin]]
+name = "corint-decision-server"
+path = "src/main.rs"

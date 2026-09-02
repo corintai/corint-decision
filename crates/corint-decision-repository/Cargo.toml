@@ -1,0 +1,46 @@
+[package]
+name = "corint-decision-repository"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+# Core AST types
+corint-decision-model = { path = "../corint-decision-model" }
+corint-decision-dsl-parser = { path = "../corint-decision-dsl-parser" }
+
+# Async runtime
+async-trait = "0.1"
+tokio = { version = "1.0", features = ["fs", "sync", "rt"] }
+
+# Serialization
+serde = { workspace = true }
+serde_json = { workspace = true }
+serde_yaml = { workspace = true }
+
+# Logging (optional, for debug output)
+tracing = { version = "0.1", optional = true }
+
+# Error handling
+thiserror = { workspace = true }
+anyhow = { workspace = true }
+
+# Path manipulation
+path-absolutize = "3.1"
+
+# Database support (optional)
+sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio-native-tls", "postgres"], optional = true }
+
+# HTTP API support (optional)
+reqwest = { version = "0.11", features = ["json"], optional = true }
+
+[dev-dependencies]
+tokio = { version = "1.0", features = ["full", "test-util"] }
+tempfile = "3.8"
+mockito = "1.2"
+
+[features]
+default = []
+postgres = ["sqlx"]
+mysql = ["sqlx"]
+api = ["reqwest"]

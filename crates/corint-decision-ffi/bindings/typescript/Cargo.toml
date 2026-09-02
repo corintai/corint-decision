@@ -1,0 +1,32 @@
+[package]
+name = "corint-decision-napi"
+version = "0.1.0"
+edition = "2021"
+license = "Elastic-2.0"
+
+[lib]
+crate-type = ["cdylib"]
+
+# Exclude from workspace
+[workspace]
+
+[dependencies]
+# napi-rs for Node.js bindings
+napi = { version = "2", features = ["async", "serde-json"] }
+napi-derive = "2"
+
+# Reuse the stable SDK facade
+corint-decision-sdk = { path = "../../../corint-decision-sdk" }
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# Async runtime
+tokio = { version = "1.41", features = ["full"] }
+
+[build-dependencies]
+napi-build = "2"
+
+[profile.release]
+lto = true

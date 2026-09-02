@@ -126,7 +126,7 @@ cat redis_features.txt | grep -v '^#' | grep -v '^$' | redis-cli
 
 ```bash
 # Start the server
-cargo run -p corint-server
+cargo run -p corint-decision-server
 
 # Test with different user scenarios
 curl -X POST http://localhost:8080/v1/decide \

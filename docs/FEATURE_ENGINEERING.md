@@ -302,7 +302,7 @@ Feature engineering in risk management follows a structured approach based on **
 **Principle:** Aggregation = Single data source + Single window + Single grouping + One-pass scan
 
 ```rust
-// From corint-runtime/src/feature/definition.rs
+// From corint-decision-runtime/src/feature/definition.rs
 enum AggregationMethod {
     // ✅ Implemented
     Count, Sum, Avg, Max, Min, Distinct,
@@ -2747,7 +2747,7 @@ When adding new operators:
 
 ## References
 
-- [Operator Implementation](crates/corint-runtime/src/feature/operator.rs)
+- [Operator Implementation](crates/corint-decision-runtime/src/feature/operator.rs)
 - [Feature Definitions](repository/configs/features/)
-- [Data Source Integration](crates/corint-runtime/src/datasource/)
+- [Data Source Integration](crates/corint-decision-runtime/src/datasource/)
 - [Risk Rule Examples](repository/library/rules/)

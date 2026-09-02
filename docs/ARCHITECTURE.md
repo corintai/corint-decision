@@ -29,11 +29,20 @@ CORINT is a high-performance, flexible decision engine designed for real-time ri
 │         │    config/server.yaml               │                  │
 │         │   (Application Config)              │                  │
 │         └──────────────────┼──────────────────┘                  │
-│                            │ Depends on corint-sdk               │
+│       HTTP Server ─────────┼──> corint-decision-engine           │
+│       FFI / WASM ──────────┴──> corint-decision-sdk              │
 └────────────────────────────┼─────────────────────────────────────┘
                              ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│                      corint-sdk (Unified Entry Point)           │
+│                corint-decision-sdk (Developer API Facade)        │
+│                                                                  │
+│  Curated public API and re-exports for SDK consumers             │
+│                                                                  │
+└────────────────────────────┬────────────────────────────────────┘
+                             │ delegates to
+                             ▼
+┌─────────────────────────────────────────────────────────────────┐
+│              corint-decision-engine (Core Orchestration)         │
 │                                                                  │
 │  DecisionEngineBuilder::new()                                   │
 │      .with_repository(RepositoryConfig::file_system("repo"))    │
@@ -65,7 +74,7 @@ CORINT is a high-performance, flexible decision engine designed for real-time ri
                             │ All depend on
                             ▼
        ┌─────────────────────────────────────────────────┐
-       │           corint-core (Foundation)              │
+       │           corint-decision-model (Foundation)              │
        │                                                  │
        │  Shared Types & Abstractions:                   │
        │  - AST (Abstract Syntax Tree)                   │
@@ -85,13 +94,14 @@ CORINT is a high-performance, flexible decision engine designed for real-time ri
 **Responsibility**: Expose decision engine to different runtime environments
 
 **Components**:
-- **HTTP Server** (`corint-server`): REST API for decision execution
+- **HTTP Server** (`corint-decision-server`): REST API for decision execution
 - **WASM** (`corint-wasm`): Browser/edge runtime support
-- **FFI** (`corint-ffi`): Language bindings (Python, Go, etc.)
+- **FFI** (`corint-decision-ffi`): Language bindings (Python, Go, etc.)
 
 **Key Characteristics**:
 - Only load application configuration (host, port, logging, etc.)
-- Depend solely on `corint-sdk` for decision engine functionality
+- `corint-decision-server` depends directly on `corint-decision-engine`
+- FFI and other developer-facing integrations consume `corint-decision-sdk`
 - Lightweight, focused on protocol/transport concerns
 
 **Example (HTTP Server)**:
@@ -99,7 +109,7 @@ CORINT is a high-performance, flexible decision engine designed for real-time ri
 // config/server.yaml - Application configuration only
 let config = ServerConfig::load()?;
 
-// Use SDK for all business logic
+// Use the engine for server-side orchestration
 let engine = DecisionEngineBuilder::new()
     .with_repository(RepositoryConfig::file_system("repository"))
     .enable_metrics(config.enable_metrics)
@@ -112,9 +122,9 @@ let result = engine.decide(request).await?;
 
 ---
 
-### 2. SDK Layer (`corint-sdk`)
+### 2. SDK Layer (`corint-decision-sdk`)
 
-**Responsibility**: Unified entry point for all integrations
+**Responsibility**: Curated developer-facing API for SDK consumers
 
 **Core API**:
 ```rust
@@ -140,19 +150,32 @@ pub struct DecisionEngine {
 ```
 
 **Key Features**:
-- Builder pattern for flexible configuration
-- Automatic repository content loading
-- Integration with runtime services (features, lists, persistence)
-- Metrics and tracing support
+- Re-export the intended engine-facing types without exposing internal modules
+- Provide a compact dependency surface for FFI and application developers
+- Delegate orchestration to `corint-decision-engine`
 
 **Re-exports**:
-- `RepositoryConfig`, `RepositorySource` from `corint-repository`
-- `DecisionEngine`, `DecisionRequest`, `DecisionResult`
-- Configuration types for external consumption
+- `DecisionEngine`, `DecisionEngineBuilder`, `DecisionRequest`, `DecisionResult`
+- Engine configuration and related public types
 
 ---
 
-### 3. Repository Layer (`corint-repository`)
+### 3. Engine Layer (`corint-decision-engine`)
+
+**Responsibility**: Coordinate repository loading, compilation, runtime services, and decision execution.
+
+**Dependencies**:
+- `corint-decision-model`
+- `corint-decision-dsl-parser`
+- `corint-decision-compiler`
+- `corint-decision-runtime`
+- `corint-decision-repository`
+
+The engine owns `DecisionEngine` and `DecisionEngineBuilder`; transport crates do not reimplement orchestration.
+
+---
+
+### 4. Repository Layer (`corint-decision-repository`)
 
 **Responsibility**: Load all business configuration from various sources
 
@@ -231,7 +254,7 @@ let content = loader.load_all().await?;
 
 ---
 
-### 4. Compiler Layer (`corint-compiler`)
+### 5. Compiler Layer (`corint-decision-compiler`)
 
 **Responsibility**: Transform YAML definitions into optimized bytecode
 
@@ -241,7 +264,7 @@ YAML Input
     ↓
 ┌─────────────────┐
 │ Parser          │  Parse YAML → AST
-│ (corint-parser) │  - Pipelines, Rules, Rulesets
+│ (corint-decision-dsl-parser) │  - Pipelines, Rules, Rulesets
 └────────┬────────┘
          ↓
 ┌─────────────────┐
@@ -269,7 +292,7 @@ YAML Input
 ```
 
 **Key Components**:
-- **Parser** (`corint-parser`): YAML → AST transformation
+- **Parser** (`corint-decision-dsl-parser`): YAML → AST transformation
 - **Semantic Analyzer**: Type checking, validation
 - **Optimizer**: Constant folding, dead code elimination
 - **Code Generator**: AST → Bytecode compilation
@@ -282,7 +305,7 @@ YAML Input
 
 ---
 
-### 5. Runtime Layer (`corint-runtime`)
+### 6. Runtime Layer (`corint-decision-runtime`)
 
 **Responsibility**: Execute compiled bytecode and provide runtime services
 
@@ -499,7 +522,7 @@ span: decide
 
 ---
 
-### 6. Core Layer (`corint-core`)
+### 7. Core Layer (`corint-decision-model`)
 
 **Responsibility**: Foundation library providing shared types and abstractions used by all other components
 
@@ -631,13 +654,13 @@ pub mod utils {
 
 **Dependency Graph**:
 ```
-corint-parser    ──┐
-                   ├──> corint-core (AST, Value, Error)
-corint-compiler  ──┤
+corint-decision-dsl-parser    ──┐
+                   ├──> corint-decision-model (AST, Value, Error)
+corint-decision-compiler  ──┤
                    │
-corint-runtime   ──┤──> corint-core (Bytecode, Value, Error)
+corint-decision-runtime   ──┤──> corint-decision-model (Bytecode, Value, Error)
                    │
-corint-repository──┘──> corint-core (Error, Value)
+corint-decision-repository──┘──> corint-decision-model (Error, Value)
 ```
 
 **Design Benefits**:
@@ -648,7 +671,7 @@ corint-repository──┘──> corint-core (Error, Value)
 
 ---
 
-### 7. LLM Layer (`corint-llm`) - Development-Time Only
+### 8. LLM Layer (`corint-decision-llm`) - Development-Time Only
 
 **⚠️ IMPORTANT**: LLM is **NOT** a runtime component. It is a development-time code generation tool.
 
@@ -667,7 +690,7 @@ corint-repository──┘──> corint-core (Error, Value)
 ├──────────────────────────────────────────────────────────┤
 │  Natural Language Description                             │
 │         ↓                                                  │
-│  corint-llm (LLM-powered generator)                       │
+│  corint-decision-llm (LLM-powered generator)                       │
 │  - RuleGenerator                                          │
 │  - RulesetGenerator                                       │
 │  - PipelineGenerator                                      │
@@ -715,7 +738,7 @@ let provider = MockProvider::with_response(yaml);
 
 **Usage Example**:
 ```rust
-use corint_llm::{RuleGenerator, OpenAIProvider};
+use corint_decision_llm::{RuleGenerator, OpenAIProvider};
 
 // Generate a rule from natural language
 let provider = Arc::new(OpenAIProvider::new(api_key));

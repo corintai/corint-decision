@@ -772,7 +772,7 @@ cleanup() {
     fi
 
     # Also try pkill as fallback
-    pkill -f "corint-server" 2>/dev/null || true
+    pkill -f "corint-decision-server" 2>/dev/null || true
 
     # Restore original config
     restore_config
@@ -926,7 +926,7 @@ run_tests_for_datasource() {
 
     # Step 3: Build server
     log_info "Step 3: Building server..."
-    cargo build --bin corint-server --features redis --quiet
+    cargo build --bin corint-decision-server --features redis --quiet
     if [ $? -ne 0 ]; then
         log_error "Failed to build server"
         return 1
@@ -938,10 +938,10 @@ run_tests_for_datasource() {
     log_info "Step 4: Starting test server..."
     # Enable detailed logging for Redis tests to debug issues
     if [ "$datasource" = "redis" ]; then
-        RUST_LOG=info target/debug/corint-server > "$RESULTS_DIR/server_${datasource}.log" 2>&1 &
+        RUST_LOG=info target/debug/corint-decision-server > "$RESULTS_DIR/server_${datasource}.log" 2>&1 &
     else
         # Enable detailed performance logging for feature execution and datasource queries
-        RUST_LOG=error,corint_runtime::feature::executor=debug,corint_runtime::datasource=debug target/debug/corint-server > "$RESULTS_DIR/server_${datasource}.log" 2>&1 &
+        RUST_LOG=error,corint_decision_runtime::feature::executor=debug,corint_decision_runtime::datasource=debug target/debug/corint-decision-server > "$RESULTS_DIR/server_${datasource}.log" 2>&1 &
     fi
     SERVER_PID=$!
     echo $SERVER_PID > "$SERVER_PID_FILE"

@@ -516,12 +516,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "773648b94d0e5d620f64f280777445740e61fe701025087ec8b57f45c791888b"
 
 [[package]]
-name = "corint-compiler"
+name = "corint-decision-compiler"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "corint-core",
- "corint-parser",
+ "corint-decision-dsl-parser",
+ "corint-decision-model",
  "serde",
  "serde_json",
  "serde_yaml",
@@ -529,24 +529,46 @@ dependencies = [
 ]
 
 [[package]]
-name = "corint-core"
+name = "corint-decision-dsl-parser"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "corint-decision-model",
  "log",
  "serde",
  "serde_json",
+ "serde_yaml",
  "thiserror 1.0.69",
 ]
 
 [[package]]
-name = "corint-ffi"
+name = "corint-decision-engine"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "corint-core",
- "corint-runtime",
- "corint-sdk",
+ "async-trait",
+ "chrono",
+ "corint-decision-compiler",
+ "corint-decision-dsl-parser",
+ "corint-decision-model",
+ "corint-decision-repository",
+ "corint-decision-runtime",
+ "rand 0.8.5",
+ "serde",
+ "serde_json",
+ "serde_yaml",
+ "sqlx",
+ "thiserror 1.0.69",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
+name = "corint-decision-ffi"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "corint-decision-sdk",
  "env_logger",
  "libc",
  "log",
@@ -555,12 +577,12 @@ dependencies = [
 ]
 
 [[package]]
-name = "corint-llm"
+name = "corint-decision-llm"
 version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
- "corint-parser",
+ "corint-decision-dsl-parser",
  "dashmap",
  "jsonschema",
  "regex",
@@ -575,26 +597,24 @@ dependencies = [
 ]
 
 [[package]]
-name = "corint-parser"
+name = "corint-decision-model"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "corint-core",
  "log",
  "serde",
  "serde_json",
- "serde_yaml",
  "thiserror 1.0.69",
 ]
 
 [[package]]
-name = "corint-repository"
+name = "corint-decision-repository"
 version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
- "corint-core",
- "corint-parser",
+ "corint-decision-dsl-parser",
+ "corint-decision-model",
  "mockito",
  "path-absolutize",
  "reqwest",
@@ -609,14 +629,14 @@ dependencies = [
 ]
 
 [[package]]
-name = "corint-runtime"
+name = "corint-decision-runtime"
 version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
  "bigdecimal",
  "chrono",
- "corint-core",
+ "corint-decision-model",
  "futures",
  "redis",
  "reqwest",
@@ -634,29 +654,15 @@ dependencies = [
 ]
 
 [[package]]
-name = "corint-sdk"
+name = "corint-decision-sdk"
 version = "0.1.0"
 dependencies = [
- "anyhow",
- "async-trait",
- "chrono",
- "corint-compiler",
- "corint-core",
- "corint-parser",
- "corint-repository",
- "corint-runtime",
- "rand 0.8.5",
- "serde",
- "serde_json",
- "serde_yaml",
- "sqlx",
- "thiserror 1.0.69",
+ "corint-decision-engine",
  "tokio",
- "tracing",
 ]
 
 [[package]]
-name = "corint-server"
+name = "corint-decision-server"
 version = "0.1.0"
 dependencies = [
  "anyhow",
@@ -664,10 +670,7 @@ dependencies = [
  "axum",
  "chrono",
  "config",
- "corint-core",
- "corint-repository",
- "corint-runtime",
- "corint-sdk",
+ "corint-decision-engine",
  "dotenvy",
  "http-body-util",
  "hyper 1.8.1",
@@ -676,7 +679,6 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_yaml",
- "sqlx",
  "tempfile",
  "thiserror 1.0.69",
  "tokio",

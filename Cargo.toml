@@ -1,9 +1,15 @@
 [workspace]
 members = [
-    "crates/corint-core",
-    "crates/corint-parser",
-    "crates/corint-compiler",
-    "crates/corint-runtime", "crates/corint-sdk", "crates/corint-server", "crates/corint-repository", "crates/corint-ffi", "crates/corint-llm",
+    "crates/corint-decision-model",
+    "crates/corint-decision-dsl-parser",
+    "crates/corint-decision-compiler",
+    "crates/corint-decision-runtime",
+    "crates/corint-decision-engine",
+    "crates/corint-decision-sdk",
+    "crates/corint-decision-server",
+    "crates/corint-decision-repository",
+    "crates/corint-decision-ffi",
+    "crates/corint-decision-llm",
 ]
 resolver = "2"
 
@@ -21,6 +27,6 @@ license = "Elastic-2.0"
 
 # Note: Root-level examples have been removed.
 # Code examples are now located in individual crate examples/ directories:
-# - crates/corint-runtime/examples/
-# - crates/corint-sdk/examples/
+# - crates/corint-decision-runtime/examples/
+# - crates/corint-decision-sdk/examples/
 # - etc.

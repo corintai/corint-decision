@@ -1,0 +1,36 @@
+[package]
+name = "corint-decision-engine"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+description = "Core application orchestration for the CORINT Decision Engine"
+
+[dependencies]
+corint-decision-model = { path = "../corint-decision-model" }
+corint-decision-dsl-parser = { path = "../corint-decision-dsl-parser" }
+corint-decision-compiler = { path = "../corint-decision-compiler" }
+corint-decision-runtime = { path = "../corint-decision-runtime" }
+corint-decision-repository = { path = "../corint-decision-repository" }
+thiserror = { workspace = true }
+anyhow = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+serde_yaml = { workspace = true }
+tokio = { version = "1.0", features = ["full"] }
+async-trait = "0.1"
+tracing = "0.1"
+chrono = { version = "0.4", features = ["serde"] }
+rand = "0.8"
+sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio-native-tls", "postgres"], optional = true }
+
+[features]
+default = []
+sqlx = ["dep:sqlx", "corint-decision-runtime/sqlx"]
+postgres = ["corint-decision-repository/postgres"]
+mysql = ["corint-decision-repository/mysql"]
+api = ["corint-decision-repository/api"]
+clickhouse = ["corint-decision-runtime/clickhouse"]
+redis = ["corint-decision-runtime/redis"]
+
+[dev-dependencies]
+tokio = { version = "1.0", features = ["full", "test-util"] }
