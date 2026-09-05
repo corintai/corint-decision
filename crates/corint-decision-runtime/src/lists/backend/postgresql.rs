@@ -122,7 +122,9 @@ impl ListBackend for PostgresBackend {
             .bind(&value_str)
             .execute(&*self.pool)
             .await
-            .map_err(|e| RuntimeError::InvalidOperation(format!("Database insert failed: {}", e)))?;
+            .map_err(|e| {
+                RuntimeError::InvalidOperation(format!("Database insert failed: {}", e))
+            })?;
 
         Ok(())
     }
@@ -140,7 +142,9 @@ impl ListBackend for PostgresBackend {
             .bind(&value_str)
             .execute(&*self.pool)
             .await
-            .map_err(|e| RuntimeError::InvalidOperation(format!("Database delete failed: {}", e)))?;
+            .map_err(|e| {
+                RuntimeError::InvalidOperation(format!("Database delete failed: {}", e))
+            })?;
 
         Ok(())
     }
@@ -166,9 +170,9 @@ impl ListBackend for PostgresBackend {
 
         let mut values = Vec::new();
         for row in rows {
-            let value_str: String = row
-                .try_get(0)
-                .map_err(|e| RuntimeError::InvalidOperation(format!("Failed to read value: {}", e)))?;
+            let value_str: String = row.try_get(0).map_err(|e| {
+                RuntimeError::InvalidOperation(format!("Failed to read value: {}", e))
+            })?;
             values.push(Value::String(value_str));
         }
 

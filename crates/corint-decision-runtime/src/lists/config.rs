@@ -143,20 +143,34 @@ impl ListConfig {
 
     /// Get the table name (generic, tries to get from any backend config)
     pub fn table(&self) -> Option<String> {
-        self.sqlite_config.as_ref().and_then(|c| c.table.clone())
+        self.sqlite_config
+            .as_ref()
+            .and_then(|c| c.table.clone())
             .or_else(|| self.postgres_config.as_ref().and_then(|c| c.table.clone()))
     }
 
     /// Get the value column name (generic, tries to get from any backend config)
     pub fn value_column(&self) -> Option<String> {
-        self.sqlite_config.as_ref().and_then(|c| c.value_column.clone())
-            .or_else(|| self.postgres_config.as_ref().and_then(|c| c.value_column.clone()))
+        self.sqlite_config
+            .as_ref()
+            .and_then(|c| c.value_column.clone())
+            .or_else(|| {
+                self.postgres_config
+                    .as_ref()
+                    .and_then(|c| c.value_column.clone())
+            })
     }
 
     /// Get the expiration column name (generic, tries to get from any backend config)
     pub fn expiration_column(&self) -> Option<String> {
-        self.sqlite_config.as_ref().and_then(|c| c.expiration_column.clone())
-            .or_else(|| self.postgres_config.as_ref().and_then(|c| c.expiration_column.clone()))
+        self.sqlite_config
+            .as_ref()
+            .and_then(|c| c.expiration_column.clone())
+            .or_else(|| {
+                self.postgres_config
+                    .as_ref()
+                    .and_then(|c| c.expiration_column.clone())
+            })
     }
 
     /// Get the default table name for PostgreSQL backend
@@ -190,9 +204,7 @@ impl ListConfig {
 
     /// Get the reload interval for File backend (in seconds)
     pub fn file_reload_interval(&self) -> Option<u64> {
-        self.file_config
-            .as_ref()
-            .and_then(|c| c.reload_interval)
+        self.file_config.as_ref().and_then(|c| c.reload_interval)
     }
 
     /// Get the database path for SQLite backend

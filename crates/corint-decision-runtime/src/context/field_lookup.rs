@@ -91,7 +91,10 @@ mod tests {
         // Nested object
         let mut user = HashMap::new();
         user.insert("id".to_string(), Value::Number(123.0));
-        user.insert("email".to_string(), Value::String("alice@example.com".to_string()));
+        user.insert(
+            "email".to_string(),
+            Value::String("alice@example.com".to_string()),
+        );
 
         let mut profile = HashMap::new();
         profile.insert("age".to_string(), Value::Number(30.0));

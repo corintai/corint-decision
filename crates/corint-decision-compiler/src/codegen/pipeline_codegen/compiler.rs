@@ -2,11 +2,11 @@
 //!
 //! Main compilation logic for pipelines with DAG structure.
 
-use crate::error::{CompileError, Result};
 use super::condition_compiler::compile_when_block;
 use super::instruction_gen::compile_step;
 use super::metadata_builder::build_steps_metadata;
 use super::validator::topological_sort;
+use crate::error::{CompileError, Result};
 use corint_decision_model::ast::pipeline::Pipeline;
 use corint_decision_model::ir::{Instruction, Program, ProgramMetadata};
 use std::collections::HashMap;
@@ -54,9 +54,11 @@ impl CompileContext {
     pub(super) fn add_pending_conditional_jump(&mut self, target: String, jump_if_true: bool) {
         let jump_pos = self.instructions.len();
         if jump_if_true {
-            self.instructions.push(Instruction::JumpIfTrue { offset: 0 });
+            self.instructions
+                .push(Instruction::JumpIfTrue { offset: 0 });
         } else {
-            self.instructions.push(Instruction::JumpIfFalse { offset: 0 });
+            self.instructions
+                .push(Instruction::JumpIfFalse { offset: 0 });
         }
         self.pending_jumps.push((jump_pos, target));
     }
@@ -90,7 +92,8 @@ impl PipelineCompiler {
 
             // If condition is false, jump to end (skip entire pipeline)
             let jump_if_false_pos = ctx.instructions.len();
-            ctx.instructions.push(Instruction::JumpIfFalse { offset: 0 });
+            ctx.instructions
+                .push(Instruction::JumpIfFalse { offset: 0 });
 
             // Mark the position where we'll jump to (after all steps)
             // We'll backfill this offset after we know the total instruction count
@@ -123,8 +126,8 @@ impl PipelineCompiler {
         resolve_jumps(&mut ctx)?;
 
         // Step 6: Build program metadata
-        let mut metadata = ProgramMetadata::for_pipeline(pipeline.id.clone())
-            .with_name(pipeline.name.clone());
+        let mut metadata =
+            ProgramMetadata::for_pipeline(pipeline.id.clone()).with_name(pipeline.name.clone());
 
         // Step 7: Add step information to metadata for tracing
         let steps_json = build_steps_metadata(&sorted_steps);
@@ -136,8 +139,15 @@ impl PipelineCompiler {
             let decision_instructions = compile_decision_logic(decision_rules)?;
             // Add decision instructions info to metadata for debugging
             metadata = metadata.with_custom("has_decision_logic".to_string(), "true".to_string());
-            metadata = metadata.with_custom("decision_instructions_count".to_string(), decision_instructions.len().to_string());
-            Ok(Program::new_with_decision(ctx.instructions, metadata, decision_instructions))
+            metadata = metadata.with_custom(
+                "decision_instructions_count".to_string(),
+                decision_instructions.len().to_string(),
+            );
+            Ok(Program::new_with_decision(
+                ctx.instructions,
+                metadata,
+                decision_instructions,
+            ))
         } else {
             Ok(Program::new(ctx.instructions, metadata))
         }
@@ -254,10 +264,7 @@ fn resolve_jumps(ctx: &mut CompileContext) -> Result<()> {
             return_pos
         } else {
             *ctx.step_positions.get(target_id).ok_or_else(|| {
-                CompileError::InvalidExpression(format!(
-                    "Unknown step target: '{}'",
-                    target_id
-                ))
+                CompileError::InvalidExpression(format!("Unknown step target: '{}'", target_id))
             })?
         };
 
@@ -311,8 +318,14 @@ mod tests {
         assert!(!program.instructions.is_empty());
 
         // Should have: MarkStepExecuted, CallRuleset, Jump, Return
-        assert!(matches!(program.instructions[0], Instruction::MarkStepExecuted { .. }));
-        assert!(matches!(program.instructions[1], Instruction::CallRuleset { .. }));
+        assert!(matches!(
+            program.instructions[0],
+            Instruction::MarkStepExecuted { .. }
+        ));
+        assert!(matches!(
+            program.instructions[1],
+            Instruction::CallRuleset { .. }
+        ));
         assert!(matches!(program.instructions[2], Instruction::Jump { .. }));
         assert!(matches!(program.instructions[3], Instruction::Return));
     }
@@ -365,9 +378,18 @@ mod tests {
 
         assert!(!program.instructions.is_empty());
         // Should contain LoadField, LoadConst, Compare, JumpIfFalse, Jump instructions
-        assert!(program.instructions.iter().any(|i| matches!(i, Instruction::LoadField { .. })));
-        assert!(program.instructions.iter().any(|i| matches!(i, Instruction::Compare { .. })));
-        assert!(program.instructions.iter().any(|i| matches!(i, Instruction::JumpIfFalse { .. })));
+        assert!(program
+            .instructions
+            .iter()
+            .any(|i| matches!(i, Instruction::LoadField { .. })));
+        assert!(program
+            .instructions
+            .iter()
+            .any(|i| matches!(i, Instruction::Compare { .. })));
+        assert!(program
+            .instructions
+            .iter()
+            .any(|i| matches!(i, Instruction::JumpIfFalse { .. })));
     }
 
     #[test]

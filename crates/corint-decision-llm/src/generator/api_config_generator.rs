@@ -85,10 +85,7 @@ impl APIConfigGenerator {
     }
 
     /// Generate an API config and return both the YAML and the raw LLM response
-    pub async fn generate_with_metadata(
-        &self,
-        description: &str,
-    ) -> Result<(String, LLMResponse)> {
+    pub async fn generate_with_metadata(&self, description: &str) -> Result<(String, LLMResponse)> {
         let prompt = API_CONFIG_GENERATION_PROMPT.replace("{description}", description);
 
         let request = LLMRequest {
@@ -183,7 +180,10 @@ endpoints:
         let provider = Arc::new(MockProvider::with_response(mock_response.to_string()));
         let generator = APIConfigGenerator::with_defaults(provider);
 
-        let result = generator.generate("Fraud API with multiple endpoints").await.unwrap();
+        let result = generator
+            .generate("Fraud API with multiple endpoints")
+            .await
+            .unwrap();
 
         assert!(result.contains("name: fraud_api"));
         assert!(result.contains("check_transaction"));
@@ -234,10 +234,7 @@ base_url: https://example.com"#;
         let provider = Arc::new(MockProvider::with_response(mock_response.to_string()));
         let generator = APIConfigGenerator::with_defaults(provider);
 
-        let (yaml, metadata) = generator
-            .generate_with_metadata("Test API")
-            .await
-            .unwrap();
+        let (yaml, metadata) = generator.generate_with_metadata("Test API").await.unwrap();
 
         assert!(yaml.contains("name: test_api"));
         assert_eq!(metadata.model, "gpt-4");

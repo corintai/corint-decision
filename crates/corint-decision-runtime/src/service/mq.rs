@@ -130,13 +130,10 @@ impl ServiceClient for MockMqClient {
         let topic = request.operation.clone();
 
         // Extract key and value from params
-        let key = request
-            .params
-            .get("key")
-            .and_then(|v| match v {
-                Value::String(s) => Some(s.clone()),
-                _ => None,
-            });
+        let key = request.params.get("key").and_then(|v| match v {
+            Value::String(s) => Some(s.clone()),
+            _ => None,
+        });
 
         let value = request
             .params
@@ -154,7 +151,10 @@ impl ServiceClient for MockMqClient {
         if let Some(k) = key {
             metadata.insert("key".to_string(), Value::String(k));
         }
-        metadata.insert("driver".to_string(), Value::String(format!("{:?}", self.driver)));
+        metadata.insert(
+            "driver".to_string(),
+            Value::String(format!("{:?}", self.driver)),
+        );
         metadata.insert("status".to_string(), Value::String("published".to_string()));
 
         Ok(ServiceResponse {

@@ -195,7 +195,9 @@ impl WhenBlock {
     /// Recursively collect all expressions from condition groups
     fn collect_expressions<'a>(&self, group: &'a ConditionGroup, result: &mut Vec<&'a Expression>) {
         let conditions = match group {
-            ConditionGroup::All(conds) | ConditionGroup::Any(conds) | ConditionGroup::Not(conds) => conds,
+            ConditionGroup::All(conds)
+            | ConditionGroup::Any(conds)
+            | ConditionGroup::Not(conds) => conds,
         };
 
         for condition in conditions {

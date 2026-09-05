@@ -80,10 +80,7 @@ impl PipelineGenerator {
     }
 
     /// Generate a pipeline and return both the YAML and the raw LLM response
-    pub async fn generate_with_metadata(
-        &self,
-        description: &str,
-    ) -> Result<(String, LLMResponse)> {
+    pub async fn generate_with_metadata(&self, description: &str) -> Result<(String, LLMResponse)> {
         // Use the new build_pipeline_prompt function with full DSL spec
         let prompt = build_pipeline_prompt(description);
 

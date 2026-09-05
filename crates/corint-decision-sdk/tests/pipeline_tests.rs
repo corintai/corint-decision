@@ -13,8 +13,8 @@
 
 mod common;
 
-use corint_decision_sdk::{Signal, Value};
 use common::{ResponseAssertions, TestEngine};
+use corint_decision_sdk::{Signal, Value};
 use std::collections::HashMap;
 
 // ============================================================================
@@ -711,7 +711,10 @@ pipeline:
 
     let pipeline_trace = trace.pipeline.as_ref().unwrap();
     assert!(!pipeline_trace.steps.is_empty(), "Steps should be traced");
-    assert!(!pipeline_trace.rulesets.is_empty(), "Rulesets should be traced");
+    assert!(
+        !pipeline_trace.rulesets.is_empty(),
+        "Rulesets should be traced"
+    );
 }
 
 #[tokio::test]
@@ -777,8 +780,14 @@ pipeline:
     // Verify condition trace has values
     assert!(!rule_trace.conditions.is_empty());
     let condition_trace = &rule_trace.conditions[0];
-    assert!(condition_trace.left_value.is_some(), "Left value should be present");
-    assert!(condition_trace.right_value.is_some(), "Right value should be present");
+    assert!(
+        condition_trace.left_value.is_some(),
+        "Left value should be present"
+    );
+    assert!(
+        condition_trace.right_value.is_some(),
+        "Right value should be present"
+    );
 }
 
 // ============================================================================
@@ -799,8 +808,7 @@ pipeline:
       action: approve
 "#;
 
-    let engine = TestEngine::new()
-        .with_pipeline(pipeline_yaml);
+    let engine = TestEngine::new().with_pipeline(pipeline_yaml);
 
     let event = HashMap::new();
 

@@ -10,8 +10,8 @@
 //! - Routes with when conditions (consistent with registry format)
 //! - Convention over Configuration for outputs
 
-use crate::ast::Expression;
 use crate::ast::rule::WhenBlock;
+use crate::ast::Expression;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -522,8 +522,8 @@ impl Branch {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ast::rule::{Condition, ConditionGroup};
     use crate::ast::{Expression, Operator};
-    use crate::ast::rule::{ConditionGroup, Condition};
     use crate::Value;
 
     #[test]
@@ -538,7 +538,10 @@ mod tests {
             "step1".to_string(),
         )
         .with_metadata(metadata.clone())
-        .add_step(PipelineStep::router("step1".to_string(), "Router Step".to_string()));
+        .add_step(PipelineStep::router(
+            "step1".to_string(),
+            "Router Step".to_string(),
+        ));
 
         assert_eq!(pipeline.id, "test_pipeline");
         assert_eq!(pipeline.name, "Test Pipeline");
@@ -551,13 +554,13 @@ mod tests {
     fn test_router_step() {
         let when_block = WhenBlock {
             event_type: None,
-            condition_group: Some(ConditionGroup::All(vec![
-                Condition::Expression(Expression::binary(
+            condition_group: Some(ConditionGroup::All(vec![Condition::Expression(
+                Expression::binary(
                     Expression::field_access(vec!["amount".to_string()]),
                     Operator::Gt,
                     Expression::literal(Value::Number(1000.0)),
-                )),
-            ])),
+                ),
+            )])),
             conditions: None,
         };
 
@@ -623,10 +626,7 @@ mod tests {
     fn test_api_step_all_mode() {
         let details = StepDetails::Api {
             api_target: ApiTarget::All {
-                all: vec![
-                    "credit_bureau".to_string(),
-                    "fraud_detection".to_string(),
-                ],
+                all: vec!["credit_bureau".to_string(), "fraud_detection".to_string()],
             },
             endpoint: None,
             params: None,
@@ -685,12 +685,10 @@ mod tests {
 
     #[test]
     fn test_pipeline_serde() {
-        let pipeline = Pipeline::new(
-            "test".to_string(),
-            "Test".to_string(),
-            "step1".to_string(),
-        )
-        .add_step(PipelineStep::router("step1".to_string(), "Router".to_string()));
+        let pipeline =
+            Pipeline::new("test".to_string(), "Test".to_string(), "step1".to_string()).add_step(
+                PipelineStep::router("step1".to_string(), "Router".to_string()),
+            );
 
         // Serialize to JSON
         let json = serde_json::to_string(&pipeline).unwrap();

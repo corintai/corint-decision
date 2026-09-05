@@ -60,7 +60,10 @@ pub(super) fn build_system_vars() -> HashMap<String, Value> {
         12 => "december",
         _ => "unknown",
     };
-    sys.insert("month_name".to_string(), Value::String(month_name.to_string()));
+    sys.insert(
+        "month_name".to_string(),
+        Value::String(month_name.to_string()),
+    );
 
     // Quarter
     let quarter = ((now.month() - 1) / 3) + 1;
@@ -83,11 +86,17 @@ pub(super) fn build_system_vars() -> HashMap<String, Value> {
         18..=21 => "evening",
         _ => "night",
     };
-    sys.insert("time_of_day".to_string(), Value::String(time_of_day.to_string()));
+    sys.insert(
+        "time_of_day".to_string(),
+        Value::String(time_of_day.to_string()),
+    );
 
     // Business hours (9 AM - 5 PM)
     let is_business_hours = now.hour() >= 9 && now.hour() < 17;
-    sys.insert("is_business_hours".to_string(), Value::Bool(is_business_hours));
+    sys.insert(
+        "is_business_hours".to_string(),
+        Value::Bool(is_business_hours),
+    );
 
     // Day of week
     let day_of_week = match now.weekday() {
@@ -114,7 +123,10 @@ pub(super) fn build_system_vars() -> HashMap<String, Value> {
         chrono::Weekday::Sat => 6,
         chrono::Weekday::Sun => 7,
     };
-    sys.insert("day_of_week_num".to_string(), Value::Number(day_of_week_num as f64));
+    sys.insert(
+        "day_of_week_num".to_string(),
+        Value::Number(day_of_week_num as f64),
+    );
 
     // Weekend and weekday flags
     let is_weekend = matches!(now.weekday(), chrono::Weekday::Sat | chrono::Weekday::Sun);
@@ -122,14 +134,15 @@ pub(super) fn build_system_vars() -> HashMap<String, Value> {
     sys.insert("is_weekday".to_string(), Value::Bool(!is_weekend));
 
     // Day of year
-    sys.insert("day_of_year".to_string(), Value::Number(now.ordinal() as f64));
+    sys.insert(
+        "day_of_year".to_string(),
+        Value::Number(now.ordinal() as f64),
+    );
 
     // Environment information
     sys.insert(
         "environment".to_string(),
-        Value::String(
-            std::env::var("ENVIRONMENT").unwrap_or_else(|_| "development".to_string()),
-        ),
+        Value::String(std::env::var("ENVIRONMENT").unwrap_or_else(|_| "development".to_string())),
     );
 
     // Version information

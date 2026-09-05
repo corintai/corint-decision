@@ -7,8 +7,8 @@
 //! - `attributes.risk_level in ["high", "critical"]`
 
 use super::types::{
-    ParsedCondition, ParsedConditionGroup, ParsedConditionItem, ParsedValue,
-    WhenClause, WhenClauseComplex, WhenClauseItem,
+    ParsedCondition, ParsedConditionGroup, ParsedConditionItem, ParsedValue, WhenClause,
+    WhenClauseComplex, WhenClauseItem,
 };
 use crate::ast::operator::Operator;
 use crate::types::Value;
@@ -57,14 +57,19 @@ impl ConditionParser {
         match when {
             WhenClause::Simple(expr) => {
                 let condition = self.parse_condition(expr)?;
-                Ok(ParsedConditionGroup::All(vec![ParsedConditionItem::Condition(condition)]))
+                Ok(ParsedConditionGroup::All(vec![
+                    ParsedConditionItem::Condition(condition),
+                ]))
             }
             WhenClause::Complex(complex) => self.parse_complex(complex),
         }
     }
 
     /// Parse a complex when clause
-    fn parse_complex(&self, complex: &WhenClauseComplex) -> Result<ParsedConditionGroup, ParseError> {
+    fn parse_complex(
+        &self,
+        complex: &WhenClauseComplex,
+    ) -> Result<ParsedConditionGroup, ParseError> {
         // Prioritize 'all', then 'any', then 'not'
         if let Some(all) = &complex.all {
             let items = self.parse_items(all)?;
@@ -82,7 +87,10 @@ impl ConditionParser {
     }
 
     /// Parse a list of when clause items
-    fn parse_items(&self, items: &[WhenClauseItem]) -> Result<Vec<ParsedConditionItem>, ParseError> {
+    fn parse_items(
+        &self,
+        items: &[WhenClauseItem],
+    ) -> Result<Vec<ParsedConditionItem>, ParseError> {
         let mut result = Vec::new();
         for item in items {
             match item {
@@ -334,7 +342,10 @@ mod tests {
 
         assert_eq!(result.field, "type");
         assert_eq!(result.operator, Operator::Eq);
-        assert_eq!(result.value.to_value(), Value::String("transaction".to_string()));
+        assert_eq!(
+            result.value.to_value(),
+            Value::String("transaction".to_string())
+        );
     }
 
     #[test]
@@ -360,7 +371,9 @@ mod tests {
     #[test]
     fn test_parse_in_operator() {
         let parser = ConditionParser::new();
-        let result = parser.parse_condition(r#"country in ["US", "CA"]"#).unwrap();
+        let result = parser
+            .parse_condition(r#"country in ["US", "CA"]"#)
+            .unwrap();
 
         assert_eq!(result.field, "country");
         assert_eq!(result.operator, Operator::In);
@@ -379,17 +392,24 @@ mod tests {
         context.insert("user_id".to_string(), Value::String("user123".to_string()));
 
         let parser = ConditionParser::with_context(context);
-        let result = parser.parse_condition(r#"user_id == "{event.user_id}""#).unwrap();
+        let result = parser
+            .parse_condition(r#"user_id == "{event.user_id}""#)
+            .unwrap();
 
         assert_eq!(result.field, "user_id");
         assert_eq!(result.operator, Operator::Eq);
-        assert_eq!(result.value.to_value(), Value::String("user123".to_string()));
+        assert_eq!(
+            result.value.to_value(),
+            Value::String("user123".to_string())
+        );
     }
 
     #[test]
     fn test_parse_unresolved_template() {
         let parser = ConditionParser::new();
-        let result = parser.parse_condition(r#"user_id == {event.user_id}"#).unwrap();
+        let result = parser
+            .parse_condition(r#"user_id == {event.user_id}"#)
+            .unwrap();
 
         assert!(result.value.is_template());
         assert!(result.needs_resolution());
@@ -398,17 +418,24 @@ mod tests {
     #[test]
     fn test_parse_contains() {
         let parser = ConditionParser::new();
-        let result = parser.parse_condition(r#"email contains "@example.com""#).unwrap();
+        let result = parser
+            .parse_condition(r#"email contains "@example.com""#)
+            .unwrap();
 
         assert_eq!(result.field, "email");
         assert_eq!(result.operator, Operator::Contains);
-        assert_eq!(result.value.to_value(), Value::String("@example.com".to_string()));
+        assert_eq!(
+            result.value.to_value(),
+            Value::String("@example.com".to_string())
+        );
     }
 
     #[test]
     fn test_parse_nested_field() {
         let parser = ConditionParser::new();
-        let result = parser.parse_condition(r#"attributes.risk_level == "high""#).unwrap();
+        let result = parser
+            .parse_condition(r#"attributes.risk_level == "high""#)
+            .unwrap();
 
         assert_eq!(result.field, "attributes.risk_level");
         assert_eq!(result.operator, Operator::Eq);

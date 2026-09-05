@@ -5,8 +5,8 @@
 
 mod common;
 
-use corint_decision_sdk::{Signal, Value};
 use common::{ResponseAssertions, TestEngine};
+use corint_decision_sdk::{Signal, Value};
 use std::collections::HashMap;
 
 // ============================================================================
@@ -290,7 +290,10 @@ ruleset:
         .with_ruleset(ruleset_yaml);
 
     let mut event = HashMap::new();
-    event.insert("email".to_string(), Value::String("user@tempmail.com".to_string()));
+    event.insert(
+        "email".to_string(),
+        Value::String("user@tempmail.com".to_string()),
+    );
 
     let response = engine.execute_ruleset("test_ruleset", event).await;
     response.assert_score(40);
@@ -358,7 +361,10 @@ ruleset:
         .with_ruleset(ruleset_yaml);
 
     let mut event = HashMap::new();
-    event.insert("email".to_string(), Value::String("admin@whitehouse.gov".to_string()));
+    event.insert(
+        "email".to_string(),
+        Value::String("admin@whitehouse.gov".to_string()),
+    );
 
     let response = engine.execute_ruleset("test_ruleset", event).await;
     response.assert_score(-30);

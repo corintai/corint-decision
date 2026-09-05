@@ -21,16 +21,10 @@ pub(super) fn load_environment_vars() -> HashMap<String, Value> {
     for (key, value) in std::env::vars() {
         if key.starts_with("CORINT_") {
             // Remove CORINT_ prefix and convert to lowercase
-            let config_key = key
-                .strip_prefix("CORINT_")
-                .unwrap()
-                .to_lowercase();
+            let config_key = key.strip_prefix("CORINT_").unwrap().to_lowercase();
 
             // Try to parse as different types
-            env.insert(
-                config_key,
-                parse_env_value(&value),
-            );
+            env.insert(config_key, parse_env_value(&value));
         }
     }
 
@@ -40,7 +34,10 @@ pub(super) fn load_environment_vars() -> HashMap<String, Value> {
     }
 
     if !env.contains_key("default_action") {
-        env.insert("default_action".to_string(), Value::String("approve".to_string()));
+        env.insert(
+            "default_action".to_string(),
+            Value::String("approve".to_string()),
+        );
     }
 
     // Feature flags namespace
@@ -49,15 +46,9 @@ pub(super) fn load_environment_vars() -> HashMap<String, Value> {
     // Check for feature flag environment variables
     for (key, value) in std::env::vars() {
         if key.starts_with("FEATURE_") {
-            let flag_name = key
-                .strip_prefix("FEATURE_")
-                .unwrap()
-                .to_lowercase();
+            let flag_name = key.strip_prefix("FEATURE_").unwrap().to_lowercase();
 
-            feature_flags.insert(
-                flag_name,
-                parse_bool_value(&value),
-            );
+            feature_flags.insert(flag_name, parse_bool_value(&value));
         }
     }
 

@@ -334,14 +334,12 @@ mod tests {
         .unwrap();
 
         // Insert entry without expiration (never expires)
-        sqlx::query(
-            "INSERT INTO list_entries (list_id, value, expires_at) VALUES (?1, ?2, NULL)",
-        )
-        .bind(test_list)
-        .bind("permanent_user")
-        .execute(&pool)
-        .await
-        .unwrap();
+        sqlx::query("INSERT INTO list_entries (list_id, value, expires_at) VALUES (?1, ?2, NULL)")
+            .bind(test_list)
+            .bind("permanent_user")
+            .execute(&pool)
+            .await
+            .unwrap();
 
         // Expired user should NOT be found
         assert!(!backend

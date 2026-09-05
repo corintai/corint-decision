@@ -2,10 +2,10 @@
 //!
 //! Generates IR instructions for different types of pipeline steps.
 
-use crate::error::Result;
 use super::compiler::CompileContext;
 use super::condition_compiler::compile_when_block;
 use super::validator::get_next_step_id;
+use crate::error::Result;
 use corint_decision_model::ast::pipeline::{PipelineStep, StepDetails, StepNext};
 use corint_decision_model::ast::WhenBlock;
 use corint_decision_model::ir::Instruction;
@@ -64,7 +64,8 @@ fn compile_router_step(step: &PipelineStep, ctx: &mut CompileContext) -> Result<
 
             // If condition is false, skip to next route
             let jump_if_false_pos = ctx.instructions.len();
-            ctx.instructions.push(Instruction::JumpIfFalse { offset: 0 });
+            ctx.instructions
+                .push(Instruction::JumpIfFalse { offset: 0 });
 
             // If condition is true:
             // 1. Mark step as executed with the selected route
@@ -137,7 +138,11 @@ fn compile_function_step(step: &PipelineStep, ctx: &mut CompileContext) -> Resul
         is_default_route: false,
     });
 
-    if let StepDetails::Function { function, params: _ } = &step.details {
+    if let StepDetails::Function {
+        function,
+        params: _,
+    } = &step.details
+    {
         // TODO: Implement function call compilation
         // For now, we'll just add a placeholder comment via Store
         ctx.instructions.push(Instruction::Store {
@@ -179,7 +184,8 @@ fn compile_service_step(step: &PipelineStep, ctx: &mut CompileContext) -> Result
         let output_var = output
             .clone()
             .unwrap_or_else(|| format!("service.{}", service));
-        ctx.instructions.push(Instruction::Store { name: output_var });
+        ctx.instructions
+            .push(Instruction::Store { name: output_var });
     }
 
     compile_next_jump(step, ctx)
@@ -234,7 +240,8 @@ fn compile_api_step(step: &PipelineStep, ctx: &mut CompileContext) -> Result<()>
                 format!("api.{}", api_name)
             }
         });
-        ctx.instructions.push(Instruction::Store { name: output_var });
+        ctx.instructions
+            .push(Instruction::Store { name: output_var });
     }
 
     compile_next_jump(step, ctx)

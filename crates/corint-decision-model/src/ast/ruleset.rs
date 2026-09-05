@@ -167,7 +167,6 @@ impl DecisionRule {
         self.reason = Some(reason);
         self
     }
-
 }
 
 #[cfg(test)]
@@ -275,7 +274,10 @@ mod tests {
 
         // First rule: Decline if score > 200
         assert_eq!(ruleset.conclusion[0].signal, Signal::Decline);
-        assert_eq!(ruleset.conclusion[0].actions, vec!["BLOCK_CARD", "NOTIFY_USER"]);
+        assert_eq!(
+            ruleset.conclusion[0].actions,
+            vec!["BLOCK_CARD", "NOTIFY_USER"]
+        );
 
         // Second rule: Review if score > 100
         assert_eq!(ruleset.conclusion[1].signal, Signal::Review);

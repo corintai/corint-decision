@@ -96,10 +96,7 @@ fn test_extends_decision_logic_override() {
         assert_eq!(doc.definition.extends, Some("payment_base".to_string()));
 
         // Should have its own decision logic (6 rules in this case)
-        println!(
-            "📊 Conclusion rules: {}",
-            doc.definition.conclusion.len()
-        );
+        println!("📊 Conclusion rules: {}", doc.definition.conclusion.len());
         assert!(!doc.definition.conclusion.is_empty());
 
         // Verify it has different thresholds than base

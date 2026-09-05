@@ -51,6 +51,6 @@ mod types;
 
 pub use parser::{ConditionParser, ParseError};
 pub use types::{
-    ParsedCondition, ParsedConditionGroup, ParsedConditionItem, ParsedValue,
-    WhenClause, WhenClauseComplex, WhenClauseItem,
+    ParsedCondition, ParsedConditionGroup, ParsedConditionItem, ParsedValue, WhenClause,
+    WhenClauseComplex, WhenClauseItem,
 };

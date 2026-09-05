@@ -9,14 +9,14 @@ pub trait LLMProvider: LLMClient {
 }
 
 // Re-export all providers
+mod anthropic;
+mod deepseek;
+mod gemini;
 mod mock;
 mod openai;
-mod anthropic;
-mod gemini;
-mod deepseek;
 
+pub use anthropic::AnthropicProvider;
+pub use deepseek::DeepSeekProvider;
+pub use gemini::GeminiProvider;
 pub use mock::MockProvider;
 pub use openai::OpenAIProvider;
-pub use anthropic::AnthropicProvider;
-pub use gemini::GeminiProvider;
-pub use deepseek::DeepSeekProvider;

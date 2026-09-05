@@ -10,7 +10,17 @@ pub(super) const FUNCTION_STEP_FIELDS: &[&str] = &["function", "params"];
 pub(super) const RULE_STEP_FIELDS: &[&str] = &["rule"];
 pub(super) const RULESET_STEP_FIELDS: &[&str] = &["ruleset"];
 pub(super) const PIPELINE_STEP_FIELDS: &[&str] = &["pipeline", "inline"];
-pub(super) const API_STEP_FIELDS: &[&str] = &["api", "any", "all", "params", "endpoint", "output", "timeout", "on_error", "min_success"];
+pub(super) const API_STEP_FIELDS: &[&str] = &[
+    "api",
+    "any",
+    "all",
+    "params",
+    "endpoint",
+    "output",
+    "timeout",
+    "on_error",
+    "min_success",
+];
 pub(super) const SERVICE_STEP_FIELDS: &[&str] = &["service", "query", "params"];
 pub(super) const ROUTER_STEP_FIELDS: &[&str] = &["routes", "default"];
 pub(super) const TRIGGER_STEP_FIELDS: &[&str] = &["target", "params"];

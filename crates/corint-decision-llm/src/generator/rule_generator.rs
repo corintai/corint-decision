@@ -135,10 +135,7 @@ impl RuleGenerator {
     /// Generate a rule and return both the YAML and the raw LLM response
     ///
     /// Useful for debugging or analyzing the LLM's thinking process
-    pub async fn generate_with_metadata(
-        &self,
-        description: &str,
-    ) -> Result<(String, LLMResponse)> {
+    pub async fn generate_with_metadata(&self, description: &str) -> Result<(String, LLMResponse)> {
         let prompt = RULE_GENERATION_PROMPT.replace("{description}", description);
 
         let request = LLMRequest {
@@ -240,10 +237,7 @@ This rule checks velocity."#;
         let provider = Arc::new(MockProvider::with_response(mock_response.to_string()));
         let generator = RuleGenerator::with_defaults(provider);
 
-        let (yaml, metadata) = generator
-            .generate_with_metadata("Test rule")
-            .await
-            .unwrap();
+        let (yaml, metadata) = generator.generate_with_metadata("Test rule").await.unwrap();
 
         assert!(yaml.contains("rule:"));
         // The MockProvider echoes back the request model, which is "gpt-4" from default config

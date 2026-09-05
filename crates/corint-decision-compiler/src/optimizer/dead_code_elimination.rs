@@ -28,7 +28,11 @@ impl DeadCodeEliminator {
 
         // Preserve decision_instructions when optimizing
         if let Some(ref decision_instructions) = program.decision_instructions {
-            Program::new_with_decision(optimized_instructions, program.metadata.clone(), decision_instructions.clone())
+            Program::new_with_decision(
+                optimized_instructions,
+                program.metadata.clone(),
+                decision_instructions.clone(),
+            )
         } else {
             Program::new(optimized_instructions, program.metadata.clone())
         }
@@ -122,7 +126,11 @@ impl DeadCodeEliminator {
 
         // Preserve decision_instructions when optimizing
         if let Some(ref decision_instructions) = program.decision_instructions {
-            Program::new_with_decision(optimized_instructions, program.metadata.clone(), decision_instructions.clone())
+            Program::new_with_decision(
+                optimized_instructions,
+                program.metadata.clone(),
+                decision_instructions.clone(),
+            )
         } else {
             Program::new(optimized_instructions, program.metadata.clone())
         }
@@ -139,7 +147,11 @@ impl DeadCodeEliminator {
 
         // Preserve decision_instructions when optimizing
         if let Some(ref decision_instructions) = program.decision_instructions {
-            Program::new_with_decision(optimized_instructions, program.metadata.clone(), decision_instructions.clone())
+            Program::new_with_decision(
+                optimized_instructions,
+                program.metadata.clone(),
+                decision_instructions.clone(),
+            )
         } else {
             Program::new(optimized_instructions, program.metadata.clone())
         }

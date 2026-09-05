@@ -104,7 +104,11 @@ impl CacheManager {
     }
 
     /// Build cache key from feature name and context
-    pub(super) fn build_cache_key(&self, feature_name: &str, context: &HashMap<String, Value>) -> String {
+    pub(super) fn build_cache_key(
+        &self,
+        feature_name: &str,
+        context: &HashMap<String, Value>,
+    ) -> String {
         // Extract key dimension values from context
         let mut key_parts = vec![feature_name.to_string()];
 
@@ -201,14 +205,20 @@ impl CacheManager {
     }
 
     /// Get cache configuration from feature (currently disabled)
-    pub(super) fn get_cache_config<'a>(&self, _feature: &'a FeatureDefinition) -> Option<&'a CacheConfig> {
+    pub(super) fn get_cache_config<'a>(
+        &self,
+        _feature: &'a FeatureDefinition,
+    ) -> Option<&'a CacheConfig> {
         // TODO: Implement cache configuration in new feature structure
         None
     }
 
     /// Get cache configuration from old Operator enum (deprecated, kept for tests)
     #[allow(dead_code)]
-    pub(super) fn get_cache_config_from_operator<'a>(&self, operator: &'a Operator) -> Option<&'a CacheConfig> {
+    pub(super) fn get_cache_config_from_operator<'a>(
+        &self,
+        operator: &'a Operator,
+    ) -> Option<&'a CacheConfig> {
         match operator {
             Operator::Count(op) => op.params.cache.as_ref(),
             Operator::Sum(op) => op.params.cache.as_ref(),

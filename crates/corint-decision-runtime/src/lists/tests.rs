@@ -13,11 +13,17 @@ async fn test_memory_backend_basic() {
 
     // Add some values
     backend
-        .add("email_blocklist", Value::String("fraud@example.com".to_string()))
+        .add(
+            "email_blocklist",
+            Value::String("fraud@example.com".to_string()),
+        )
         .await
         .unwrap();
     backend
-        .add("email_blocklist", Value::String("spam@test.com".to_string()))
+        .add(
+            "email_blocklist",
+            Value::String("spam@test.com".to_string()),
+        )
         .await
         .unwrap();
 
@@ -67,10 +73,7 @@ async fn test_list_service_basic() {
 
     // Initially empty
     assert!(!service
-        .contains(
-            "test_list",
-            &Value::String("value1".to_string())
-        )
+        .contains("test_list", &Value::String("value1".to_string()))
         .await
         .unwrap());
 

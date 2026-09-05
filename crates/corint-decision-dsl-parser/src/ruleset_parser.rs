@@ -84,9 +84,8 @@ impl RulesetParser {
             .and_then(|v| serde_yaml::from_value(v.clone()).ok());
 
         // Parse conclusion (ruleset's decision rules)
-        let conclusion = if let Some(logic_array) = ruleset_obj
-            .get("conclusion")
-            .and_then(|v| v.as_sequence())
+        let conclusion = if let Some(logic_array) =
+            ruleset_obj.get("conclusion").and_then(|v| v.as_sequence())
         {
             logic_array
                 .iter()
@@ -156,7 +155,10 @@ impl RulesetParser {
             "pass" => Ok(Signal::Pass),
             _ => Err(ParseError::InvalidValue {
                 field: "signal".to_string(),
-                message: format!("Unknown signal type: {}. Valid signals: approve, decline, review, hold, pass", signal_str),
+                message: format!(
+                    "Unknown signal type: {}. Valid signals: approve, decline, review, hold, pass",
+                    signal_str
+                ),
             }),
         }
     }
@@ -236,7 +238,10 @@ ruleset:
 
         // Check decline signal with actions
         assert!(matches!(ruleset.conclusion[0].signal, Signal::Decline));
-        assert_eq!(ruleset.conclusion[0].actions, vec!["BLOCK_CARD", "NOTIFY_USER"]);
+        assert_eq!(
+            ruleset.conclusion[0].actions,
+            vec!["BLOCK_CARD", "NOTIFY_USER"]
+        );
 
         // Check review signal with actions
         assert!(matches!(ruleset.conclusion[1].signal, Signal::Review));
@@ -273,7 +278,6 @@ ruleset:
         assert!(matches!(ruleset.conclusion[0].signal, Signal::Decline));
         assert!(matches!(ruleset.conclusion[1].signal, Signal::Approve));
     }
-
 
     #[test]
     fn test_parse_ruleset_default_rule() {

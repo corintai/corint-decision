@@ -69,7 +69,8 @@ impl FeatureRegistry {
 
         // Get features array from YAML for post-processing
         let empty_vec = vec![];
-        let features_yaml = yaml_value.get("features")
+        let features_yaml = yaml_value
+            .get("features")
             .and_then(|v| v.as_sequence())
             .unwrap_or(&empty_vec);
 

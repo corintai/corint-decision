@@ -101,11 +101,9 @@ impl ParsedValue {
     pub fn to_value(&self) -> Value {
         match self {
             ParsedValue::Literal(v) => v.clone(),
-            ParsedValue::Template { resolved, path } => {
-                resolved.clone().unwrap_or_else(|| {
-                    panic!("Template '{}' was not resolved", path)
-                })
-            }
+            ParsedValue::Template { resolved, path } => resolved
+                .clone()
+                .unwrap_or_else(|| panic!("Template '{}' was not resolved", path)),
         }
     }
 
@@ -121,7 +119,11 @@ impl ParsedValue {
 impl ParsedCondition {
     /// Create a new parsed condition
     pub fn new(field: String, operator: Operator, value: ParsedValue) -> Self {
-        Self { field, operator, value }
+        Self {
+            field,
+            operator,
+            value,
+        }
     }
 
     /// Check if this condition has a template value that needs resolution
@@ -217,9 +219,12 @@ mod tests {
         assert!(matches!(simple, WhenClause::Simple(_)));
 
         // Test complex when clause
-        let complex: WhenClause = serde_json::from_str(r#"{
+        let complex: WhenClause = serde_json::from_str(
+            r#"{
             "all": ["type == \"transaction\"", "amount > 100"]
-        }"#).unwrap();
+        }"#,
+        )
+        .unwrap();
         assert!(matches!(complex, WhenClause::Complex(_)));
     }
 }

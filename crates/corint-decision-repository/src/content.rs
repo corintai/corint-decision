@@ -143,7 +143,7 @@ pub struct ApiAuth {
 }
 
 fn default_timeout() -> u64 {
-    10000  // Changed from 5000 to 10000 per docs
+    10000 // Changed from 5000 to 10000 per docs
 }
 
 /// API endpoint definition

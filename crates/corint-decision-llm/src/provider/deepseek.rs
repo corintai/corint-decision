@@ -84,14 +84,13 @@ impl LLMClient for DeepSeekProvider {
             .json(&body)
             .send()
             .await
-            .map_err(|e| {
-                LLMError::ApiCallFailed(format!("DeepSeek API call failed: {}", e))
-            })?;
+            .map_err(|e| LLMError::ApiCallFailed(format!("DeepSeek API call failed: {}", e)))?;
 
         let status = resp.status();
-        let resp_text = resp.text().await.map_err(|e| {
-            LLMError::ApiCallFailed(format!("Failed to read response: {}", e))
-        })?;
+        let resp_text = resp
+            .text()
+            .await
+            .map_err(|e| LLMError::ApiCallFailed(format!("Failed to read response: {}", e)))?;
 
         if !status.is_success() {
             return Err(LLMError::ApiCallFailed(format!(
@@ -101,9 +100,8 @@ impl LLMClient for DeepSeekProvider {
         }
 
         // Parse response
-        let resp_json: serde_json::Value = serde_json::from_str(&resp_text).map_err(|e| {
-            LLMError::ApiCallFailed(format!("Failed to parse response: {}", e))
-        })?;
+        let resp_json: serde_json::Value = serde_json::from_str(&resp_text)
+            .map_err(|e| LLMError::ApiCallFailed(format!("Failed to parse response: {}", e)))?;
 
         let content = resp_json["choices"][0]["message"]["content"]
             .as_str()

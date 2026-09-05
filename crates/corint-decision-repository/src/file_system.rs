@@ -1,8 +1,8 @@
 //! File system based repository implementation
 
 use async_trait::async_trait;
-use corint_decision_model::ast::{Pipeline, Rule, Ruleset};
 use corint_decision_dsl_parser::{PipelineParser, RuleParser, RulesetParser};
+use corint_decision_model::ast::{Pipeline, Rule, Ruleset};
 use path_absolutize::Absolutize;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -359,7 +359,12 @@ impl FileSystemRepository {
         self.collect_yaml_files(&dir_path, &self.root_path, &mut files)
             .await?;
 
-        eprintln!("[DEBUG] Found {} YAML files in {}: {:?}", files.len(), relative_dir, files);
+        eprintln!(
+            "[DEBUG] Found {} YAML files in {}: {:?}",
+            files.len(),
+            relative_dir,
+            files
+        );
 
         Ok(files)
     }

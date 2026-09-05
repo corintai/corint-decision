@@ -84,14 +84,13 @@ impl LLMClient for AnthropicProvider {
             .json(&body)
             .send()
             .await
-            .map_err(|e| {
-                LLMError::ApiCallFailed(format!("Anthropic API call failed: {}", e))
-            })?;
+            .map_err(|e| LLMError::ApiCallFailed(format!("Anthropic API call failed: {}", e)))?;
 
         let status = resp.status();
-        let resp_text = resp.text().await.map_err(|e| {
-            LLMError::ApiCallFailed(format!("Failed to read response: {}", e))
-        })?;
+        let resp_text = resp
+            .text()
+            .await
+            .map_err(|e| LLMError::ApiCallFailed(format!("Failed to read response: {}", e)))?;
 
         if !status.is_success() {
             return Err(LLMError::ApiCallFailed(format!(
@@ -101,14 +100,13 @@ impl LLMClient for AnthropicProvider {
         }
 
         // Parse response
-        let resp_json: serde_json::Value = serde_json::from_str(&resp_text).map_err(|e| {
-            LLMError::ApiCallFailed(format!("Failed to parse response: {}", e))
-        })?;
+        let resp_json: serde_json::Value = serde_json::from_str(&resp_text)
+            .map_err(|e| LLMError::ApiCallFailed(format!("Failed to parse response: {}", e)))?;
 
         // Extract content blocks
-        let content_blocks = resp_json["content"].as_array().ok_or_else(|| {
-            LLMError::InvalidResponse("No content in response".to_string())
-        })?;
+        let content_blocks = resp_json["content"]
+            .as_array()
+            .ok_or_else(|| LLMError::InvalidResponse("No content in response".to_string()))?;
 
         let mut main_content = String::new();
         let mut thinking_content = None;

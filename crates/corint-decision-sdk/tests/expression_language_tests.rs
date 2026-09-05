@@ -4,8 +4,8 @@
 
 mod common;
 
-use corint_decision_sdk::{Signal, Value};
 use common::{ResponseAssertions, TestEngine};
+use corint_decision_sdk::{Signal, Value};
 use std::collections::HashMap;
 
 // ============================================================================

@@ -95,14 +95,13 @@ impl LLMClient for GeminiProvider {
             .json(&body)
             .send()
             .await
-            .map_err(|e| {
-                LLMError::ApiCallFailed(format!("Gemini API call failed: {}", e))
-            })?;
+            .map_err(|e| LLMError::ApiCallFailed(format!("Gemini API call failed: {}", e)))?;
 
         let status = resp.status();
-        let resp_text = resp.text().await.map_err(|e| {
-            LLMError::ApiCallFailed(format!("Failed to read response: {}", e))
-        })?;
+        let resp_text = resp
+            .text()
+            .await
+            .map_err(|e| LLMError::ApiCallFailed(format!("Failed to read response: {}", e)))?;
 
         if !status.is_success() {
             return Err(LLMError::ApiCallFailed(format!(
@@ -112,9 +111,8 @@ impl LLMClient for GeminiProvider {
         }
 
         // Parse response
-        let resp_json: serde_json::Value = serde_json::from_str(&resp_text).map_err(|e| {
-            LLMError::ApiCallFailed(format!("Failed to parse response: {}", e))
-        })?;
+        let resp_json: serde_json::Value = serde_json::from_str(&resp_text)
+            .map_err(|e| LLMError::ApiCallFailed(format!("Failed to parse response: {}", e)))?;
 
         let content = resp_json["candidates"][0]["content"]["parts"][0]["text"]
             .as_str()

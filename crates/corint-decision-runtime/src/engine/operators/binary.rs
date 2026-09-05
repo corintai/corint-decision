@@ -46,15 +46,11 @@ pub(crate) fn execute_binary_op(left: &Value, op: &Operator, right: &Value) -> R
         (Value::Bool(l), Operator::Or, Value::Bool(r)) => Ok(Value::Bool(*l || *r)),
 
         // String operations
-        (Value::String(l), Operator::Contains, Value::String(r)) => {
-            Ok(Value::Bool(l.contains(r)))
-        }
+        (Value::String(l), Operator::Contains, Value::String(r)) => Ok(Value::Bool(l.contains(r))),
         (Value::String(l), Operator::StartsWith, Value::String(r)) => {
             Ok(Value::Bool(l.starts_with(r)))
         }
-        (Value::String(l), Operator::EndsWith, Value::String(r)) => {
-            Ok(Value::Bool(l.ends_with(r)))
-        }
+        (Value::String(l), Operator::EndsWith, Value::String(r)) => Ok(Value::Bool(l.ends_with(r))),
 
         // Array operations
         (Value::Array(arr), Operator::Contains, val) => {
@@ -63,9 +59,7 @@ pub(crate) fn execute_binary_op(left: &Value, op: &Operator, right: &Value) -> R
 
         // In operator
         (val, Operator::In, Value::Array(arr)) => Ok(Value::Bool(arr.iter().any(|v| v == val))),
-        (val, Operator::NotIn, Value::Array(arr)) => {
-            Ok(Value::Bool(!arr.iter().any(|v| v == val)))
-        }
+        (val, Operator::NotIn, Value::Array(arr)) => Ok(Value::Bool(!arr.iter().any(|v| v == val))),
 
         _ => Err(RuntimeError::InvalidOperation(format!(
             "Cannot apply {:?} to {:?} and {:?}",

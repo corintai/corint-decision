@@ -11,7 +11,6 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
-
 /// Unified data source client
 pub struct DataSourceClient {
     /// Data source configuration
@@ -182,4 +181,3 @@ pub(super) trait FeatureStoreOps: Send + Sync {
 use super::feature_store::FeatureStoreClient;
 use super::olap::OLAPClient;
 use super::sql::SQLClient;
-

@@ -21,7 +21,11 @@ pub async fn init_engine(config: &ServerConfig) -> Result<corint_decision_engine
         RepositoryType::FileSystem { path } => {
             RepositoryConfig::file_system(path.to_string_lossy().to_string())
         }
-        RepositoryType::Database { datasource, url, db_type: _ } => {
+        RepositoryType::Database {
+            datasource,
+            url,
+            db_type: _,
+        } => {
             // If datasource name is provided, look it up in server.yaml datasources
             if let Some(ds_name) = datasource {
                 if let Some(ds_config) = config.datasource.get(ds_name) {
@@ -74,16 +78,20 @@ pub async fn init_engine(config: &ServerConfig) -> Result<corint_decision_engine
     // Set server datasources (takes precedence over repository datasources)
     if !server_datasources.is_empty() {
         builder = builder.with_server_datasources(server_datasources);
-        info!("✓ Loaded {} datasources from server.yaml", config.datasource.len());
+        info!(
+            "✓ Loaded {} datasources from server.yaml",
+            config.datasource.len()
+        );
     }
 
     // Set database URL for automatic ResultWriter initialization
     #[cfg(feature = "sqlx")]
     {
         // Try to get database URL from config first, then fall back to environment variable
-        let database_url = config.database_url.clone().or_else(|| {
-            std::env::var("DATABASE_URL").ok()
-        });
+        let database_url = config
+            .database_url
+            .clone()
+            .or_else(|| std::env::var("DATABASE_URL").ok());
 
         if let Some(db_url) = database_url {
             builder = builder.with_database_url(db_url);

@@ -79,10 +79,7 @@ impl RulesetGenerator {
     }
 
     /// Generate a ruleset and return both the YAML and the raw LLM response
-    pub async fn generate_with_metadata(
-        &self,
-        description: &str,
-    ) -> Result<(String, LLMResponse)> {
+    pub async fn generate_with_metadata(&self, description: &str) -> Result<(String, LLMResponse)> {
         let prompt = RULESET_GENERATION_PROMPT.replace("{description}", description);
 
         let request = LLMRequest {
@@ -138,10 +135,7 @@ mod tests {
         let provider = Arc::new(MockProvider::with_response(mock_response.to_string()));
         let generator = RulesetGenerator::with_defaults(provider);
 
-        let result = generator
-            .generate("Fraud detection ruleset")
-            .await
-            .unwrap();
+        let result = generator.generate("Fraud detection ruleset").await.unwrap();
 
         assert!(result.contains("ruleset:"));
         assert!(result.contains("fraud_detection"));

@@ -77,7 +77,6 @@ pub struct ExecutionContext {
     pub stack: Vec<Value>,
 
     // ========== 8 Namespaces (Flattened Architecture) ==========
-
     /// User request raw data (read-only)
     pub event: HashMap<String, Value>,
 
@@ -367,7 +366,12 @@ impl ExecutionContext {
 
     /// Store a value in a namespace at a nested path
     pub fn store_in_namespace(&mut self, namespace: &str, path: &[&str], value: Value) {
-        tracing::trace!("store_in_namespace: namespace={}, path={:?}, value={:?}", namespace, path, value);
+        tracing::trace!(
+            "store_in_namespace: namespace={}, path={:?}, value={:?}",
+            namespace,
+            path,
+            value
+        );
 
         let namespace_map = match namespace {
             "api" => &mut self.api,
@@ -378,8 +382,15 @@ impl ExecutionContext {
             "sys" => &mut self.sys,
             _ => {
                 // Unknown namespace, store in variables as fallback
-                let full_path = std::iter::once(namespace).chain(path.iter().copied()).collect::<Vec<_>>().join(".");
-                tracing::trace!("Unknown namespace {}, storing in variables as {}", namespace, full_path);
+                let full_path = std::iter::once(namespace)
+                    .chain(path.iter().copied())
+                    .collect::<Vec<_>>()
+                    .join(".");
+                tracing::trace!(
+                    "Unknown namespace {}, storing in variables as {}",
+                    namespace,
+                    full_path
+                );
                 self.store_variable(full_path, value);
                 return;
             }
@@ -393,15 +404,27 @@ impl ExecutionContext {
 
         if path.len() == 1 {
             // Direct storage in namespace
-            tracing::trace!("Storing directly in {} namespace at key {}", namespace, path[0]);
+            tracing::trace!(
+                "Storing directly in {} namespace at key {}",
+                namespace,
+                path[0]
+            );
             namespace_map.insert(path[0].to_string(), value);
         } else {
             // Need to create nested objects
-            tracing::trace!("Storing nested in {} namespace at path {:?}", namespace, path);
+            tracing::trace!(
+                "Storing nested in {} namespace at path {:?}",
+                namespace,
+                path
+            );
             Self::store_nested_in_map(namespace_map, path, value);
         }
 
-        tracing::trace!("After store, {} namespace has {} entries", namespace, namespace_map.len());
+        tracing::trace!(
+            "After store, {} namespace has {} entries",
+            namespace,
+            namespace_map.len()
+        );
     }
 
     /// Helper to store value in nested map hierarchy
@@ -682,7 +705,10 @@ mod tests {
         // Verify types
         assert!(matches!(ctx.sys.get("hour").unwrap(), Value::Number(_)));
         assert!(matches!(ctx.sys.get("is_weekend").unwrap(), Value::Bool(_)));
-        assert!(matches!(ctx.sys.get("day_of_week").unwrap(), Value::String(_)));
+        assert!(matches!(
+            ctx.sys.get("day_of_week").unwrap(),
+            Value::String(_)
+        ));
     }
 
     #[test]
@@ -746,7 +772,10 @@ mod tests {
     #[test]
     fn test_validation_rejects_reserved_prefix() {
         let mut event = HashMap::new();
-        event.insert("sys_custom_field".to_string(), Value::String("test".to_string()));
+        event.insert(
+            "sys_custom_field".to_string(),
+            Value::String("test".to_string()),
+        );
 
         let result = ExecutionContext::from_event(event);
         assert!(result.is_err());
@@ -950,8 +979,18 @@ mod tests {
 
         if let Some(Value::String(month_name)) = ctx.sys.get("month_name") {
             let valid_months = vec![
-                "january", "february", "march", "april", "may", "june",
-                "july", "august", "september", "october", "november", "december"
+                "january",
+                "february",
+                "march",
+                "april",
+                "may",
+                "june",
+                "july",
+                "august",
+                "september",
+                "october",
+                "november",
+                "december",
             ];
             assert!(valid_months.contains(&month_name.as_str()));
         } else {

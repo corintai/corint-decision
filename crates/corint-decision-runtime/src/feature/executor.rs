@@ -150,7 +150,9 @@ impl FeatureExecutor {
 
         // Try to get from cache
         if let Some(cache_config) = self.cache_manager.get_cache_config(feature) {
-            let cache_key = self.cache_manager.build_cache_key(feature_name, &context_map);
+            let cache_key = self
+                .cache_manager
+                .build_cache_key(feature_name, &context_map);
 
             // L1 cache check
             if let Some(value) = self.cache_manager.get_from_l1_cache(&cache_key).await {
@@ -158,7 +160,11 @@ impl FeatureExecutor {
                     self.cache_manager.stats().write().await.l1_hits += 1;
                 }
                 let elapsed = start_time.elapsed();
-                debug!("Feature '{}' L1 cache hit ({}ms)", feature_name, elapsed.as_millis());
+                debug!(
+                    "Feature '{}' L1 cache hit ({}ms)",
+                    feature_name,
+                    elapsed.as_millis()
+                );
                 return Ok(value);
             }
 
@@ -173,10 +179,15 @@ impl FeatureExecutor {
                         self.cache_manager.stats().write().await.l2_hits += 1;
                     }
                     let elapsed = start_time.elapsed();
-                    debug!("Feature '{}' L2 cache hit ({}ms)", feature_name, elapsed.as_millis());
+                    debug!(
+                        "Feature '{}' L2 cache hit ({}ms)",
+                        feature_name,
+                        elapsed.as_millis()
+                    );
 
                     // Populate L1 cache
-                    self.cache_manager.set_to_l1_cache(&cache_key, value.clone(), cache_config.ttl)
+                    self.cache_manager
+                        .set_to_l1_cache(&cache_key, value.clone(), cache_config.ttl)
                         .await;
 
                     return Ok(value);
@@ -207,7 +218,8 @@ impl FeatureExecutor {
             );
 
             // Store in cache
-            self.cache_manager.set_to_cache(&cache_key, value.clone(), cache_config)
+            self.cache_manager
+                .set_to_cache(&cache_key, value.clone(), cache_config)
                 .await;
 
             Ok(value)
@@ -218,7 +230,9 @@ impl FeatureExecutor {
             }
 
             let compute_start = Instant::now();
-            let value = self.compute_feature(feature, &context_map, &dep_values).await?;
+            let value = self
+                .compute_feature(feature, &context_map, &dep_values)
+                .await?;
             let compute_elapsed = compute_start.elapsed();
             let total_elapsed = start_time.elapsed();
 
@@ -273,7 +287,11 @@ impl FeatureExecutor {
             "Batch execution of {} features completed in {}ms (avg: {}ms/feature)",
             sorted_features.len(),
             batch_elapsed.as_millis(),
-            if sorted_features.is_empty() { 0 } else { batch_elapsed.as_millis() / sorted_features.len() as u128 }
+            if sorted_features.is_empty() {
+                0
+            } else {
+                batch_elapsed.as_millis() / sorted_features.len() as u128
+            }
         );
 
         Ok(results)
@@ -302,7 +320,9 @@ impl FeatureExecutor {
 
         // For expression features, pass dependencies directly
         if feature.feature_type == crate::feature::definition::FeatureType::Expression {
-            let result = self.execute_expression(feature, context, dependencies).await?;
+            let result = self
+                .execute_expression(feature, context, dependencies)
+                .await?;
             let elapsed = start.elapsed();
             debug!(
                 "Expression feature '{}' computed in {}μs",
@@ -352,15 +372,9 @@ impl FeatureExecutor {
             FeatureType::Aggregation => {
                 self.execute_aggregation(feature, datasource, context).await
             }
-            FeatureType::State => {
-                self.execute_state(feature, datasource, context).await
-            }
-            FeatureType::Sequence => {
-                self.execute_sequence(feature, datasource, context).await
-            }
-            FeatureType::Graph => {
-                self.execute_graph(feature, datasource, context).await
-            }
+            FeatureType::State => self.execute_state(feature, datasource, context).await,
+            FeatureType::Sequence => self.execute_sequence(feature, datasource, context).await,
+            FeatureType::Graph => self.execute_graph(feature, datasource, context).await,
             FeatureType::Expression => {
                 // Expression features are handled directly in compute_feature
                 // This case should never be reached
@@ -369,9 +383,7 @@ impl FeatureExecutor {
                     feature.name
                 ))
             }
-            FeatureType::Lookup => {
-                self.execute_lookup(feature, datasource, context).await
-            }
+            FeatureType::Lookup => self.execute_lookup(feature, datasource, context).await,
         }
     }
 
@@ -382,13 +394,18 @@ impl FeatureExecutor {
         datasource: &DataSourceClient,
         context: &HashMap<String, Value>,
     ) -> Result<Value> {
-        use crate::datasource::query::{Query, QueryType, Aggregation, AggregationType, Filter, FilterOperator, TimeWindow, TimeWindowType, RelativeWindow};
+        use crate::datasource::query::{
+            Aggregation, AggregationType, Filter, FilterOperator, Query, QueryType, RelativeWindow,
+            TimeWindow, TimeWindowType,
+        };
 
-        let config = feature.aggregation.as_ref()
-            .ok_or_else(|| anyhow::anyhow!("Missing aggregation config for feature '{}'", feature.name))?;
+        let config = feature.aggregation.as_ref().ok_or_else(|| {
+            anyhow::anyhow!("Missing aggregation config for feature '{}'", feature.name)
+        })?;
 
-        let method = feature.method.as_ref()
-            .ok_or_else(|| anyhow::anyhow!("Missing method for aggregation feature '{}'", feature.name))?;
+        let method = feature.method.as_ref().ok_or_else(|| {
+            anyhow::anyhow!("Missing method for aggregation feature '{}'", feature.name)
+        })?;
 
         // Build filters from when conditions
         let filters = self.build_filters(&config.when, context)?;
@@ -397,13 +414,16 @@ impl FeatureExecutor {
         let time_window = config.window.as_ref().and_then(|w| {
             RelativeWindow::from_string(w).map(|relative| TimeWindow {
                 window_type: TimeWindowType::Relative(relative),
-                time_field: config.timestamp_field.clone()
+                time_field: config
+                    .timestamp_field
+                    .clone()
                     .unwrap_or_else(|| "event_timestamp".to_string()),
             })
         });
 
         // Substitute dimension_value template with context values
-        let dimension_value = ExpressionEvaluator::substitute_template(&config.dimension_value, context)?;
+        let dimension_value =
+            ExpressionEvaluator::substitute_template(&config.dimension_value, context)?;
 
         // Add dimension filter to constrain the query
         let mut all_filters = filters;
@@ -414,92 +434,137 @@ impl FeatureExecutor {
         });
 
         // Determine query type and build aggregation based on method
-        let (query_type, aggregations) = match method.as_str() {
-            "count" => {
-                // COUNT(*) query
-                (QueryType::Count, vec![Aggregation {
-                    agg_type: AggregationType::Count,
-                    field: None,
-                    output_name: "count".to_string(),
-                }])
-            }
-            "sum" => {
-                let field = config.field.clone()
-                    .ok_or_else(|| anyhow::anyhow!("Field required for sum aggregation"))?;
-                (QueryType::Aggregate, vec![Aggregation {
-                    agg_type: AggregationType::Sum,
-                    field: Some(field),
-                    output_name: "sum".to_string(),
-                }])
-            }
-            "avg" => {
-                let field = config.field.clone()
-                    .ok_or_else(|| anyhow::anyhow!("Field required for avg aggregation"))?;
-                (QueryType::Aggregate, vec![Aggregation {
-                    agg_type: AggregationType::Avg,
-                    field: Some(field),
-                    output_name: "avg".to_string(),
-                }])
-            }
-            "max" => {
-                let field = config.field.clone()
-                    .ok_or_else(|| anyhow::anyhow!("Field required for max aggregation"))?;
-                (QueryType::Aggregate, vec![Aggregation {
-                    agg_type: AggregationType::Max,
-                    field: Some(field),
-                    output_name: "max".to_string(),
-                }])
-            }
-            "min" => {
-                let field = config.field.clone()
-                    .ok_or_else(|| anyhow::anyhow!("Field required for min aggregation"))?;
-                (QueryType::Aggregate, vec![Aggregation {
-                    agg_type: AggregationType::Min,
-                    field: Some(field),
-                    output_name: "min".to_string(),
-                }])
-            }
-            "distinct" => {
-                let field = config.field.clone()
-                    .ok_or_else(|| anyhow::anyhow!("Field required for distinct aggregation"))?;
-                (QueryType::CountDistinct, vec![Aggregation {
-                    agg_type: AggregationType::CountDistinct,
-                    field: Some(field),
-                    output_name: "distinct_count".to_string(),
-                }])
-            }
-            "stddev" => {
-                let field = config.field.clone()
-                    .ok_or_else(|| anyhow::anyhow!("Field required for stddev aggregation"))?;
-                (QueryType::Aggregate, vec![Aggregation {
-                    agg_type: AggregationType::Stddev,
-                    field: Some(field),
-                    output_name: "stddev".to_string(),
-                }])
-            }
-            "median" => {
-                let field = config.field.clone()
-                    .ok_or_else(|| anyhow::anyhow!("Field required for median aggregation"))?;
-                (QueryType::Aggregate, vec![Aggregation {
-                    agg_type: AggregationType::Median,
-                    field: Some(field),
-                    output_name: "median".to_string(),
-                }])
-            }
-            "percentile" => {
-                let field = config.field.clone()
-                    .ok_or_else(|| anyhow::anyhow!("Field required for percentile aggregation"))?;
-                let p = config.percentile.unwrap_or(50);
-                (QueryType::Aggregate, vec![Aggregation {
-                    agg_type: AggregationType::Percentile { p },
-                    field: Some(field),
-                    output_name: "percentile".to_string(),
-                }])
-            }
-            _ => {
-                return Err(anyhow::anyhow!("Unsupported aggregation method: {}", method));
-            }
-        };
+        let (query_type, aggregations) =
+            match method.as_str() {
+                "count" => {
+                    // COUNT(*) query
+                    (
+                        QueryType::Count,
+                        vec![Aggregation {
+                            agg_type: AggregationType::Count,
+                            field: None,
+                            output_name: "count".to_string(),
+                        }],
+                    )
+                }
+                "sum" => {
+                    let field = config
+                        .field
+                        .clone()
+                        .ok_or_else(|| anyhow::anyhow!("Field required for sum aggregation"))?;
+                    (
+                        QueryType::Aggregate,
+                        vec![Aggregation {
+                            agg_type: AggregationType::Sum,
+                            field: Some(field),
+                            output_name: "sum".to_string(),
+                        }],
+                    )
+                }
+                "avg" => {
+                    let field = config
+                        .field
+                        .clone()
+                        .ok_or_else(|| anyhow::anyhow!("Field required for avg aggregation"))?;
+                    (
+                        QueryType::Aggregate,
+                        vec![Aggregation {
+                            agg_type: AggregationType::Avg,
+                            field: Some(field),
+                            output_name: "avg".to_string(),
+                        }],
+                    )
+                }
+                "max" => {
+                    let field = config
+                        .field
+                        .clone()
+                        .ok_or_else(|| anyhow::anyhow!("Field required for max aggregation"))?;
+                    (
+                        QueryType::Aggregate,
+                        vec![Aggregation {
+                            agg_type: AggregationType::Max,
+                            field: Some(field),
+                            output_name: "max".to_string(),
+                        }],
+                    )
+                }
+                "min" => {
+                    let field = config
+                        .field
+                        .clone()
+                        .ok_or_else(|| anyhow::anyhow!("Field required for min aggregation"))?;
+                    (
+                        QueryType::Aggregate,
+                        vec![Aggregation {
+                            agg_type: AggregationType::Min,
+                            field: Some(field),
+                            output_name: "min".to_string(),
+                        }],
+                    )
+                }
+                "distinct" => {
+                    let field = config.field.clone().ok_or_else(|| {
+                        anyhow::anyhow!("Field required for distinct aggregation")
+                    })?;
+                    (
+                        QueryType::CountDistinct,
+                        vec![Aggregation {
+                            agg_type: AggregationType::CountDistinct,
+                            field: Some(field),
+                            output_name: "distinct_count".to_string(),
+                        }],
+                    )
+                }
+                "stddev" => {
+                    let field = config
+                        .field
+                        .clone()
+                        .ok_or_else(|| anyhow::anyhow!("Field required for stddev aggregation"))?;
+                    (
+                        QueryType::Aggregate,
+                        vec![Aggregation {
+                            agg_type: AggregationType::Stddev,
+                            field: Some(field),
+                            output_name: "stddev".to_string(),
+                        }],
+                    )
+                }
+                "median" => {
+                    let field = config
+                        .field
+                        .clone()
+                        .ok_or_else(|| anyhow::anyhow!("Field required for median aggregation"))?;
+                    (
+                        QueryType::Aggregate,
+                        vec![Aggregation {
+                            agg_type: AggregationType::Median,
+                            field: Some(field),
+                            output_name: "median".to_string(),
+                        }],
+                    )
+                }
+                "percentile" => {
+                    let field = config.field.clone().ok_or_else(|| {
+                        anyhow::anyhow!("Field required for percentile aggregation")
+                    })?;
+                    let p = config.percentile.unwrap_or(50);
+                    (
+                        QueryType::Aggregate,
+                        vec![Aggregation {
+                            agg_type: AggregationType::Percentile { p },
+                            field: Some(field),
+                            output_name: "percentile".to_string(),
+                        }],
+                    )
+                }
+                _ => {
+                    return Err(anyhow::anyhow!(
+                        "Unsupported aggregation method: {}",
+                        method
+                    ));
+                }
+            };
 
         // Build the query - datasource-agnostic
         let query = Query {
@@ -513,7 +578,9 @@ impl FeatureExecutor {
         };
 
         // Execute the query - DataSourceClient handles SQL generation based on provider
-        let result = datasource.query(query).await
+        let result = datasource
+            .query(query)
+            .await
             .map_err(|e| anyhow::anyhow!("Query execution failed: {}", e))?;
 
         // Extract the result value
@@ -608,9 +675,11 @@ impl FeatureExecutor {
     }
 
     /// Convert corint_decision_model::ast::operator::Operator to FilterOperator
-    fn convert_operator(op: &corint_decision_model::ast::operator::Operator) -> crate::datasource::query::FilterOperator {
-        use corint_decision_model::ast::operator::Operator as CoreOp;
+    fn convert_operator(
+        op: &corint_decision_model::ast::operator::Operator,
+    ) -> crate::datasource::query::FilterOperator {
         use crate::datasource::query::FilterOperator;
+        use corint_decision_model::ast::operator::Operator as CoreOp;
 
         match op {
             CoreOp::Eq => FilterOperator::Eq,
@@ -625,7 +694,10 @@ impl FeatureExecutor {
             CoreOp::Contains | CoreOp::StartsWith | CoreOp::EndsWith => FilterOperator::Like,
             // For operators that don't have a direct SQL equivalent, default to Eq
             _ => {
-                warn!("Operator {:?} not directly supported in SQL filters, defaulting to Eq", op);
+                warn!(
+                    "Operator {:?} not directly supported in SQL filters, defaulting to Eq",
+                    op
+                );
                 FilterOperator::Eq
             }
         }
@@ -641,11 +713,13 @@ impl FeatureExecutor {
         debug!("execute_state called for feature '{}', type: {:?}, method: {:?}, state config present: {}",
                feature.name, feature.feature_type, feature.method, feature.state.is_some());
 
-        let config = feature.state.as_ref()
-            .ok_or_else(|| anyhow::anyhow!("Missing state config for feature '{}'", feature.name))?;
+        let config = feature.state.as_ref().ok_or_else(|| {
+            anyhow::anyhow!("Missing state config for feature '{}'", feature.name)
+        })?;
 
-        let method = feature.method.as_ref()
-            .ok_or_else(|| anyhow::anyhow!("Missing method for state feature '{}'", feature.name))?;
+        let method = feature.method.as_ref().ok_or_else(|| {
+            anyhow::anyhow!("Missing method for state feature '{}'", feature.name)
+        })?;
 
         debug!("State feature '{}': method='{}', config.entity='{}', config.dimension='{}', config.unit='{:?}'",
                feature.name, method, config.entity, config.dimension, config.unit);
@@ -653,44 +727,57 @@ impl FeatureExecutor {
         match method.as_str() {
             "time_since" => {
                 // Build TimeSinceOperator
-                use crate::feature::operator::{TimeSinceOperator, WindowUnit, FilterConfig, FilterOp};
+                use crate::feature::operator::{
+                    FilterConfig, FilterOp, TimeSinceOperator, WindowUnit,
+                };
 
                 // Parse unit
-                let unit_str = config.unit.as_ref()
-                    .ok_or_else(|| anyhow::anyhow!("Missing unit for time_since feature '{}'", feature.name))?;
+                let unit_str = config.unit.as_ref().ok_or_else(|| {
+                    anyhow::anyhow!("Missing unit for time_since feature '{}'", feature.name)
+                })?;
 
                 let unit = match unit_str.as_str() {
                     "minutes" => WindowUnit::Minutes,
                     "hours" => WindowUnit::Hours,
                     "days" => WindowUnit::Days,
-                    _ => return Err(anyhow::anyhow!("Invalid unit '{}' for time_since feature", unit_str)),
+                    _ => {
+                        return Err(anyhow::anyhow!(
+                            "Invalid unit '{}' for time_since feature",
+                            unit_str
+                        ))
+                    }
                 };
 
                 // Build filters from when conditions
                 let filters_query = self.build_filters(&config.when, context)?;
 
                 // Convert datasource filters to operator FilterConfig format
-                let filters: Vec<FilterConfig> = filters_query.iter().map(|f| {
-                    let operator = match f.operator {
-                        crate::datasource::query::FilterOperator::Eq => FilterOp::Eq,
-                        crate::datasource::query::FilterOperator::Ne => FilterOp::Ne,
-                        crate::datasource::query::FilterOperator::Gt => FilterOp::Gt,
-                        crate::datasource::query::FilterOperator::Ge => FilterOp::Gte,
-                        crate::datasource::query::FilterOperator::Lt => FilterOp::Lt,
-                        crate::datasource::query::FilterOperator::Le => FilterOp::Lte,
-                        crate::datasource::query::FilterOperator::In => FilterOp::In,
-                        crate::datasource::query::FilterOperator::NotIn => FilterOp::NotIn,
-                        _ => FilterOp::Eq, // Default for unsupported operators
-                    };
+                let filters: Vec<FilterConfig> = filters_query
+                    .iter()
+                    .map(|f| {
+                        let operator = match f.operator {
+                            crate::datasource::query::FilterOperator::Eq => FilterOp::Eq,
+                            crate::datasource::query::FilterOperator::Ne => FilterOp::Ne,
+                            crate::datasource::query::FilterOperator::Gt => FilterOp::Gt,
+                            crate::datasource::query::FilterOperator::Ge => FilterOp::Gte,
+                            crate::datasource::query::FilterOperator::Lt => FilterOp::Lt,
+                            crate::datasource::query::FilterOperator::Le => FilterOp::Lte,
+                            crate::datasource::query::FilterOperator::In => FilterOp::In,
+                            crate::datasource::query::FilterOperator::NotIn => FilterOp::NotIn,
+                            _ => FilterOp::Eq, // Default for unsupported operators
+                        };
 
-                    FilterConfig {
-                        field: f.field.clone(),
-                        operator,
-                        value: f.value.clone(),
-                    }
-                }).collect();
+                        FilterConfig {
+                            field: f.field.clone(),
+                            operator,
+                            value: f.value.clone(),
+                        }
+                    })
+                    .collect();
 
-                let timestamp_field = config.timestamp_field.clone()
+                let timestamp_field = config
+                    .timestamp_field
+                    .clone()
                     .unwrap_or_else(|| "event_timestamp".to_string());
 
                 let operator = TimeSinceOperator {
@@ -738,7 +825,10 @@ impl FeatureExecutor {
         _datasource: &DataSourceClient,
         _context: &HashMap<String, Value>,
     ) -> Result<Value> {
-        Err(anyhow::anyhow!("Sequence features not yet implemented: {}", feature.name))
+        Err(anyhow::anyhow!(
+            "Sequence features not yet implemented: {}",
+            feature.name
+        ))
     }
 
     /// Execute graph feature (stub)
@@ -748,7 +838,10 @@ impl FeatureExecutor {
         _datasource: &DataSourceClient,
         _context: &HashMap<String, Value>,
     ) -> Result<Value> {
-        Err(anyhow::anyhow!("Graph features not yet implemented: {}", feature.name))
+        Err(anyhow::anyhow!(
+            "Graph features not yet implemented: {}",
+            feature.name
+        ))
     }
 
     /// Execute expression feature - computes from other features
@@ -758,8 +851,9 @@ impl FeatureExecutor {
         _context: &HashMap<String, Value>,
         dependencies: &HashMap<String, Value>,
     ) -> Result<Value> {
-        let config = feature.expression.as_ref()
-            .ok_or_else(|| anyhow::anyhow!("Missing expression config for feature '{}'", feature.name))?;
+        let config = feature.expression.as_ref().ok_or_else(|| {
+            anyhow::anyhow!("Missing expression config for feature '{}'", feature.name)
+        })?;
 
         // Expression features only consume results from other features
         // They do NOT access datasources directly
@@ -771,16 +865,24 @@ impl FeatureExecutor {
             // Use the pre-computed dependency values directly
             debug!(
                 "Evaluating expression '{}' for feature '{}' with dependencies: {:?}",
-                expr_str, feature.name, dependencies.keys()
+                expr_str,
+                feature.name,
+                dependencies.keys()
             );
 
             // Evaluate the expression with the dependency values
             ExpressionEvaluator::evaluate_expression(expr_str, dependencies)
         } else if config.model.is_some() {
             // ML model scoring (not yet implemented)
-            Err(anyhow::anyhow!("ML model scoring not yet implemented for feature '{}'", feature.name))
+            Err(anyhow::anyhow!(
+                "ML model scoring not yet implemented for feature '{}'",
+                feature.name
+            ))
         } else {
-            Err(anyhow::anyhow!("Expression feature '{}' must have either expression or model", feature.name))
+            Err(anyhow::anyhow!(
+                "Expression feature '{}' must have either expression or model",
+                feature.name
+            ))
         }
     }
 
@@ -791,8 +893,9 @@ impl FeatureExecutor {
         datasource: &DataSourceClient,
         context: &HashMap<String, Value>,
     ) -> Result<Value> {
-        let config = feature.lookup.as_ref()
-            .ok_or_else(|| anyhow::anyhow!("Missing lookup config for feature '{}'", feature.name))?;
+        let config = feature.lookup.as_ref().ok_or_else(|| {
+            anyhow::anyhow!("Missing lookup config for feature '{}'", feature.name)
+        })?;
 
         // Substitute template in key (e.g., "user_risk_score:{event.user_id}" -> "user_risk_score:123")
         let key = ExpressionEvaluator::substitute_template(&config.key, context)?;
@@ -808,11 +911,17 @@ impl FeatureExecutor {
             }
             Ok(None) => {
                 // Not found, use fallback
-                debug!("Lookup feature '{}' not found, using fallback", feature.name);
+                debug!(
+                    "Lookup feature '{}' not found, using fallback",
+                    feature.name
+                );
                 Ok(config.fallback.clone().unwrap_or(Value::Null))
             }
             Err(e) => {
-                warn!("Lookup feature '{}' error: {}, using fallback", feature.name, e);
+                warn!(
+                    "Lookup feature '{}' error: {}, using fallback",
+                    feature.name, e
+                );
                 // On error, return fallback
                 Ok(config.fallback.clone().unwrap_or(Value::Null))
             }
@@ -824,31 +933,31 @@ impl FeatureExecutor {
         use crate::feature::definition::FeatureType;
 
         match feature.feature_type {
-            FeatureType::Aggregation => {
-                feature.aggregation.as_ref()
-                    .map(|c| c.datasource.clone())
-                    .unwrap_or_else(|| "default".to_string())
-            }
-            FeatureType::State => {
-                feature.state.as_ref()
-                    .map(|c| c.datasource.clone())
-                    .unwrap_or_else(|| "default".to_string())
-            }
-            FeatureType::Sequence => {
-                feature.sequence.as_ref()
-                    .map(|c| c.datasource.clone())
-                    .unwrap_or_else(|| "default".to_string())
-            }
-            FeatureType::Graph => {
-                feature.graph.as_ref()
-                    .map(|c| c.datasource.clone())
-                    .unwrap_or_else(|| "default".to_string())
-            }
-            FeatureType::Lookup => {
-                feature.lookup.as_ref()
-                    .map(|c| c.datasource.clone())
-                    .unwrap_or_else(|| "default".to_string())
-            }
+            FeatureType::Aggregation => feature
+                .aggregation
+                .as_ref()
+                .map(|c| c.datasource.clone())
+                .unwrap_or_else(|| "default".to_string()),
+            FeatureType::State => feature
+                .state
+                .as_ref()
+                .map(|c| c.datasource.clone())
+                .unwrap_or_else(|| "default".to_string()),
+            FeatureType::Sequence => feature
+                .sequence
+                .as_ref()
+                .map(|c| c.datasource.clone())
+                .unwrap_or_else(|| "default".to_string()),
+            FeatureType::Graph => feature
+                .graph
+                .as_ref()
+                .map(|c| c.datasource.clone())
+                .unwrap_or_else(|| "default".to_string()),
+            FeatureType::Lookup => feature
+                .lookup
+                .as_ref()
+                .map(|c| c.datasource.clone())
+                .unwrap_or_else(|| "default".to_string()),
             FeatureType::Expression => {
                 "default".to_string() // Expression features don't need datasource
             }
@@ -1008,7 +1117,7 @@ fn parse_window(window_str: &str) -> Option<crate::feature::operator::WindowConf
     }
 
     let unit_char = window_str.chars().last()?;
-    let value_str = &window_str[..len-1];
+    let value_str = &window_str[..len - 1];
     let value = value_str.parse::<u64>().ok()?;
 
     let unit = match unit_char {
@@ -1304,8 +1413,9 @@ mod tests {
         // Test division expression
         let result = ExpressionEvaluator::evaluate_expression(
             "failed_logins / login_count",
-            &feature_values
-        ).unwrap();
+            &feature_values,
+        )
+        .unwrap();
 
         assert_eq!(result, Value::Number(0.3));
     }
@@ -1314,7 +1424,10 @@ mod tests {
     fn test_substitute_template_direct_reference() {
         let mut context = HashMap::new();
         context.insert("user_id".to_string(), Value::String("user123".to_string()));
-        context.insert("device_id".to_string(), Value::String("device456".to_string()));
+        context.insert(
+            "device_id".to_string(),
+            Value::String("device456".to_string()),
+        );
 
         // Test direct reference: event.user_id -> lookup context["user_id"]
         let result = ExpressionEvaluator::substitute_template("event.user_id", &context).unwrap();
@@ -1334,23 +1447,33 @@ mod tests {
     fn test_substitute_template_string_interpolation() {
         let mut context = HashMap::new();
         context.insert("user_id".to_string(), Value::String("user123".to_string()));
-        context.insert("device_id".to_string(), Value::String("device456".to_string()));
+        context.insert(
+            "device_id".to_string(),
+            Value::String("device456".to_string()),
+        );
 
         // Test string interpolation: ${event.user_id} inside string
-        let result = ExpressionEvaluator::substitute_template("${event.user_id}", &context).unwrap();
+        let result =
+            ExpressionEvaluator::substitute_template("${event.user_id}", &context).unwrap();
         assert_eq!(result, "user123");
 
         // Test string interpolation with prefix
-        let result = ExpressionEvaluator::substitute_template("user_risk:${event.user_id}", &context).unwrap();
+        let result =
+            ExpressionEvaluator::substitute_template("user_risk:${event.user_id}", &context)
+                .unwrap();
         assert_eq!(result, "user_risk:user123");
 
         // Test string interpolation with prefix and suffix
-        let result = ExpressionEvaluator::substitute_template("prefix:${event.device_id}:suffix", &context).unwrap();
+        let result =
+            ExpressionEvaluator::substitute_template("prefix:${event.device_id}:suffix", &context)
+                .unwrap();
         assert_eq!(result, "prefix:device456:suffix");
 
         // Test with numeric value
         context.insert("count".to_string(), Value::Number(42.0));
-        let result = ExpressionEvaluator::substitute_template("count_${event.count}_value", &context).unwrap();
+        let result =
+            ExpressionEvaluator::substitute_template("count_${event.count}_value", &context)
+                .unwrap();
         assert_eq!(result, "count_42_value");
     }
 

@@ -201,7 +201,10 @@ ruleset:
     let imports = doc.imports();
     assert_eq!(imports.rules.len(), 2);
     assert_eq!(imports.rules[0], "library/rules/fraud/fraud_farm.yaml");
-    assert_eq!(imports.rules[1], "library/rules/fraud/account_takeover.yaml");
+    assert_eq!(
+        imports.rules[1],
+        "library/rules/fraud/account_takeover.yaml"
+    );
 
     // Check ruleset
     assert_eq!(doc.definition.id, "fraud_detection_core");
@@ -349,10 +352,7 @@ pipeline:
     );
 
     // Check pipeline
-    assert_eq!(
-        doc.definition.id,
-        "fraud_detection_pipeline".to_string()
-    );
+    assert_eq!(doc.definition.id, "fraud_detection_pipeline".to_string());
     assert_eq!(doc.definition.steps.len(), 1);
 }
 

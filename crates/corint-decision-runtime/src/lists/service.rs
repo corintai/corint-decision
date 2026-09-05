@@ -110,12 +110,18 @@ mod tests {
 
         // Create backend for list1
         let mut backend1 = MemoryBackend::new();
-        backend1.add("list1", Value::String("value1".to_string())).await.unwrap();
+        backend1
+            .add("list1", Value::String("value1".to_string()))
+            .await
+            .unwrap();
         backends.insert("list1".to_string(), Box::new(backend1));
 
         // Create backend for list2
         let mut backend2 = MemoryBackend::new();
-        backend2.add("list2", Value::String("value2".to_string())).await.unwrap();
+        backend2
+            .add("list2", Value::String("value2".to_string()))
+            .await
+            .unwrap();
         backends.insert("list2".to_string(), Box::new(backend2));
 
         let service = ListService::new_with_backends(backends);

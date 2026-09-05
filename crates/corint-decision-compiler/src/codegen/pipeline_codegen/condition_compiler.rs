@@ -43,9 +43,9 @@ pub(super) fn compile_when_block(when: &WhenBlock) -> Result<Vec<Instruction>> {
                     "type".to_string(),
                 ]),
                 corint_decision_model::ast::Operator::Eq,
-                corint_decision_model::ast::Expression::literal(corint_decision_model::Value::String(
-                    event_type.clone(),
-                )),
+                corint_decision_model::ast::Expression::literal(
+                    corint_decision_model::Value::String(event_type.clone()),
+                ),
             );
             let event_type_instructions = ExpressionCompiler::compile(&event_type_expr)?;
 

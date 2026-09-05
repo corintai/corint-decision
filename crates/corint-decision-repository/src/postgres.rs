@@ -1,8 +1,8 @@
 //! PostgreSQL database repository implementation
 
 use async_trait::async_trait;
-use corint_decision_model::ast::{Pipeline, Rule, Ruleset};
 use corint_decision_dsl_parser::{PipelineParser, RuleParser, RulesetParser};
+use corint_decision_model::ast::{Pipeline, Rule, Ruleset};
 use sqlx::postgres::PgPool;
 use sqlx::Row;
 use std::collections::HashMap;

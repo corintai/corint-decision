@@ -19,7 +19,6 @@ pub mod types;
 pub use extractors::JsonExtractor;
 pub use router::create_router;
 pub use types::{
-    AppState, CognitionPayload, DecideRequestPayload, DecideResponsePayload,
-    DecisionPayload, EvidencePayload, HealthResponse, ReloadResponse, RequestOptions,
-    ScoresPayload,
+    AppState, CognitionPayload, DecideRequestPayload, DecideResponsePayload, DecisionPayload,
+    EvidencePayload, HealthResponse, ReloadResponse, RequestOptions, ScoresPayload,
 };

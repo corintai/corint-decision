@@ -21,16 +21,23 @@ pub(super) fn extract_reason_codes(explanation: &str) -> Vec<String> {
 
     // Extract codes from explanation (this is a basic implementation)
     // In a real system, these would come from the decision result
-    if explanation.to_lowercase().contains("email") && explanation.to_lowercase().contains("not verified") {
+    if explanation.to_lowercase().contains("email")
+        && explanation.to_lowercase().contains("not verified")
+    {
         codes.push("EMAIL_NOT_VERIFIED".to_string());
     }
-    if explanation.to_lowercase().contains("phone") && explanation.to_lowercase().contains("not verified") {
+    if explanation.to_lowercase().contains("phone")
+        && explanation.to_lowercase().contains("not verified")
+    {
         codes.push("PHONE_NOT_VERIFIED".to_string());
     }
-    if explanation.to_lowercase().contains("new account") || explanation.to_lowercase().contains("account_age") {
+    if explanation.to_lowercase().contains("new account")
+        || explanation.to_lowercase().contains("account_age")
+    {
         codes.push("NEW_ACCOUNT".to_string());
     }
-    if explanation.to_lowercase().contains("high") && explanation.to_lowercase().contains("amount") {
+    if explanation.to_lowercase().contains("high") && explanation.to_lowercase().contains("amount")
+    {
         codes.push("HIGH_TRANSACTION_AMOUNT".to_string());
     }
     if explanation.to_lowercase().contains("low risk") {

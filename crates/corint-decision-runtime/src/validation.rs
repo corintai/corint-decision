@@ -259,7 +259,10 @@ mod tests {
     #[test]
     fn test_reserved_prefix_sys() {
         let mut event = create_valid_event();
-        event.insert("sys_custom_field".to_string(), Value::String("test".to_string()));
+        event.insert(
+            "sys_custom_field".to_string(),
+            Value::String("test".to_string()),
+        );
 
         let result = validate_event_data(&event);
         assert!(result.is_err());
@@ -274,10 +277,7 @@ mod tests {
     #[test]
     fn test_reserved_prefix_features() {
         let mut event = create_valid_event();
-        event.insert(
-            "features_count".to_string(),
-            Value::Number(10.0),
-        );
+        event.insert("features_count".to_string(), Value::Number(10.0));
 
         assert!(validate_event_data(&event).is_err());
     }
@@ -338,8 +338,8 @@ mod tests {
 
         assert!(!is_reserved_field("user_id"));
         assert!(!is_reserved_field("amount"));
-        assert!(!is_reserved_field("system"));  // "system" is ok, "sys_" is not
-        assert!(!is_reserved_field("feature"));  // "feature" is ok, "features_" is not
+        assert!(!is_reserved_field("system")); // "system" is ok, "sys_" is not
+        assert!(!is_reserved_field("feature")); // "feature" is ok, "features_" is not
     }
 
     #[test]
@@ -350,7 +350,10 @@ mod tests {
         let mut level2 = HashMap::new();
         let mut level3 = HashMap::new();
 
-        level3.insert("sys_deep_field".to_string(), Value::String("test".to_string()));
+        level3.insert(
+            "sys_deep_field".to_string(),
+            Value::String("test".to_string()),
+        );
         level2.insert("level3".to_string(), Value::Object(level3));
         level1.insert("level2".to_string(), Value::Object(level2));
         event.insert("level1".to_string(), Value::Object(level1));

@@ -354,10 +354,7 @@ ruleset:
         let provider = Arc::new(MockProvider::with_response(mock_response.to_string()));
         let generator = DecisionFlowGenerator::with_defaults(provider);
 
-        let (flow, metadata) = generator
-            .generate_with_metadata("Test flow")
-            .await
-            .unwrap();
+        let (flow, metadata) = generator.generate_with_metadata("Test flow").await.unwrap();
 
         assert_eq!(flow.rule_count, 1);
         assert_eq!(flow.ruleset_count, 1);

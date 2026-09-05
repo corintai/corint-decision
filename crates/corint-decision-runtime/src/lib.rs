@@ -27,7 +27,9 @@ pub use datasource::{
 pub use engine::PipelineExecutor;
 pub use error::{Result, RuntimeError};
 pub use executor::Executor;
-pub use external_api::{ApiAuth, ApiConfig, ApiEndpoint, ApiResponse, ExternalApiClient, HttpMethod};
+pub use external_api::{
+    ApiAuth, ApiConfig, ApiEndpoint, ApiResponse, ExternalApiClient, HttpMethod,
+};
 pub use feature::FeatureExtractor;
 pub use lists::{ListBackend, ListService, MemoryBackend};
 pub use observability::{Metrics, MetricsCollector};

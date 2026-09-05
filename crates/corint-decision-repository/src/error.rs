@@ -92,8 +92,9 @@ mod tests {
 
     #[test]
     fn test_parser_error() {
-        let parse_err =
-            corint_decision_dsl_parser::error::ParseError::InvalidExpression("Invalid YAML syntax".to_string());
+        let parse_err = corint_decision_dsl_parser::error::ParseError::InvalidExpression(
+            "Invalid YAML syntax".to_string(),
+        );
         let err = RepositoryError::Parser(parse_err);
 
         assert!(err.to_string().contains("Parser error"));

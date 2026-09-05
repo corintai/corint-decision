@@ -126,9 +126,10 @@ pub unsafe extern "C" fn corint_engine_decide(
         Err(_) => return ptr::null_mut(),
     };
 
-    let result = match engine_ref.runtime.block_on(async {
-        engine_ref.engine.decide(request).await
-    }) {
+    let result = match engine_ref
+        .runtime
+        .block_on(async { engine_ref.engine.decide(request).await })
+    {
         Ok(r) => r,
         Err(e) => {
             let error_response = serde_json::json!({

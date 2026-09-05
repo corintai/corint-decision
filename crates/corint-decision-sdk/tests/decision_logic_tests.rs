@@ -5,8 +5,8 @@
 
 mod common;
 
-use corint_decision_sdk::{Signal, Value};
 use common::{ResponseAssertions, TestEngine};
+use corint_decision_sdk::{Signal, Value};
 use std::collections::HashMap;
 
 // ============================================================================
@@ -576,8 +576,7 @@ ruleset:
       signal: approve
 "#;
 
-    let engine = TestEngine::new()
-        .with_ruleset(ruleset_yaml);
+    let engine = TestEngine::new().with_ruleset(ruleset_yaml);
 
     let event = HashMap::new();
 

@@ -1,7 +1,7 @@
 //! FFI type definitions
 
-use std::sync::Arc;
 use corint_decision_sdk::DecisionEngine;
+use std::sync::Arc;
 use tokio::runtime::Runtime;
 
 /// Opaque type representing a CORINT decision engine

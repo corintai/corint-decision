@@ -7,9 +7,9 @@ use crate::error::Result;
 use crate::import_resolver::ImportResolver;
 use crate::optimizer::{ConstantFolder, DeadCodeEliminator};
 use crate::semantic::SemanticAnalyzer;
+use corint_decision_dsl_parser::PipelineParser;
 use corint_decision_model::ast::{Pipeline, Rule, Ruleset};
 use corint_decision_model::ir::Program;
-use corint_decision_dsl_parser::PipelineParser;
 use std::path::Path;
 
 /// Compiler options
