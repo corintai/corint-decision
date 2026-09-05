@@ -1,0 +1,23 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Editable CDL Core source bundle v1 (no evidence or authorization)",
+  "type": "object", "additionalProperties": false,
+  "required": ["format", "format_version", "profile", "language_version", "input_schema", "sources"],
+  "properties": {
+    "format": {"const": "corint-core-source-bundle"},
+    "format_version": {"const": "1"},
+    "profile": {"const": "cdl-core-risk-draft-1"},
+    "language_version": {"const": "0.1"},
+    "input_schema": {"$ref": "#/definitions/source"},
+    "sources": {"type": "array", "minItems": 1, "maxItems": 10000, "items": {"$ref": "#/definitions/source"}}
+  },
+  "definitions": {
+    "source": {
+      "type": "object", "additionalProperties": false, "required": ["path", "yaml"],
+      "properties": {
+        "path": {"type": "string", "minLength": 1, "pattern": "^[A-Za-z0-9_-]+(/[A-Za-z0-9_-]+)*\\.ya?ml$"},
+        "yaml": {"type": "string", "minLength": 1}
+      }
+    }
+  }
+}

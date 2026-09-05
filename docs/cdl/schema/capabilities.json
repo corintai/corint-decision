@@ -8,7 +8,19 @@
   "test_suite_schema": "test-suite.json",
   "source_package_schema": "source-package.json",
   "generation_response_schema": "generation-response.json",
+  "source_bundle_schema": "source-bundle.json",
   "tools": {
+    "source_exchange_cli": {
+      "status": "experimental",
+      "commands": ["corint export", "corint import"],
+      "entry_point": "corint-decision-toolchain::transfer",
+      "scope": "editable_source_exchange_and_fresh_local_evidence",
+      "historical_evidence_transferred": false,
+      "filesystem_extraction": false,
+      "business_evaluation": "not_performed",
+      "publication_approval": "not_granted",
+      "evidence": "../../../crates/corint-decision-cli/tests/transfer.rs"
+    },
     "validate_cli": {
       "status": "experimental",
       "command": "corint validate --input-schema PATH --format json FILE...",

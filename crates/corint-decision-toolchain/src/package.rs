@@ -111,7 +111,7 @@ pub struct Verification {
     pub error: Option<CoreError>,
 }
 
-fn hash(bytes: &[u8]) -> String {
+pub(crate) fn hash(bytes: &[u8]) -> String {
     format!("{:x}", Sha256::digest(bytes))
 }
 
@@ -324,6 +324,12 @@ pub fn write(package: &Package, path: &Path) -> Result<Receipt, CoreError> {
     check_output(path)?;
     let mut bytes = serde_json::to_vec_pretty(package).expect("package JSON");
     bytes.push(b'\n');
+    write_bytes(&bytes, path)?;
+    Ok(receipt(package, label(path), &bytes))
+}
+
+pub(crate) fn write_bytes(bytes: &[u8], path: &Path) -> Result<(), CoreError> {
+    check_output(path)?;
     let parent = path
         .parent()
         .filter(|p| !p.as_os_str().is_empty())
@@ -332,7 +338,7 @@ pub fn write(package: &Package, path: &Path) -> Result<Receipt, CoreError> {
     // Same-directory temporary + no-clobber persist, including a competing writer.
     // Tempfile's Drop removes the pending file on any error; source files are untouched.
     let mut file = tempfile::NamedTempFile::new_in(parent).map_err(io_error)?;
-    file.write_all(&bytes).map_err(io_error)?;
+    file.write_all(bytes).map_err(io_error)?;
     file.as_file().sync_all().map_err(io_error)?;
     file.persist_noclobber(path).map_err(|e| {
         if e.error.kind() == std::io::ErrorKind::AlreadyExists {
@@ -346,10 +352,10 @@ pub fn write(package: &Package, path: &Path) -> Result<Receipt, CoreError> {
             io_error(e.error)
         }
     })?;
-    Ok(receipt(package, label(path), &bytes))
+    Ok(())
 }
 
-pub fn verify(stored: &CoreSource, suite: &CoreSource) -> Result<Verification, CoreError> {
+fn read_package(stored: &CoreSource) -> Result<Package, CoreError> {
     // Derived strict structs reject duplicate/unknown keys at every level. We
     // never read embedded labels as paths, extract archives, or follow imports.
     let package: Package = serde_json::from_str(&stored.yaml).map_err(|e| {
@@ -391,16 +397,15 @@ pub fn verify(stored: &CoreSource, suite: &CoreSource) -> Result<Verification, C
             "Policy or report binding mismatch",
         ));
     }
-    if package.evidence.suite_sha256 != hash(suite.yaml.as_bytes()) {
-        return Err(invalid(
-            "/evidence/suite_sha256",
-            "E_SUITE_MISMATCH",
-            "Supply the exact test file used by this package",
-        ));
-    }
-    if package.evidence.tool != tool()? {
-        return Err(invalid("/evidence/tool","E_TOOL_MISMATCH","Evidence requires the exact host executable; rebuild under the current tool to create new evidence"));
-    }
+    Ok(package)
+}
+
+fn validated_sources(
+    package: &Package,
+    origin: &str,
+) -> Result<(Vec<CoreSource>, CoreSource), CoreError> {
+    let invalid =
+        |path: &str, code: &str, message: &str| diagnostic(origin, path, "package", code, message);
     if package.policy.input_schema.path != INPUT_PATH {
         return Err(invalid(
             "/policy/input_schema/path",
@@ -426,9 +431,38 @@ pub fn verify(stored: &CoreSource, suite: &CoreSource) -> Result<Verification, C
             "Source labels/order must match their resource kind/ID",
         ));
     }
+    let input = package.policy.input_schema.source();
+    compile_core(&sources, parse_core_input_schema(&input)?)?;
+    Ok((sources, input))
+}
+
+/// Read a portable source snapshot, NOT the historical behavior evidence.
+pub(crate) fn source_snapshot(
+    stored: &CoreSource,
+) -> Result<(Vec<CoreSource>, CoreSource), CoreError> {
+    let package = read_package(stored)?;
+    validated_sources(&package, &stored.path)
+}
+
+pub fn verify(stored: &CoreSource, suite: &CoreSource) -> Result<Verification, CoreError> {
+    let package = read_package(stored)?;
+    let invalid = |path: &str, code: &str, message: &str| {
+        diagnostic(&stored.path, path, "package", code, message)
+    };
+    if package.evidence.suite_sha256 != hash(suite.yaml.as_bytes()) {
+        return Err(invalid(
+            "/evidence/suite_sha256",
+            "E_SUITE_MISMATCH",
+            "Supply the exact test file used by this package",
+        ));
+    }
+    if package.evidence.tool != tool()? {
+        return Err(invalid("/evidence/tool","E_TOOL_MISMATCH","Evidence requires the exact host executable; rebuild under the current tool to create new evidence"));
+    }
+    let (sources, input) = validated_sources(&package, &stored.path)?;
     // Recompile/retest from the embedded snapshot, not the original filesystem.
     // Recomputed digests alone cannot make a stale or fabricated report pass.
-    let (fresh, tests) = prepare(&sources, &package.policy.input_schema.source(), suite)?;
+    let (fresh, tests) = prepare(&sources, &input, suite)?;
     let error = if let Some(fresh) = fresh {
         if fresh.evidence.test_report_sha256 != package.evidence.test_report_sha256
             || fresh.evidence.total != package.evidence.total

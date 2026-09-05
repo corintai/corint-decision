@@ -557,13 +557,13 @@ Feature / Model 的资源描述和就绪性契约在首期设计，不代表首�
 
 #### 11.2 交付物与代码落点
 
-下表描述完整阶段 0 目标。Core 规范/schema、fixture 与 runner、独立 CLI、共享工具链及可选严格生成/修改 API 已有首批实现；其余落点和完整完成定义仍需逐项验收：
+下表描述完整阶段 0 目标。Core 规范/schema、fixture 与 runner、独立 CLI、共享工具链及可选严格生成/修改 API 已有首批实现。新增 [源码交换](cdl/exchange.md)：`corint export` 导出不含历史证据的可编辑 YAML 源码集合（JSON 容器），`corint import` 使用调用方样例重新编译/执行并生成当前程序的新证据。已覆盖生成器宿主与 CLI 的真实跨程序往返，但不宣称 Work 集成、历史证据跨宿主互认或发布授权；其余落点和完整完成定义仍需逐项验收：
 
 | 交付物 | 建议落点 | 完成定义 |
 |---|---|---|
 | 规范性文本 | `docs/cdl/cdl-core.md` | 给出字段、默认、类型、引用、求值、错误和兼容性规则；每条要求有用例 ID |
 | 机器可读契约 | `docs/cdl/schema/` | 资源 schema 与版本化能力清单可供编辑器、Agent、验证器共用；表达式类型检查仍由编译器完成 |
-| 独立工具链 | 现有 parser / compiler / engine 公共库、`crates/corint-decision-toolchain`、`crates/corint-decision-cli` 及严格生成适配层 | CLI 与生成器已复用无 Work 的严格编译校验、真实引擎样例行为测试、源码包构建/指纹核验；生产分发/激活、跨宿主证据及完整公共契约待完成 |
+| 独立工具链 | 现有 parser / compiler / engine 公共库、`crates/corint-decision-toolchain`、`crates/corint-decision-cli` 及严格生成适配层 | CLI 与生成器已复用严格编译、真实引擎样例测试、源码包构建/指纹核验、源码导出/导入和新证据重建；生产分发/激活、跨宿主可信历史证据及完整公共契约待完成 |
 | 跨产品公共契约 | `docs/contracts/` | 定义 BusinessContext、TargetCapabilities、Feature / Model、PolicyPackage、验证/评估报告与反馈事件；明确生产者、消费者、版本、信任与兼容性 |
 | 严格校验入口 | 现有 parser / compiler / repository 装配链 | 拒绝未知版本、字段、类型、引用和不支持能力，输出结构化诊断；已有宽松入口不能绕过发布门禁 |
 | 用例与真实示例 | `tests/conformance/cdl_core/` | 每例包含完整依赖、输入、预期输出或预期错误；不依赖在线服务或本机私有仓库 |

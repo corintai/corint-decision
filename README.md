@@ -23,6 +23,7 @@
 
 For the experimental strict CDL Core, use the [offline validation CLI](docs/cdl/cli.md),
 [behavior testing CLI](docs/cdl/testing.md), [source packages](docs/cdl/packages.md),
+[source exchange](docs/cdl/exchange.md),
 [strict generation API](docs/cdl/generation.md)
 and [bounded specification](docs/cdl/cdl-core.md). Compile-time validation is
 not behavior testing, business evaluation or production certification.

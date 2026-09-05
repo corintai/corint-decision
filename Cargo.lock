@@ -520,6 +520,7 @@ name = "corint-decision-cli"
 version = "0.1.0"
 dependencies = [
  "corint-decision-compiler",
+ "corint-decision-llm",
  "corint-decision-toolchain",
  "jsonschema",
  "serde",
@@ -527,6 +528,7 @@ dependencies = [
  "serde_yaml",
  "sha2",
  "tempfile",
+ "tokio",
 ]
 
 [[package]]

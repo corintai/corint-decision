@@ -19,7 +19,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - name: Run strict Core behavior and contract checks
         run: cargo test -p corint-decision-engine --test cdl_core_conformance --locked
-      - name: Run offline CLI validation, behavior and package integrity checks
+      - name: Run offline CLI validation, behavior, package integrity and source exchange checks
         run: cargo test -p corint-decision-cli --locked
       - name: Run shared toolchain checks
         run: cargo test -p corint-decision-toolchain --locked

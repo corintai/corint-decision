@@ -130,10 +130,11 @@ strict initial rule is not a cross-platform compatibility policy or software
 attestation. The fingerprint identifies the executable file, not the OS and all
 dynamically linked libraries or execution environment.
 
-The [strict generation API](generation.md) and CLI share
+The [source exchange commands](exchange.md), strict [generation API](generation.md) and CLI share
 `corint-decision-toolchain`. Generator packages retain this same host binding:
-they must be rebuilt from their reviewed sources under the target CLI to obtain
-CLI-bound evidence. Cross-host evidence verification is not implemented.
+use `corint export` and `corint import` to rebuild reviewed sources under the
+target CLI and obtain CLI-bound evidence. Cross-host historical evidence
+verification is not implemented; source exchange does not bypass this restriction.
 
 ## Reports and trust boundaries
 

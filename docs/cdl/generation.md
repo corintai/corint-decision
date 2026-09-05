@@ -102,8 +102,9 @@ The package format and policy hashes are unchanged. Evidence binds the **host
 executable** running the shared toolchain, which is the CLI executable for CLI
 builds, or the embedding application for generator builds. `corint verify`
 therefore cannot certify evidence produced by a different host binary: it
-returns `E_TOOL_MISMATCH`. Export/review the embedded sources and rebuild with
-the target CLI and the caller-owned suite to create fresh evidence; do not
+returns `E_TOOL_MISMATCH`. Use [`corint export / import`](exchange.md) to
+export/review the embedded sources and rebuild with the target CLI and the
+caller-owned suite to create fresh evidence; do not
 remove or rewrite the fingerprint to bypass this check. Cross-host signed
 attestation remains future work.
 

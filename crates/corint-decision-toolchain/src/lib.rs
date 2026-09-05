@@ -3,6 +3,7 @@
 //! worker. No Work dependency, LLM call, deployment or business evaluation.
 pub mod behavior;
 pub mod package;
+pub mod transfer;
 
 use corint_decision_compiler::core::{diagnostic, CoreError};
 use std::path::Path;

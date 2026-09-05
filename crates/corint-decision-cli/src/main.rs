@@ -1,5 +1,5 @@
 //! Thin, offline adapter over the shared Core compiler, never a second validator.
-use corint_decision_toolchain::{behavior, package};
+use corint_decision_toolchain::{behavior, package, transfer};
 
 use corint_decision_compiler::core::{
     compile_core, diagnostic, parse_core_input_schema, CoreError, CoreSource, PROFILE,
@@ -19,6 +19,8 @@ Usage:
   corint test --input-schema PATH --cases PATH [--format text|json] FILE...
   corint build --input-schema PATH --cases PATH --output PATH [--format text|json] FILE...
   corint verify --package PATH --cases PATH [--format text|json]
+  corint export --package PATH --output PATH [--format text|json]
+  corint import --bundle PATH --cases PATH --output PATH [--format text|json]
   corint --help
   corint --version
 
@@ -30,6 +32,10 @@ business evaluation or publication is performed. Validate compiles only; test
 executes declared cases through the real engine, with trace off/on. Build writes
 a new source package after tests pass (never overwrites); verify checks bindings
 and reruns the supplied cases. Packages do not embed case inputs or authorization.
+Export writes an editable JSON source bundle without historical evidence; it
+checks content bindings and compilation only. Import retests that bundle with
+caller-owned cases and builds fresh evidence under this host. Neither command
+extracts embedded paths to disk, trusts old evidence or activates a policy.
 
 JSON reports go to stdout for success and failure; text is the default format.
 Exit codes: 0 = command passed, 1 = validation/test failure, 2 = usage or I/O error.
@@ -41,8 +47,11 @@ struct Options {
     test: bool,
     build: bool,
     verify: bool,
+    export: bool,
+    import: bool,
     output: Option<PathBuf>,
     package: Option<PathBuf>,
+    bundle: Option<PathBuf>,
     cases: Option<PathBuf>,
     input_schema: Option<PathBuf>,
     sources: Vec<PathBuf>,
@@ -66,6 +75,12 @@ struct Report {
     test_results: Option<behavior::TestResults>,
     #[serde(skip_serializing_if = "Option::is_none")]
     artifact: Option<package::Receipt>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    exported_bundle: Option<transfer::ExportReceipt>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    package_file: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    bundle_file: Option<String>,
 }
 
 fn render_behavior(report: &Report) -> String {
@@ -124,9 +139,14 @@ fn parse_args(args: &[OsString], options: &mut Options) -> Result<(), CoreError>
             options.test = true;
             options.verify = true;
         }
+        Some("export") => options.export = true,
+        Some("import") => {
+            options.test = true;
+            options.import = true;
+        }
         _ => {
             return Err(usage(
-                "Expected 'validate', 'test', 'build' or 'verify'; use corint --help",
+                "Expected validate, test, build, verify, export or import; use corint --help",
             ))
         }
     };
@@ -139,7 +159,11 @@ fn parse_args(args: &[OsString], options: &mut Options) -> Result<(), CoreError>
                 break;
             }
             Some("--input-schema") => {
-                if options.verify || options.input_schema.is_some() {
+                if options.verify
+                    || options.export
+                    || options.import
+                    || options.input_schema.is_some()
+                {
                     return Err(usage("--input-schema may only be supplied once"));
                 }
                 let value = args
@@ -154,10 +178,13 @@ fn parse_args(args: &[OsString], options: &mut Options) -> Result<(), CoreError>
             }
             Some("--output" | "--package") => {
                 let output = arg == "--output";
-                if (output && (!options.build || options.output.is_some()))
-                    || (!output && (!options.verify || options.package.is_some()))
+                if (output
+                    && (!(options.build || options.export || options.import)
+                        || options.output.is_some()))
+                    || (!output
+                        && (!(options.verify || options.export) || options.package.is_some()))
                 {
-                    return Err(usage("--output is only for build; --package is only for verify; neither may repeat"));
+                    return Err(usage("--output is only for build/export/import; --package is only for verify/export; neither may repeat"));
                 }
                 let value = args.next().ok_or_else(|| usage("Option needs a path"))?;
                 if value.to_string_lossy().starts_with('-') {
@@ -169,10 +196,20 @@ fn parse_args(args: &[OsString], options: &mut Options) -> Result<(), CoreError>
                     options.package = Some(value.into());
                 }
             }
+            Some("--bundle") => {
+                if !options.import || options.bundle.is_some() {
+                    return Err(usage("--bundle is only for import and may not repeat"));
+                }
+                let value = args.next().ok_or_else(|| usage("--bundle needs a path"))?;
+                if value.to_string_lossy().starts_with('-') {
+                    return Err(usage("--bundle needs a path; prefix dash paths with ./"));
+                }
+                options.bundle = Some(value.into());
+            }
             Some("--cases") => {
                 if !options.test || options.cases.is_some() {
                     return Err(usage(
-                        "--cases is required once for test/build/verify, not allowed for validate",
+                        "--cases is required once for test/build/verify/import, not allowed for validate/export",
                     ));
                 }
                 let value = args.next().ok_or_else(|| usage("--cases needs a path"))?;
@@ -196,6 +233,21 @@ fn parse_args(args: &[OsString], options: &mut Options) -> Result<(), CoreError>
             }
             _ => options.sources.push(arg.into()),
         }
+    }
+    if options.export || options.import {
+        let input_present = if options.export {
+            options.package.is_some()
+        } else {
+            options.bundle.is_some()
+        };
+        if !input_present
+            || options.output.is_none()
+            || !options.sources.is_empty()
+            || (options.import && options.cases.is_none())
+        {
+            return Err(usage("export requires --package and --output; import requires --bundle, --cases and --output; neither accepts source files"));
+        }
+        return Ok(());
     }
     if options.verify {
         if options.package.is_none() || options.cases.is_none() || !options.sources.is_empty() {
@@ -265,15 +317,22 @@ fn render(report: &Report, json: bool) -> String {
     if json {
         return serde_json::to_string_pretty(report).expect("serializable report") + "\n";
     }
-    if report.scope == "build" || report.scope == "verify" {
+    if report.scope == "export" {
+        if let Some(bundle) = &report.exported_bundle {
+            return format!("EXPORTED: {} ({} sources)\nBundle SHA-256: {}\nSource bindings and compilation checked; execution and historical evidence NOT checked.\nNo evidence or publication approval exported.\n",
+                bundle.path, bundle.source_count, bundle.bundle_sha256);
+        }
+        // Failures use the normal diagnostic renderer below, not a success banner.
+    }
+    if report.scope == "build" || report.scope == "verify" || report.scope == "import" {
         let mut text = render_behavior(report);
         if let Some(artifact) = &report.artifact {
             text.push_str(&format!(
                 "{} package: {}\nPolicy SHA-256: {}\nPackage SHA-256: {}\n",
-                if report.scope == "build" {
-                    "Built"
-                } else {
+                if report.scope == "verify" {
                     "Verified"
+                } else {
+                    "Built"
                 },
                 artifact.path,
                 artifact.policy_sha256,
@@ -317,6 +376,8 @@ fn run(args: Vec<OsString>) -> (u8, String) {
         || args == [OsString::from("test"), OsString::from("--help")]
         || args == [OsString::from("build"), OsString::from("--help")]
         || args == [OsString::from("verify"), OsString::from("--help")]
+        || args == [OsString::from("export"), OsString::from("--help")]
+        || args == [OsString::from("import"), OsString::from("--help")]
     {
         return (0, HELP.into());
     }
@@ -335,7 +396,28 @@ fn run(args: Vec<OsString>) -> (u8, String) {
     let mut options = Options::default();
     let mut test_results = None;
     let mut artifact = None;
+    let mut exported_bundle = None;
     let result = parse_args(&args, &mut options).and_then(|()| {
+        if options.export {
+            let (_, stored) = read_source(options.package.as_ref().expect("checked args"))?;
+            exported_bundle = Some(transfer::export(
+                &stored,
+                options.output.as_ref().expect("checked args"),
+            )?);
+            return Ok(());
+        }
+        if options.import {
+            let output = options.output.as_ref().expect("checked args");
+            package::check_output(output)?;
+            let (_, stored) = read_source(options.bundle.as_ref().expect("checked args"))?;
+            let (_, suite) = read_source(options.cases.as_ref().expect("checked args"))?;
+            let (package, tests) = transfer::import_sources(&stored, &suite)?;
+            test_results = Some(tests);
+            if let Some(package) = package {
+                artifact = Some(package::write(&package, output)?);
+            }
+            return Ok(());
+        }
         if options.verify {
             let path = options.package.as_ref().expect("checked args");
             let (_, stored) = read_source(path)?;
@@ -376,7 +458,11 @@ fn run(args: Vec<OsString>) -> (u8, String) {
         report_version: "1",
         tool_version: env!("CARGO_PKG_VERSION"),
         profile: PROFILE,
-        scope: if options.build {
+        scope: if options.export {
+            "export"
+        } else if options.import {
+            "import"
+        } else if options.build {
             "build"
         } else if options.verify {
             "verify"
@@ -394,6 +480,9 @@ fn run(args: Vec<OsString>) -> (u8, String) {
         cases_file: options.cases.as_deref().map(label),
         test_results,
         artifact,
+        exported_bundle,
+        package_file: options.package.as_deref().map(label),
+        bundle_file: options.bundle.as_deref().map(label),
     };
     let exit = match result {
         Ok(()) => {
