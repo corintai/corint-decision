@@ -1,0 +1,196 @@
+# Test descriptor, not CDL syntax. All data is synthetic, not a business evaluation.
+profile: cdl-core-risk-draft-1
+cases:
+  - id: payment_boundaries
+    requirements: [C01, C03, C04, C05]
+    documents: [rule.yaml, ruleset.yaml, pipeline.yaml, registry.yaml]
+    runs:
+      - amount: 1001
+        score: 60
+        signal: decline
+        actions: [BLOCK]
+        triggered: [large_amount]
+        steps: [check]
+        local_scores: {risk: 60}
+        calls: [large_amount]
+      - amount: 1000
+        score: 0
+        signal: approve
+        actions: []
+        triggered: []
+        steps: [check]
+        local_scores: {risk: 0}
+        calls: [large_amount]
+      - amount: 999
+        score: 0
+        signal: approve
+        actions: []
+        triggered: []
+        steps: [check]
+        local_scores: {risk: 0}
+        calls: [large_amount]
+  - id: result_dependent_router
+    requirements: [C06, C07]
+    documents: [rule.yaml, ruleset.yaml, router.yaml, registry.yaml, branch_rule.yaml, branch_ruleset.yaml]
+    runs:
+      - amount: 1001
+        score: 67
+        signal: decline
+        actions: [BLOCK]
+        triggered: [large_amount, branch_marker]
+        steps: [check, route, extra]
+        local_scores: {risk: 60, branch: 7}
+        calls: [large_amount, branch_marker]
+      - amount: 1000
+        score: 0
+        signal: approve
+        actions: []
+        triggered: []
+        steps: [check, route]
+        local_scores: {risk: 0}
+        calls: [large_amount]
+invalid:
+  - id: N01_unknown_condition
+    document: rule.yaml
+    find: 'when: event.amount > 1000'
+    replace: 'when: {al: ["event.amount > 1000"]}'
+    stage: validate
+    code: E_UNKNOWN_FIELD
+  - id: N01_unknown_field
+    document: rule.yaml
+    find: 'score: 60'
+    replace: "score: 60\n  typo: 1"
+    stage: validate
+    code: E_UNKNOWN_FIELD
+  - id: N01_duplicate_key
+    document: rule.yaml
+    find: 'score: 60'
+    replace: "score: 60\n  score: 0"
+    stage: parse
+    code: E_INVALID_STRUCTURE
+  - id: N02_unknown_version
+    document: rule.yaml
+    find: 'version: "0.1"'
+    replace: 'version: "9.9"'
+    stage: validate
+    code: E_UNSUPPORTED_VERSION
+  - id: N02_missing_version
+    document: rule.yaml
+    find: 'version: "0.1"'
+    replace: ''
+    stage: validate
+    code: E_INVALID_VERSION
+  - id: N02_numeric_version
+    document: rule.yaml
+    find: 'version: "0.1"'
+    replace: 'version: 0.1'
+    stage: validate
+    code: E_INVALID_VERSION
+  - id: N03_G01_missing_name
+    document: rule.yaml
+    find: '  name: Large amount'
+    replace: ''
+    stage: validate
+    code: E_MISSING_FIELD
+  - id: N03_missing_score
+    document: rule.yaml
+    find: '  score: 60'
+    replace: ''
+    stage: validate
+    code: E_MISSING_FIELD
+  - id: N03_missing_decision
+    document: pipeline.yaml
+    find: 'decision:'
+    replace: 'old_decision:'
+    stage: validate
+    code: E_UNKNOWN_FIELD
+  - id: N04_empty_group
+    document: rule.yaml
+    find: 'when: event.amount > 1000'
+    replace: 'when: {all: []}'
+    stage: validate
+    code: E_INVALID_STRUCTURE
+  - id: N04_ambiguous_groups
+    document: rule.yaml
+    find: 'when: event.amount > 1000'
+    replace: 'when: {all: ["true"], any: ["false"]}'
+    stage: validate
+    code: E_INVALID_STRUCTURE
+  - id: N04_multiple_not
+    document: rule.yaml
+    find: 'when: event.amount > 1000'
+    replace: 'when: {not: ["true", "false"]}'
+    stage: validate
+    code: E_INVALID_STRUCTURE
+  - id: N04_missing_default
+    document: ruleset.yaml
+    find: 'default: true'
+    replace: 'when: "true"'
+    stage: validate
+    code: E_INVALID_STRUCTURE
+  - id: N05_missing_rule
+    document: ruleset.yaml
+    find: 'rules: [large_amount]'
+    replace: 'rules: [invented_rule]'
+    stage: resolve
+    code: E_UNRESOLVED_REF
+  - id: N05_cycle
+    document: pipeline.yaml
+    find: 'next: end'
+    replace: 'next: check'
+    stage: resolve
+    code: E_INVALID_GRAPH
+  - id: N06_undeclared_event
+    document: rule.yaml
+    find: 'event.amount > 1000'
+    replace: 'event.amout > 1000'
+    stage: type
+    code: E_INVALID_REF
+  - id: N06_uncompleted_result
+    document: pipeline.yaml
+    find: 'results.risk.signal'
+    replace: 'results.not_executed.signal'
+    stage: type
+    code: E_INVALID_REF
+  - id: N07_step_guard
+    document: pipeline.yaml
+    find: 'next: end'
+    replace: "when: 'false'\n        next: end"
+    stage: validate
+    code: E_UNSUPPORTED_CAPABILITY
+  - id: N07_subpipeline
+    document: pipeline.yaml
+    find: 'type: ruleset'
+    replace: 'type: pipeline'
+    stage: validate
+    code: E_UNSUPPORTED_CAPABILITY
+  - id: N07_single_rule
+    document: pipeline.yaml
+    find: 'type: ruleset'
+    replace: 'type: rule'
+    stage: validate
+    code: E_UNSUPPORTED_CAPABILITY
+  - id: N08_api
+    document: pipeline.yaml
+    find: 'type: ruleset'
+    replace: 'type: api'
+    stage: validate
+    code: E_UNSUPPORTED_CAPABILITY
+  - id: N08_service
+    document: pipeline.yaml
+    find: 'type: ruleset'
+    replace: 'type: service'
+    stage: validate
+    code: E_UNSUPPORTED_CAPABILITY
+  - id: N09_score_overflow_literal
+    document: rule.yaml
+    find: 'score: 60'
+    replace: 'score: 2147483648'
+    stage: validate
+    code: E_INVALID_STRUCTURE
+  - id: N09_operand_type
+    document: rule.yaml
+    find: 'event.amount > 1000'
+    replace: 'event.amount > "1000"'
+    stage: type
+    code: E_TYPE

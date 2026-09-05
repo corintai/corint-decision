@@ -11,6 +11,21 @@ env:
   RUST_BACKTRACE: 1
 
 jobs:
+  cdl-core:
+    name: CDL Core conformance (offline policy fixtures)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Run strict Core behavior and contract checks
+        run: cargo test -p corint-decision-engine --test cdl_core_conformance --locked
+      - name: Run offline CLI validation, behavior and package integrity checks
+        run: cargo test -p corint-decision-cli --locked
+      - name: Run shared toolchain checks
+        run: cargo test -p corint-decision-toolchain --locked
+      - name: Run strict generator contract checks with offline model responses
+        run: cargo test -p corint-decision-llm --features core-generation --test core_generation --locked
+
   test:
     name: Test
     runs-on: ubuntu-latest

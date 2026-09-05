@@ -4,6 +4,7 @@
 
 pub mod codegen;
 pub mod compiler;
+pub mod core;
 pub mod error;
 pub mod import_resolver;
 pub mod optimizer;

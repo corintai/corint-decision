@@ -1,0 +1,6 @@
+version: "0.1"
+rule:
+  id: branch_marker
+  name: Proof of branch execution
+  when: "true"
+  score: 7

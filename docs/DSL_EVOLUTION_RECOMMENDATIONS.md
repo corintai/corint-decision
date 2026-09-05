@@ -1,6 +1,6 @@
 # Corint 解决方案：Work、Decision 与 CDL 演进建议
 
-> 状态：修订提案，尚未完成核心规范与一致性验收。
+> 状态：阶段 0 首批实现已落地，完整核心规范与跨产品一致性验收仍未完成。当前边界见 [CDL Core 首批规范](cdl/cdl-core.md)。
 >
 > 修订日期：2026-09-05。本文区分当前实现、首期候选契约与后续设计；提案示例不代表当前引擎已经支持。
 >
@@ -308,6 +308,8 @@ Registry 只负责选择入口 Pipeline；复杂业务判断应在 Pipeline 或 
 
 ### 8.2 可交换的策略包
 
+当前已有[实验性源码包构建与核验](cdl/packages.md)：`corint build / verify` 保存完整 Core 源码与输入 schema，以指纹绑定独立保存的测试集、工具二进制及重新运行的结果摘要。默认不导出测试输入，不包含签名、环境绑定或发布审批，不代表下述完整 PolicyPackage 已完成。
+
 用户可以只编辑一个 YAML 文件，但发布交付物应是依赖明确、可验证的 `PolicyPackage`。包契约在首期定义，具体封装格式和分发服务分阶段实现；它不要求立即新增 CDL 顶层关键字。
 
 策略包至少包含或以不可变引用关联：
@@ -364,7 +366,7 @@ LLM 适合首先位于控制面：生成规则草案、解释 Trace、发现冲�
 
 - 为 Agent 提供机器可读的资源 schema、表达式/函数签名、能力清单、错误码和通过验证的例子；结构合法仍不代表策略符合业务意图。
 - 复用现有 `Diagnostic` 并补齐 source path、字段路径、阶段、稳定错误码和可用的源码范围；同一个错误在 CLI、服务端和生成器中含义一致。
-- Prompt 和生成器必须来自同一版本契约。当前 [规则生成器](../crates/corint-decision-llm/src/generator/rule_generator.rs) 提取 YAML 后主要检查 `rule:` 前缀，而 [模板](../crates/corint-decision-llm/src/generator/prompt_templates.rs) 仍含缺少 `name`、可选 `score`、旧 Ruleset 字段等偏差，应纳入首期回归。
+- Prompt 和生成器必须来自同一版本契约。已新增可选 [严格生成入口](cdl/generation.md)，直接嵌入 Core 规范、schema 和 conformance fixture；复用共享工具链完成生成/修改后的编译、真实引擎样例测试和源码包构建。调用方固定输入契约和独立验收样例，模型不能修改期望或提交验证声明，样例不发送给模型。现有 [规则生成器](../crates/corint-decision-llm/src/generator/rule_generator.rs) 与 [模板](../crates/corint-decision-llm/src/generator/prompt_templates.rs) 保留兼容语义，不能据此声称通过 Core 门禁；旧字段/缺失字段已纳入严格入口反例。
 - 可以基于结构化诊断进行有次数上限的自动修复，但修复不能修改 schema、提升权限、跳过测试或自行批准发布。
 - 文档、检索内容、事件数据和模型响应均是非可信数据，不能成为引擎指令、凭据来源或授权依据。编写、测试、审批、发布应具有分开的权限。
 
@@ -532,7 +534,7 @@ Decision Worker 应尽量无状态：规则包和版本来自受控分发，持�
 - **可执行核心**：规范、独立工具链、真实行为测试与严格发布校验。
 - **跨产品公共契约**：业务上下文、目标能力、Feature / Model 资源、策略包、验证/评估报告及反馈事件的 schema 与契约测试。
 
-先固定接口并验证最小交互，不要求同时完成真实数据连接、模型训练服务和完整 Work 产品。下面是交付计划；相关 schema、fixture、runner、接口和门禁尚未因本次文档修订而实现。
+先固定接口并验证最小交互，不要求同时完成真实数据连接、模型训练服务和完整 Work 产品。首批已新增实验性 `cdl-core-risk-draft-1`：公开结构 schema、显式严格 Rust 入口、闭包校验、同步规则集调用和真实引擎 runner。现已增加 [离线 CLI](cdl/cli.md)：`corint validate` 校验编译；[`corint test`](cdl/testing.md) 用真实引擎核对声明样例、路径与 Trace 一致性；[`corint build / verify`](cdl/packages.md) 构建源码快照、绑定内容指纹并重新核验测试证据。[严格生成/修改 API](cdl/generation.md) 已复用 `corint-decision-toolchain` 完成同一闭环，固定模型响应测试覆盖失败拒绝和最小往返。上述工具均不宣称真实业务效果已验证，也不授予发布权限；生成测试通过不等于真实模型或 Work 产品接入完成。文件 import、生产产物分发/激活、真实生成客户端/发布接入、跨宿主可信证据与跨产品公共契约仍待实现；完整交付计划如下。
 
 #### 11.1 首期候选支持范围
 
@@ -555,13 +557,13 @@ Feature / Model 的资源描述和就绪性契约在首期设计，不代表首�
 
 #### 11.2 交付物与代码落点
 
-下列新增路径是拟议落点，尚不是现有文件或可执行命令：
+下表描述完整阶段 0 目标。Core 规范/schema、fixture 与 runner、独立 CLI、共享工具链及可选严格生成/修改 API 已有首批实现；其余落点和完整完成定义仍需逐项验收：
 
 | 交付物 | 建议落点 | 完成定义 |
 |---|---|---|
 | 规范性文本 | `docs/cdl/cdl-core.md` | 给出字段、默认、类型、引用、求值、错误和兼容性规则；每条要求有用例 ID |
 | 机器可读契约 | `docs/cdl/schema/` | 资源 schema 与版本化能力清单可供编辑器、Agent、验证器共用；表达式类型检查仍由编译器完成 |
-| 独立工具链 | 现有 parser / compiler / engine 公共库及待建的 CLI/接口适配层 | 无需 Work 账号即可使用本地上下文完成校验、测试和构建；不同适配层复用同一实现 |
+| 独立工具链 | 现有 parser / compiler / engine 公共库、`crates/corint-decision-toolchain`、`crates/corint-decision-cli` 及严格生成适配层 | CLI 与生成器已复用无 Work 的严格编译校验、真实引擎样例行为测试、源码包构建/指纹核验；生产分发/激活、跨宿主证据及完整公共契约待完成 |
 | 跨产品公共契约 | `docs/contracts/` | 定义 BusinessContext、TargetCapabilities、Feature / Model、PolicyPackage、验证/评估报告与反馈事件；明确生产者、消费者、版本、信任与兼容性 |
 | 严格校验入口 | 现有 parser / compiler / repository 装配链 | 拒绝未知版本、字段、类型、引用和不支持能力，输出结构化诊断；已有宽松入口不能绕过发布门禁 |
 | 用例与真实示例 | `tests/conformance/cdl_core/` | 每例包含完整依赖、输入、预期输出或预期错误；不依赖在线服务或本机私有仓库 |
@@ -594,7 +596,7 @@ runs:
     expect_error: { stage: input, code: E_INPUT_SCHEMA }
 ```
 
-该 fixture 对应规则条件 `event.amount > 1000`、分数 `60`，并包含必填的 `id / name / when / score`。缺失值的预期是新契约要求，不是当前实现已经满足的行为；边界还需覆盖低于阈值和错误类型。
+该 fixture 对应规则条件 `event.amount > 1000`、分数 `60`，并包含必填的 `id / name / when / score`。当前严格 Core 已覆盖高于/等于/低于阈值，以及缺失值和错误输入类型；实际用例见 `tests/conformance/cdl_core/behavior.yaml`，不表示所有历史兼容入口都满足同一输入契约。
 
 #### 11.4 阶段退出条件
 
@@ -657,7 +659,7 @@ runs:
 
 ### 12.2 首期必备用例
 
-以下为待落地的验收要求，不是已通过的测试报告。错误码为拟定名称，落地时应统一映射到现有诊断模型。
+以下为完整验收要求，不是整体已通过的测试报告。首批覆盖范围以 [能力清单](cdl/schema/capabilities.json) 及所绑定用例为准；C08、完整条件级 Trace 等仍未完成。首批已复用现有 Diagnostic 并补充来源、字段路径与阶段，其余错误码仍需逐项收敛。
 
 | ID | 场景 | 预期断言 |
 |---|---|---|

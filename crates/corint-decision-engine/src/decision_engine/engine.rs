@@ -8,10 +8,10 @@ use super::types::{DecisionRequest, DecisionResponse};
 use crate::config::EngineConfig;
 use crate::error::{EngineError, Result};
 use corint_decision_compiler::{Compiler, CompilerOptions as CompilerOpts};
+use corint_decision_dsl_parser::RegistryParser;
 use corint_decision_model::ast::{PipelineRegistry, Signal};
 use corint_decision_model::ir::Program;
 use corint_decision_model::Value;
-use corint_decision_dsl_parser::RegistryParser;
 use corint_decision_runtime::{
     ApiConfig, ConditionTrace, DecisionResult, ExecutionTrace, ExternalApiClient, MetricsCollector,
     PipelineExecutor, PipelineTrace, RuleTrace, RulesetTrace,
@@ -44,6 +44,9 @@ pub struct DecisionEngine {
 
     /// Configuration
     config: EngineConfig,
+    /// Present only for the explicit, closed-world Core entry point.
+    core_input_schema: Option<corint_decision_model::types::Schema>,
+    core_registry_guards: Vec<Program>,
 
     /// Optional decision result writer for persisting decision results
     pub(crate) result_writer: Option<Arc<corint_decision_runtime::DecisionResultWriter>>,
@@ -60,6 +63,58 @@ pub struct DecisionEngine {
 }
 
 impl DecisionEngine {
+    /// Build the first strict Core increment without filesystem, Work or network dependencies.
+    /// Every resource must be supplied explicitly; legacy loading is never a fallback.
+    pub fn from_core(
+        sources: &[corint_decision_compiler::core::CoreSource],
+        input_schema: corint_decision_model::types::Schema,
+    ) -> Result<Self> {
+        let compiled = corint_decision_compiler::core::compile_core(sources, input_schema)?;
+        let mut rule_map = HashMap::new();
+        let mut ruleset_map = HashMap::new();
+        let mut pipeline_map = HashMap::new();
+        for p in &compiled.programs {
+            match p.metadata.source_type.as_str() {
+                "rule" => {
+                    rule_map.insert(p.metadata.source_id.clone(), p.clone());
+                }
+                "ruleset" => {
+                    ruleset_map.insert(p.metadata.source_id.clone(), p.clone());
+                }
+                "pipeline" => {
+                    pipeline_map.insert(p.metadata.source_id.clone(), p.clone());
+                }
+                _ => (),
+            }
+        }
+        let mut calls = HashMap::new();
+        for (id, conclusion) in &ruleset_map {
+            let rules = conclusion.metadata.custom["rules"]
+                .split(',')
+                .map(|id| rule_map[id].clone())
+                .collect();
+            calls.insert(id.clone(), (rules, conclusion.clone()));
+        }
+        let executor = Arc::new(PipelineExecutor::new_offline().with_ruleset_programs(calls));
+        let metrics = executor.metrics();
+        Ok(Self {
+            programs: compiled.programs,
+            rule_map,
+            ruleset_map,
+            pipeline_map,
+            registry: Some(compiled.registry),
+            executor,
+            metrics,
+            config: EngineConfig::new(),
+            core_input_schema: Some(compiled.input_schema),
+            core_registry_guards: compiled.registry_guards,
+            result_writer: None,
+            repository_config: None,
+            feature_executor: None,
+            list_service: None,
+        })
+    }
+
     /// Generate a unique request ID
     /// Format: req_YYYYMMDDHHmmss_xxxxxx
     /// Example: req_20231209143052_a3f2e1
@@ -243,6 +298,8 @@ impl DecisionEngine {
             executor,
             metrics,
             config,
+            core_input_schema: None,
+            core_registry_guards: Vec::new(),
             result_writer: None,
             repository_config: None,
             feature_executor: feature_executor_clone,
@@ -252,6 +309,25 @@ impl DecisionEngine {
 
     pub async fn decide(&self, mut request: DecisionRequest) -> Result<DecisionResponse> {
         use corint_decision_runtime::result::ExecutionResult;
+
+        if let Some(schema) = &self.core_input_schema {
+            corint_decision_compiler::core::validate_core_input(schema, &request.event_data)?;
+            if request.features.is_some()
+                || request.api.is_some()
+                || request.service.is_some()
+                || request.llm.is_some()
+                || request.vars.is_some()
+            {
+                return Err(corint_decision_compiler::core::diagnostic(
+                    "<request>",
+                    "",
+                    "input",
+                    "E_UNSUPPORTED_CAPABILITY",
+                    "Core increment 1 accepts only event inputs",
+                )
+                .into());
+            }
+        }
 
         let start = std::time::Instant::now();
 
@@ -311,7 +387,16 @@ impl DecisionEngine {
                 );
 
                 // Evaluate when block against event data
-                if WhenEvaluator::evaluate_when_block(&entry.when, &request.event_data) {
+                let matches = if self.core_input_schema.is_some() {
+                    self.executor
+                        .execute(&self.core_registry_guards[idx], request.event_data.clone())
+                        .await?
+                        .score
+                        == 1
+                } else {
+                    WhenEvaluator::evaluate_when_block(&entry.when, &request.event_data)
+                };
+                if matches {
                     tracing::info!(
                         "✓ Registry matched entry {}: pipeline={}",
                         idx,
@@ -344,6 +429,50 @@ impl DecisionEngine {
 
                         // Update execution_result with pipeline context
                         execution_result.variables = result.context.clone();
+
+                        if self.core_input_schema.is_some() {
+                            combined_result.signal = result.signal.clone();
+                            combined_result.actions = result.actions.clone();
+                            combined_result.explanation = result.explanation.clone();
+                            execution_result.score = result.score;
+                            execution_result.triggered_rules = result.triggered_rules.clone();
+                            combined_result.score = result.score;
+                            combined_result.triggered_rules = result.triggered_rules.clone();
+                            if let Some(Value::Array(records)) =
+                                result.context.get("__core_rule_executions__")
+                            {
+                                for record in records {
+                                    if let Value::Object(record) = record {
+                                        if let (
+                                            Some(Value::String(ruleset)),
+                                            Some(Value::String(rule)),
+                                            Some(Value::Bool(triggered)),
+                                            Some(Value::Number(score)),
+                                        ) = (
+                                            record.get("ruleset_id"),
+                                            record.get("rule_id"),
+                                            record.get("triggered"),
+                                            record.get("score"),
+                                        ) {
+                                            rule_executions.push(
+                                                TraceBuilder::create_rule_execution_record(
+                                                    &request_id,
+                                                    Some(ruleset),
+                                                    rule,
+                                                    None,
+                                                    *triggered,
+                                                    *score as i32,
+                                                    0,
+                                                    None,
+                                                    None,
+                                                    None,
+                                                ),
+                                            );
+                                        }
+                                    }
+                                }
+                            }
+                        }
 
                         // Preserve branch execution info from pipeline execution
                         if let Some(Value::Number(branch_idx)) =
@@ -558,8 +687,10 @@ impl DecisionEngine {
                                 "None".to_string()
                             }
                         );
-                        if let Some(ref decision_instructions) =
-                            pipeline_program.decision_instructions
+                        if let Some(decision_instructions) = pipeline_program
+                            .decision_instructions
+                            .as_ref()
+                            .filter(|_| self.core_input_schema.is_none())
                         {
                             tracing::debug!(
                                 "Executing pipeline decision logic ({} instructions)",
@@ -1054,6 +1185,19 @@ impl DecisionEngine {
             }
         }
 
+        if self.core_input_schema.is_some() {
+            if !pipeline_matched {
+                return Err(corint_decision_compiler::core::diagnostic(
+                    "<registry>",
+                    "/registry",
+                    "execute",
+                    "E_NO_PIPELINE_MATCH",
+                    "No registry entry matched; no business approval was produced",
+                )
+                .into());
+            }
+            combined_result.context = execution_result.variables.clone();
+        }
         let processing_time_ms = start.elapsed().as_millis() as u64;
 
         // Persist decision result asynchronously if result writer is configured

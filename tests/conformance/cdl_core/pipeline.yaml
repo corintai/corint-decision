@@ -1,0 +1,23 @@
+version: "0.1"
+pipeline:
+  id: payment
+  name: Payment risk
+  entry: check
+  steps:
+    - step:
+        id: check
+        name: Check risk
+        type: ruleset
+        ruleset: risk
+        next: end
+  decision:
+    - when: results.risk.signal == "decline"
+      result: decline
+      actions: [BLOCK]
+      reason: Large amount
+    - when: results.risk.score > 50
+      result: review
+      actions: [REVIEW]
+    - default: true
+      result: approve
+      reason: Below threshold

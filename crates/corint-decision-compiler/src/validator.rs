@@ -36,6 +36,13 @@ pub enum DiagnosticSeverity {
 /// A single diagnostic message from validation
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Diagnostic {
+    /// Source identifier, JSON pointer and validation stage for strict Core tools.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub field_path: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stage: Option<String>,
     /// Severity level
     pub severity: DiagnosticSeverity,
 
@@ -63,6 +70,9 @@ impl Diagnostic {
     pub fn error(code: impl Into<String>, message: impl Into<String>) -> Self {
         Self {
             severity: DiagnosticSeverity::Error,
+            source: None,
+            field_path: None,
+            stage: None,
             code: code.into(),
             message: message.into(),
             line: None,
@@ -75,6 +85,9 @@ impl Diagnostic {
     pub fn warning(code: impl Into<String>, message: impl Into<String>) -> Self {
         Self {
             severity: DiagnosticSeverity::Warning,
+            source: None,
+            field_path: None,
+            stage: None,
             code: code.into(),
             message: message.into(),
             line: None,
@@ -400,7 +413,9 @@ impl DslValidator {
         let mut ruleset_refs = Vec::new();
         for step in &pipeline.steps {
             // Handle both new PipelineStep and legacy Step enum
-            if let corint_decision_model::ast::pipeline::StepDetails::Ruleset { ruleset } = &step.details {
+            if let corint_decision_model::ast::pipeline::StepDetails::Ruleset { ruleset } =
+                &step.details
+            {
                 ruleset_refs.push(ruleset.clone());
             }
         }

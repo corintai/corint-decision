@@ -1,0 +1,34 @@
+version: "0.1"
+pipeline:
+  id: payment
+  name: Payment risk with a result-dependent branch
+  entry: check
+  steps:
+    - step:
+        id: check
+        name: Check risk
+        type: ruleset
+        ruleset: risk
+        next: route
+    - step:
+        id: route
+        name: Route on completed risk
+        type: router
+        routes:
+          - when: results.risk.score >= 60
+            next: extra
+        default: end
+    - step:
+        id: extra
+        name: High amount branch
+        type: ruleset
+        ruleset: branch
+        next: end
+  decision:
+    - when: results.risk.signal == "decline"
+      result: decline
+      actions: [BLOCK]
+      reason: Large amount
+    - default: true
+      result: approve
+      reason: Below threshold

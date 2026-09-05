@@ -44,6 +44,8 @@
 //! ```
 
 pub mod api_config_generator;
+#[cfg(feature = "core-generation")]
+pub mod core_generator;
 pub mod decision_flow_generator;
 pub mod pipeline_generator;
 pub mod prompt_templates;
@@ -53,7 +55,9 @@ pub mod yaml_extractor;
 
 // Re-export main types
 pub use api_config_generator::{APIConfigGenerator, APIConfigGeneratorConfig};
-pub use decision_flow_generator::{DecisionFlow, DecisionFlowGenerator, DecisionFlowGeneratorConfig};
+pub use decision_flow_generator::{
+    DecisionFlow, DecisionFlowGenerator, DecisionFlowGeneratorConfig,
+};
 pub use pipeline_generator::{PipelineGenerator, PipelineGeneratorConfig};
 pub use rule_generator::{RuleGenerator, RuleGeneratorConfig};
 pub use ruleset_generator::{RulesetGenerator, RulesetGeneratorConfig};

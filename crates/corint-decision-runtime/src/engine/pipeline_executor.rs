@@ -21,14 +21,19 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Instant;
 
+/// Ordered rule programs and a conclusion program for each validated ruleset.
+pub type RulesetPrograms = HashMap<String, (Vec<Program>, Program)>;
+
 /// Pipeline executor for async IR execution
 pub struct PipelineExecutor {
     feature_extractor: Option<Arc<FeatureExtractor>>,
     feature_executor: Option<Arc<FeatureExecutor>>,
     service_client: Option<Arc<dyn ServiceClient>>,
-    external_api_client: Arc<ExternalApiClient>,
+    external_api_client: Option<Arc<ExternalApiClient>>,
     list_service: Option<Arc<crate::lists::ListService>>,
     metrics: Arc<MetricsCollector>,
+    /// Opt-in synchronous calls: rule programs followed by the conclusion program.
+    ruleset_programs: Option<Arc<RulesetPrograms>>,
 }
 
 impl PipelineExecutor {
@@ -38,9 +43,24 @@ impl PipelineExecutor {
             feature_extractor: None,
             feature_executor: None,
             service_client: None,
-            external_api_client: Arc::new(ExternalApiClient::new()),
+            external_api_client: Some(Arc::new(ExternalApiClient::new())),
             list_service: None,
             metrics: Arc::new(MetricsCollector::new()),
+            ruleset_programs: None,
+        }
+    }
+
+    /// Construct the strict Core executor without initializing HTTP clients or
+    /// any other connector. API instructions fail closed if supplied directly.
+    pub fn new_offline() -> Self {
+        Self {
+            feature_extractor: None,
+            feature_executor: None,
+            service_client: None,
+            external_api_client: None,
+            list_service: None,
+            metrics: Arc::new(MetricsCollector::new()),
+            ruleset_programs: None,
         }
     }
 
@@ -50,9 +70,10 @@ impl PipelineExecutor {
             feature_extractor: Some(Arc::new(FeatureExtractor::new(storage))),
             feature_executor: None,
             service_client: None,
-            external_api_client: Arc::new(ExternalApiClient::new()),
+            external_api_client: Some(Arc::new(ExternalApiClient::new())),
             list_service: None,
             metrics: Arc::new(MetricsCollector::new()),
+            ruleset_programs: None,
         }
     }
 
@@ -70,13 +91,19 @@ impl PipelineExecutor {
 
     /// Set external API client
     pub fn with_external_api_client(mut self, client: Arc<ExternalApiClient>) -> Self {
-        self.external_api_client = client;
+        self.external_api_client = Some(client);
         self
     }
 
     /// Set list service for list lookup operations
     pub fn with_list_service(mut self, service: Arc<crate::lists::ListService>) -> Self {
         self.list_service = Some(service);
+        self
+    }
+
+    /// Install an immutable validated call registry and enable synchronous calls.
+    pub fn with_ruleset_programs(mut self, programs: RulesetPrograms) -> Self {
+        self.ruleset_programs = Some(Arc::new(programs));
         self
     }
 
@@ -106,7 +133,7 @@ impl PipelineExecutor {
         let start_time = Instant::now();
         self.metrics.counter("executions_total").inc();
 
-        let mut ctx = ExecutionContext::with_result(context_input, existing_result)?;
+        let mut ctx = ExecutionContext::with_result(context_input.clone(), existing_result)?;
         let mut pc = 0; // Program Counter
 
         tracing::debug!("Program has {} instructions", program.instructions.len());
@@ -137,9 +164,7 @@ impl PipelineExecutor {
                     };
 
                     let value = match ctx.load_variable(&result_key) {
-                        Ok(Value::Object(map)) => {
-                            map.get(field).cloned().unwrap_or(Value::Null)
-                        }
+                        Ok(Value::Object(map)) => map.get(field).cloned().unwrap_or(Value::Null),
                         Ok(_) => {
                             tracing::warn!(
                                 "Result '{}' is not an object, returning Null",
@@ -306,7 +331,11 @@ impl PipelineExecutor {
                 }
 
                 Instruction::AddScore { value } => {
-                    ctx.add_score(*value);
+                    ctx.result.score = ctx.result.score.checked_add(*value).ok_or_else(|| {
+                        RuntimeError::InvalidOperation(
+                            "E_SCORE_OVERFLOW: i32 score overflow".into(),
+                        )
+                    })?;
                     pc += 1;
                 }
 
@@ -350,11 +379,7 @@ impl PipelineExecutor {
                         "__executed_branch_condition__".to_string(),
                         Value::String(condition.clone()),
                     );
-                    tracing::debug!(
-                        "Branch {} executed: condition={}",
-                        branch_index,
-                        condition
-                    );
+                    tracing::debug!("Branch {} executed: condition={}", branch_index, condition);
                     pc += 1;
                 }
 
@@ -398,6 +423,88 @@ impl PipelineExecutor {
                 }
 
                 Instruction::CallRuleset { ruleset_id } => {
+                    if let Some(programs) = &self.ruleset_programs {
+                        let (rules, conclusion) = programs.get(ruleset_id).ok_or_else(|| {
+                            RuntimeError::InvalidOperation(format!("Unknown ruleset: {ruleset_id}"))
+                        })?;
+                        // Each ruleset starts with a local score. Previously completed
+                        // results remain available, but local signals/actions never leak.
+                        let mut local = ExecutionResult::new();
+                        local.variables = ctx.result.variables.clone();
+                        let mut records = match local.variables.remove("__core_rule_executions__") {
+                            Some(Value::Array(items)) => items,
+                            _ => Vec::new(),
+                        };
+                        for rule in rules {
+                            let previous_score = local.score;
+                            let result = Box::pin(self.execute_with_result(
+                                rule,
+                                context_input.clone(),
+                                local,
+                            ))
+                            .await?;
+                            let triggered =
+                                result.triggered_rules.contains(&rule.metadata.source_id);
+                            records.push(Value::Object(HashMap::from([
+                                ("ruleset_id".into(), Value::String(ruleset_id.clone())),
+                                (
+                                    "rule_id".into(),
+                                    Value::String(rule.metadata.source_id.clone()),
+                                ),
+                                ("triggered".into(), Value::Bool(triggered)),
+                                (
+                                    "score".into(),
+                                    Value::Number(
+                                        f64::from(result.score) - f64::from(previous_score),
+                                    ),
+                                ),
+                            ])));
+                            local = ExecutionResult::new();
+                            local.score = result.score;
+                            local.triggered_rules = result.triggered_rules;
+                            local.variables = result.context;
+                        }
+                        let result = Box::pin(self.execute_with_result(
+                            conclusion,
+                            context_input.clone(),
+                            local,
+                        ))
+                        .await?;
+                        ctx.result.score =
+                            ctx.result.score.checked_add(result.score).ok_or_else(|| {
+                                RuntimeError::InvalidOperation(
+                                    "E_SCORE_OVERFLOW: i32 aggregate overflow".into(),
+                                )
+                            })?;
+                        ctx.result.triggered_rules.extend(result.triggered_rules);
+                        ctx.result.variables.extend(result.context);
+                        let signal = result.signal.ok_or_else(|| {
+                            RuntimeError::InvalidOperation("Missing ruleset conclusion".into())
+                        })?;
+                        let signal = match signal {
+                            corint_decision_model::ast::Signal::Approve => "approve",
+                            corint_decision_model::ast::Signal::Decline => "decline",
+                            corint_decision_model::ast::Signal::Review => "review",
+                            corint_decision_model::ast::Signal::Hold => "hold",
+                            corint_decision_model::ast::Signal::Pass => "pass",
+                        };
+                        let output = Value::Object(HashMap::from([
+                            ("signal".into(), Value::String(signal.to_owned())),
+                            ("score".into(), Value::Number(f64::from(result.score))),
+                            ("total_score".into(), Value::Number(f64::from(result.score))),
+                        ]));
+                        ctx.store_variable(
+                            format!("__ruleset_result__.{ruleset_id}"),
+                            output.clone(),
+                        );
+                        ctx.store_variable("__last_ruleset_result__".into(), output);
+                        ctx.store_variable(
+                            "__core_rule_executions__".into(),
+                            Value::Array(records),
+                        );
+                        pc += 1;
+                        continue;
+                    }
                     // Store the ruleset ID in an array to support multiple rulesets
                     // The actual execution will be handled by the DecisionEngine
                     tracing::debug!("CallRuleset: {}", ruleset_id);
@@ -556,6 +663,12 @@ impl PipelineExecutor {
                     // Call external API using the generic client
                     let value = match self
                         .external_api_client
+                        .as_ref()
+                        .ok_or_else(|| {
+                            RuntimeError::InvalidOperation(
+                                "External APIs are disabled in the offline executor".into(),
+                            )
+                        })?
                         .call(api, endpoint, params, *timeout, &ctx)
                         .await
                     {
@@ -588,6 +701,17 @@ impl PipelineExecutor {
 
         // Execute decision logic if present
         if let Some(ref decision_instructions) = program.decision_instructions {
+            if self.ruleset_programs.is_some() {
+                // Core final decisions use the SAME VM instruction set after all
+                // selected calls complete, never the legacy reduced interpreter.
+                let decision = Program {
+                    instructions: decision_instructions.clone(),
+                    metadata: program.metadata.clone(),
+                    decision_instructions: None,
+                };
+                return Box::pin(self.execute_with_result(&decision, context_input, ctx.result))
+                    .await;
+            }
             tracing::debug!(
                 "Executing {} decision instructions",
                 decision_instructions.len()
@@ -793,11 +917,7 @@ impl PipelineExecutor {
                             Ok(feature_value)
                         }
                         Err(e) => {
-                            tracing::warn!(
-                                "Failed to calculate feature '{}': {}",
-                                feature_name,
-                                e
-                            );
+                            tracing::warn!("Failed to calculate feature '{}': {}", feature_name, e);
                             Ok(Value::Null)
                         }
                     }
@@ -826,4 +946,3 @@ impl Default for PipelineExecutor {
         Self::new()
     }
 }
-

@@ -1,0 +1,6 @@
+name: payment-event-v1
+fields:
+  amount:
+    name: amount
+    field_type: number
+    required: true

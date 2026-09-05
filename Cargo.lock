@@ -516,12 +516,27 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "773648b94d0e5d620f64f280777445740e61fe701025087ec8b57f45c791888b"
 
 [[package]]
+name = "corint-decision-cli"
+version = "0.1.0"
+dependencies = [
+ "corint-decision-compiler",
+ "corint-decision-toolchain",
+ "jsonschema",
+ "serde",
+ "serde_json",
+ "serde_yaml",
+ "sha2",
+ "tempfile",
+]
+
+[[package]]
 name = "corint-decision-compiler"
 version = "0.1.0"
 dependencies = [
  "anyhow",
  "corint-decision-dsl-parser",
  "corint-decision-model",
+ "jsonschema",
  "serde",
  "serde_json",
  "serde_yaml",
@@ -582,7 +597,9 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
+ "corint-decision-compiler",
  "corint-decision-dsl-parser",
+ "corint-decision-toolchain",
  "dashmap",
  "jsonschema",
  "regex",
@@ -691,6 +708,21 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "uuid",
+]
+
+[[package]]
+name = "corint-decision-toolchain"
+version = "0.1.0"
+dependencies = [
+ "corint-decision-compiler",
+ "corint-decision-engine",
+ "jsonschema",
+ "serde",
+ "serde_json",
+ "serde_yaml",
+ "sha2",
+ "tempfile",
+ "tokio",
 ]
 
 [[package]]

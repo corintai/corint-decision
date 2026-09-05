@@ -39,6 +39,15 @@ corint-decision-dsl-parser = { path = "../corint-decision-dsl-parser", optional 
 [dev-dependencies]
 tokio-test = "0.4"
 
+[dependencies.corint-decision-toolchain]
+path = "../corint-decision-toolchain"
+optional = true
+
+[dependencies.corint-decision-compiler]
+path = "../corint-decision-compiler"
+optional = true
+
 [features]
 default = []
+core-generation = ["dep:corint-decision-toolchain", "dep:corint-decision-compiler", "jsonschema"]
 validation = ["jsonschema", "corint-decision-dsl-parser"]  # 生成内容验证

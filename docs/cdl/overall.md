@@ -1,4 +1,9 @@
 # Corint Definition Language (CDL)
+> For the opt-in executable Core increment, see [CDL Core](cdl-core.md) and its
+> [capability inventory](schema/capabilities.json). Historical support labels below
+> are not Core conformance certification.
+> For generated strategies, use the opt-in [strict generation API](generation.md);
+> compatibility generators do not produce Core acceptance evidence.
 ## Overall Specification (v0.1)
 
 **CDL is the domain-specific language used by CORINT (Cognitive Risk Intelligence) to define rules, rule groups, and full risk-processing pipelines.**

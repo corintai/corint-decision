@@ -16,6 +16,8 @@ pub use builder::DecisionEngineBuilder;
 pub use config::{
     EngineConfig, LLMConfig, LLMProvider, ServiceConfig, ServiceType, StorageConfig, StorageType,
 };
+pub use corint_decision_compiler::core::{CoreError, CoreSource};
+pub use corint_decision_model::types::{FieldType, Schema, SchemaField};
 pub use decision_engine::{DecisionEngine, DecisionOptions, DecisionRequest, DecisionResponse};
 pub use error::{EngineError, Result};
 pub use score::ScoreNormalizer;
@@ -38,5 +40,5 @@ pub use corint_decision_runtime::{
         DataSourceConfig as RuntimeDataSourceConfig, DataSourceType, FeatureStoreConfig,
         OLAPConfig, OLAPProvider, SQLConfig, SQLProvider,
     },
-    DecisionResult, ExecutionTrace, MetricsCollector,
+    DecisionResult, ExecutionTrace, MetricsCollector, RuntimeError,
 };

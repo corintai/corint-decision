@@ -1,0 +1,47 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Experimental CDL Core source package v1 (unsigned, no publication authorization)",
+  "type": "object", "additionalProperties": false,
+  "required": ["format", "format_version", "profile", "language_version", "policy", "evidence"],
+  "properties": {
+    "format": {"const": "corint-core-source-package"},
+    "format_version": {"const": "1"},
+    "profile": {"const": "cdl-core-risk-draft-1"},
+    "language_version": {"const": "0.1"},
+    "policy": {
+      "type": "object", "additionalProperties": false, "required": ["sha256", "input_schema", "sources"],
+      "properties": {
+        "sha256": {"$ref": "#/definitions/hash"},
+        "input_schema": {"$ref": "#/definitions/document"},
+        "sources": {"type": "array", "minItems": 1, "maxItems": 10000, "items": {"$ref": "#/definitions/document"}}
+      }
+    },
+    "evidence": {
+      "type": "object", "additionalProperties": false,
+      "required": ["policy_sha256", "suite_sha256", "tool", "validation", "behavior", "test_report_sha256", "total", "passed", "business_evaluation", "publication_approval", "authenticity"],
+      "properties": {
+        "policy_sha256": {"$ref": "#/definitions/hash"}, "suite_sha256": {"$ref": "#/definitions/hash"},
+        "tool": {
+          "type": "object", "additionalProperties": false, "required": ["version", "executable_sha256"],
+          "properties": {"version": {"type": "string", "minLength": 1}, "executable_sha256": {"$ref": "#/definitions/hash"}}
+        },
+        "validation": {"const": "passed"}, "behavior": {"const": "passed"},
+        "test_report_sha256": {"$ref": "#/definitions/hash"},
+        "total": {"type": "integer", "minimum": 1, "maximum": 1000},
+        "passed": {"type": "integer", "minimum": 1, "maximum": 1000},
+        "business_evaluation": {"const": "not_performed"},
+        "publication_approval": {"const": "not_granted"}, "authenticity": {"const": "unsigned"}
+      }
+    }
+  },
+  "definitions": {
+    "hash": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "document": {
+      "type": "object", "additionalProperties": false, "required": ["path", "sha256", "yaml"],
+      "properties": {
+        "path": {"type": "string", "pattern": "^(input-schema\\.yaml|registry\\.yaml|(rule|ruleset|pipeline)/[A-Za-z_][A-Za-z0-9_-]*\\.yaml)$"},
+        "sha256": {"$ref": "#/definitions/hash"}, "yaml": {"type": "string", "minLength": 1}
+      }
+    }
+  }
+}

@@ -1,0 +1,30 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "CDL Core draft-1 input Schema serialization",
+  "description": "Strict file representation of the existing model Schema, not a BusinessContext contract. Semantic constraints are also checked by the Core compiler.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["name", "fields"],
+  "properties": {
+    "name": {"type": "string"},
+    "description": {"type": ["string", "null"]},
+    "fields": {
+      "type": "object",
+      "additionalProperties": {"$ref": "#/definitions/field"}
+    }
+  },
+  "definitions": {
+    "field": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "field_type", "required"],
+      "properties": {
+        "name": {"type": "string"},
+        "field_type": {"enum": ["number", "string", "boolean"]},
+        "required": {"type": "boolean"},
+        "description": {"type": ["string", "null"]},
+        "default": {"type": ["string", "null"]}
+      }
+    }
+  }
+}

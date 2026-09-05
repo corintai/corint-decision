@@ -1,0 +1,45 @@
+# Synthetic behavior cases, not CDL and not a business evaluation.
+version: "1"
+profile: cdl-core-risk-draft-1
+cases:
+  - id: above_threshold
+    input: {event: {amount: 1001}}
+    expect:
+      pipeline_id: payment
+      score: 60
+      signal: decline
+      actions: [BLOCK]
+      triggered_rules: [large_amount]
+      explanation: Large amount
+      steps: [check]
+      calls: [{ruleset_id: risk, rule_id: large_amount, triggered: true, score: 60}]
+      local_results: {risk: {score: 60, signal: decline}}
+  - id: equal_threshold
+    input: {event: {amount: 1000}}
+    expect:
+      pipeline_id: payment
+      score: 0
+      signal: approve
+      actions: []
+      triggered_rules: []
+      explanation: Below threshold
+      steps: [check]
+      calls: [{ruleset_id: risk, rule_id: large_amount, triggered: false, score: 0}]
+      local_results: {risk: {score: 0, signal: approve}}
+  - id: below_threshold
+    input: {event: {amount: 999}}
+    expect:
+      pipeline_id: payment
+      score: 0
+      signal: approve
+      actions: []
+      triggered_rules: []
+      steps: [check]
+      calls: [{ruleset_id: risk, rule_id: large_amount, triggered: false, score: 0}]
+      local_results: {risk: {score: 0, signal: approve}}
+  - id: missing_input
+    input: {event: {}}
+    expect_error: {stage: input, code: E_INPUT_SCHEMA}
+  - id: wrong_input_type
+    input: {event: {amount: "1001"}}
+    expect_error: {stage: input, code: E_INPUT_SCHEMA}

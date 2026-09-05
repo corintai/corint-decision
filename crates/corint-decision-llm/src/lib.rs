@@ -9,31 +9,27 @@
 //! LLM calls have 2-5 second latency, unsuitable for real-time decisions.
 
 // Re-export core types
+pub use cache::{InMemoryLLMCache, LLMCache};
 pub use client::{LLMClient, LLMRequest, LLMResponse};
-pub use cache::{LLMCache, InMemoryLLMCache};
 pub use error::{LLMError, Result};
 
 // Re-export providers
 pub use provider::{
-    LLMProvider,
-    OpenAIProvider,
-    AnthropicProvider,
-    GeminiProvider,
-    DeepSeekProvider,
-    MockProvider,
+    AnthropicProvider, DeepSeekProvider, GeminiProvider, LLMProvider, MockProvider, OpenAIProvider,
 };
 
 // Re-export generators
 pub use generator::{
-    RuleGenerator, RuleGeneratorConfig,
-    RulesetGenerator, RulesetGeneratorConfig,
-    PipelineGenerator, PipelineGeneratorConfig,
-    APIConfigGenerator, APIConfigGeneratorConfig,
-    DecisionFlowGenerator, DecisionFlowGeneratorConfig, DecisionFlow,
+    APIConfigGenerator, APIConfigGeneratorConfig, DecisionFlow, DecisionFlowGenerator,
+    DecisionFlowGeneratorConfig, PipelineGenerator, PipelineGeneratorConfig, RuleGenerator,
+    RuleGeneratorConfig, RulesetGenerator, RulesetGeneratorConfig,
 };
 
-pub mod client;
 pub mod cache;
+pub mod client;
 pub mod error;
-pub mod provider;
 pub mod generator;
+pub mod provider;
+
+#[cfg(feature = "core-generation")]
+pub use generator::core_generator::{CoreGeneration, CoreGenerationError, CoreGenerator};

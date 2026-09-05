@@ -5,6 +5,9 @@ use thiserror::Error;
 /// Error returned by decision-engine operations.
 #[derive(Error, Debug)]
 pub enum EngineError {
+    /// Structured error from the opt-in CDL Core gate.
+    #[error("CDL Core: {0}")]
+    Core(#[from] corint_decision_compiler::core::CoreError),
     /// Configuration error.
     #[error("Configuration error: {0}")]
     Config(String),

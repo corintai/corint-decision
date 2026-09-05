@@ -3,6 +3,8 @@ members = [
     "crates/corint-decision-model",
     "crates/corint-decision-dsl-parser",
     "crates/corint-decision-compiler",
+    "crates/corint-decision-cli",
+    "crates/corint-decision-toolchain",
     "crates/corint-decision-runtime",
     "crates/corint-decision-engine",
     "crates/corint-decision-sdk",

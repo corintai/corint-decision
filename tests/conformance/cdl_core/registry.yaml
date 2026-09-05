@@ -1,0 +1,6 @@
+version: "0.1"
+registry:
+  - pipeline: payment
+    when: event.amount >= 0
+  - pipeline: payment
+    when: "true"

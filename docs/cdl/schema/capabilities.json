@@ -1,0 +1,67 @@
+{
+  "profile": "cdl-core-risk-draft-1",
+  "language_version": "0.1",
+  "status": "experimental",
+  "entry_point": "DecisionEngine::from_core",
+  "schema": "core.json",
+  "input_schema": "input.json",
+  "test_suite_schema": "test-suite.json",
+  "source_package_schema": "source-package.json",
+  "generation_response_schema": "generation-response.json",
+  "tools": {
+    "validate_cli": {
+      "status": "experimental",
+      "command": "corint validate --input-schema PATH --format json FILE...",
+      "entry_point": "compile_core",
+      "scope": "compile_only",
+      "execution_checked": false,
+      "business_evaluation": "not_performed",
+      "evidence": "../../../crates/corint-decision-cli/tests/validate.rs"
+    },
+    "test_cli": {
+      "status": "experimental",
+      "command": "corint test --input-schema PATH --cases PATH --format json FILE...",
+      "entry_point": "DecisionEngine::from_core",
+      "scope": "declared_examples_only",
+      "trace_modes": [false, true],
+      "business_evaluation": "not_performed",
+      "evidence": "../../../crates/corint-decision-cli/tests/behavior.rs"
+    },
+    "core_generator": {
+      "status": "experimental",
+      "feature": "corint-decision-llm/core-generation",
+      "entry_points": ["CoreGenerator::generate", "CoreGenerator::revise"],
+      "shared_toolchain": "corint-decision-toolchain",
+      "scope": "complete_closure_and_caller_owned_examples",
+      "acceptance_cases_sent_to_model": false,
+      "automatic_retries": 0,
+      "business_evaluation": "not_performed",
+      "publication_approval": "not_granted",
+      "evidence": "../../../crates/corint-decision-llm/tests/core_generation.rs"
+    },
+    "source_package_cli": {
+      "status": "experimental",
+      "commands": ["corint build", "corint verify"],
+      "entry_point": "DecisionEngine::from_core",
+      "scope": "source_snapshot_and_fresh_example_evidence",
+      "authenticity": "unsigned",
+      "publication_approval": "not_granted",
+      "business_evaluation": "not_performed",
+      "evidence": "../../../crates/corint-decision-cli/tests/package.rs"
+    }
+  },
+  "evidence_scope": "Only the named increment-1 fixtures and tests; not full phase-0 certification",
+  "capabilities": [
+    {"id": "rule.score", "status": "supported", "cases": ["payment_boundaries"], "tests": []},
+    {"id": "ruleset.local_score_and_first_match", "status": "supported", "cases": ["payment_boundaries", "result_dependent_router"], "tests": []},
+    {"id": "pipeline.first_match_and_action_intents", "status": "supported", "cases": ["payment_boundaries"], "tests": []},
+    {"id": "pipeline.synchronous_ruleset_router", "status": "supported", "cases": ["result_dependent_router"], "tests": ["node_order_does_not_change_control_flow", "graph_and_reference_guards"]},
+    {"id": "registry.first_match", "status": "supported", "cases": ["payment_boundaries"], "tests": ["input_errors_and_registry_no_match_are_not_approval"]},
+    {"id": "expressions.pure_boolean", "status": "supported", "cases": [], "tests": ["boolean_forms_share_short_circuit_execution", "boolean_conditions_work_across_public_scopes"]},
+    {"id": "strict.version_shape_references", "status": "supported", "cases": [], "tests": ["manifest_invalid_documents_fail_at_expected_stage", "graph_and_reference_guards", "imports_and_legacy_generator_shapes_are_not_silently_accepted"]},
+    {"id": "input.required_flat_scalars", "status": "supported", "cases": [], "tests": ["input_errors_and_registry_no_match_are_not_approval"]},
+    {"id": "score.checked_accumulation", "status": "supported", "cases": [], "tests": ["score_overflow_is_a_controlled_error"]}
+  ],
+  "not_enabled": ["import", "pipeline_guard", "step_guard", "single_rule_step", "subpipeline", "connector", "dynamic_feature", "list", "model", "rule_parameters", "ruleset_inheritance", "structured_action", "optional_or_nested_input"],
+  "pending": ["C08", "full_operand_trace", "production_package_distribution_and_activation", "live_provider_and_Work_generator_integration", "publication_gate", "cross_product_contracts", "full_W01_W10"]
+}
