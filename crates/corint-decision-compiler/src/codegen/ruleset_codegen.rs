@@ -272,7 +272,7 @@ impl RulesetCompiler {
             Expression::FunctionCall { name, args } => {
                 let args_str = args
                     .iter()
-                    .map(|a| Self::expression_to_readable_string(a))
+                    .map(Self::expression_to_readable_string)
                     .collect::<Vec<_>>()
                     .join(", ");
                 format!("{}({})", name, args_str)
@@ -297,7 +297,7 @@ impl RulesetCompiler {
                 };
                 let conditions_str = conditions
                     .iter()
-                    .map(|c| Self::expression_to_readable_string(c))
+                    .map(Self::expression_to_readable_string)
                     .collect::<Vec<_>>()
                     .join(", ");
                 format!("{}:[{}]", op_str, conditions_str)

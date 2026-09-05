@@ -2,16 +2,16 @@
 //!
 //! Request and response types for the REST API endpoints.
 
-use corint_decision_engine::{DecisionEngine, ExecutionTrace};
+use crate::snapshot::EngineManager;
+use corint_decision_engine::ExecutionTrace;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
-use tokio::sync::RwLock;
 
 /// Application state
 #[derive(Clone)]
 pub struct AppState {
-    pub engine: Arc<RwLock<DecisionEngine>>,
+    pub engine: Arc<EngineManager>,
 }
 
 /// Health check response

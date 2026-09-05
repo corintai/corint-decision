@@ -1,0 +1,22 @@
+{
+  "kind": "corint-approval-evidence",
+  "contract_version": "1",
+  "id": "approval-evidence-fixture",
+  "revision": "r1",
+  "provenance": {
+    "producer": "fixture-reviewer",
+    "reference": "fixture://phase0/approval-evidence"
+  },
+  "subject": {
+    "policy_sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+    "context_sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+    "target_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+    "bindings_sha256": "ac4dcdd2663360f06bd782cfedf91a21a91b621c4959cab4fbb2ef743a2e500e",
+    "checker_sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+  },
+  "evaluation_sha256": "0ca4317355bf5918544b6f146796ae5478edaab1f4f7d074d7b2cb8acbd3bb88",
+  "approver": "fixture-reviewer",
+  "decision": "approved",
+  "issued_at_ms": 160,
+  "expires_at_ms": 500
+}

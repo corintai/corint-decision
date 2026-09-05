@@ -1,0 +1,132 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "urn:corint:resource-bindings:1",
+  "title": "resource-bindings v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "kind",
+    "contract_version",
+    "id",
+    "revision",
+    "provenance",
+    "target_sha256",
+    "resources"
+  ],
+  "properties": {
+    "kind": {
+      "const": "corint-resource-bindings"
+    },
+    "contract_version": {
+      "const": "1"
+    },
+    "id": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "\\S"
+    },
+    "revision": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "\\S"
+    },
+    "provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "producer",
+        "reference"
+      ],
+      "properties": {
+        "producer": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "\\S"
+        },
+        "reference": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "\\S"
+        }
+      }
+    },
+    "target_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "resources": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "resource",
+          "status",
+          "offline_binding",
+          "online_binding",
+          "capability"
+        ],
+        "properties": {
+          "resource": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "kind",
+              "id",
+              "revision",
+              "sha256"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "feature",
+                  "model"
+                ]
+              },
+              "id": {
+                "type": "string",
+                "minLength": 1,
+                "pattern": "\\S"
+              },
+              "revision": {
+                "type": "string",
+                "minLength": 1,
+                "pattern": "\\S"
+              },
+              "sha256": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$"
+              }
+            }
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "defined",
+              "evaluated",
+              "ready"
+            ]
+          },
+          "offline_binding": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "\\S"
+          },
+          "online_binding": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "\\S"
+          },
+          "capability": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "\\S"
+          }
+        }
+      },
+      "minItems": 0,
+      "uniqueItems": true
+    }
+  }
+}

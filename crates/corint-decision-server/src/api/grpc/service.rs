@@ -4,14 +4,17 @@
 // DecisionEngine to handle gRPC requests.
 
 use crate::api::grpc::pb::{
-    decision_service_server::DecisionService, Action, Cognition, Decision, DecideRequest,
-    DecideResponse, Evidence, HealthCheckRequest, HealthCheckResponse, ReloadRepositoryRequest,
+    decision_service_server::DecisionService, Action, Cognition, DecideRequest, DecideResponse,
+    Decision, Evidence, HealthCheckRequest, HealthCheckResponse, ReloadRepositoryRequest,
     ReloadRepositoryResponse, Scores, Value as ProtoValue,
 };
-use corint_decision_engine::{DecisionEngine, DecisionRequest as EngineDecisionRequest, ScoreNormalizer, Value};
+use crate::snapshot::{
+    EngineManager, EngineSnapshot, ReloadError, EXPECTED_REVISION_HEADER, POLICY_HEADER,
+    REVISION_HEADER,
+};
+use corint_decision_engine::{DecisionRequest as EngineDecisionRequest, ScoreNormalizer, Value};
 use std::collections::HashMap;
 use std::sync::Arc;
-use tokio::sync::RwLock;
 use tonic::{Request, Response, Status};
 use tracing::{error, info};
 
@@ -22,12 +25,12 @@ pub mod pb {
 
 /// gRPC service implementation
 pub struct DecisionGrpcService {
-    engine: Arc<RwLock<DecisionEngine>>,
+    engine: Arc<EngineManager>,
 }
 
 impl DecisionGrpcService {
     /// Create a new gRPC service
-    pub fn new(engine: Arc<RwLock<DecisionEngine>>) -> Self {
+    pub fn new(engine: Arc<EngineManager>) -> Self {
         Self { engine }
     }
 }
@@ -74,12 +77,11 @@ impl DecisionService for DecisionGrpcService {
         }
 
         // Execute decision
-        let engine = self.engine.read().await;
-        let response = engine.decide(engine_request).await.map_err(|e| {
+        let snapshot = self.engine.snapshot().await;
+        let response = snapshot.engine.decide(engine_request).await.map_err(|e| {
             error!("Decision execution failed: {}", e);
             Status::internal(format!("Decision execution failed: {}", e))
         })?;
-        drop(engine);
 
         // Convert response
         let result_str = response
@@ -118,52 +120,74 @@ impl DecisionService for DecisionGrpcService {
             request_id: response.request_id,
             status: 200,
             process_time_ms: response.processing_time_ms as i64,
-            pipeline_id: response.pipeline_id.unwrap_or_else(|| "default".to_string()),
+            pipeline_id: response
+                .pipeline_id
+                .unwrap_or_else(|| "default".to_string()),
             decision: Some(decision),
             error: None,
             trace: None, // TODO: Convert trace if requested
             features: HashMap::new(),
         };
 
-        Ok(Response::new(grpc_response))
+        Ok(with_snapshot(grpc_response, &snapshot))
     }
 
     async fn health_check(
         &self,
         _request: Request<HealthCheckRequest>,
     ) -> Result<Response<HealthCheckResponse>, Status> {
-        Ok(Response::new(HealthCheckResponse {
-            status: "healthy".to_string(),
-            version: env!("CARGO_PKG_VERSION").to_string(),
-        }))
+        let snapshot = self.engine.snapshot().await;
+        Ok(with_snapshot(
+            HealthCheckResponse {
+                status: "healthy".to_string(),
+                version: env!("CARGO_PKG_VERSION").to_string(),
+            },
+            &snapshot,
+        ))
     }
 
     async fn reload_repository(
         &self,
-        _request: Request<ReloadRepositoryRequest>,
+        request: Request<ReloadRepositoryRequest>,
     ) -> Result<Response<ReloadRepositoryResponse>, Status> {
-        info!("Reloading repository via gRPC");
-
-        let mut engine = self.engine.write().await;
-        match engine.reload().await {
-            Ok(_) => {
-                info!("Repository reloaded successfully via gRPC");
-                Ok(Response::new(ReloadRepositoryResponse {
-                    success: true,
-                    message: "Repository reloaded successfully".to_string(),
-                    pipelines_loaded: 0, // TODO: Get actual count from reload result
-                    rules_loaded: 0,     // TODO: Get actual count from reload result
-                }))
-            }
-            Err(e) => {
-                error!("Failed to reload repository: {}", e);
-                Err(Status::internal(format!(
-                    "Failed to reload repository: {}",
-                    e
-                )))
-            }
-        }
+        let expected = request
+            .metadata()
+            .get(EXPECTED_REVISION_HEADER)
+            .map(|value| value.to_str())
+            .transpose()
+            .map_err(|_| Status::invalid_argument("Invalid expected revision"))?;
+        let snapshot = self
+            .engine
+            .reload(expected)
+            .await
+            .map_err(|error| match error {
+                ReloadError::Busy => Status::resource_exhausted(error.to_string()),
+                ReloadError::Stale => Status::aborted(error.to_string()),
+                _ => Status::internal(error.to_string()),
+            })?;
+        Ok(with_snapshot(
+            ReloadRepositoryResponse {
+                success: true,
+                message: "Repository reloaded successfully".to_string(),
+                pipelines_loaded: 0,
+                rules_loaded: 0,
+            },
+            &snapshot,
+        ))
     }
+}
+
+fn with_snapshot<T>(body: T, snapshot: &EngineSnapshot) -> Response<T> {
+    let mut response = Response::new(body);
+    response.metadata_mut().insert(
+        REVISION_HEADER,
+        snapshot.revision.parse().expect("UUID metadata"),
+    );
+    response.metadata_mut().insert(
+        POLICY_HEADER,
+        snapshot.compiled_sha256.parse().expect("SHA256 metadata"),
+    );
+    response
 }
 
 /// Convert protobuf Value to engine Value
@@ -224,8 +248,7 @@ fn extract_reason_codes(explanation: &str) -> Vec<String> {
     {
         codes.push("NEW_ACCOUNT".to_string());
     }
-    if explanation.to_lowercase().contains("high")
-        && explanation.to_lowercase().contains("amount")
+    if explanation.to_lowercase().contains("high") && explanation.to_lowercase().contains("amount")
     {
         codes.push("HIGH_TRANSACTION_AMOUNT".to_string());
     }

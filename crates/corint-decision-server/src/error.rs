@@ -20,6 +20,8 @@ fn generate_request_id() -> String {
 /// Server error type
 #[derive(Error, Debug)]
 pub enum ServerError {
+    #[error(transparent)]
+    Reload(#[from] crate::snapshot::ReloadError),
     /// Decision engine error
     #[error("Engine error: {0}")]
     EngineError(
@@ -89,11 +91,22 @@ impl IntoResponse for ServerError {
         let request_id = generate_request_id();
 
         let (status, code, message, details, retry_after) = match &self {
+            ServerError::Reload(error) => {
+                use crate::snapshot::ReloadError;
+                let (status, code) = match error {
+                    ReloadError::Busy => (StatusCode::CONFLICT, "RELOAD_BUSY"),
+                    ReloadError::Stale => (StatusCode::CONFLICT, "REVISION_CONFLICT"),
+                    _ => (StatusCode::INTERNAL_SERVER_ERROR, "RELOAD_FAILED"),
+                };
+                (status, code, error.to_string(), None, None)
+            }
             ServerError::EngineError(e) => (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "INTERNAL_ERROR",
                 format!("An error occurred while processing your request: {}", e),
-                Some(json!({ "hint": format!("Please contact support with request_id: {}", request_id) })),
+                Some(
+                    json!({ "hint": format!("Please contact support with request_id: {}", request_id) }),
+                ),
                 None,
             ),
             ServerError::InvalidRequest(msg) => (
@@ -114,7 +127,9 @@ impl IntoResponse for ServerError {
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "INTERNAL_ERROR",
                 format!("An unexpected error occurred: {}", e),
-                Some(json!({ "hint": format!("Please contact support with request_id: {}", request_id) })),
+                Some(
+                    json!({ "hint": format!("Please contact support with request_id: {}", request_id) }),
+                ),
                 None,
             ),
             ServerError::NotFound(resource) => (
@@ -154,7 +169,8 @@ mod tests {
 
     #[test]
     fn test_engine_error_display() {
-        let engine_err = corint_decision_engine::EngineError::GenericError("compilation failed".to_string());
+        let engine_err =
+            corint_decision_engine::EngineError::GenericError("compilation failed".to_string());
         let err = ServerError::EngineError(engine_err);
         assert!(err.to_string().contains("Engine error"));
         assert!(err.to_string().contains("compilation failed"));

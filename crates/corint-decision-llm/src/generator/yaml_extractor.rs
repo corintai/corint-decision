@@ -125,9 +125,10 @@ fn is_likely_yaml(content: &str) -> bool {
     // Check for YAML-like patterns
     let has_colon = trimmed.contains(':');
     let has_dash = trimmed.contains('-');
-    let starts_with_key = trimmed.lines().next().map_or(false, |line| {
-        line.trim().contains(':') || line.trim().starts_with('-')
-    });
+    let starts_with_key = trimmed
+        .lines()
+        .next()
+        .is_some_and(|line| line.trim().contains(':') || line.trim().starts_with('-'));
 
     has_colon && starts_with_key || has_dash && starts_with_key
 }
@@ -137,9 +138,7 @@ fn validate_and_return(content: &str) -> Result<String> {
     let trimmed = content.trim();
 
     if trimmed.is_empty() {
-        return Err(LLMError::InvalidResponse(
-            "Empty YAML content".to_string(),
-        ));
+        return Err(LLMError::InvalidResponse("Empty YAML content".to_string()));
     }
 
     // Check if content looks like YAML before parsing
@@ -157,9 +156,8 @@ fn validate_and_return(content: &str) -> Result<String> {
     }
 
     // Basic YAML validation - try to parse it
-    serde_yaml::from_str::<serde_yaml::Value>(trimmed).map_err(|e| {
-        LLMError::InvalidResponse(format!("Invalid YAML: {}", e))
-    })?;
+    serde_yaml::from_str::<serde_yaml::Value>(trimmed)
+        .map_err(|e| LLMError::InvalidResponse(format!("Invalid YAML: {}", e)))?;
 
     Ok(trimmed.to_string())
 }
@@ -189,10 +187,7 @@ pub fn extract_multiple_yaml(llm_output: &str) -> Result<Vec<String>> {
             }
 
             // For individual documents, skip the multi-document check
-            match validate_single_document(trimmed) {
-                Ok(valid_doc) => Some(valid_doc),
-                Err(_) => None,
-            }
+            validate_single_document(trimmed).ok()
         })
         .collect();
 
@@ -210,9 +205,7 @@ fn validate_single_document(content: &str) -> Result<String> {
     let trimmed = content.trim();
 
     if trimmed.is_empty() {
-        return Err(LLMError::InvalidResponse(
-            "Empty YAML content".to_string(),
-        ));
+        return Err(LLMError::InvalidResponse("Empty YAML content".to_string()));
     }
 
     // Check if content looks like YAML
@@ -223,9 +216,8 @@ fn validate_single_document(content: &str) -> Result<String> {
     }
 
     // Basic YAML validation - try to parse it
-    serde_yaml::from_str::<serde_yaml::Value>(trimmed).map_err(|e| {
-        LLMError::InvalidResponse(format!("Invalid YAML: {}", e))
-    })?;
+    serde_yaml::from_str::<serde_yaml::Value>(trimmed)
+        .map_err(|e| LLMError::InvalidResponse(format!("Invalid YAML: {}", e)))?;
 
     Ok(trimmed.to_string())
 }

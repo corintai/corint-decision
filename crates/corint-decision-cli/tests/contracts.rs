@@ -395,7 +395,9 @@ fn input_mismatch_action_branches_and_target_budget_are_checked() {
 fn all_core_negative_fixtures_preserve_compiler_diagnostics() {
     let dir = setup();
     let manifest: Value = serde_yaml::from_str(&source("manifest.yaml").yaml).unwrap();
-    assert_eq!(manifest["invalid"].as_array().unwrap().len(), 24);
+    // Preserve the original 24 rejections plus five new Pipeline boundary cases;
+    // future manifest additions must also run through this adapter.
+    assert!(manifest["invalid"].as_array().unwrap().len() >= 29);
     for case in manifest["invalid"].as_array().unwrap() {
         let mut docs = sources();
         let doc = docs

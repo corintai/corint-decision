@@ -1,6 +1,6 @@
 # CORINT Decision Engine Server
 
-For an isolated, opt-in strict Core execution and operator-controlled activation
+For an isolated, opt-in strict Core execution and operator-controlled repository reload
 mode, see [Core server contracts](../../../docs/contracts/core-server.md).
 It requires `CORINT_CORE_CONFIG`, separate credentials and loopback binding;
 the legacy API described below does not automatically inherit those gates.
@@ -568,7 +568,7 @@ When executing decisions, results are automatically saved to the database.
 1. **No Authentication**: API endpoints have no authentication mechanism
 2. **No Rate Limiting**: No request rate limiting protection
 3. **In-Memory Cache**: Feature cache is only valid within request lifecycle
-4. **No Rule Hot Reload**: Rules require server restart to reload
+4. **Connector configuration reload**: Policy/registry hot reload is supported; connector configuration changes still require restart. See [shared snapshot contract](../../../docs/contracts/compatibility-server-snapshots.md).
 
 ### Planned Solutions
 
@@ -587,7 +587,7 @@ These limitations will be addressed in future versions.
 - [ ] Implement gRPC API
 - [ ] Add WebSocket support (real-time rule updates)
 - [ ] Add Admin API (rule management)
-- [ ] Implement rule hot reload
+- [x] Share HTTP/gRPC policy snapshots and atomically reload repository policies
 - [ ] Add API versioning
 
 ### Long-term (3-6 months)

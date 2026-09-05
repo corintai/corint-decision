@@ -1,6 +1,6 @@
 # Corint 解决方案：Work、Decision 与 CDL 演进建议
 
-> 状态：阶段 0 首批实现已落地，完整核心规范与跨产品一致性验收仍未完成。当前边界见 [CDL Core 首批规范](cdl/cdl-core.md)。
+> 状态：已完成优化见 **§1.4 进度标记**；阶段 0 首批实现及 W04/W07/W08 离线契约已落地，完整核心规范与跨产品一致性验收仍未完成。当前边界见 [CDL Core 首批规范](cdl/cdl-core.md)。
 >
 > 修订日期：2026-09-05。本文区分当前实现、首期候选契约与后续设计；提案示例不代表当前引擎已经支持。
 >
@@ -30,22 +30,24 @@ Corint 解决方案包含两个产品：**Corint Work** 是 Agentic Risk Operati
 
 首期继续使用现有 `rule / ruleset / pipeline / registry` 结构，不立即引入第二套顶层语法。结构化表达式和结构化 action 属于后续扩展；策略包先定义交付契约，具体格式示例仍是待实现提案，不改变当前 CDL 顶层语法。
 
-### 1.2 当前实现中的关键差距
+### 1.2 严格 Core 当前状态与兼容入口遗留问题
 
-以下基于 `3fad78f` 对现有解析器、编译器和执行链路的核对，不是完整运行时能力认证；修复后应由第 12 节的一致性用例替代人工判断。
+最初问题清单来自 `3fad78f`；以下按当前严格 Core 与兼容入口分别记录，避免把已经完成的 Core 修复重复列为待办。严格 Core 指 `compile_core` / `DecisionEngine::from_core` 及明确接入它们的 CLI、生成器和 Core HTTP 模式；旧 parser、builder 与 REST/gRPC 入口不会因声明 `version: "0.1"` 自动获得这些保证。
 
-| 核对项 | 当前证据 | 对首期规范的要求 |
-|---|---|---|
-| 版本校验 | `parse_with_imports` 读取版本或默认 `0.1`，未据此拒绝未知版本（[RuleParser](../crates/corint-decision-dsl-parser/src/rule_parser.rs)、[PipelineParser](../crates/corint-decision-dsl-parser/src/pipeline/parser.rs)） | 不认识的语言版本必须拒绝，不能只存入 metadata |
-| 未知条件字段 | Rule 的 `when: { al: [...] }` 未被识别为条件组，可进入无条件加分路径（[解析器](../crates/corint-decision-dsl-parser/src/rule_parser.rs)、[规则编译器](../crates/corint-decision-compiler/src/codegen/rule_codegen.rs)） | 所有语义对象严格校验字段，拼写错误不能改变为“恒真” |
-| Step guard | `compile_step_when_guard` 当前是 no-op（[指令生成](../crates/corint-decision-compiler/src/codegen/pipeline_codegen/instruction_gen.rs)） | 实现并测试跳过语义，否则拒绝 `step.when` |
-| API 调用 | 当前生成空参数、无 fallback；`any / all` 仅选择第一项（[指令生成](../crates/corint-decision-compiler/src/codegen/pipeline_codegen/instruction_gen.rs)） | 不得宣称完整支持；参数、失败策略和组合调用分别验收 |
-| 子 Pipeline | 当前仅标记步骤并跳转，未发出实际子调用（[指令生成](../crates/corint-decision-compiler/src/codegen/pipeline_codegen/instruction_gen.rs)） | 完整实现前在严格核心模式拒绝 |
-| Service 字段 | 文档使用的 `endpoint` 等字段不在当前白名单中（[字段校验](../crates/corint-decision-dsl-parser/src/pipeline/validation.rs)） | schema、文档、解析器必须共享同一字段契约 |
-| 默认与必填 | Registry 解析要求 `when`，但文档省略它表示兜底；Pipeline 文档要求 `decision`，解析器允许缺失（[RegistryParser](../crates/corint-decision-dsl-parser/src/registry_parser.rs)、[PipelineParser](../crates/corint-decision-dsl-parser/src/pipeline/parser.rs)） | 默认和必填都必须有明确、可测试的唯一语义 |
-| 调用执行时序 | Runtime 的 `CallRuleset` 先收集 ID，实际执行交给上层 DecisionEngine（[Pipeline Executor](../crates/corint-decision-runtime/src/engine/pipeline_executor.rs)） | 必须测试调用完成后的结果可见性，不能用“发出指令”代替执行验收 |
+| 核对项 | 严格 Core 当前状态 | 兼容入口遗留问题 | 验收证据 |
+|---|---|---|---|
+| 版本校验 | 拒绝未知、缺失和非字符串版本 | `parse_with_imports` 仍保留读取/默认版本语义，不能作为严格发布门禁 | `N02_unknown_version` / `N02_missing_version` / `N02_numeric_version` |
+| 未知条件字段 | 未知字段、重复键及错误结构在执行前拒绝 | 原始 Rule parser 的未知条件键问题不能因 Core 外层校验而视为已修复 | `N01_unknown_condition` / `N01_unknown_field` / `N01_duplicate_key` |
+| Step guard | 明确拒绝 `step.when`，不是已支持的 guard | `compile_step_when_guard` 仍为空操作；条件为 false 不会据此跳过步骤 | N07_step_guard |
+| API 调用 | Connector 整体拒绝，包括参数、失败策略和组合调用 | Pipeline 编译器仍丢弃 `params / on_error / min_success`；`any / all` 只选第一项 | `N08_api_params` / `N08_api_any` / `N08_api_all` |
+| 子 Pipeline | 明确拒绝子调用节点 | 兼容编译器仅标记步骤并跳转，没有真实子调用 | N07_subpipeline |
+| Service 字段 | Service 节点及历史 `endpoint` 写法均拒绝 | `endpoint` 不在兼容 step 字段白名单，参考示例不代表可执行支持 | N08_service_endpoint |
+| 默认与必填 | Registry 必须显式 `when`；Pipeline 必须 `decision`；conclusion/decision 唯一末尾 default | 兼容 parser 的默认/必填行为仍需单独迁移；文档中省略 Registry `when` 的兜底例已更正 | N03/N04；malformed_defaults_and_ids_are_rejected；input_errors_and_registry_no_match_are_not_approval |
+| 调用执行时序 | Core `CallRuleset` 同步完成求值，后续 router 能看到真实结果 | 兼容路径仍收集 ID 并由上层 DecisionEngine 补执行，不具备同一时序保证 | result_dependent_router；node_order_does_not_change_control_flow |
 
-已有 AST、IR、类型模型和 [Validator / Diagnostic](../crates/corint-decision-compiler/src/validator.rs) 可以复用；问题在于它们尚未组成覆盖所有入口和文档示例的统一契约，不需要另建一套互不相通的校验器。
+上述 Nxx / 完整场景来自 [conformance manifest](../tests/conformance/cdl_core/manifest.yaml)，具名测试来自 [真实引擎 runner](../crates/corint-decision-engine/tests/cdl_core_conformance.rs)。实现落点是 [Core 编译门禁](../crates/corint-decision-compiler/src/core.rs)、[Pipeline 指令生成](../crates/corint-decision-compiler/src/codegen/pipeline_codegen/instruction_gen.rs) 与 [Pipeline Runtime](../crates/corint-decision-runtime/src/engine/pipeline_executor.rs)。拒绝某项能力证明门禁有效，不证明该能力已实现。
+
+已有 AST、IR、类型模型和 [Validator / Diagnostic](../crates/corint-decision-compiler/src/validator.rs) 可以复用。后续工作是按入口收敛语义与证据，不需要另建一套互不相通的校验器。
 
 ### 1.3 支持状态必须由证据决定
 
@@ -56,9 +58,26 @@ Corint 解决方案包含两个产品：**Corint Work** 是 Agentic Risk Operati
 | `planned` | 设计提案或尚未实现 | 明确标注，严格 Core 拒绝 |
 | `deprecated` | 曾受支持、仍有兼容测试的旧写法 | 给出替代写法、诊断和移除版本 |
 
-本提案的完整 Core 清单仍待验收；实验性 `cdl-core-risk-draft-1` 已有绑定 fixture 和真实引擎测试的部分 `supported` 能力，范围以 [机器可读清单](cdl/schema/capabilities.json) 为准。这不代表阶段 0 整体验收通过。其余 `docs/cdl/` 中的“✅ Implemented”仍需逐项核验；仅能解析或编译，不足以升级为 `supported`。
+本提案的完整 Core 清单仍待验收；实验性 `cdl-core-risk-draft-1` 已有绑定 fixture 和真实引擎测试的部分 `supported` 能力，范围以 [机器可读清单](cdl/schema/capabilities.json) 为准。这不代表阶段 0 整体验收通过。历史参考页现已统一标为 `compatibility-unverified`，撤下未绑定证据的实现/生产支持徽标；它们的片段仍需逐项验收。仅能解析或编译，不足以升级为 `supported`。
 
 这里的状态描述语言能力，不描述某份客户策略的业务效果。策略的语言校验、行为测试、业务评估和发布审批必须分别记录，见第 9.3 节。
+
+### 1.4 进度标记（2026-09-05）
+
+**“已完成”仅指下表写明的交付范围**；“契约已完成”表示 schema、正反例及离线消费者已验收，不表示在线资源或真实产品集成已完成。语言能力是否 `supported` 仍以 §1.3 的能力清单和对应入口为准。
+
+| 优化项 | 状态 | 已完成范围与证据 | 剩余工作 |
+|---|---|---|---|
+| 验收基线与 CI 配置修正 | **已完成（配置与基线修复）** | 修正 server 二进制名、安装 `protoc`、统一 fmt/Clippy 命令，修复已发现的基线失败；见 [CI](../.github/workflows/ci.yml) | 后续并发改动需重新验收；不代表远端 CI 已通过，release 工作流迁移另行处理 |
+| 文档支持声明与示例门禁 | **已完成（登记范围内）** | 3 个严格参考页绑定 fixture；13 个兼容参考页统一范围声明；补充 5 个 guard/API/Service 反例；见 [示例清单](cdl/examples.json) 与 §11.3 | 历史片段逐例包装、LLM 兼容模板映射仍待补齐 |
+| 严格 Core 校验与执行语义 | **已完成（首批 Core 范围）** | 版本/未知字段/必填/default 门禁、同步 Ruleset 调用、显式跳转及条件 Trace；见 §1.2 与 [conformance](../crates/corint-decision-engine/tests/cdl_core_conformance.rs) | 兼容入口收敛和未启用扩展仍待实现；拒绝能力不等于实现能力 |
+| 独立工具链、生成校验与源码交换 | **已完成（离线首批）** | validate/test/build/verify、严格生成/修改、export/import 与冻结文件 import；见 [CLI](cdl/cli.md)、[生成接口](cdl/generation.md)、[源码交换](cdl/exchange.md) | 真实 Work 客户端、完整 PolicyPackage 与跨宿主可信证据仍待接入 |
+| 业务上下文与目标兼容性 | **已完成（声明契约）** | BusinessContext / TargetCapabilities v1、共享 check-target 与旧绑定拒绝；见 [公共契约](contracts/README.md) | 远端就绪证明与生产权限治理仍待完善 |
+| W04：Feature / Model 描述与绑定 | **契约已完成** | 3 份 v1 schema、精确版本/内容/目标/能力检查、缺失或未部署绑定反例；见 [阶段 0 契约](contracts/phase0.md) | 在线 Feature/Model、真实部署状态校验及发布入口接入 |
+| W07 及 W05/W06/W09：评估与审批证据 | **契约已完成** | 2 份 v1 schema、固定样例口径与历史可用时间、证据绑定、外部信任与审批有效期检查；见 [契约测试](../crates/corint-decision-toolchain/tests/phase0_contracts.rs) | 真实评估后端、签名/认证基础设施及发布入口接入 |
+| W08：决策记录、标签与动作回执 | **契约已完成** | 3 份 v1 schema、内存消费者、关联/去重/更正/历史查询与回执校验；见 [阶段 0 契约](contracts/phase0.md) | HTTP 事件产出、持久化投递及真实反馈消费者接入 |
+
+本轮公共契约验收：新增 **8 组测试（包含 16 个清单反例）**、CLI 契约 **9 项**、Core conformance **16 项**通过，全仓 Clippy 通过。本次新增文件格式通过；全仓格式检查曾发现并发引擎文件差异，后续以最新工作区检查为准。这里记录本地验收结果，不将阶段 0 或 W01–W10 整体标为完成。
 
 ## 2. 目标架构与产品边界
 
@@ -113,6 +132,19 @@ Work 的差异化在于业务上下文、数据证据与运营闭环，而不是
 跨工具交换的 `PolicyPackage` 是源码、契约、依赖及关联证据的交付单元；它通过上述加载链路成为针对目标环境的编译产物。两者需要可追溯关联，但源码包可交换不代表 IR 可以跨任意引擎版本直接加载。
 
 这是目标架构，不要求在首期验收前一次性重写全部模块。可以先复用现有装配链路建立一致性测试，但任何尚未满足执行契约的能力都不能绕过门禁。
+
+### 2.4 Repository 作为唯一权威策略来源
+
+策略源码、依赖和已发布版本的选择统一由 repository 管理。运行中的编译引擎是 repository 某个确定版本的派生快照，不另建独立的策略持久化或内存上传发布通道。Agent、Work 与 API 创作最终都应进入同一 repository 发布流程。
+
+- 发布方先验证候选源码、目标契约和独立行为样例，再在 repo 中发布确定版本及内容指纹。
+- 服务启动与重载共用严格加载链路：读取 repo 已发布声明 → 冻结依赖闭包 → 核对内容指纹 → 严格编译、目标检查、批准匹配和行为验收 → 构建不可变引擎快照。
+- 重载只在验收成功且运行版本未被其他重载替换时原子切换；请求取得一次快照后完成整个决策。失败继续使用旧快照。
+- 重启重新读取 repo 的已发布版本，不恢复上次进程的临时内存状态。若 repo 被外部修改为无效版本，启动失败，不静默回退到旧策略或宽松入口。
+- 回滚由发布方在 repo 恢复历史版本，再触发同一验收和重载流程；回滚不绕过当前授权或验收。
+- HTTP 重载请求不接受策略正文、文件路径、审批或验收样例。发布历史和版本存储由 repo 后端承担，服务端仅报告实际加载的 repo 版本及指纹。
+
+当前增量已将上述流程接入严格 Core 服务端的文件 repository（配置 v2 与 published.json），启动和重载复用同一验收链路。兼容 HTTP/gRPC 已共享同一进程快照与 repo 重载管理器，见 §10.2；数据库/API repository 的严格验收、FFI 和完整跨协议语义仍另行验收。文件后端增量不代表所有后端已经具备严格 Core 语义。
 
 ## 3. CDL 的职责边界
 
@@ -223,6 +255,8 @@ results.payment_rules.score
 上下文与目标能力声明应包含版本、来源和完整性标识。编译器根据它们检查字段、类型与引用；目标环境在部署时重新核验实际依赖和授权。Agent 提供的目录或权限描述不是授权本身。
 
 ### 5.5 特征与模型从研究到执行的契约
+
+当前增量：[Feature/Model 描述及资源绑定 v1](contracts/phase0.md) 已有 schema、离线消费者和 W04/W07 固定契约用例；在线计算、健康验证及运行时调用仍未启用。
 
 Work 中分析有效的资源，不一定已具备在线服务能力。以下契约应在首期定义，计算、训练与服务实现仍按能力扩展逐项落地：
 
@@ -366,7 +400,7 @@ LLM 适合首先位于控制面：生成规则草案、解释 Trace、发现冲�
 
 ### 9.1 与人工编写共用同一套发布门禁
 
-已落地的服务端子集：[严格 Core 本地模式](contracts/core-server.md) 由 `CORINT_CORE_CONFIG` 显式启用，服务端持有上下文、目标、独立样例和操作者批准指纹列表；HTTP 决策/发布凭据分离，客户端不能提交审批或替换验收样例。候选必须重新编译、检查并通过真实引擎样例后才能内存激活。只允许 loopback、单目标，无持久发布记录或企业身份集成；旧 REST/gRPC 入口未自动获得这些保证。
+已落地的服务端子集：[严格 Core 本地模式](contracts/core-server.md) 由 `CORINT_CORE_CONFIG` 显式启用，服务端持有上下文、目标、独立样例和操作者批准指纹列表；HTTP 决策/重载凭据分离，客户端不能提交审批或替换验收样例。策略统一从 repo 已发布声明读取；必须重新编译、检查并通过真实引擎样例后才能切换运行快照，HTTP 不接受策略正文。只允许 loopback、单目标，策略持久化与版本历史由 repo 管理，尚无企业身份集成；旧 REST/gRPC 入口未自动获得这些保证。
 
 推荐流程：需求与授权范围 → 读取受支持 schema、业务上下文及目标能力 → 生成草案 → 解析、引用解析、类型检查与编译 → 沙箱行为测试 → 按场景进行业务评估 → 评审与审批 → 发布不可变产物。
 
@@ -417,8 +451,8 @@ Control Plane
   编辑 / 校验 / 编译 / 审批 / 发布 / 回滚 / LLM 辅助
                               │
                               ▼
-                    Artifact / Package Registry
-                              │ 发布不可变编译产物
+                    Repository（权威源码与发布版本）
+                              │ 严格加载并构建不可变编译快照
                               ▼
 Data Plane
   API Gateway ──> Decision Worker ──> Connector Layer ──> 数据源
@@ -442,7 +476,9 @@ Work 是控制面的业务创作与运营入口之一，不等于全部控制面
 
 ### 10.2 请求快照与原子热更新
 
-当前证据：上述严格 Core HTTP 模式已将引擎与策略身份放入同一不可变 `Arc` 快照，在准备候选后以 revision 比较并原子替换；失败保留旧版本，每个决策响应附带其执行快照指纹。已有并发激活与切换前后真实决策测试。此增量不包含跨进程协调、持久发布、旧入口改造或完整 HTTP/gRPC/FFI 统一快照。
+当前证据：上述严格 Core HTTP 模式已将引擎与策略身份放入同一不可变 `Arc` 快照，在准备候选后以 revision 比较并原子替换；失败保留旧版本，每个决策响应附带其执行快照指纹。已有并发激活与切换前后真实决策测试。文件 repo 增量使启动、重载和回滚均读取唯一已发布来源，响应附带 repo 版本/声明指纹；不包含跨进程协调、企业发布审计或完整 HTTP/gRPC/FFI 统一快照。
+
+兼容服务增量：普通 HTTP 与 gRPC 现在只初始化一次引擎，共享 `EngineManager` 的当前 `Arc<EngineSnapshot>`。请求执行期间不持全局锁；repo 候选在 worker 中准备后以 revision 比较并切换，失败保留旧快照，并发准备被拒绝。两个入口的决策、健康与重载响应携带相同语义的运行 revision 和 compiled SHA-256；重载可携带预期 revision。该哈希标识编译策略，不冒充 repo 发布版本或严格 Core 策略哈希。真实处理器测试覆盖跨入口切换、回滚/重新构建、错误 repo 和等待连接器的旧请求。严格 Core 的独立验收与鉴权边界保持不变。见 [兼容服务快照契约](contracts/compatibility-server-snapshots.md)。
 
 每个请求应在入口处绑定一个不可变引擎快照，例如持有 `CompiledRepository` 的 `Arc<CompiledEngine>`，随后立即释放版本索引锁。决策中的 API、数据库和特征调用可以耗时，但不能持续占用全局读锁、阻塞发布或重载。
 
@@ -521,6 +557,8 @@ Decision Worker 应尽量无状态：规则包和版本来自受控分发，持�
 
 ### 10.8 Decision 到 Work 的反馈契约
 
+当前增量：[DecisionRecord / OutcomeEvent / ActionReceipt v1](contracts/phase0.md) 已有 schema 和内存参考消费者，覆盖 W08 关联、去重、更正与历史可用时间；现有 HTTP 响应、持久化投递和真实 Work 消费尚未接入。
+
 持续优化需要把决策、实际动作和后验业务结果关联起来，而不只是收集最终 signal。以下是首期需要确定的版本化事件契约，不表示现有 API 已具备这些字段：
 
 | 记录 | 最小关联与证据信息 |
@@ -567,24 +605,24 @@ Feature / Model 的资源描述和就绪性契约在首期设计，不代表首�
 
 下表描述完整阶段 0 目标。Core 规范/schema、fixture 与 runner、独立 CLI、共享工具链及可选严格生成/修改 API 已有首批实现。新增 [源码交换](cdl/exchange.md)：`corint export` 导出不含历史证据的可编辑 YAML 源码集合（JSON 容器），`corint import` 使用调用方样例重新编译/执行并生成当前程序的新证据。已覆盖生成器宿主与 CLI 的真实跨程序往返，但不宣称 Work 集成、历史证据跨宿主互认或发布授权；其余落点和完整完成定义仍需逐项验收：
 
-| 交付物 | 建议落点 | 完成定义 |
-|---|---|---|
-| 规范性文本 | `docs/cdl/cdl-core.md` | 给出字段、默认、类型、引用、求值、错误和兼容性规则；每条要求有用例 ID |
-| 机器可读契约 | `docs/cdl/schema/` | 资源 schema 与版本化能力清单可供编辑器、Agent、验证器共用；表达式类型检查仍由编译器完成 |
-| 独立工具链 | 现有 parser / compiler / engine 公共库、`crates/corint-decision-toolchain`、`crates/corint-decision-cli` 及严格生成适配层 | CLI 与生成器已复用严格编译、真实引擎样例测试、源码包构建/指纹核验、源码导出/导入和新证据重建；生产分发/激活、跨宿主可信历史证据及完整公共契约待完成 |
-| 跨产品公共契约 | `docs/contracts/` | 已实现 Core BusinessContext / TargetCapabilities v1、声明兼容性报告、CLI/严格生成共享检查及旧绑定拒绝；Feature / Model、完整 PolicyPackage、可信评估/审批与反馈事件仍待实现 |
-| 严格校验入口 | 现有 parser / compiler / repository 装配链 | 拒绝未知版本、字段、类型、引用和不支持能力，输出结构化诊断；已有宽松入口不能绕过发布门禁 |
-| 用例与真实示例 | `tests/conformance/cdl_core/` | 每例包含完整依赖、输入、预期输出或预期错误；不依赖在线服务或本机私有仓库 |
-| 端到端 runner | `crates/corint-decision-engine/tests/cdl_core_conformance.rs` | 使用公开解析器、编译器及真实 DecisionEngine 执行，不另写测试专用解释器 |
-| Core 进程级 e2e | `tests/scripts/run_core_e2e_tests.sh`、`crates/corint-decision-cli/tests/core_process_e2e.rs` | 固定模型响应经真实生成器、CLI、服务进程和 TCP HTTP；验证激活失败保持旧状态、决策/Trace 等价和重启语义，不代表真实 Work/在线模型集成 |
-| 互操作与证据测试 | `tests/conformance/contracts/` | 验证上下文/依赖检查、规范化往返、报告与版本绑定、事件关联；与真实 Work/在线依赖集成测试分开报告 |
-| 文档与生成器同步 | `docs/cdl/`、LLM prompt templates、现有 CI | 支持示例引用同一份 fixture；更改语义、示例、schema 或 prompt 都触发门禁 |
+| 交付物 | 当前进度 | 建议落点 | 完成定义 |
+|---|---|---|---|
+| 规范性文本 | **首批 Core 已完成** | `docs/cdl/cdl-core.md` | 给出字段、默认、类型、引用、求值、错误和兼容性规则；每条要求有用例 ID |
+| 机器可读契约 | **首批 Core 已完成** | `docs/cdl/schema/` | 资源 schema 与版本化能力清单可供编辑器、Agent、验证器共用；表达式类型检查仍由编译器完成 |
+| 独立工具链 | **离线首批已完成；产品集成待办** | 现有 parser / compiler / engine 公共库、`crates/corint-decision-toolchain`、`crates/corint-decision-cli` 及严格生成适配层 | CLI 与生成器已复用严格编译、真实引擎样例测试、源码包构建/指纹核验、源码导出/导入和新证据重建；生产分发/激活、跨宿主可信历史证据及完整公共契约待完成 |
+| 跨产品公共契约 | **已完成本轮契约；完整交付待办** | `docs/contracts/` | 已实现 Core BusinessContext / TargetCapabilities v1、声明兼容性报告、CLI/严格生成共享检查及旧绑定拒绝；已补充 [W04/W07/W08 v1 契约](contracts/phase0.md) 的资源描述与绑定、评估/审批证据、决策/标签/动作回执 schema 和离线消费者；完整 PolicyPackage、可信基础设施及真实产品集成仍待实现 |
+| 严格校验入口 | **严格 Core 已完成；兼容收敛待办** | 现有 parser / compiler / repository 装配链 | 拒绝未知版本、字段、类型、引用和不支持能力，输出结构化诊断；已有宽松入口不能绕过发布门禁 |
+| 用例与真实示例 | **首批 fixture 已完成；历史示例待办** | `tests/conformance/cdl_core/` | 每例包含完整依赖、输入、预期输出或预期错误；不依赖在线服务或本机私有仓库 |
+| 端到端 runner | **首批 Core 已完成** | `crates/corint-decision-engine/tests/cdl_core_conformance.rs` | 使用公开解析器、编译器及真实 DecisionEngine 执行，不另写测试专用解释器 |
+| Core 进程级 e2e | **本地单目标用例已完成** | `tests/scripts/run_core_e2e_tests.sh`、`crates/corint-decision-cli/tests/core_process_e2e.rs` | 固定模型响应经真实生成器、CLI、服务进程和 TCP HTTP；验证激活失败保持旧状态、决策/Trace 等价和重启语义，不代表真实 Work/在线模型集成 |
+| 互操作与证据测试 | **离线契约已完成；真实集成待办** | `tests/conformance/contracts/` | 验证上下文/依赖检查、规范化往返、报告与版本绑定、事件关联；与真实 Work/在线依赖集成测试分开报告 |
+| 文档与生成器同步 | **部分完成；范围见 §1.4** | `docs/cdl/`、LLM prompt templates、现有 CI | 支持示例引用同一份 fixture；更改语义、示例、schema 或 prompt 都触发门禁 |
 
 schema 约束 YAML 对象形状；符号、类型、引用和控制流检查约束语义；行为用例验证实际执行。三者不能互相代替。需对 schema 接受集与解析器接受集作一致性检查，避免再形成两套定义。
 
 #### 11.3 示例即测试资产
 
-首批 [example registry](cdl/examples.json) 已约束 `cdl-core.md` 和 `condition-trace.md`：完整支持例与反例绑定同一 conformance manifest；CI 校验分类、标记、fixture 链接和可执行用例，并禁止在受管页面复制内联 YAML。新增条件例还绑定精确的布尔节点结果/跳过原因。该有界门禁不等于所有历史文档、片段、提案与 LLM prompt 都已完成映射。
+当前 [example registry](cdl/examples.json) 管理 `cdl-core.md`、`condition-trace.md` 与新的严格 `pipeline.md`：完整支持例与反例绑定同一 conformance manifest；CI 校验分类、标记、fixture 链接和可执行用例，并禁止在这些页面复制内联 YAML。Pipeline 反例覆盖 guard、子调用、API 参数/any/all 与 Service endpoint；条件例绑定精确的布尔节点结果/跳过原因。原 Pipeline 细节保存在 [兼容参考](cdl/pipeline-compatibility.md)。清单另行登记 13 个 `compatibility-unverified` 页面：片段按页分类为未验收兼容资料，CI 检查范围声明并阻断重新添加实现/生产支持徽标；这些片段尚不是逐例可执行资产，LLM 兼容模板也未完成映射。
 
 每个示例必须声明用途：完整支持例、片段、反例或未来提案。完整支持例直接来自 fixture；片段必须有可运行的包装用例；反例绑定预期错误；未来提案不得进入可发布清单。CI 应拒绝没有分类或 fixture 映射的支持声明。
 
@@ -621,13 +659,13 @@ runs:
 
 ### 阶段 1：执行模型与发布安全收敛
 
-- 引入 `ResolvedRepository` 与 `CompiledRepository`；
+- 以 repo 为策略唯一权威来源，沿用严格 Core 文件 repo 的启动/重载验收；逐步收敛 `ResolvedRepository` 与 `CompiledRepository`，运行时快照是 repo 确定版本的派生产物；
 - 将完整的 Rule / Ruleset / Pipeline 调用模型纳入 Runtime，沿用阶段 0 的行为测试验证等价性；
 - 对 guard、子调用、API 参数等扩展逐项实现、测试，再更新能力清单；
 - 将首期策略包构建与导入/导出契约接入真实发布流程及 Work 客户端，落实可信报告、审批校验和目标依赖绑定；不要求把 Work 作为唯一入口；
 - 根据实际接入场景实现首批 Feature / Model 在线绑定，验证与离线口径一致，再纳入支持清单；
 - 完善 `ruleset.conclusion` 的局部输出契约与 `pipeline.decision` 的最终映射，验证优先级、默认结果和动作语义，不增加独立决策层；
-- 统一 REST、gRPC、FFI 契约，并在同一实例共享引擎快照；热更新失败保留旧版本；
+- 沿用已完成的兼容 HTTP/gRPC 共享快照与失败保留旧版本机制，继续统一完整 REST/gRPC/FFI 契约并接入 FFI；严格 Core 的跨协议支持独立验收；
 - 生产上线前记录最小 DecisionRecord、动作回执与后验结果关联字段，提供不依赖 Work 在线的异步反馈接口；
 - 移除硬编码仓库路径和明文 token-like 配置，补齐管理入口的认证、授权和审计。
 
@@ -699,26 +737,28 @@ runs:
 
 严格 Core 服务端新增 W05/W09 的局部证据：操作者批准绑定精确策略/上下文/目标/样例，拒绝越权角色与客户端伪造字段；启动失败不回退，过期 revision 和并发竞争不能覆盖新快照。该证据局限于本地单目标信任域，不等于多租户治理、可信远端证明或真实 Work 发布流程通过。
 
+新增 [阶段 0 W04/W07/W08 契约证据](contracts/phase0.md)：8 份版本化 schema 和离线消费者已覆盖精确资源绑定、固定样例口径/历史可用时间、精确评估审批信任绑定，以及反馈关联、去重、更正和历史标签查询。W05/W06/W09 增加旧证据、合成数据业务声明和越权审批的反例。该证据不启用 Core 在线资源，不接入真实 Work、评估后端或生产反馈；现有发布入口也尚未消费这些新契约。
+
 下列要求尚未整体验收。W01 已有离线工具链证据；W02 已有源码导出/导入、编辑往返及新证据重建测试；W03 已有 Core 字段和契约版本/能力检查；W05 已覆盖策略/上下文/目标/检查程序变化使旧绑定失效；W06 已区分样例通过与业务评估并拒绝自述审批字段。这些只是局部证据，不能将 W01–W10 全部标为完成。阶段 0 验证公共 schema、接口约束、独立工具链和最小往返；涉及真实 Work 客户端、在线资源或生产反馈的用例，在对应集成阶段完成后才能声明产品能力。契约 mock 的通过不等于真实产品集成通过。
 
-| ID | 场景 | 预期断言 | 验收安排 |
+| ID | 场景 | 预期断言 | 当前进度与后续验收 |
 |---|---|---|---|
-| W01 | 无 Work 的环境中验证、测试和构建 Core 策略 | 不需要 Work 账号、会话或网络调用；固定依赖下与其他创作入口的执行结果一致 | 首期独立工具链，后续补真实 Work 对照 |
-| W02 | 外部修改 → 导入 → 修改 → 导出；并发编辑 | 纯往返不改变语义，业务修改仅产生预期差异；ID 稳定、冲突不覆盖；附属信息不影响结果 | 首期规范化/契约往返，Work 接入后补完整流程 |
-| W03 | Agent 编造字段，或上下文/目标能力版本不匹配 | 给出明确诊断，不用猜测、隐式转换或宽松解析补齐 | 首期 |
-| W04 | 特征/模型有定义，但未部署、版本不符或绑定缺失 | 目标检查阻断发布，不自动运行研究任务或换版本 | 首期绑定契约，扩展启用后验证真实依赖 |
-| W05 | 阈值、依赖或绑定变更后复用旧报告/审批 | 保留历史证据，但不能为不匹配的新版本提供有效授权 | 首期证据契约，发布流程接入后补端到端验证 |
-| W06 | 只有合成样例，却声明真实数据效果已验证 | 行为测试与业务评估状态分开；拒绝伪造来源和越权审批 | 首期 |
-| W07 | 离线/在线特征同名不同口径，或使用事后补录数据 | 固定样例暴露差异；按历史可用时间取证，不能把泄漏数据当成有效回测 | 首期固定契约样例，后续真实计算后端对照 |
-| W08 | 后验标签迟到、重复、更正或尚未到达 | 按决策/事件 ID 正确关联和去重；保留标签版本；缺失不等同于安全 | 首期事件契约，反馈消费者接入后集成验证 |
-| W09 | 越权数据查询、伪造可信特征、冒充 Work 发布 | 按主体/租户/环境权限拒绝；Agent 来源或 YAML 自述不授予权限 | 首期信任契约，生产入口接入后做安全验证 |
-| W10 | Work 断连或反馈消费滞后 | Decision 不同步调用 Work、不自动更换策略；反馈故障按声明策略处理 | 部署与反馈集成阶段 |
+| W01 | 无 Work 的环境中验证、测试和构建 Core 策略 | 不需要 Work 账号、会话或网络调用；固定依赖下与其他创作入口的执行结果一致 | **离线工具链已完成**；后续补真实 Work 对照 |
+| W02 | 外部修改 → 导入 → 修改 → 导出；并发编辑 | 纯往返不改变语义，业务修改仅产生预期差异；ID 稳定、冲突不覆盖；附属信息不影响结果 | **契约往返已完成**；Work 接入后补完整流程与协作冲突验收 |
+| W03 | Agent 编造字段，或上下文/目标能力版本不匹配 | 给出明确诊断，不用猜测、隐式转换或宽松解析补齐 | **首批 Core 契约已完成**；后续扩展沿用同一门禁 |
+| W04 | 特征/模型有定义，但未部署、版本不符或绑定缺失 | 目标检查阻断发布，不自动运行研究任务或换版本 | **契约已完成**：v1 schema 与离线消费者；扩展启用后验证真实依赖 |
+| W05 | 阈值、依赖或绑定变更后复用旧报告/审批 | 保留历史证据，但不能为不匹配的新版本提供有效授权 | **契约已完成**：旧报告/审批失效检查；新证据契约接入发布流程后补端到端验证 |
+| W06 | 只有合成样例，却声明真实数据效果已验证 | 行为测试与业务评估状态分开；拒绝伪造来源和越权审批 | **契约已完成**：行为/业务评估分离及伪造反例；真实数据来源核验待接入 |
+| W07 | 离线/在线特征同名不同口径，或使用事后补录数据 | 固定样例暴露差异；按历史可用时间取证，不能把泄漏数据当成有效回测 | **契约已完成**：v1 固定样例与证据消费者；后续真实计算后端对照 |
+| W08 | 后验标签迟到、重复、更正或尚未到达 | 按决策/事件 ID 正确关联和去重；保留标签版本；缺失不等同于安全 | **契约已完成**：v1 事件与内存消费者；持久化反馈接入后集成验证 |
+| W09 | 越权数据查询、伪造可信特征、冒充 Work 发布 | 按主体/租户/环境权限拒绝；Agent 来源或 YAML 自述不授予权限 | **部分完成**：契约与本地信任域反例；生产权限、数据访问及租户隔离仍待验收 |
+| W10 | Work 断连或反馈消费滞后 | Decision 不同步调用 Work、不自动更换策略；反馈故障按声明策略处理 | **待集成验收**：部署与反馈集成阶段 |
 
 ### 12.4 CI 与支持声明
 
-严格 Core server 的独立 HTTP 鉴权/激活测试已加入 Core job，并安装其构建所需的 `protoc`。router 集成测试不启动外部监听；另有 [Core 进程级 e2e](../tests/CORE_E2E.md) 启动真实 CLI/server 二进制，在临时目录和随机 loopback 端口验证固定模型生成、构建/验证/导出、服务端独立验收、鉴权激活、失败不切换、决策与条件 Trace、重启恢复初始策略。两类测试均不使用真实客户数据或在线模型；运行时依赖的业务与生产发布治理仍须独立验收。
+严格 Core server 的独立 HTTP 鉴权/激活测试已加入 Core job，并安装其构建所需的 `protoc`。router 集成测试不启动外部监听；另有 [Core 进程级 e2e](../tests/CORE_E2E.md) 启动真实 CLI/server 二进制，在临时目录和随机 loopback 端口验证固定模型生成、构建/验证/导出、服务端独立验收、鉴权激活、失败不切换、决策与条件 Trace、重启加载 repo 已发布版本及 repo 历史版本回滚。两类测试均不使用真实客户数据或在线模型；运行时依赖的业务与生产发布治理仍须独立验收。
 
-现有 [CI 配置](../.github/workflows/ci.yml) 在推送 main 和 PR 到 main/develop 时触发。独立 Core job 已包含真实引擎 conformance、CLI、共享工具链和固定模型响应生成器测试；条件 Trace schema、受管页面示例映射及反例门禁已纳入 conformance 目标；另有 workspace tests。这是已配置的门禁，不是本地修改已在远端 CI 通过的声明，也不等于覆盖全部文档示例。尚需扩充历史示例/片段、生成模板映射与跨产品集成证据。产品集成测试与公共契约测试分别报告，不通过移除某个适配入口来隐藏语义差异。
+现有 [CI 配置](../.github/workflows/ci.yml) 在推送 main 和 PR 到 main/develop 时触发。独立 Core job 已包含真实引擎 conformance、CLI、共享工具链和固定模型响应生成器测试；条件 Trace schema、三个严格参考页的示例映射、兼容参考页范围声明及反例门禁已纳入 conformance 目标；另有 workspace tests。这是已配置的门禁，不是本地修改已在远端 CI 通过的声明，也不等于覆盖全部文档示例。尚需扩充历史示例/片段、生成模板映射与跨产品集成证据。产品集成测试与公共契约测试分别报告，不通过移除某个适配入口来隐藏语义差异。
 
 门禁应阻断：支持例解析失败、编译失败、行为不符、反例意外被接受、示例未映射、能力状态与测试不符，以及未经兼容性说明的语义变更。不得用 `ignore`、只解析不执行，或无说明地修改期望输出来维持绿色结果。
 
@@ -747,3 +787,9 @@ runs:
 - 不在决策判断中引入隐式网络调用或不受限模型推理；
 - 不在首期同时改写全部语法、替换运行时和建设完整平台；
 - 不以牺牲确定性、可解释性和审计能力来换取语法“灵活”。
+
+## 修订历史
+
+| 日期 | 变更 |
+|---|---|
+| 2026-09-05 | 更新严格 Core、验收基线、文档门禁和阶段 0 公共契约的完成状态，列明证据与后续集成边界。 |

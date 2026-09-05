@@ -11,10 +11,10 @@
 //! - Set some sample feature values
 //! - Retrieve features using the DataSourceClient
 
+use corint_decision_runtime::datasource::config::FeatureStoreProvider;
 use corint_decision_runtime::datasource::{
     DataSourceClient, DataSourceConfig, DataSourceType, FeatureStoreConfig,
 };
-use corint_decision_runtime::datasource::config::FeatureStoreProvider;
 use std::collections::HashMap;
 
 #[tokio::main]
@@ -41,7 +41,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         pooling_enabled: true,
     };
 
-    println!("Connecting to Redis at {}", "redis://127.0.0.1:6379");
+    println!("Connecting to Redis at redis://127.0.0.1:6379");
 
     // Step 2: Create datasource client
     let client = DataSourceClient::new(config).await?;
@@ -73,13 +73,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     for (feature_name, entity_key) in test_features {
         match client.get_feature(feature_name, entity_key).await {
             Ok(Some(value)) => {
-                println!("✓ Feature '{:30}' for '{}': {:?}", feature_name, entity_key, value);
+                println!(
+                    "✓ Feature '{:30}' for '{}': {:?}",
+                    feature_name, entity_key, value
+                );
             }
             Ok(None) => {
-                println!("○ Feature '{:30}' for '{}': Not found", feature_name, entity_key);
+                println!(
+                    "○ Feature '{:30}' for '{}': Not found",
+                    feature_name, entity_key
+                );
             }
             Err(e) => {
-                println!("✗ Error fetching '{}' for '{}': {}", feature_name, entity_key, e);
+                println!(
+                    "✗ Error fetching '{}' for '{}': {}",
+                    feature_name, entity_key, e
+                );
             }
         }
     }

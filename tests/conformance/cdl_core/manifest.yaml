@@ -223,3 +223,33 @@ invalid:
     replace: 'event.amount > "1000"'
     stage: type
     code: E_TYPE
+  - id: N07_pipeline_guard
+    document: pipeline.yaml
+    find: "  entry: check"
+    replace: "  when: 'true'\n  entry: check"
+    stage: validate
+    code: E_UNSUPPORTED_CAPABILITY
+  - id: N08_api_params
+    document: pipeline.yaml
+    find: "        type: ruleset\n        ruleset: risk"
+    replace: "        type: api\n        api: reputation\n        endpoint: lookup\n        params: {amount: event.amount}\n        on_error: {fallback: {risk: unknown}}"
+    stage: validate
+    code: E_UNSUPPORTED_CAPABILITY
+  - id: N08_api_any
+    document: pipeline.yaml
+    find: "        type: ruleset\n        ruleset: risk"
+    replace: "        type: api\n        any: [primary, secondary]\n        endpoint: lookup"
+    stage: validate
+    code: E_UNSUPPORTED_CAPABILITY
+  - id: N08_api_all
+    document: pipeline.yaml
+    find: "        type: ruleset\n        ruleset: risk"
+    replace: "        type: api\n        all: [primary, secondary]\n        min_success: 2\n        endpoint: lookup"
+    stage: validate
+    code: E_UNSUPPORTED_CAPABILITY
+  - id: N08_service_endpoint
+    document: pipeline.yaml
+    find: "        type: ruleset\n        ruleset: risk"
+    replace: "        type: service\n        service: account\n        endpoint: lookup\n        params: {amount: event.amount}"
+    stage: validate
+    code: E_UNSUPPORTED_CAPABILITY

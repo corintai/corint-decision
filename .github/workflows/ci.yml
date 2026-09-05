@@ -17,11 +17,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
-      - name: Run strict Core behavior, condition trace and example mapping checks
+      - name: Run Core behavior, trace, fixture mappings and compatibility claim checks
         run: cargo test -p corint-decision-engine --test cdl_core_conformance --locked
       - name: Run offline CLI validation, behavior, packages, import resolution and target contract checks
         run: cargo test -p corint-decision-cli --locked
-      - name: Run shared toolchain checks
+      - name: Run shared toolchain and phase-0 W04/W07/W08 contract checks
         run: cargo test -p corint-decision-toolchain --locked
       - name: Run strict generator contract checks with offline model responses
         run: cargo test -p corint-decision-llm --features core-generation --test core_generation --locked
@@ -71,13 +71,13 @@ jobs:
             ${{ runner.os }}-cargo-build-
 
       - name: Check code formatting
-        run: cargo fmt -- --check
+        run: cargo fmt --all -- --check
 
       - name: Install Protocol Buffers compiler for server build
         run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
 
       - name: Run clippy
-        run: cargo clippy --all-targets --all-features -- -D warnings
+        run: cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
 
       - name: Run tests
         run: |
@@ -129,17 +129,25 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-cargo-build-
 
+      - name: Install Protocol Buffers compiler (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
+
+      - name: Install Protocol Buffers compiler (macOS)
+        if: runner.os == 'macOS'
+        run: brew install protobuf
+
       - name: Build all crates
-        run: cargo build --release --all-features --workspace
+        run: cargo build --release --all-features --workspace --locked
 
       - name: Build examples
-        run: cargo build --release --examples
+        run: cargo build --release --examples --locked
 
       - name: Check binary size (Linux only)
         if: matrix.os == 'ubuntu-latest'
         run: |
-          ls -lh target/release/corint-server
-          du -sh target/release/corint-server
+          ls -lh target/release/corint-decision-server
+          du -sh target/release/corint-decision-server
 
   coverage:
     name: Code Coverage

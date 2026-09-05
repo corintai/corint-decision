@@ -28,7 +28,17 @@ const FUNCTION_STEP_FIELDS: &[&str] = &["function", "params"];
 const RULE_STEP_FIELDS: &[&str] = &["rule"];
 const RULESET_STEP_FIELDS: &[&str] = &["ruleset"];
 const PIPELINE_STEP_FIELDS: &[&str] = &["pipeline", "inline"];
-const API_STEP_FIELDS: &[&str] = &["api", "any", "all", "params", "endpoint", "output", "timeout", "on_error", "min_success"];
+const API_STEP_FIELDS: &[&str] = &[
+    "api",
+    "any",
+    "all",
+    "params",
+    "endpoint",
+    "output",
+    "timeout",
+    "on_error",
+    "min_success",
+];
 const SERVICE_STEP_FIELDS: &[&str] = &["service", "query", "params"];
 const ROUTER_STEP_FIELDS: &[&str] = &["routes", "default"];
 const TRIGGER_STEP_FIELDS: &[&str] = &["target", "params"];
@@ -138,7 +148,9 @@ impl PipelineParser {
                 for (key, value) in mapping {
                     if let Some(key_str) = key.as_str() {
                         // Convert YAML value to serde_json::Value
-                        if let Ok(json_value) = serde_yaml::from_value::<serde_json::Value>(value.clone()) {
+                        if let Ok(json_value) =
+                            serde_yaml::from_value::<serde_json::Value>(value.clone())
+                        {
                             result.insert(key_str.to_string(), json_value);
                         }
                     }
@@ -322,9 +334,9 @@ impl PipelineParser {
 
         // Update next pointers for sequential steps
         let step_count = steps.len();
-        for i in 0..step_count {
+        for (i, step) in steps.iter_mut().enumerate() {
             if i + 1 < step_count {
-                steps[i].next = Some(StepNext::StepId(format!("step_{}", i + 1)));
+                step.next = Some(StepNext::StepId(format!("step_{}", i + 1)));
             }
         }
 
@@ -360,27 +372,23 @@ impl PipelineParser {
         let step_type = YamlParser::get_string(step_obj, "type")?;
 
         // Parse optional routes
-        let routes = if let Some(routes_array) = step_obj.get("routes").and_then(|v| v.as_sequence())
-        {
-            Some(
-                routes_array
-                    .iter()
-                    .map(Self::parse_route)
-                    .collect::<Result<Vec<_>>>()?,
-            )
-        } else {
-            None
-        };
+        let routes =
+            if let Some(routes_array) = step_obj.get("routes").and_then(|v| v.as_sequence()) {
+                Some(
+                    routes_array
+                        .iter()
+                        .map(Self::parse_route)
+                        .collect::<Result<Vec<_>>>()?,
+                )
+            } else {
+                None
+            };
 
         // Parse optional default
         let default = YamlParser::get_optional_string(step_obj, "default");
 
         // Parse optional next
-        let next = if let Some(next_str) = YamlParser::get_optional_string(step_obj, "next") {
-            Some(StepNext::StepId(next_str))
-        } else {
-            None
-        };
+        let next = YamlParser::get_optional_string(step_obj, "next").map(StepNext::StepId);
 
         // Parse optional when
         let when = if let Some(when_obj) = step_obj.get("when") {
@@ -536,7 +544,9 @@ impl PipelineParser {
     }
 
     /// Parse parameters as HashMap<String, Expression>
-    fn parse_params(step_obj: &YamlValue) -> Result<Option<HashMap<String, corint_decision_model::ast::Expression>>> {
+    fn parse_params(
+        step_obj: &YamlValue,
+    ) -> Result<Option<HashMap<String, corint_decision_model::ast::Expression>>> {
         if let Some(params_obj) = step_obj.get("params").and_then(|v| v.as_mapping()) {
             let mut map = HashMap::new();
             for (key, value) in params_obj {

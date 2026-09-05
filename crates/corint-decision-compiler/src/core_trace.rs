@@ -27,35 +27,6 @@ fn mismatch() -> CompileError {
     )
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use corint_decision_model::ast::LogicalGroupOp;
-    use corint_decision_model::Value;
-
-    #[test]
-    fn source_map_checks_generated_ranges_and_rejects_drift() {
-        let expr = Expression::LogicalGroup {
-            op: LogicalGroupOp::All,
-            conditions: vec![
-                Expression::literal(Value::Bool(false)),
-                Expression::literal(Value::Bool(true)),
-            ],
-        };
-        let code = ExpressionCompiler::compile(&expr).unwrap();
-        let map = condition_map(&code, &expr, code.len(), "/rule/when".into()).unwrap();
-        assert_eq!(map.nodes.len(), 3);
-        assert_eq!((map.nodes[0].start, map.nodes[0].end), (0, code.len()));
-        assert_eq!((map.nodes[1].start, map.nodes[1].end), (0, 1));
-        assert_eq!((map.nodes[2].start, map.nodes[2].end), (2, 3));
-        assert_eq!(map.nodes[2].node_path, "/children/1");
-        let mut drifted = code.clone();
-        drifted[0] = Instruction::Pop;
-        assert!(condition_map(&drifted, &expr, code.len(), "/rule/when".into()).is_err());
-        assert!(condition_map(&code, &expr, 0, "/rule/when".into()).is_err());
-    }
-}
-
 fn locate(
     expr: &Expression,
     start: usize,
@@ -107,4 +78,33 @@ fn locate(
         _ => {}
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use corint_decision_model::ast::LogicalGroupOp;
+    use corint_decision_model::Value;
+
+    #[test]
+    fn source_map_checks_generated_ranges_and_rejects_drift() {
+        let expr = Expression::LogicalGroup {
+            op: LogicalGroupOp::All,
+            conditions: vec![
+                Expression::literal(Value::Bool(false)),
+                Expression::literal(Value::Bool(true)),
+            ],
+        };
+        let code = ExpressionCompiler::compile(&expr).unwrap();
+        let map = condition_map(&code, &expr, code.len(), "/rule/when".into()).unwrap();
+        assert_eq!(map.nodes.len(), 3);
+        assert_eq!((map.nodes[0].start, map.nodes[0].end), (0, code.len()));
+        assert_eq!((map.nodes[1].start, map.nodes[1].end), (0, 1));
+        assert_eq!((map.nodes[2].start, map.nodes[2].end), (2, 3));
+        assert_eq!(map.nodes[2].node_path, "/children/1");
+        let mut drifted = code.clone();
+        drifted[0] = Instruction::Pop;
+        assert!(condition_map(&drifted, &expr, code.len(), "/rule/when".into()).is_err());
+        assert!(condition_map(&code, &expr, 0, "/rule/when".into()).is_err());
+    }
 }

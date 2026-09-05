@@ -89,7 +89,7 @@ mod tests {
 
         // Center point (x0=500) should give ~500
         let center = normalizer.normalize(500);
-        assert!(center >= 495 && center <= 505, "Center score: {}", center);
+        assert!((495..=505).contains(&center), "Center score: {}", center);
 
         // Low scores should be low but not zero
         let low = normalizer.normalize(100);
@@ -102,7 +102,7 @@ mod tests {
         // Very high scores should saturate near 1000
         let very_high = normalizer.normalize(5000);
         assert!(
-            very_high >= 990 && very_high <= 1000,
+            (990..=1000).contains(&very_high),
             "Very high score: {}",
             very_high
         );

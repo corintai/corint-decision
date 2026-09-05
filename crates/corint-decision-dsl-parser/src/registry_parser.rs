@@ -92,11 +92,11 @@ impl RegistryParser {
 
         if let Some(mapping) = when_obj.as_mapping() {
             // Check for condition group (all/any/not)
-            if let Some(all_conds) = mapping.get(&YamlValue::String("all".to_string())) {
+            if let Some(all_conds) = mapping.get(YamlValue::String("all".to_string())) {
                 condition_group = Some(Self::parse_condition_group_all(all_conds)?);
-            } else if let Some(any_conds) = mapping.get(&YamlValue::String("any".to_string())) {
+            } else if let Some(any_conds) = mapping.get(YamlValue::String("any".to_string())) {
                 condition_group = Some(Self::parse_condition_group_any(any_conds)?);
-            } else if let Some(not_conds) = mapping.get(&YamlValue::String("not".to_string())) {
+            } else if let Some(not_conds) = mapping.get(YamlValue::String("not".to_string())) {
                 condition_group = Some(Self::parse_condition_group_not(not_conds)?);
             }
             for (key, value) in mapping {

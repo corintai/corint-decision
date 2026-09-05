@@ -41,21 +41,22 @@ The two Rust tests cover:
 - Fixed, synthetic model output → actual `CoreGenerator` acceptance → YAML files
   → CLI `validate`, `build`, `verify`, `export` → source bundle. CLI JSON reports,
   exit codes and absent business/publication approval are checked.
-- Operator-owned initial bundle, context, target, acceptance cases and pinned
+- Operator-owned repository publication, context, target, acceptance cases and pinned
   allowlist → actual server bootstrap → authenticated readiness check.
 - Real HTTP decisions at boundary/probe inputs: exact score, signal, actions,
   triggered rules, explanation, execution records and policy revision. Trace
   on/off must leave the full result unchanged; Trace must expose the observed
   rule condition outcome.
-- Publisher-only activation: absent, wrong and decision-role credentials cannot
-  activate. An approved candidate changes both the revision and probe decision.
+- Publisher-only repository reload: absent, wrong and decision-role credentials cannot
+  reload. An approved repository update changes both the revision and probe decision.
 - A candidate that passes deliberately weaker author cases but fails independent
-  server cases is rejected. Unapproved content, stale revision and injected
+  server cases is rejected. Unapproved repo content, stale revision and injected
   approval fields are also rejected. Each failure preserves the active receipt
   and the previous strategy's decision behavior.
 - Invalid event input is rejected; legacy `/v1/decide` is unavailable in Core mode.
-- An actual process restart reloads the configured initial bundle (activation is
-  currently in-memory only), creates a fresh revision and rejects stale revisions.
+- An actual process restart reloads the repository’s published version, keeps its
+  repository identity/policy fingerprint, creates a fresh runtime revision and rejects
+  stale requests. Restoring the initial repo version and reloading explicitly rolls back.
 - An unsupported startup config exits with its expected diagnostic, without
   logging a listening endpoint or falling back to legacy configuration.
 
@@ -91,6 +92,5 @@ CI run, and subprocess execution is not a claim that coverage instrumentation
 measures every line executed inside those children.
 
 These tests prove the synthetic Core delivery/execution path, **not** live model
-quality, real Corint Work integration, production data effectiveness, durable
-publication, distributed rollout, audit persistence or datasource compatibility.
+quality, real Corint Work integration, production data effectiveness, distributed rollout, audit persistence or datasource compatibility.
 `business_evaluation` remains `not_performed`.

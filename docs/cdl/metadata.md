@@ -1,4 +1,11 @@
 # Corint Definition Language (CDL)
+
+<!-- cdl-scope: compatibility-unverified -->
+> This page is an unverified compatibility reference. Its snippets are not Core support evidence.
+> For the executable contract and supported examples, use [CDL Core](cdl-core.md),
+> [Pipeline](pipeline.md) and the [capability inventory](schema/capabilities.json).
+> Described behavior may be incomplete in compatibility entry points; validate through the strict tools before delivery.
+
 ## Metadata Specification (v0.1)
 
 Metadata provides versioning, authorship, and management information for all CDL components (Rules, Rulesets, and Pipelines).

@@ -167,8 +167,14 @@ fn test_expression_ternary() {
             false_expr,
         } => {
             assert!(matches!(*condition, Expression::FieldAccess(_)));
-            assert!(matches!(*true_expr, Expression::Literal(Value::Number(10.0))));
-            assert!(matches!(*false_expr, Expression::Literal(Value::Number(50.0))));
+            assert!(matches!(
+                *true_expr,
+                Expression::Literal(Value::Number(10.0))
+            ));
+            assert!(matches!(
+                *false_expr,
+                Expression::Literal(Value::Number(50.0))
+            ));
         }
         _ => panic!("Expected ternary expression"),
     }
@@ -189,7 +195,8 @@ fn test_expression_result_access_last() {
 
 #[test]
 fn test_expression_result_access_specific() {
-    let expr = Expression::result_access_for("fraud_detection".to_string(), "total_score".to_string());
+    let expr =
+        Expression::result_access_for("fraud_detection".to_string(), "total_score".to_string());
 
     match expr {
         Expression::ResultAccess { ruleset_id, field } => {
@@ -276,7 +283,7 @@ fn test_operator_equality() {
 
 #[test]
 fn test_operator_comparison_variants() {
-    let operators = vec![
+    let operators = [
         Operator::Eq,
         Operator::Ne,
         Operator::Lt,
@@ -290,13 +297,13 @@ fn test_operator_comparison_variants() {
 
 #[test]
 fn test_operator_logical_variants() {
-    let operators = vec![Operator::And, Operator::Or];
+    let operators = [Operator::And, Operator::Or];
     assert_eq!(operators.len(), 2);
 }
 
 #[test]
 fn test_operator_arithmetic_variants() {
-    let operators = vec![
+    let operators = [
         Operator::Add,
         Operator::Sub,
         Operator::Mul,
@@ -308,7 +315,7 @@ fn test_operator_arithmetic_variants() {
 
 #[test]
 fn test_operator_string_variants() {
-    let operators = vec![
+    let operators = [
         Operator::Contains,
         Operator::StartsWith,
         Operator::EndsWith,
@@ -319,7 +326,7 @@ fn test_operator_string_variants() {
 
 #[test]
 fn test_operator_collection_variants() {
-    let operators = vec![
+    let operators = [
         Operator::In,
         Operator::NotIn,
         Operator::InList,
@@ -334,7 +341,7 @@ fn test_operator_collection_variants() {
 
 #[test]
 fn test_signal_variants() {
-    let signals = vec![
+    let signals = [
         Signal::Approve,
         Signal::Decline,
         Signal::Review,
@@ -388,14 +395,12 @@ fn test_condition_all() {
     let condition = Condition::from_group(condition_group);
 
     match condition {
-        Condition::Group(boxed_group) => {
-            match *boxed_group {
-                ConditionGroup::All(ref conds) => {
-                    assert_eq!(conds.len(), 2);
-                }
-                _ => panic!("Expected All condition group"),
+        Condition::Group(boxed_group) => match *boxed_group {
+            ConditionGroup::All(ref conds) => {
+                assert_eq!(conds.len(), 2);
             }
-        }
+            _ => panic!("Expected All condition group"),
+        },
         _ => panic!("Expected Group condition"),
     }
 }
@@ -411,14 +416,12 @@ fn test_condition_any() {
     let condition = Condition::from_group(condition_group);
 
     match condition {
-        Condition::Group(boxed_group) => {
-            match *boxed_group {
-                ConditionGroup::Any(ref conds) => {
-                    assert_eq!(conds.len(), 2);
-                }
-                _ => panic!("Expected Any condition group"),
+        Condition::Group(boxed_group) => match *boxed_group {
+            ConditionGroup::Any(ref conds) => {
+                assert_eq!(conds.len(), 2);
             }
-        }
+            _ => panic!("Expected Any condition group"),
+        },
         _ => panic!("Expected Group condition"),
     }
 }
@@ -430,15 +433,13 @@ fn test_condition_not() {
     let condition = Condition::from_group(condition_group);
 
     match condition {
-        Condition::Group(boxed_group) => {
-            match *boxed_group {
-                ConditionGroup::Not(ref conds) => {
-                    assert_eq!(conds.len(), 1);
-                    assert!(matches!(conds[0], Condition::Expression(_)));
-                }
-                _ => panic!("Expected Not condition group"),
+        Condition::Group(boxed_group) => match *boxed_group {
+            ConditionGroup::Not(ref conds) => {
+                assert_eq!(conds.len(), 1);
+                assert!(matches!(conds[0], Condition::Expression(_)));
             }
-        }
+            _ => panic!("Expected Not condition group"),
+        },
         _ => panic!("Expected Group condition"),
     }
 }

@@ -62,12 +62,20 @@ impl ListLoader {
     }
 
     /// Add a datasource configuration
-    pub fn with_datasource(mut self, name: String, provider: String, connection_string: String) -> Self {
-        self.datasources.insert(name.clone(), DatasourceInfo {
-            name,
-            provider,
-            connection_string,
-        });
+    pub fn with_datasource(
+        mut self,
+        name: String,
+        provider: String,
+        connection_string: String,
+    ) -> Self {
+        self.datasources.insert(
+            name.clone(),
+            DatasourceInfo {
+                name,
+                provider,
+                connection_string,
+            },
+        );
         self
     }
 
@@ -94,15 +102,13 @@ impl ListLoader {
             return Ok(backends);
         }
 
-        let mut entries = fs::read_dir(&lists_dir)
-            .await
-            .map_err(|e| RuntimeError::InvalidOperation(format!("Failed to read lists directory: {}", e)))?;
+        let mut entries = fs::read_dir(&lists_dir).await.map_err(|e| {
+            RuntimeError::InvalidOperation(format!("Failed to read lists directory: {}", e))
+        })?;
 
-        while let Some(entry) = entries
-            .next_entry()
-            .await
-            .map_err(|e| RuntimeError::InvalidOperation(format!("Failed to read directory entry: {}", e)))?
-        {
+        while let Some(entry) = entries.next_entry().await.map_err(|e| {
+            RuntimeError::InvalidOperation(format!("Failed to read directory entry: {}", e))
+        })? {
             let path = entry.path();
             if path.extension().and_then(|s| s.to_str()) == Some("yaml")
                 || path.extension().and_then(|s| s.to_str()) == Some("yml")
@@ -162,7 +168,9 @@ impl ListLoader {
 
         // Check if using datasource reference
         if let Some(datasource_name) = config.datasource_name() {
-            return self.create_datasource_backend(&list_id, datasource_name, &config).await;
+            return self
+                .create_datasource_backend(&list_id, datasource_name, &config)
+                .await;
         }
 
         // Otherwise use backend type
@@ -178,17 +186,15 @@ impl ListLoader {
                 let mut backend = MemoryBackend::new();
                 // Load initial values
                 for value_str in config.initial_values {
-                    backend
-                        .add(&list_id, Value::String(value_str))
-                        .await?;
+                    backend.add(&list_id, Value::String(value_str)).await?;
                 }
                 Box::new(backend)
             }
 
             ListBackendType::File => {
-                let file_path = config
-                    .file_path()
-                    .ok_or_else(|| RuntimeError::InvalidOperation("File backend requires 'path' field".to_string()))?;
+                let file_path = config.file_path().ok_or_else(|| {
+                    RuntimeError::InvalidOperation("File backend requires 'path' field".to_string())
+                })?;
 
                 // Resolve path relative to repository root
                 let full_path = if Path::new(&file_path).is_absolute() {
@@ -211,7 +217,9 @@ impl ListLoader {
             #[cfg(feature = "sqlx")]
             ListBackendType::PostgreSQL => {
                 let pool = self.db_pool.as_ref().ok_or_else(|| {
-                    RuntimeError::InvalidOperation("PostgreSQL backend requires database pool".to_string())
+                    RuntimeError::InvalidOperation(
+                        "PostgreSQL backend requires database pool".to_string(),
+                    )
                 })?;
 
                 let backend = if let Some(postgres_config) = &config.postgres_config {
@@ -255,7 +263,8 @@ impl ListLoader {
                     .or_else(|| self.sqlite_db_path.clone())
                     .ok_or_else(|| {
                         RuntimeError::InvalidOperation(
-                            "SQLite backend requires 'db_path' field or default sqlite_db_path".to_string(),
+                            "SQLite backend requires 'db_path' field or default sqlite_db_path"
+                                .to_string(),
                         )
                     })?;
 
@@ -307,7 +316,8 @@ impl ListLoader {
                 let table = config.table().unwrap_or_else(|| "list_entries".to_string());
                 let value_column = config.value_column().unwrap_or_else(|| "value".to_string());
                 // For SQLite, default to "expires_at" if not specified
-                let expiration_column = config.expiration_column()
+                let expiration_column = config
+                    .expiration_column()
                     .or_else(|| Some("expires_at".to_string()));
 
                 let backend = SqliteBackend::new_with_custom_table(
@@ -415,14 +425,13 @@ lists:
 
         // Create list config
         let config_file = lists_dir.join("file_list.yaml");
-        let yaml = format!(
-            r#"
+        let yaml = r#"
 id: file_list
 description: "File-based list"
 backend: file
 path: "configs/lists/data/values.txt"
 "#
-        );
+        .to_string();
         fs::write(&config_file, yaml).await.unwrap();
 
         let loader = ListLoader::new(temp_dir.path());

@@ -1,5 +1,12 @@
 # CORINT Expression Language Reference
 
+<!-- cdl-scope: compatibility-unverified -->
+> This page is an unverified compatibility reference. Its snippets are not Core support evidence.
+> For the executable contract and supported examples, use [CDL Core](cdl-core.md),
+> [Pipeline](pipeline.md) and the [capability inventory](schema/capabilities.json).
+> Described behavior may be incomplete in compatibility entry points; validate through the strict tools before delivery.
+
+
 > **Purpose**: This document provides a concise reference for LLM agents working with CORINT's expression language. For detailed documentation, see other DSL guides.
 
 ## Quick Reference
@@ -14,8 +21,8 @@ CORINT expressions are used in:
 
 | Context | Evaluator | Supported Operations |
 |---------|-----------|---------------------|
-| **Rules/Pipelines** | WhenEvaluator | ✅ Comparison, logical, membership, string operations |
-| **Feature Expressions** | ExpressionEvaluator | ✅ Basic arithmetic (+, -, *, /, parentheses) only |
+| **Rules/Pipelines** | WhenEvaluator | Comparison, logical, membership, string operations |
+| **Feature Expressions** | ExpressionEvaluator | Basic arithmetic (+, -, *, /, parentheses) only |
 
 ---
 
@@ -445,7 +452,7 @@ event.type.                 # ❌ Cannot end with dot
 
 ## Summary
 
-### ✅ Supported in Rules/Pipelines
+### Supported in Rules/Pipelines
 
 - Field access (event, features, results, api, service, vars, sys)
 - Comparison operators (==, !=, <, >, <=, >=)
@@ -454,7 +461,7 @@ event.type.                 # ❌ Cannot end with dot
 - String operators (contains, starts_with, ends_with, regex)
 - Literals (numbers, strings, booleans, null, arrays)
 
-### ✅ Supported in Feature Expressions
+### Supported in Feature Expressions
 
 - Basic arithmetic (+, -, *, /, parentheses)
 - Feature name substitution

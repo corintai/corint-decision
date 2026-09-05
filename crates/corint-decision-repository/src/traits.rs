@@ -282,7 +282,11 @@ pub trait CacheableRepository: Repository {
 ///     name: "New Rule".to_string(),
 ///     description: None,
 ///     params: None,
-///     when: WhenBlock { event_type: None, conditions: vec![] },
+///     when: WhenBlock {
+///         event_type: None,
+///         condition_group: None,
+///         conditions: Some(vec![]),
+///     },
 ///     score: 50,
 ///     metadata: None,
 /// };

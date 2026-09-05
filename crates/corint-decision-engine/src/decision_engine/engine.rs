@@ -148,6 +148,19 @@ impl DecisionEngine {
         feature_executor: Option<Arc<corint_decision_runtime::feature::FeatureExecutor>>,
         list_service: Option<Arc<corint_decision_runtime::lists::ListService>>,
     ) -> Result<Self> {
+        Self::new_with_repository(config, feature_executor, list_service, None).await
+    }
+
+    pub(crate) async fn new_with_repository(
+        config: EngineConfig,
+        feature_executor: Option<Arc<corint_decision_runtime::feature::FeatureExecutor>>,
+        list_service: Option<Arc<corint_decision_runtime::lists::ListService>>,
+        repository_config: Option<corint_decision_repository::RepositoryConfig>,
+    ) -> Result<Self> {
+        let repository_root = repository_config
+            .as_ref()
+            .and_then(|config| config.base_path.as_deref())
+            .unwrap_or("repository");
         let mut programs = Vec::new();
 
         // Compile all rule files
@@ -155,7 +168,7 @@ impl DecisionEngine {
             enable_semantic_analysis: config.compiler_options.enable_semantic_analysis,
             enable_constant_folding: config.compiler_options.enable_constant_folding,
             enable_dead_code_elimination: true, // FIXED: Bug with default actions resolved - now uses proper CFG analysis
-            library_base_path: "repository".to_string(),
+            library_base_path: repository_root.to_string(),
         };
 
         let mut compiler = Compiler::with_options(compiler_opts);
@@ -194,23 +207,8 @@ impl DecisionEngine {
 
         // Load optional registry file
         let registry = if let Some(registry_content) = &config.registry_content {
-            // Load registry from content string using RegistryParser
-            match RegistryParser::parse(registry_content) {
-                Ok(reg) => {
-                    tracing::info!(
-                        "✓ Loaded pipeline registry from content: {} entries",
-                        reg.registry.len()
-                    );
-                    Some(reg)
-                }
-                Err(e) => {
-                    tracing::warn!(
-                        "Failed to parse registry content: {}. Continuing without registry.",
-                        e
-                    );
-                    None
-                }
-            }
+            // A declared routing policy must not silently disappear on parse failure.
+            Some(RegistryParser::parse(registry_content)?)
         } else if let Some(registry_file) = &config.registry_file {
             // Fall back to loading from file
             match CompilerHelper::load_registry(registry_file).await {
@@ -237,10 +235,10 @@ impl DecisionEngine {
         let mut api_client = ExternalApiClient::new();
 
         // Load API configs from repository/configs/apis directory
-        let api_config_dir = Path::new("repository/configs/apis");
+        let api_config_dir = Path::new(repository_root).join("configs/apis");
         tracing::debug!("Checking for API configs in: {:?}", api_config_dir);
         if api_config_dir.exists() {
-            if let Ok(entries) = std::fs::read_dir(api_config_dir) {
+            if let Ok(entries) = std::fs::read_dir(&api_config_dir) {
                 for entry in entries.flatten() {
                     let path = entry.path();
                     tracing::debug!("Found file: {:?}", path);
@@ -303,7 +301,7 @@ impl DecisionEngine {
             core_input_schema: None,
             core_registry_guards: Vec::new(),
             result_writer: None,
-            repository_config: None,
+            repository_config,
             feature_executor: feature_executor_clone,
             list_service: list_service_clone,
         })
@@ -1442,13 +1440,13 @@ impl DecisionEngine {
                             &trace_data,
                         );
                         rule_trace.conditions.extend(condition_traces);
-                    } else if let Some(ref conditions_json) = rule_exec.rule_conditions {
+                    } else if let Some(serde_json::Value::String(ref conditions_str)) =
+                        rule_exec.rule_conditions
+                    {
                         // Fallback to legacy string format
-                        if let serde_json::Value::String(conditions_str) = conditions_json {
-                            let condition_trace =
-                                ConditionTrace::new(conditions_str.clone(), rule_exec.triggered);
-                            rule_trace.conditions.push(condition_trace);
-                        }
+                        let condition_trace =
+                            ConditionTrace::new(conditions_str.clone(), rule_exec.triggered);
+                        rule_trace.conditions.push(condition_trace);
                     }
 
                     if let Some(score) = rule_exec.score {
@@ -1535,6 +1533,14 @@ impl DecisionEngine {
     ///
     /// Returns an error if the repository is not configured or if reloading fails.
     pub async fn reload(&mut self) -> Result<()> {
+        *self = self.prepare_reload().await?;
+        Ok(())
+    }
+
+    /// Prepare an independent policy candidate without mutating this engine.
+    /// Runtime services and connection pools retain their startup configuration.
+    /// Strict Core engines cannot use this compatibility repository loader.
+    pub async fn prepare_reload(&self) -> Result<Self> {
         use corint_decision_repository::RepositoryLoader;
 
         // Check if repository is configured
@@ -1576,7 +1582,10 @@ impl DecisionEngine {
             enable_semantic_analysis: new_config.compiler_options.enable_semantic_analysis,
             enable_constant_folding: new_config.compiler_options.enable_constant_folding,
             enable_dead_code_elimination: true,
-            library_base_path: "repository".to_string(),
+            library_base_path: repo_config
+                .base_path
+                .clone()
+                .unwrap_or_else(|| "repository".into()),
         };
 
         let mut compiler = Compiler::with_options(compiler_opts);
@@ -1607,38 +1616,34 @@ impl DecisionEngine {
             }
         }
 
-        // Load optional registry
-        let registry = if let Some(registry_content) = &new_config.registry_content {
-            match RegistryParser::parse(registry_content) {
-                Ok(reg) => {
-                    tracing::info!(
-                        "✓ Reloaded pipeline registry: {} entries",
-                        reg.registry.len()
-                    );
-                    Some(reg)
-                }
-                Err(e) => {
-                    tracing::warn!(
-                        "Failed to parse registry content: {}. Continuing without registry.",
-                        e
-                    );
-                    None
-                }
-            }
-        } else {
-            None
-        };
+        let registry = new_config
+            .registry_content
+            .as_deref()
+            .map(RegistryParser::parse)
+            .transpose()?;
 
-        // Update engine state
-        self.programs = programs;
-        self.ruleset_map = ruleset_map;
-        self.rule_map = rule_map;
-        self.pipeline_map = pipeline_map;
-        self.registry = registry;
-        self.config = new_config;
+        Ok(Self {
+            programs,
+            ruleset_map,
+            rule_map,
+            pipeline_map,
+            registry,
+            config: new_config,
+            executor: self.executor.clone(),
+            metrics: self.metrics.clone(),
+            result_writer: self.result_writer.clone(),
+            repository_config: self.repository_config.clone(),
+            feature_executor: self.feature_executor.clone(),
+            list_service: self.list_service.clone(),
+            core_input_schema: None,
+            core_registry_guards: Vec::new(),
+        })
+    }
 
-        tracing::info!("✓ Repository reloaded successfully");
-
-        Ok(())
+    /// Serializable compiled policy for a runtime fingerprint. This excludes
+    /// runtime connector configuration; it is not a repository publication ID.
+    pub fn compiled_policy(&self) -> Result<serde_json::Value> {
+        serde_json::to_value((&self.programs, &self.registry))
+            .map_err(|e| EngineError::Config(format!("Cannot encode compiled policy: {e}")))
     }
 }

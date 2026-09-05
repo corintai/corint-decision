@@ -1,0 +1,63 @@
+{
+  "kind": "corint-evaluation-evidence",
+  "contract_version": "1",
+  "id": "evaluation-evidence-fixture",
+  "revision": "r1",
+  "provenance": {
+    "producer": "fixture-author",
+    "reference": "fixture://phase0/evaluation-evidence"
+  },
+  "subject": {
+    "policy_sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+    "context_sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+    "target_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+    "bindings_sha256": "ac4dcdd2663360f06bd782cfedf91a21a91b621c4959cab4fbb2ef743a2e500e",
+    "checker_sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+  },
+  "scope": "business",
+  "dataset": {
+    "origin": "real",
+    "snapshot_sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+    "reference": "fixture://declared-real-dataset-not-actual-data",
+    "split_method": "fixed disjoint historical partitions",
+    "train_partition_sha256": "2222222222222222222222222222222222222222222222222222222222222222",
+    "tuning_partition_sha256": "3333333333333333333333333333333333333333333333333333333333333333",
+    "evaluation_partition_sha256": "4444444444444444444444444444444444444444444444444444444444444444"
+  },
+  "features": [
+    {
+      "kind": "feature",
+      "id": "feature-descriptor-fixture",
+      "revision": "r1",
+      "sha256": "9a28f42ee37f98a2a324954bee3d77942f55dd36ee90fde66175a2cfb3bbac7e"
+    }
+  ],
+  "samples": [
+    {
+      "feature": {
+        "kind": "feature",
+        "id": "feature-descriptor-fixture",
+        "revision": "r1",
+        "sha256": "9a28f42ee37f98a2a324954bee3d77942f55dd36ee90fde66175a2cfb3bbac7e"
+      },
+      "entity_id": "fixture-account",
+      "input_sha256": "5555555555555555555555555555555555555555555555555555555555555555",
+      "offline_definition_sha256": "9a28f42ee37f98a2a324954bee3d77942f55dd36ee90fde66175a2cfb3bbac7e",
+      "online_definition_sha256": "9a28f42ee37f98a2a324954bee3d77942f55dd36ee90fde66175a2cfb3bbac7e",
+      "offline_value_sha256": "6666666666666666666666666666666666666666666666666666666666666666",
+      "online_value_sha256": "6666666666666666666666666666666666666666666666666666666666666666",
+      "event_time_ms": 100,
+      "available_time_ms": 110,
+      "decision_time_ms": 120
+    }
+  ],
+  "result": "passed",
+  "metrics": [
+    {
+      "name": "fixture_error_rate",
+      "value": 0.1,
+      "unit": "ratio"
+    }
+  ],
+  "created_at_ms": 150
+}

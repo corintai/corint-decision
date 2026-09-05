@@ -2,17 +2,15 @@
 //!
 //! Parses different types of pipeline steps from YAML format.
 
+use super::validation::get_valid_fields_for_step_type;
 use crate::error::{ParseError, Result};
 use crate::expression_parser::ExpressionParser;
 use crate::rule_parser::RuleParser;
 use crate::yaml_parser::YamlParser;
-use super::validation::get_valid_fields_for_step_type;
 use corint_decision_model::ast::pipeline::{
     ApiTarget, ErrorAction, ErrorHandling, PipelineStep, Route, StepDetails, StepNext,
 };
-use corint_decision_model::ast::{
-    Branch, FeatureDefinition, MergeStrategy, Step, WhenBlock,
-};
+use corint_decision_model::ast::{Branch, FeatureDefinition, MergeStrategy, Step, WhenBlock};
 use serde_yaml::Value as YamlValue;
 use std::collections::HashMap;
 
@@ -29,8 +27,7 @@ pub(super) fn parse_new_step(yaml: &YamlValue) -> Result<PipelineStep> {
     let step_type = YamlParser::get_string(step_obj, "type")?;
 
     // Parse optional routes
-    let routes = if let Some(routes_array) = step_obj.get("routes").and_then(|v| v.as_sequence())
-    {
+    let routes = if let Some(routes_array) = step_obj.get("routes").and_then(|v| v.as_sequence()) {
         Some(
             routes_array
                 .iter()
@@ -45,11 +42,7 @@ pub(super) fn parse_new_step(yaml: &YamlValue) -> Result<PipelineStep> {
     let default = YamlParser::get_optional_string(step_obj, "default");
 
     // Parse optional next
-    let next = if let Some(next_str) = YamlParser::get_optional_string(step_obj, "next") {
-        Some(StepNext::StepId(next_str))
-    } else {
-        None
-    };
+    let next = YamlParser::get_optional_string(step_obj, "next").map(StepNext::StepId);
 
     // Parse optional when
     let when = if let Some(when_obj) = step_obj.get("when") {
@@ -77,11 +70,7 @@ pub(super) fn parse_new_step(yaml: &YamlValue) -> Result<PipelineStep> {
 pub(super) fn parse_step_details(step_obj: &YamlValue, step_type: &str) -> Result<StepDetails> {
     // Validate fields strictly for this step type
     let valid_fields = get_valid_fields_for_step_type(step_type);
-    YamlParser::validate_fields_strict(
-        step_obj,
-        &valid_fields,
-        &format!("{} step", step_type),
-    )?;
+    YamlParser::validate_fields_strict(step_obj, &valid_fields, &format!("{} step", step_type))?;
 
     match step_type {
         "router" => Ok(StepDetails::Router {}),
@@ -205,7 +194,9 @@ pub(super) fn parse_api_target(step_obj: &YamlValue) -> Result<ApiTarget> {
 }
 
 /// Parse parameters as HashMap<String, Expression>
-pub(super) fn parse_params(step_obj: &YamlValue) -> Result<Option<HashMap<String, corint_decision_model::ast::Expression>>> {
+pub(super) fn parse_params(
+    step_obj: &YamlValue,
+) -> Result<Option<HashMap<String, corint_decision_model::ast::Expression>>> {
     if let Some(params_obj) = step_obj.get("params").and_then(|v| v.as_mapping()) {
         let mut map = HashMap::new();
         for (key, value) in params_obj {
@@ -330,15 +321,15 @@ pub(super) fn parse_step(yaml: &YamlValue) -> Result<Step> {
 pub(super) fn parse_extract_step(yaml: &YamlValue) -> Result<Step> {
     let id = YamlParser::get_string(yaml, "id")?;
 
-    let features =
-        if let Some(features_array) = yaml.get("features").and_then(|v| v.as_sequence()) {
-            features_array
-                .iter()
-                .map(parse_feature_definition)
-                .collect::<Result<Vec<_>>>()?
-        } else {
-            Vec::new()
-        };
+    let features = if let Some(features_array) = yaml.get("features").and_then(|v| v.as_sequence())
+    {
+        features_array
+            .iter()
+            .map(parse_feature_definition)
+            .collect::<Result<Vec<_>>>()?
+    } else {
+        Vec::new()
+    };
 
     Ok(Step::Extract { id, features })
 }
@@ -473,15 +464,15 @@ pub(super) fn parse_include_step(yaml: &YamlValue) -> Result<Step> {
 
 /// Parse branch step
 pub(super) fn parse_branch_step(yaml: &YamlValue) -> Result<Step> {
-    let branches =
-        if let Some(branches_array) = yaml.get("branches").and_then(|v| v.as_sequence()) {
-            branches_array
-                .iter()
-                .map(parse_branch)
-                .collect::<Result<Vec<_>>>()?
-        } else {
-            Vec::new()
-        };
+    let branches = if let Some(branches_array) = yaml.get("branches").and_then(|v| v.as_sequence())
+    {
+        branches_array
+            .iter()
+            .map(parse_branch)
+            .collect::<Result<Vec<_>>>()?
+    } else {
+        Vec::new()
+    };
 
     Ok(Step::Branch { branches })
 }
@@ -491,8 +482,7 @@ pub(super) fn parse_branch(yaml: &YamlValue) -> Result<Branch> {
     let condition_str = YamlParser::get_string(yaml, "condition")?;
     let condition = ExpressionParser::parse(&condition_str)?;
 
-    let pipeline = if let Some(steps_array) = yaml.get("pipeline").and_then(|v| v.as_sequence())
-    {
+    let pipeline = if let Some(steps_array) = yaml.get("pipeline").and_then(|v| v.as_sequence()) {
         steps_array
             .iter()
             .map(parse_step)
@@ -563,7 +553,10 @@ pub(super) fn parse_include_shorthand(yaml: &YamlValue) -> Result<Step> {
 }
 
 /// Parse parallel shorthand format: - parallel: [...] with merge
-pub(super) fn parse_parallel_shorthand(parallel_val: &YamlValue, parent: &YamlValue) -> Result<Step> {
+pub(super) fn parse_parallel_shorthand(
+    parallel_val: &YamlValue,
+    parent: &YamlValue,
+) -> Result<Step> {
     let steps = if let Some(steps_array) = parallel_val.as_sequence() {
         steps_array
             .iter()

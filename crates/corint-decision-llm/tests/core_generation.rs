@@ -326,7 +326,9 @@ async fn complete_but_wrong_behavior_has_results_and_no_package() {
 #[tokio::test]
 async fn all_manifest_failures_keep_compiler_diagnostics() {
     let manifest: Value = serde_yaml::from_str(&source("manifest.yaml").yaml).unwrap();
-    assert_eq!(manifest["invalid"].as_array().unwrap().len(), 24);
+    // Preserve the original 24 rejections plus five new Pipeline boundary cases;
+    // future manifest additions must also run through this adapter.
+    assert!(manifest["invalid"].as_array().unwrap().len() >= 29);
     for case in manifest["invalid"].as_array().unwrap() {
         let mut docs = sources();
         let doc = docs

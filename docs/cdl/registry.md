@@ -1,4 +1,11 @@
 # Corint Definition Language (CDL)
+
+<!-- cdl-scope: compatibility-unverified -->
+> This page is an unverified compatibility reference. Its snippets are not Core support evidence.
+> For the executable contract and supported examples, use [CDL Core](cdl-core.md),
+> [Pipeline](pipeline.md) and the [capability inventory](schema/capabilities.json).
+> Described behavior may be incomplete in compatibility entry points; validate through the strict tools before delivery.
+
 ## Pipeline Registry Specification (v0.1)
 
 A **Pipeline Registry** defines the entry point routing for event processing in CORINT's Cognitive Risk Intelligence framework.  
@@ -55,7 +62,7 @@ registry:
 |-------|------|----------|-------------|
 | `registry` | array | Yes | Ordered list of pipeline routing entries |
 | `pipeline` | string | Yes | Pipeline ID that references a defined pipeline |
-| `when` | object | Yes | When block that determines if this entry matches the event (same format as rule/pipeline when blocks) |
+| `when` | string / object | Yes | When block that determines if this entry matches the event (same format as rule/pipeline when blocks) |
 
 ---
 
@@ -76,7 +83,7 @@ More specific conditions should be placed **before** more general ones:
 
 ```yaml
 registry:
-  # ✅ Correct: Specific conditions first
+  # Correct: Specific conditions first
   - pipeline: payment_br_pipeline
     when:
       all:
@@ -117,8 +124,9 @@ registry:
       all:
         - event.type == "payment"
 
-  # Default fallback - no when block means always matches
+  # Default fallback - explicit always-true condition
   - pipeline: default_pipeline
+    when: "true"
 ```
 
 ---
@@ -276,6 +284,7 @@ registry:
 
   # Default fallback
   - pipeline: default_pipeline
+    when: "true"
 ```
 
 ### 6.2 Pipeline Definition Example (`payment_rules.yaml`)
@@ -345,10 +354,10 @@ If no registry entry matches the event:
 
 The Pipeline Registry provides:
 
-- ✅ **Centralized routing**: Single entry point for pipeline selection
-- ✅ **Priority-based matching**: First match wins, no duplicates
-- ✅ **Clear ordering**: Explicit control over pipeline execution order
-- ✅ **Expression-based**: Flexible matching using CORINT expression syntax
-- ✅ **Backward compatible**: Pipeline `when` conditions still work as final validation
+- **Centralized routing**: Single entry point for pipeline selection
+- **Priority-based matching**: First match wins, no duplicates
+- **Clear ordering**: Explicit control over pipeline execution order
+- **Expression-based**: Flexible matching using CORINT expression syntax
+- **Backward compatible**: Pipeline `when` conditions still work as final validation
 
 This design ensures predictable, efficient pipeline routing while maintaining the flexibility of pipeline-level conditions.

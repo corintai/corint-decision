@@ -159,8 +159,7 @@ impl RelativeWindow {
         }
 
         // Check for multi-character units first (mo for months)
-        let (value, unit) = if s.ends_with("mo") {
-            let value_str = &s[..s.len() - 2];
+        let (value, unit) = if let Some(value_str) = s.strip_suffix("mo") {
             let value = value_str.parse::<u64>().ok()?;
             (value, TimeUnit::Months)
         } else {

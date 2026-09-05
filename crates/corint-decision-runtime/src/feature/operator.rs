@@ -714,31 +714,47 @@ impl TimeSinceOperator {
                 // Try parsing as ISO 8601 with timezone first
                 let first_time = if let Ok(dt) = timestamp_str.parse::<DateTime<Utc>>() {
                     dt
-                } else if let Ok(dt) = DateTime::parse_from_str(timestamp_str, "%Y-%m-%d %H:%M:%S%.f%:z") {
+                } else if let Ok(dt) =
+                    DateTime::parse_from_str(timestamp_str, "%Y-%m-%d %H:%M:%S%.f%:z")
+                {
                     // PostgreSQL timestamptz: "YYYY-MM-DD HH:MM:SS.mmm+00:00"
                     dt.with_timezone(&Utc)
-                } else if let Ok(dt) = DateTime::parse_from_str(timestamp_str, "%Y-%m-%d %H:%M:%S%.f%z") {
+                } else if let Ok(dt) =
+                    DateTime::parse_from_str(timestamp_str, "%Y-%m-%d %H:%M:%S%.f%z")
+                {
                     // PostgreSQL timestamptz: "YYYY-MM-DD HH:MM:SS.mmm+00"
                     dt.with_timezone(&Utc)
-                } else if let Ok(dt) = DateTime::parse_from_str(timestamp_str, "%Y-%m-%d %H:%M:%S%:z") {
+                } else if let Ok(dt) =
+                    DateTime::parse_from_str(timestamp_str, "%Y-%m-%d %H:%M:%S%:z")
+                {
                     // PostgreSQL timestamptz: "YYYY-MM-DD HH:MM:SS+00:00"
                     dt.with_timezone(&Utc)
-                } else if let Ok(dt) = DateTime::parse_from_str(timestamp_str, "%Y-%m-%d %H:%M:%S%z") {
+                } else if let Ok(dt) =
+                    DateTime::parse_from_str(timestamp_str, "%Y-%m-%d %H:%M:%S%z")
+                {
                     // PostgreSQL timestamptz: "YYYY-MM-DD HH:MM:SS+00"
                     dt.with_timezone(&Utc)
-                } else if let Ok(naive_dt) = NaiveDateTime::parse_from_str(timestamp_str, "%Y-%m-%d %H:%M:%S%.f") {
+                } else if let Ok(naive_dt) =
+                    NaiveDateTime::parse_from_str(timestamp_str, "%Y-%m-%d %H:%M:%S%.f")
+                {
                     // ClickHouse DateTime64 format: "YYYY-MM-DD HH:MM:SS.mmm" (no timezone)
                     // Also matches SQLite format: "YYYY-MM-DD HH:MM:SS"
                     // Assume UTC timezone
                     DateTime::from_naive_utc_and_offset(naive_dt, Utc)
-                } else if let Ok(naive_dt) = NaiveDateTime::parse_from_str(timestamp_str, "%Y-%m-%d %H:%M:%S") {
+                } else if let Ok(naive_dt) =
+                    NaiveDateTime::parse_from_str(timestamp_str, "%Y-%m-%d %H:%M:%S")
+                {
                     // SQLite returns format: "YYYY-MM-DD HH:MM:SS" (no timezone)
                     // Assume UTC timezone
                     DateTime::from_naive_utc_and_offset(naive_dt, Utc)
-                } else if let Ok(naive_dt) = NaiveDateTime::parse_from_str(timestamp_str, "%Y-%m-%dT%H:%M:%S%.f") {
+                } else if let Ok(naive_dt) =
+                    NaiveDateTime::parse_from_str(timestamp_str, "%Y-%m-%dT%H:%M:%S%.f")
+                {
                     // ISO format with milliseconds but no timezone
                     DateTime::from_naive_utc_and_offset(naive_dt, Utc)
-                } else if let Ok(naive_dt) = NaiveDateTime::parse_from_str(timestamp_str, "%Y-%m-%dT%H:%M:%S") {
+                } else if let Ok(naive_dt) =
+                    NaiveDateTime::parse_from_str(timestamp_str, "%Y-%m-%dT%H:%M:%S")
+                {
                     // ISO format without timezone
                     DateTime::from_naive_utc_and_offset(naive_dt, Utc)
                 } else {
@@ -761,14 +777,15 @@ impl TimeSinceOperator {
                 return Ok(Value::Number(elapsed));
             } else {
                 return Err(RuntimeError::InvalidValue(
-                    "Query result missing 'first_timestamp' field or field is not a string".to_string()
+                    "Query result missing 'first_timestamp' field or field is not a string"
+                        .to_string(),
                 ));
             }
         }
 
         // No matching records found - return error so fallback can be used
         Err(RuntimeError::RuntimeError(
-            "No matching records found for time_since calculation".to_string()
+            "No matching records found for time_since calculation".to_string(),
         ))
     }
 }
@@ -899,7 +916,7 @@ fn resolve_template(template: &str, context: &HashMap<String, Value>) -> Result<
                 let key_path = &result[start + 2..end];
                 // Parse path like "event.user_id" -> extract "user_id"
                 let key = if key_path.contains('.') {
-                    key_path.split('.').last().unwrap_or(key_path)
+                    key_path.split('.').next_back().unwrap_or(key_path)
                 } else {
                     key_path
                 };
@@ -928,7 +945,7 @@ fn resolve_template(template: &str, context: &HashMap<String, Value>) -> Result<
 
     // If not found and contains '.', try extracting the last part
     if template.contains('.') {
-        let key = template.split('.').last().unwrap_or(template);
+        let key = template.split('.').next_back().unwrap_or(template);
         if let Some(value) = context.get(key) {
             return Ok(value_to_string(value));
         }

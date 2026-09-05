@@ -11,9 +11,9 @@
 //! - Expression: Compute from other features (rate, ratio, ML models)
 //! - Lookup: Retrieve pre-computed values (Redis cache)
 
+use corint_decision_model::Value;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use corint_decision_model::Value;
 
 /// Feature type classification based on DSL v0.2
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
@@ -417,30 +417,49 @@ impl<'de> Deserialize<'de> for FeatureDefinition {
     {
         // First deserialize as a generic value to get the type
         let value = serde_yaml::Value::deserialize(deserializer)?;
-        
+
         // Extract type to determine which config to use
-        let feature_type = value.get("type")
+        let feature_type = value
+            .get("type")
             .and_then(|v| FeatureType::deserialize(v).ok())
             .ok_or_else(|| serde::de::Error::custom("Missing or invalid 'type' field"))?;
-        
+
         // Deserialize based on type
         match feature_type {
             FeatureType::Lookup => {
                 // For lookup, manually extract fields (avoid recursion)
-                let name = value.get("name").and_then(|v| v.as_str())
+                let name = value
+                    .get("name")
+                    .and_then(|v| v.as_str())
                     .ok_or_else(|| serde::de::Error::missing_field("name"))?
                     .to_string();
-                let method = value.get("method").and_then(|v| v.as_str()).map(|s| s.to_string());
-                let description = value.get("description").and_then(|v| v.as_str()).unwrap_or("").to_string();
-                let dependencies = value.get("dependencies")
+                let method = value
+                    .get("method")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string());
+                let description = value
+                    .get("description")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                let dependencies = value
+                    .get("dependencies")
                     .and_then(|v| Vec::<String>::deserialize(v).ok())
                     .unwrap_or_default();
-                let tags = value.get("tags")
+                let tags = value
+                    .get("tags")
                     .and_then(|v| Vec::<String>::deserialize(v).ok())
                     .unwrap_or_default();
-                let enabled = value.get("enabled").and_then(|v| v.as_bool()).unwrap_or(true);
-                let version = value.get("version").and_then(|v| v.as_str()).unwrap_or("1.0").to_string();
-                
+                let enabled = value
+                    .get("enabled")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(true);
+                let version = value
+                    .get("version")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("1.0")
+                    .to_string();
+
                 Ok(FeatureDefinition {
                     name,
                     feature_type,
@@ -460,24 +479,47 @@ impl<'de> Deserialize<'de> for FeatureDefinition {
             }
             FeatureType::State => {
                 // For state, deserialize StateConfig explicitly
-                let state_config: StateConfig = serde_yaml::from_value(value.clone())
-                    .map_err(|e| serde::de::Error::custom(format!("Failed to deserialize state config: {}", e)))?;
-                
+                let state_config: StateConfig =
+                    serde_yaml::from_value(value.clone()).map_err(|e| {
+                        serde::de::Error::custom(format!(
+                            "Failed to deserialize state config: {}",
+                            e
+                        ))
+                    })?;
+
                 // Extract other fields
-                let name = value.get("name").and_then(|v| v.as_str())
+                let name = value
+                    .get("name")
+                    .and_then(|v| v.as_str())
                     .ok_or_else(|| serde::de::Error::missing_field("name"))?
                     .to_string();
-                let method = value.get("method").and_then(|v| v.as_str()).map(|s| s.to_string());
-                let description = value.get("description").and_then(|v| v.as_str()).unwrap_or("").to_string();
-                let dependencies = value.get("dependencies")
+                let method = value
+                    .get("method")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string());
+                let description = value
+                    .get("description")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                let dependencies = value
+                    .get("dependencies")
                     .and_then(|v| Vec::<String>::deserialize(v).ok())
                     .unwrap_or_default();
-                let tags = value.get("tags")
+                let tags = value
+                    .get("tags")
                     .and_then(|v| Vec::<String>::deserialize(v).ok())
                     .unwrap_or_default();
-                let enabled = value.get("enabled").and_then(|v| v.as_bool()).unwrap_or(true);
-                let version = value.get("version").and_then(|v| v.as_str()).unwrap_or("1.0").to_string();
-                
+                let enabled = value
+                    .get("enabled")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(true);
+                let version = value
+                    .get("version")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("1.0")
+                    .to_string();
+
                 Ok(FeatureDefinition {
                     name,
                     feature_type,
@@ -497,23 +539,46 @@ impl<'de> Deserialize<'de> for FeatureDefinition {
             }
             FeatureType::Aggregation => {
                 // For aggregation, deserialize AggregationConfig explicitly
-                let agg_config: AggregationConfig = serde_yaml::from_value(value.clone())
-                    .map_err(|e| serde::de::Error::custom(format!("Failed to deserialize aggregation config: {}", e)))?;
-                
-                let name = value.get("name").and_then(|v| v.as_str())
+                let agg_config: AggregationConfig =
+                    serde_yaml::from_value(value.clone()).map_err(|e| {
+                        serde::de::Error::custom(format!(
+                            "Failed to deserialize aggregation config: {}",
+                            e
+                        ))
+                    })?;
+
+                let name = value
+                    .get("name")
+                    .and_then(|v| v.as_str())
                     .ok_or_else(|| serde::de::Error::missing_field("name"))?
                     .to_string();
-                let method = value.get("method").and_then(|v| v.as_str()).map(|s| s.to_string());
-                let description = value.get("description").and_then(|v| v.as_str()).unwrap_or("").to_string();
-                let dependencies = value.get("dependencies")
+                let method = value
+                    .get("method")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string());
+                let description = value
+                    .get("description")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                let dependencies = value
+                    .get("dependencies")
                     .and_then(|v| Vec::<String>::deserialize(v).ok())
                     .unwrap_or_default();
-                let tags = value.get("tags")
+                let tags = value
+                    .get("tags")
                     .and_then(|v| Vec::<String>::deserialize(v).ok())
                     .unwrap_or_default();
-                let enabled = value.get("enabled").and_then(|v| v.as_bool()).unwrap_or(true);
-                let version = value.get("version").and_then(|v| v.as_str()).unwrap_or("1.0").to_string();
-                
+                let enabled = value
+                    .get("enabled")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(true);
+                let version = value
+                    .get("version")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("1.0")
+                    .to_string();
+
                 Ok(FeatureDefinition {
                     name,
                     feature_type,
@@ -533,23 +598,46 @@ impl<'de> Deserialize<'de> for FeatureDefinition {
             }
             FeatureType::Sequence => {
                 // For sequence, deserialize SequenceConfig explicitly
-                let seq_config: SequenceConfig = serde_yaml::from_value(value.clone())
-                    .map_err(|e| serde::de::Error::custom(format!("Failed to deserialize sequence config: {}", e)))?;
-                
-                let name = value.get("name").and_then(|v| v.as_str())
+                let seq_config: SequenceConfig =
+                    serde_yaml::from_value(value.clone()).map_err(|e| {
+                        serde::de::Error::custom(format!(
+                            "Failed to deserialize sequence config: {}",
+                            e
+                        ))
+                    })?;
+
+                let name = value
+                    .get("name")
+                    .and_then(|v| v.as_str())
                     .ok_or_else(|| serde::de::Error::missing_field("name"))?
                     .to_string();
-                let method = value.get("method").and_then(|v| v.as_str()).map(|s| s.to_string());
-                let description = value.get("description").and_then(|v| v.as_str()).unwrap_or("").to_string();
-                let dependencies = value.get("dependencies")
+                let method = value
+                    .get("method")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string());
+                let description = value
+                    .get("description")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                let dependencies = value
+                    .get("dependencies")
                     .and_then(|v| Vec::<String>::deserialize(v).ok())
                     .unwrap_or_default();
-                let tags = value.get("tags")
+                let tags = value
+                    .get("tags")
                     .and_then(|v| Vec::<String>::deserialize(v).ok())
                     .unwrap_or_default();
-                let enabled = value.get("enabled").and_then(|v| v.as_bool()).unwrap_or(true);
-                let version = value.get("version").and_then(|v| v.as_str()).unwrap_or("1.0").to_string();
-                
+                let enabled = value
+                    .get("enabled")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(true);
+                let version = value
+                    .get("version")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("1.0")
+                    .to_string();
+
                 Ok(FeatureDefinition {
                     name,
                     feature_type,
@@ -569,23 +657,46 @@ impl<'de> Deserialize<'de> for FeatureDefinition {
             }
             FeatureType::Graph => {
                 // For graph, deserialize GraphConfig explicitly
-                let graph_config: GraphConfig = serde_yaml::from_value(value.clone())
-                    .map_err(|e| serde::de::Error::custom(format!("Failed to deserialize graph config: {}", e)))?;
-                
-                let name = value.get("name").and_then(|v| v.as_str())
+                let graph_config: GraphConfig =
+                    serde_yaml::from_value(value.clone()).map_err(|e| {
+                        serde::de::Error::custom(format!(
+                            "Failed to deserialize graph config: {}",
+                            e
+                        ))
+                    })?;
+
+                let name = value
+                    .get("name")
+                    .and_then(|v| v.as_str())
                     .ok_or_else(|| serde::de::Error::missing_field("name"))?
                     .to_string();
-                let method = value.get("method").and_then(|v| v.as_str()).map(|s| s.to_string());
-                let description = value.get("description").and_then(|v| v.as_str()).unwrap_or("").to_string();
-                let dependencies = value.get("dependencies")
+                let method = value
+                    .get("method")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string());
+                let description = value
+                    .get("description")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                let dependencies = value
+                    .get("dependencies")
                     .and_then(|v| Vec::<String>::deserialize(v).ok())
                     .unwrap_or_default();
-                let tags = value.get("tags")
+                let tags = value
+                    .get("tags")
                     .and_then(|v| Vec::<String>::deserialize(v).ok())
                     .unwrap_or_default();
-                let enabled = value.get("enabled").and_then(|v| v.as_bool()).unwrap_or(true);
-                let version = value.get("version").and_then(|v| v.as_str()).unwrap_or("1.0").to_string();
-                
+                let enabled = value
+                    .get("enabled")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(true);
+                let version = value
+                    .get("version")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("1.0")
+                    .to_string();
+
                 Ok(FeatureDefinition {
                     name,
                     feature_type,
@@ -605,23 +716,46 @@ impl<'de> Deserialize<'de> for FeatureDefinition {
             }
             FeatureType::Expression => {
                 // For expression, deserialize ExpressionConfig explicitly
-                let expr_config: ExpressionConfig = serde_yaml::from_value(value.clone())
-                    .map_err(|e| serde::de::Error::custom(format!("Failed to deserialize expression config: {}", e)))?;
-                
-                let name = value.get("name").and_then(|v| v.as_str())
+                let expr_config: ExpressionConfig =
+                    serde_yaml::from_value(value.clone()).map_err(|e| {
+                        serde::de::Error::custom(format!(
+                            "Failed to deserialize expression config: {}",
+                            e
+                        ))
+                    })?;
+
+                let name = value
+                    .get("name")
+                    .and_then(|v| v.as_str())
                     .ok_or_else(|| serde::de::Error::missing_field("name"))?
                     .to_string();
-                let method = value.get("method").and_then(|v| v.as_str()).map(|s| s.to_string());
-                let description = value.get("description").and_then(|v| v.as_str()).unwrap_or("").to_string();
-                let dependencies = value.get("dependencies")
+                let method = value
+                    .get("method")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string());
+                let description = value
+                    .get("description")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                let dependencies = value
+                    .get("dependencies")
                     .and_then(|v| Vec::<String>::deserialize(v).ok())
                     .unwrap_or_default();
-                let tags = value.get("tags")
+                let tags = value
+                    .get("tags")
                     .and_then(|v| Vec::<String>::deserialize(v).ok())
                     .unwrap_or_default();
-                let enabled = value.get("enabled").and_then(|v| v.as_bool()).unwrap_or(true);
-                let version = value.get("version").and_then(|v| v.as_str()).unwrap_or("1.0").to_string();
-                
+                let enabled = value
+                    .get("enabled")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(true);
+                let version = value
+                    .get("version")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("1.0")
+                    .to_string();
+
                 Ok(FeatureDefinition {
                     name,
                     feature_type,
@@ -652,20 +786,17 @@ impl FeatureDefinition {
                 yaml_value.get("datasource").and_then(|v| v.as_str()),
                 yaml_value.get("key").and_then(|v| v.as_str()),
             ) {
-                let fallback = yaml_value.get("fallback")
-                    .and_then(|v| {
-                        // Convert serde_yaml::Value to corint_decision_model::Value
-                        match v {
-                            serde_yaml::Value::Bool(b) => Some(Value::Bool(*b)),
-                            serde_yaml::Value::Number(n) => {
-                                n.as_f64().map(Value::Number)
-                            }
-                            serde_yaml::Value::String(s) => Some(Value::String(s.clone())),
-                            serde_yaml::Value::Null => Some(Value::Null),
-                            _ => None,
-                        }
-                    });
-                
+                let fallback = yaml_value.get("fallback").and_then(|v| {
+                    // Convert serde_yaml::Value to corint_decision_model::Value
+                    match v {
+                        serde_yaml::Value::Bool(b) => Some(Value::Bool(*b)),
+                        serde_yaml::Value::Number(n) => n.as_f64().map(Value::Number),
+                        serde_yaml::Value::String(s) => Some(Value::String(s.clone())),
+                        serde_yaml::Value::Null => Some(Value::Null),
+                        _ => None,
+                    }
+                });
+
                 self.lookup = Some(LookupConfig {
                     datasource: datasource.to_string(),
                     key: key.to_string(),
@@ -674,14 +805,6 @@ impl FeatureDefinition {
             }
         }
     }
-}
-
-fn default_enabled() -> bool {
-    true
-}
-
-fn default_version() -> String {
-    "1.0".to_string()
 }
 
 impl FeatureDefinition {
@@ -695,38 +818,45 @@ impl FeatureDefinition {
         let name = name.into();
 
         match operator {
-            Operator::Count(op) => {
-                Self {
-                    name,
-                    feature_type: FeatureType::Aggregation,
-                    method: Some("count".to_string()),
-                    aggregation: Some(AggregationConfig {
-                        datasource: op.params.datasource.unwrap_or_else(|| "default".to_string()),
-                        entity: op.params.entity,
-                        dimension: op.params.dimension,
-                        dimension_value: op.params.dimension_value,
-                        field: None,
-                        window: op.params.window.map(|w| format!("{}{}", w.value, match w.unit {
-                            crate::feature::operator::WindowUnit::Minutes => "m",
-                            crate::feature::operator::WindowUnit::Hours => "h",
-                            crate::feature::operator::WindowUnit::Days => "d",
-                        })),
-                        timestamp_field: None,
-                        when: None,
-                        percentile: None,
+            Operator::Count(op) => Self {
+                name,
+                feature_type: FeatureType::Aggregation,
+                method: Some("count".to_string()),
+                aggregation: Some(AggregationConfig {
+                    datasource: op
+                        .params
+                        .datasource
+                        .unwrap_or_else(|| "default".to_string()),
+                    entity: op.params.entity,
+                    dimension: op.params.dimension,
+                    dimension_value: op.params.dimension_value,
+                    field: None,
+                    window: op.params.window.map(|w| {
+                        format!(
+                            "{}{}",
+                            w.value,
+                            match w.unit {
+                                crate::feature::operator::WindowUnit::Minutes => "m",
+                                crate::feature::operator::WindowUnit::Hours => "h",
+                                crate::feature::operator::WindowUnit::Days => "d",
+                            }
+                        )
                     }),
-                    state: None,
-                    sequence: None,
-                    graph: None,
-                    expression: None,
-                    lookup: None,
-                    description: String::new(),
-                    dependencies: Vec::new(),
-                    tags: Vec::new(),
-                    enabled: true,
-                    version: "1.0".to_string(),
-                }
-            }
+                    timestamp_field: None,
+                    when: None,
+                    percentile: None,
+                }),
+                state: None,
+                sequence: None,
+                graph: None,
+                expression: None,
+                lookup: None,
+                description: String::new(),
+                dependencies: Vec::new(),
+                tags: Vec::new(),
+                enabled: true,
+                version: "1.0".to_string(),
+            },
             _ => {
                 // For other operators, create a minimal valid feature
                 Self {
@@ -778,7 +908,9 @@ impl FeatureDefinition {
         // Note: Due to serde's flatten with Option<T>, config objects (aggregation, state, etc.)
         // may not be properly populated even when fields exist in YAML. We only validate method field.
         match self.feature_type {
-            FeatureType::Aggregation | FeatureType::State | FeatureType::Sequence
+            FeatureType::Aggregation
+            | FeatureType::State
+            | FeatureType::Sequence
             | FeatureType::Graph => {
                 if self.method.is_none() {
                     return Err(format!(
@@ -956,7 +1088,7 @@ mod tests {
         let feature = FeatureDefinition {
             name: "user_risk_score_90d".to_string(),
             feature_type: FeatureType::Lookup,
-            method: None,  // Lookup doesn't need method
+            method: None, // Lookup doesn't need method
             aggregation: None,
             state: None,
             sequence: None,
@@ -1013,7 +1145,7 @@ mod tests {
         let feature = FeatureDefinition {
             name: "txn_velocity_ratio".to_string(),
             feature_type: FeatureType::Expression,
-            method: None,  // Method field is optional for expression type
+            method: None, // Method field is optional for expression type
             aggregation: None,
             state: None,
             sequence: None,
@@ -1089,16 +1221,19 @@ features:
     fallback: false
 "#;
 
-        let yaml_value: serde_yaml::Value = serde_yaml::from_str(yaml).expect("Failed to parse YAML");
-        let mut collection: FeatureCollection = serde_yaml::from_str(yaml).expect("Failed to parse YAML");
+        let yaml_value: serde_yaml::Value =
+            serde_yaml::from_str(yaml).expect("Failed to parse YAML");
+        let mut collection: FeatureCollection =
+            serde_yaml::from_str(yaml).expect("Failed to parse YAML");
         assert_eq!(collection.features.len(), 1);
 
         // Post-process lookup features
         let empty_vec = vec![];
-        let features_yaml = yaml_value.get("features")
+        let features_yaml = yaml_value
+            .get("features")
             .and_then(|v| v.as_sequence())
             .unwrap_or(&empty_vec);
-        
+
         for (idx, feature) in collection.features.iter_mut().enumerate() {
             if feature.feature_type == FeatureType::Lookup {
                 if let Some(feature_yaml) = features_yaml.get(idx) {
@@ -1110,9 +1245,12 @@ features:
         let feature = &collection.features[0];
         assert_eq!(feature.name, "user_is_verified");
         assert_eq!(feature.feature_type, FeatureType::Lookup);
-        
+
         // Verify lookup config is properly populated
-        let lookup = feature.lookup.as_ref().expect("Lookup config should be populated");
+        let lookup = feature
+            .lookup
+            .as_ref()
+            .expect("Lookup config should be populated");
         assert_eq!(lookup.datasource, "lookup_datasource");
         assert_eq!(lookup.key, "user_profiles:${event.user_id}:is_verified");
         assert_eq!(lookup.fallback, Some(Value::Bool(false)));
@@ -1136,20 +1274,29 @@ features:
     unit: days
 "#;
 
-        let yaml_value: serde_yaml::Value = serde_yaml::from_str(yaml).expect("Failed to parse YAML");
-        let mut collection: FeatureCollection = serde_yaml::from_str(yaml).expect("Failed to parse YAML");
+        let _yaml_value: serde_yaml::Value =
+            serde_yaml::from_str(yaml).expect("Failed to parse YAML");
+        let collection: FeatureCollection =
+            serde_yaml::from_str(yaml).expect("Failed to parse YAML");
         assert_eq!(collection.features.len(), 1);
 
         let feature = &collection.features[0];
         assert_eq!(feature.name, "account_age_days");
         assert_eq!(feature.feature_type, FeatureType::State);
-        
+
         // Verify method is correctly parsed
-        assert_eq!(feature.method, Some("time_since".to_string()), 
-                   "Method should be 'time_since', but got: {:?}", feature.method);
-        
+        assert_eq!(
+            feature.method,
+            Some("time_since".to_string()),
+            "Method should be 'time_since', but got: {:?}",
+            feature.method
+        );
+
         // Verify state config is properly populated
-        let state = feature.state.as_ref().expect("State config should be populated");
+        let state = feature
+            .state
+            .as_ref()
+            .expect("State config should be populated");
         assert_eq!(state.entity, "events");
         assert_eq!(state.dimension, "user_id");
         assert_eq!(state.unit, Some("days".to_string()));

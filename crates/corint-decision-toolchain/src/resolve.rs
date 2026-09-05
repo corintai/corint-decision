@@ -1,5 +1,5 @@
-//! Explicit authoring-only imports. Execution, server activation and legacy
-//! draft-1 parsing never use this filesystem entry point.
+//! Explicit authoring/load-time imports, also used by strict repository startup
+//! and reload. Runtime evaluation and legacy draft-1 parsing never read files.
 use crate::{package, transfer::SourceBundle};
 use corint_decision_compiler::core::{
     diagnostic, parse_core_input_schema, validate_core_document, CoreError, CoreSource,

@@ -35,10 +35,10 @@ impl ExpressionEvaluator {
                     // Check if it's not a function name, not a context prefix, and not a number
                     if !functions.contains(&current_token.as_str())
                         && !context_prefixes.contains(&current_token.as_str())
-                        && current_token.chars().next().unwrap().is_alphabetic() {
-                        if !dependencies.contains(&current_token) {
-                            dependencies.push(current_token.clone());
-                        }
+                        && current_token.chars().next().unwrap().is_alphabetic()
+                        && !dependencies.contains(&current_token)
+                    {
+                        dependencies.push(current_token.clone());
                     }
                     current_token.clear();
                 }
@@ -46,14 +46,13 @@ impl ExpressionEvaluator {
         }
 
         // Don't forget the last token
-        if !current_token.is_empty() {
-            if !functions.contains(&current_token.as_str())
-                && !context_prefixes.contains(&current_token.as_str())
-                && current_token.chars().next().unwrap().is_alphabetic() {
-                if !dependencies.contains(&current_token) {
-                    dependencies.push(current_token);
-                }
-            }
+        if !current_token.is_empty()
+            && !functions.contains(&current_token.as_str())
+            && !context_prefixes.contains(&current_token.as_str())
+            && current_token.chars().next().unwrap().is_alphabetic()
+            && !dependencies.contains(&current_token)
+        {
+            dependencies.push(current_token);
         }
 
         dependencies
@@ -73,7 +72,13 @@ impl ExpressionEvaluator {
             let value_num = match value {
                 Value::Number(n) => *n,
                 Value::Null => 0.0,
-                Value::Bool(b) => if *b { 1.0 } else { 0.0 },
+                Value::Bool(b) => {
+                    if *b {
+                        1.0
+                    } else {
+                        0.0
+                    }
+                }
                 _ => return Err(anyhow::anyhow!("Feature '{}' has non-numeric value", name)),
             };
 
@@ -98,7 +103,7 @@ impl ExpressionEvaluator {
 
         // Handle parentheses - evaluate inner expression first
         if expr.starts_with('(') && expr.ends_with(')') {
-            return Self::eval_math_expr(&expr[1..expr.len()-1]);
+            return Self::eval_math_expr(&expr[1..expr.len() - 1]);
         }
 
         // Handle division by zero
@@ -125,7 +130,7 @@ impl ExpressionEvaluator {
                     }
 
                     let left = &expr[..idx];
-                    let right = &expr[idx+1..];
+                    let right = &expr[idx + 1..];
 
                     let left_val = match Self::eval_math_expr(left)? {
                         Value::Number(n) => n,
@@ -162,7 +167,10 @@ impl ExpressionEvaluator {
     /// Supports:
     /// - Direct reference: "event.user_id" -> lookup context["user_id"]
     /// - String interpolation: "prefix:${event.user_id}:suffix" -> "prefix:value:suffix"
-    pub(super) fn substitute_template(template: &str, context: &HashMap<String, Value>) -> Result<String> {
+    pub(super) fn substitute_template(
+        template: &str,
+        context: &HashMap<String, Value>,
+    ) -> Result<String> {
         // Check for string interpolation: contains "${...}"
         if template.contains("${") {
             let mut result = template.to_string();
@@ -171,7 +179,7 @@ impl ExpressionEvaluator {
             if let Some(start) = result.find("${") {
                 if let Some(end) = result[start..].find('}') {
                     let end = start + end;
-                    let var_path = &result[start+2..end];
+                    let var_path = &result[start + 2..end];
 
                     // Parse path like "event.user_id" -> ["event", "user_id"]
                     let parts: Vec<&str> = var_path.split('.').collect();
@@ -183,13 +191,16 @@ impl ExpressionEvaluator {
                                 Value::String(s) => s.clone(),
                                 Value::Number(n) => n.to_string(),
                                 Value::Bool(b) => b.to_string(),
-                                _ => return Err(anyhow::anyhow!("Unsupported template value type")),
+                                _ => {
+                                    return Err(anyhow::anyhow!("Unsupported template value type"))
+                                }
                             };
                             result = result.replace(&result[start..=end], &value_str);
                         } else {
                             return Err(anyhow::anyhow!(
                                 "Template variable '{}' not found in context. Available keys: {:?}",
-                                key, context.keys().collect::<Vec<_>>()
+                                key,
+                                context.keys().collect::<Vec<_>>()
                             ));
                         }
                     }

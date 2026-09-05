@@ -1,8 +1,15 @@
 # External API Integration DSL
 
+<!-- cdl-scope: compatibility-unverified -->
+> This page is an unverified compatibility reference. Its snippets are not Core support evidence.
+> For the executable contract and supported examples, use [CDL Core](cdl-core.md),
+> [Pipeline](pipeline.md) and the [capability inventory](schema/capabilities.json).
+> Described behavior may be incomplete in compatibility entry points; validate through the strict tools before delivery.
+
+
 ## Overview
 
-External API integration allows CORINT pipelines to call third-party HTTP APIs with automatic parameter resolution, error handling, and response parsing.
+This page preserves the intended external API configuration and Pipeline syntax. Strict Core rejects API steps. The compatibility Pipeline compiler currently drops step `params` and `on_error`, supplies no step fallback, and selects only the first API in `any` / `all`. Runtime helper support does not establish end-to-end Pipeline support.
 
 ---
 
@@ -335,7 +342,7 @@ endpoints:
 
 ### 3.5 Output Storage
 
-Results are automatically stored at `api.{api_name}.{endpoint_name}` unless `output` is specified.
+The following is the intended output mapping; compatibility execution has not been certified against these examples.
 
 **Example**:
 ```yaml
@@ -370,7 +377,7 @@ rule:
 
 ### 3.6 Error Handling
 
-Fallback priority (highest to lowest):
+Proposed fallback priority (not implemented end-to-end by the Pipeline compiler):
 1. Pipeline step `on_error.fallback`
 2. API config endpoint `response.fallback`
 3. `null` if no fallback defined

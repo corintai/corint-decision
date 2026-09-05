@@ -1,6 +1,8 @@
 //! Real CLI + real Core server process + TCP, with a fixed (not live) model.
 //! Run via tests/scripts/run_core_e2e_tests.sh; no database or ambient credentials.
 use corint_decision_compiler::core::{CoreSource, PROFILE};
+#[path = "../../../tests/support/core_repository.rs"]
+mod repository_fixture;
 use corint_decision_llm::{CoreGenerator, MockProvider, RuleGeneratorConfig};
 use reqwest::{Client, Method, StatusCode};
 use serde_json::{json, Value};
@@ -252,10 +254,17 @@ async fn prepare(dir: &Path, condition: &str, weak_cases: bool) -> Delivery {
             .count(),
         1
     );
-    Delivery {
-        bundle,
-        policy: package["policy"]["sha256"].clone(),
-    }
+    let typed = serde_json::from_value(bundle.clone()).unwrap();
+    let policy = json!(repository_fixture::identity(&typed));
+    Delivery { bundle, policy }
+}
+
+fn publish(dir: &Path, bundle: &Value, revision: &str) {
+    repository_fixture::publish(
+        dir,
+        &serde_json::from_value(bundle.clone()).unwrap(),
+        revision,
+    );
 }
 
 fn operator_config(dir: &Path, initial: &Delivery, approved: &[&Delivery]) -> PathBuf {
@@ -267,9 +276,9 @@ fn operator_config(dir: &Path, initial: &Delivery, approved: &[&Delivery]) -> Pa
     ] {
         fs::write(dir.join(name), fixture(source)).unwrap();
     }
-    save(&dir.join("initial.json"), &initial.bundle);
-    let config = json!({"config_version":"1", "listen":"127.0.0.1:0",
-        "context":"context.yaml", "target":"target.json", "cases":"cases.yaml", "initial_bundle":"initial.json",
+    publish(dir, &initial.bundle, "initial");
+    let config = json!({"config_version":"2", "listen":"127.0.0.1:0",
+        "context":"context.yaml", "target":"target.json", "cases":"cases.yaml", "repository":"repository",
         "decision_token_env":"E2E_DECISION_TOKEN", "publisher_token_env":"E2E_PUBLISHER_TOKEN",
         "approvals":approved.iter().map(|delivery| json!({"policy_sha256":delivery.policy,
             "context_sha256":hash(&fs::read(dir.join("context.yaml")).unwrap()),
@@ -498,15 +507,11 @@ async fn check_delivery_scenario() {
     for (amount, decline) in [(999, false), (1000, false), (1001, true), (2500, true)] {
         server.assert_decision(&original, amount, decline).await;
     }
-    let activation = json!({"expected_revision":original["revision"], "bundle":next.bundle});
+    publish(config.parent().unwrap(), &next.bundle, "next");
+    let activation = json!({"expected_revision":original["revision"]});
     for token in [None, Some(DECISION), Some("wrong-token")] {
         let (status, body) = server
-            .call(
-                Method::POST,
-                "/v1/core/policies/activate",
-                token,
-                &activation,
-            )
+            .call(Method::POST, "/v1/core/repo/reload", token, &activation)
             .await;
         assert_eq!(status, 401);
         assert_eq!(body["error"], "E_CORE_UNAUTHORIZED");
@@ -516,7 +521,7 @@ async fn check_delivery_scenario() {
     let (status, updated) = server
         .call(
             Method::POST,
-            "/v1/core/policies/activate",
+            "/v1/core/repo/reload",
             Some(PUBLISHER),
             &activation,
         )
@@ -538,20 +543,41 @@ async fn check_delivery_scenario() {
         }
     }
     assert_ne!(unapproved, next.bundle);
-    for (candidate, expected_status, code) in [
+    for (contents, expected_status, code, revision) in [
+        (&wrong.bundle, 422, "E_CORE_BEHAVIOR_REJECTED", "wrong"),
         (
-            json!({"expected_revision":updated["revision"],"bundle":wrong.bundle}),
-            422,
-            "E_CORE_BEHAVIOR_REJECTED",
-        ),
-        (
-            json!({"expected_revision":updated["revision"],"bundle":unapproved}),
+            &unapproved,
             403,
             "E_OPERATOR_APPROVAL_REQUIRED",
+            "unapproved",
         ),
+    ] {
+        publish(config.parent().unwrap(), contents, revision);
+        let (status, body) = server
+            .call(
+                Method::POST,
+                "/v1/core/repo/reload",
+                Some(PUBLISHER),
+                &json!({"expected_revision":updated["revision"]}),
+            )
+            .await;
+        assert_eq!(status, expected_status, "{body}");
+        assert_eq!(body["error"], code);
+        assert_eq!(server.state().await, updated);
+        server.assert_decision(&updated, 2500, false).await;
+    }
+    // An invalid externally published repo keeps the old process alive, but
+    // cannot be accepted on restart. Restore the validated repo before restart.
+    publish(config.parent().unwrap(), &next.bundle, "next");
+    for (candidate, expected_status, code) in [
         (activation, 409, "E_ACTIVE_REVISION"),
         (
-            json!({"expected_revision":updated["revision"],"bundle":initial.bundle,"approvals":[]}),
+            json!({"expected_revision":updated["revision"],"bundle":initial.bundle}),
+            400,
+            "E_CORE_REQUEST",
+        ),
+        (
+            json!({"expected_revision":updated["revision"],"approvals":[]}),
             400,
             "E_CORE_REQUEST",
         ),
@@ -559,7 +585,7 @@ async fn check_delivery_scenario() {
         let (status, body) = server
             .call(
                 Method::POST,
-                "/v1/core/policies/activate",
+                "/v1/core/repo/reload",
                 Some(PUBLISHER),
                 &candidate,
             )
@@ -569,6 +595,18 @@ async fn check_delivery_scenario() {
         assert_eq!(server.state().await, updated);
         server.assert_decision(&updated, 2500, false).await;
     }
+    assert_eq!(
+        server
+            .call(
+                Method::POST,
+                "/v1/core/policies/activate",
+                Some(PUBLISHER),
+                &json!({"expected_revision":updated["revision"],"bundle":initial.bundle})
+            )
+            .await
+            .0,
+        404
+    );
     let (status, _) = server
         .call(
             Method::POST,
@@ -591,19 +629,33 @@ async fn check_delivery_scenario() {
     let state = restarted.state().await;
     assert_ne!(state["revision"], updated["revision"]);
     assert_ne!(state["revision"], original["revision"]);
-    assert_eq!(state["policy_sha256"], initial.policy);
-    restarted.assert_decision(&state, 2500, true).await;
+    assert_eq!(state["policy_sha256"], next.policy);
+    assert_eq!(state["repository"], updated["repository"]);
+    restarted.assert_decision(&state, 2500, false).await;
     let (status, _) = restarted
         .call(
             Method::POST,
-            "/v1/core/policies/activate",
+            "/v1/core/repo/reload",
             Some(PUBLISHER),
-            &json!({"expected_revision":updated["revision"],"bundle":next.bundle}),
+            &json!({"expected_revision":updated["revision"]}),
         )
         .await;
     assert_eq!(status, 409);
     assert_eq!(restarted.state().await, state);
-    restarted.assert_decision(&state, 2500, true).await;
+    restarted.assert_decision(&state, 2500, false).await;
+    publish(config.parent().unwrap(), &initial.bundle, "initial");
+    let (status, rolled_back) = restarted
+        .call(
+            Method::POST,
+            "/v1/core/repo/reload",
+            Some(PUBLISHER),
+            &json!({"expected_revision":state["revision"]}),
+        )
+        .await;
+    assert_eq!(status, 200);
+    assert_eq!(rolled_back["policy_sha256"], initial.policy);
+    assert_eq!(rolled_back["repository"]["revision"], "initial");
+    restarted.assert_decision(&rolled_back, 2500, true).await;
     for process in [&server.process, &restarted.process] {
         for path in [&process.stdout, &process.stderr] {
             let log = fs::read_to_string(path).unwrap();
@@ -622,7 +674,7 @@ fn rejected_bootstrap_exits_without_listening_or_legacy_fallback() {
         &json!({
             "config_version":"unsupported", "listen":"127.0.0.1:0",
             "context":"context.yaml", "target":"target.json", "cases":"cases.yaml",
-            "initial_bundle":"initial.json", "approvals":[],
+            "repository":"repository", "approvals":[],
             "decision_token_env":"E2E_DECISION_TOKEN", "publisher_token_env":"E2E_PUBLISHER_TOKEN"
         }),
     );

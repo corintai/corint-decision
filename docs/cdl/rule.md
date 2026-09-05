@@ -1,4 +1,11 @@
 # Corint Definition Language (CDL)
+
+<!-- cdl-scope: compatibility-unverified -->
+> This page is an unverified compatibility reference. Its snippets are not Core support evidence.
+> For the executable contract and supported examples, use [CDL Core](cdl-core.md),
+> [Pipeline](pipeline.md) and the [capability inventory](schema/capabilities.json).
+> Described behavior may be incomplete in compatibility entry points; validate through the strict tools before delivery.
+
 ## Rule Specification (v0.1)
 
 A **Rule** is the smallest executable logic unit within CORINT's Cognitive Risk Intelligence framework.
@@ -8,16 +15,16 @@ Rules define deterministic conditions used to evaluate risk events and generate 
 
 ## 1. Rule Structure
 
-### 1.1 Implemented Fields (✅)
+### 1.1 Legacy fields (unverified)
 
 ```yaml
 rule:
-  id: string                 # ✅ Required: Unique identifier
-  name: string               # ✅ Required: Human-readable name
-  description: string        # ✅ Optional: Rule description
-  when: <condition-block>    # ✅ Required: Condition logic
-  score: number              # ✅ Required: Risk score (supports negative values)
-  metadata:                  # ✅ Optional: Arbitrary metadata
+  id: string                 # Required: Unique identifier
+  name: string               # Required: Human-readable name
+  description: string        # Optional: Rule description
+  when: <condition-block>    # Required: Condition logic
+  score: number              # Required: Risk score (supports negative values)
+  metadata:                  # Optional: Arbitrary metadata
     <key>: <value>
 ```
 ---
@@ -60,7 +67,7 @@ The core of the rule. Describes conditions that must be satisfied for the rule t
 
 The `when` clause supports boolean expressions, logical operators (`all`/`any`/`not`), and arbitrary nesting for complex condition evaluation.
 
-### 5.1 Basic Syntax (✅ Implemented)
+### 5.1 Basic Syntax (Unverified compatibility behavior)
 
 **1. Simple Boolean Expression:**
 A single boolean expression that evaluates to true or false.
@@ -77,7 +84,7 @@ when: event.amount < 100
 **3. Nesting:**
 Logical operators can be nested arbitrarily to create complex conditions.
 
-### 5.2 Logical Operators (✅ Implemented)
+### 5.2 Logical Operators (Unverified compatibility behavior)
 
 **all** - All conditions must be true (AND logic):
 ```yaml
@@ -129,10 +136,10 @@ when:
 **Important:** 
 - Rules use the `event.` prefix to access event fields (unlike feature definitions)
 - When accessing calculated features, always use the `features.` namespace prefix:
-  - ✅ `features.transaction_sum_7d > 5000` - Correct
+  - `features.transaction_sum_7d > 5000` - Correct
   - ❌ `transaction_sum_7d > 5000` - Incorrect (will not work)
 
-### 5.3 Supported Operators (✅ Implemented)
+### 5.3 Supported Operators (Unverified compatibility behavior)
 
 | Operator | Meaning | Example |
 |----------|---------|---------|
@@ -166,7 +173,7 @@ features.risk_tags contains "proxy"   # Array contains
 
 > **Note:** `exists` and `missing` operators are NOT currently implemented. Check for null/non-null values instead: `event.field == null` or `event.field != null`
 
-### 5.4 Context Variables (✅ Implemented)
+### 5.4 Context Variables (Unverified compatibility behavior)
 
 Common context variable prefixes for rule conditions:
 
@@ -182,11 +189,11 @@ Common context variable prefixes for rule conditions:
 | `list.*` | Custom lists | `list.blocked_users`, `list.vip_emails` |
 
 **Note:** In rules, always use the appropriate namespace prefix. For example:
-- ✅ `event.amount` - Correct
-- ✅ `features.txn_count_24h` - Correct
+- `event.amount` - Correct
+- `features.txn_count_24h` - Correct
 - ❌ `amount` - Incorrect (missing prefix)
 
-### 5.5 Common Patterns (✅ Implemented)
+### 5.5 Common Patterns (Unverified compatibility behavior)
 
 **Pattern 1: Whitelist Check**
 ```yaml
@@ -308,31 +315,31 @@ rule:
 
 ## 8. Summary
 
-### 8.1 Implemented Features (✅)
+### 8.1 Legacy features (unverified)
 
 A CORINT Rule currently supports:
 
 **Core Fields:**
-- ✅ `id` - Unique identifier
-- ✅ `name` - Human-readable name
-- ✅ `description` - Optional description
-- ✅ `when` - Condition logic (all/any/not)
-- ✅ `score` - Risk score (supports negative values)
-- ✅ `metadata` - Arbitrary metadata
+- `id` - Unique identifier
+- `name` - Human-readable name
+- `description` - Optional description
+- `when` - Condition logic (all/any/not)
+- `score` - Risk score (supports negative values)
+- `metadata` - Arbitrary metadata
 
 **Condition Logic:**
-- ✅ Logical operators: `all` (AND), `any` (OR), `not` (NOT)
-- ✅ Nested condition groups
-- ✅ Event field access with `event.` prefix
-- ✅ Feature access with `features.` prefix
-- ✅ Comparison operators: `==`, `!=`, `<`, `>`, `<=`, `>=`
-- ✅ Membership operators: `in`, `not in`, `in list`, `not in list`
-- ✅ String operators: `contains`, `starts_with`, `ends_with`, `regex`
+- Logical operators: `all` (AND), `any` (OR), `not` (NOT)
+- Nested condition groups
+- Event field access with `event.` prefix
+- Feature access with `features.` prefix
+- Comparison operators: `==`, `!=`, `<`, `>`, `<=`, `>=`
+- Membership operators: `in`, `not in`, `in list`, `not in list`
+- String operators: `contains`, `starts_with`, `ends_with`, `regex`
 
 **Integration:**
-- ✅ Forms the basis of reusable Rulesets
-- ✅ Integrates seamlessly into Pipelines
-- ✅ **Does not define actions** (actions defined in Ruleset)
+- Forms the basis of reusable Rulesets
+- Integrates seamlessly into Pipelines
+- **Does not define actions** (strict Core emits action intents only from the selected Pipeline decision)
 ---
 
 ## 8.2. Related Documentation

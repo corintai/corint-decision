@@ -27,7 +27,9 @@ impl FeatureStoreClient {
 
         #[cfg(feature = "redis")]
         let redis_conn = if matches!(config.provider, FeatureStoreProvider::Redis) {
-            Self::init_redis_connection(&config.connection_string).await.ok()
+            Self::init_redis_connection(&config.connection_string)
+                .await
+                .ok()
         } else {
             None
         };
@@ -46,11 +48,13 @@ impl FeatureStoreClient {
     async fn init_redis_connection(connection_string: &str) -> Result<ConnectionManager> {
         use redis::Client;
 
-        let client = Client::open(connection_string)
-            .map_err(|e| RuntimeError::RuntimeError(format!("Failed to create Redis client: {}", e)))?;
+        let client = Client::open(connection_string).map_err(|e| {
+            RuntimeError::RuntimeError(format!("Failed to create Redis client: {}", e))
+        })?;
 
-        let conn_manager = ConnectionManager::new(client).await
-            .map_err(|e| RuntimeError::RuntimeError(format!("Failed to connect to Redis: {}", e)))?;
+        let conn_manager = ConnectionManager::new(client).await.map_err(|e| {
+            RuntimeError::RuntimeError(format!("Failed to connect to Redis: {}", e))
+        })?;
 
         tracing::info!("Successfully connected to Redis: {}", connection_string);
         Ok(conn_manager)
@@ -107,7 +111,9 @@ impl FeatureStoreClient {
                         Value::Number(num)
                     } else if let Ok(b) = value_str.parse::<bool>() {
                         Value::Bool(b)
-                    } else if let Ok(json_val) = serde_json::from_str::<serde_json::Value>(&value_str) {
+                    } else if let Ok(json_val) =
+                        serde_json::from_str::<serde_json::Value>(&value_str)
+                    {
                         // Try to parse as JSON
                         match json_val {
                             serde_json::Value::Number(n) => {
@@ -198,8 +204,9 @@ impl FeatureStoreClient {
                 Value::String(s) => s.clone(),
                 Value::Array(_) | Value::Object(_) => {
                     // Serialize complex types as JSON
-                    serde_json::to_string(value)
-                        .map_err(|e| RuntimeError::RuntimeError(format!("JSON serialization error: {}", e)))?
+                    serde_json::to_string(value).map_err(|e| {
+                        RuntimeError::RuntimeError(format!("JSON serialization error: {}", e))
+                    })?
                 }
             };
 
@@ -272,9 +279,7 @@ impl FeatureStoreOps for FeatureStoreClient {
         tracing::debug!("Getting feature {} for entity {}", feature_name, entity_key);
 
         match self.config.provider {
-            FeatureStoreProvider::Redis => {
-                self.get_redis_feature(feature_name, entity_key).await
-            }
+            FeatureStoreProvider::Redis => self.get_redis_feature(feature_name, entity_key).await,
             FeatureStoreProvider::Feast => Err(RuntimeError::RuntimeError(
                 "Feast not yet implemented".to_string(),
             )),
@@ -325,17 +330,24 @@ mod tests {
     #[tokio::test]
     #[cfg(feature = "redis")]
     async fn test_redis_connection_error() {
-        // Test with invalid connection string
+        // Fail locally without DNS or a dependency on any installed Redis server.
+        // Port zero cannot name a bound listening endpoint.
         let config = FeatureStoreConfig {
             provider: FeatureStoreProvider::Redis,
-            connection_string: "redis://invalid-host:9999".to_string(),
+            connection_string: "redis://127.0.0.1:0".to_string(),
             namespace: "test".to_string(),
             default_ttl: 3600,
             options: HashMap::new(),
         };
 
         // This should fail to connect but should not panic
-        let result = FeatureStoreClient::new(config).await;
+        // redis 0.24 retries six times with up to 12.6 s of jittered backoff.
+        let result = tokio::time::timeout(
+            std::time::Duration::from_secs(20),
+            FeatureStoreClient::new(config),
+        )
+        .await
+        .expect("Refused loopback connection should finish within the retry budget");
 
         // The client should be created even if connection fails (graceful degradation)
         assert!(result.is_ok());
@@ -354,7 +366,7 @@ mod tests {
             (Value::Bool(true), "true"),
             (Value::Bool(false), "false"),
             (Value::Number(42.0), "42"),
-            (Value::Number(3.14), "3.14"),
+            (Value::Number(1.25), "1.25"),
             (Value::String("hello".to_string()), "hello"),
         ];
 

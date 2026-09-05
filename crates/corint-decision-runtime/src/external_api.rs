@@ -104,7 +104,11 @@ pub enum HttpMethod {
 }
 
 impl HttpMethod {
-    /// Parse HTTP method from string
+    /// Parse HTTP method from string. Keep the legacy Option-returning API.
+    #[allow(
+        clippy::should_implement_trait,
+        reason = "Compatibility API returns Option instead of FromStr Result"
+    )]
     pub fn from_str(s: &str) -> Option<Self> {
         match s.to_uppercase().as_str() {
             "GET" => Some(HttpMethod::GET),
@@ -121,8 +125,8 @@ impl HttpMethod {
 pub struct ExternalApiClient {
     /// API configurations by name
     configs: HashMap<String, ApiConfig>,
-    /// HTTP client
-    client: reqwest::Client,
+    /// Retain the constructor-time client validation; calls build per-endpoint clients.
+    _client: reqwest::Client,
 }
 
 fn build_http_client(
@@ -173,7 +177,7 @@ impl ExternalApiClient {
     pub fn new() -> Self {
         Self {
             configs: HashMap::new(),
-            client: build_http_client(Duration::from_secs(10), None).unwrap_or_else(|err| {
+            _client: build_http_client(Duration::from_secs(10), None).unwrap_or_else(|err| {
                 panic!("Failed to create HTTP client: {}", err);
             }),
         }
@@ -214,7 +218,11 @@ impl ExternalApiClient {
         // Build the complete URL
         let url = self.build_url(api_config, endpoint, params, ctx)?;
 
-        tracing::debug!("Calling external API: {} (timeout: {}ms)", url, effective_timeout);
+        tracing::debug!(
+            "Calling external API: {} (timeout: {}ms)",
+            url,
+            effective_timeout
+        );
 
         // Add authentication headers if configured
         let mut headers = reqwest::header::HeaderMap::new();
@@ -224,18 +232,15 @@ impl ExternalApiClient {
                     .map_err(|e| {
                         RuntimeError::ExternalCallFailed(format!("Invalid header name: {}", e))
                     })?;
-                let header_value = reqwest::header::HeaderValue::from_str(&auth.value)
-                    .map_err(|e| {
+                let header_value =
+                    reqwest::header::HeaderValue::from_str(&auth.value).map_err(|e| {
                         RuntimeError::ExternalCallFailed(format!("Invalid header value: {}", e))
                     })?;
                 headers.insert(header_name, header_value);
             }
         }
 
-        let client = build_http_client(
-            Duration::from_millis(effective_timeout),
-            Some(headers),
-        )?;
+        let client = build_http_client(Duration::from_millis(effective_timeout), Some(headers))?;
 
         // Parse HTTP method
         let method = HttpMethod::from_str(&endpoint.method).ok_or_else(|| {
@@ -257,7 +262,12 @@ impl ExternalApiClient {
 
                 // Process request body if present
                 if let Some(body_template) = &endpoint.request_body {
-                    let body = self.substitute_body_template(body_template, &endpoint.params, params, ctx)?;
+                    let body = self.substitute_body_template(
+                        body_template,
+                        &endpoint.params,
+                        params,
+                        ctx,
+                    )?;
                     request = request
                         .header("Content-Type", "application/json")
                         .body(body);
@@ -279,9 +289,11 @@ impl ExternalApiClient {
                 if let Some(fallback) = &response_config.fallback {
                     tracing::warn!(
                         "External API {}::{} failed with status {}, using endpoint fallback",
-                        api_name, endpoint_name, response.status()
+                        api_name,
+                        endpoint_name,
+                        response.status()
                     );
-                    return Ok(Self::json_to_value(fallback.clone())?);
+                    return Self::json_to_value(fallback.clone());
                 }
             }
 
@@ -302,10 +314,13 @@ impl ExternalApiClient {
                             "External API {}::{} response parsing failed: {}, using endpoint fallback",
                             api_name, endpoint_name, e
                         );
-                        return Ok(Self::json_to_value(fallback.clone())?);
+                        return Self::json_to_value(fallback.clone());
                     }
                 }
-                return Err(RuntimeError::ExternalCallFailed(format!("Failed to parse JSON: {}", e)));
+                return Err(RuntimeError::ExternalCallFailed(format!(
+                    "Failed to parse JSON: {}",
+                    e
+                )));
             }
         };
 
@@ -318,7 +333,10 @@ impl ExternalApiClient {
         // Apply response mapping if configured
         let mut value = Self::json_to_value(json)?;
         if let Some(response_config) = &endpoint.response {
-            tracing::debug!("Response config exists with {} mappings", response_config.mapping.len());
+            tracing::debug!(
+                "Response config exists with {} mappings",
+                response_config.mapping.len()
+            );
             if !response_config.mapping.is_empty() {
                 tracing::debug!("Applying response mapping: {:?}", response_config.mapping);
                 value = self.apply_response_mapping(value, &response_config.mapping)?;
@@ -359,7 +377,11 @@ impl ExternalApiClient {
         for param_name in &endpoint.query_params {
             if let Some(value) = resolved_params.get(param_name) {
                 let value_str = self.value_to_string(value)?;
-                query_parts.push(format!("{}={}", param_name, urlencoding::encode(&value_str)));
+                query_parts.push(format!(
+                    "{}={}",
+                    param_name,
+                    urlencoding::encode(&value_str)
+                ));
             }
         }
 
@@ -416,9 +438,8 @@ impl ExternalApiClient {
                     })
                 } else {
                     // Single token could be a context field or literal
-                    ctx.load_field(&[s.clone()]).or_else(|_| {
-                        Ok(Value::String(s.clone()))
-                    })
+                    ctx.load_field(std::slice::from_ref(s))
+                        .or_else(|_| Ok(Value::String(s.clone())))
                 }
             }
             serde_json::Value::Number(n) => {
@@ -489,7 +510,8 @@ impl ExternalApiClient {
             for (output_field, response_field) in mapping {
                 // Extract nested field from response
                 let field_value = if response_field.contains('.') {
-                    let path: Vec<String> = response_field.split('.').map(|s| s.to_string()).collect();
+                    let path: Vec<String> =
+                        response_field.split('.').map(|s| s.to_string()).collect();
                     self.extract_nested_field(&Value::Object(obj.clone()), &path)
                         .unwrap_or(Value::Null)
                 } else {
@@ -585,7 +607,10 @@ mod tests {
     fn test_build_url_with_path_params() {
         let mut endpoints = HashMap::new();
         let mut endpoint_params = HashMap::new();
-        endpoint_params.insert("id".to_string(), serde_json::Value::String("user_id".to_string()));
+        endpoint_params.insert(
+            "id".to_string(),
+            serde_json::Value::String("user_id".to_string()),
+        );
 
         endpoints.insert(
             "get_user".to_string(),
@@ -618,7 +643,7 @@ mod tests {
         let ctx = ExecutionContext::from_event(HashMap::new()).unwrap();
 
         let url = client
-            .build_url(&api_config, &endpoint, &params, &ctx)
+            .build_url(&api_config, endpoint, &params, &ctx)
             .unwrap();
         assert_eq!(url, "https://api.example.com/users/123");
     }
@@ -627,8 +652,14 @@ mod tests {
     fn test_build_url_with_query_params() {
         let mut endpoints = HashMap::new();
         let mut endpoint_params = HashMap::new();
-        endpoint_params.insert("token".to_string(), serde_json::Value::String("api_token".to_string()));
-        endpoint_params.insert("format".to_string(), serde_json::Value::String("response_format".to_string()));
+        endpoint_params.insert(
+            "token".to_string(),
+            serde_json::Value::String("api_token".to_string()),
+        );
+        endpoint_params.insert(
+            "format".to_string(),
+            serde_json::Value::String("response_format".to_string()),
+        );
 
         endpoints.insert(
             "get_data".to_string(),
@@ -662,7 +693,7 @@ mod tests {
         let ctx = ExecutionContext::from_event(HashMap::new()).unwrap();
 
         let url = client
-            .build_url(&api_config, &endpoint, &params, &ctx)
+            .build_url(&api_config, endpoint, &params, &ctx)
             .unwrap();
         // Query params may be in any order
         assert!(url.starts_with("https://api.example.com/data?"));

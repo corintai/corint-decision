@@ -11,17 +11,13 @@ use std::time::Instant;
 /// DSL document type
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
+#[derive(Default)]
 pub enum DslType {
     Rule,
     Ruleset,
     Pipeline,
+    #[default]
     Auto, // Auto-detect from content
-}
-
-impl Default for DslType {
-    fn default() -> Self {
-        DslType::Auto
-    }
 }
 
 /// Severity level for validation diagnostics
@@ -277,17 +273,17 @@ impl DslValidator {
         }
 
         // Try parsing YAML to detect
-        if let Ok(yaml) = serde_yaml::from_str::<serde_yaml::Value>(content) {
-            if let serde_yaml::Value::Mapping(map) = yaml {
-                if map.contains_key(&serde_yaml::Value::String("rule".to_string())) {
-                    return DslType::Rule;
-                }
-                if map.contains_key(&serde_yaml::Value::String("ruleset".to_string())) {
-                    return DslType::Ruleset;
-                }
-                if map.contains_key(&serde_yaml::Value::String("pipeline".to_string())) {
-                    return DslType::Pipeline;
-                }
+        if let Ok(serde_yaml::Value::Mapping(map)) =
+            serde_yaml::from_str::<serde_yaml::Value>(content)
+        {
+            if map.contains_key(serde_yaml::Value::String("rule".to_string())) {
+                return DslType::Rule;
+            }
+            if map.contains_key(serde_yaml::Value::String("ruleset".to_string())) {
+                return DslType::Ruleset;
+            }
+            if map.contains_key(serde_yaml::Value::String("pipeline".to_string())) {
+                return DslType::Pipeline;
             }
         }
 
@@ -436,13 +432,13 @@ impl DslValidator {
     /// Try to validate as any document type
     fn validate_any(&self, content: &str, start: Instant) -> ValidationResult {
         // Try each format in order
-        if let Ok(_) = RuleParser::parse(content) {
+        if RuleParser::parse(content).is_ok() {
             return self.validate_rule(content, start);
         }
-        if let Ok(_) = RulesetParser::parse(content) {
+        if RulesetParser::parse(content).is_ok() {
             return self.validate_ruleset(content, start);
         }
-        if let Ok(_) = PipelineParser::parse(content) {
+        if PipelineParser::parse(content).is_ok() {
             return self.validate_pipeline(content, start);
         }
 

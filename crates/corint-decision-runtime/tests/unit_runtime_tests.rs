@@ -2,11 +2,11 @@
 //!
 //! Tests all major runtime components to achieve 80%+ coverage
 
-use corint_decision_model::ast::{Signal, Operator, UnaryOperator};
+use corint_decision_model::ast::{Operator, Signal, UnaryOperator};
 use corint_decision_model::ir::{Instruction, Program, ProgramMetadata};
 use corint_decision_model::Value;
 use corint_decision_runtime::context::{ContextInput, ExecutionContext};
-use corint_decision_runtime::error::{Result, RuntimeError};
+use corint_decision_runtime::error::RuntimeError;
 use corint_decision_runtime::executor::Executor;
 use corint_decision_runtime::result::{DecisionResult, ExecutionResult};
 use corint_decision_runtime::validation;
@@ -67,10 +67,7 @@ fn test_context_multi_namespace_storage() {
     assert_eq!(ctx.vars.len(), 1);
 
     // Verify retrieval
-    let value = ctx.load_field(&[
-        String::from("features"),
-        String::from("user_velocity"),
-    ]);
+    let value = ctx.load_field(&[String::from("features"), String::from("user_velocity")]);
     assert!(value.is_ok());
     assert_eq!(value.unwrap(), Value::Number(25.5));
 }
@@ -112,7 +109,10 @@ fn test_context_stack_underflow() {
     // Try to pop from empty stack
     let result = ctx.pop();
     assert!(result.is_err());
-    assert!(matches!(result.err().unwrap(), RuntimeError::StackUnderflow));
+    assert!(matches!(
+        result.err().unwrap(),
+        RuntimeError::StackUnderflow
+    ));
 }
 
 #[test]
@@ -630,9 +630,9 @@ async fn test_executor_unary_negate() {
 async fn test_executor_jump() {
     let program = Program::new(
         vec![
-            Instruction::Jump { offset: 2 }, // Skip next instruction
+            Instruction::Jump { offset: 2 },      // Skip next instruction
             Instruction::SetScore { value: 100 }, // Should be skipped
-            Instruction::SetScore { value: 50 }, // Should execute
+            Instruction::SetScore { value: 50 },  // Should execute
             Instruction::Return,
         ],
         ProgramMetadata::default(),
@@ -650,7 +650,7 @@ async fn test_executor_jump_if_true() {
                 value: Value::Bool(true),
             },
             Instruction::JumpIfTrue { offset: 2 }, // Skip next instruction
-            Instruction::SetScore { value: 100 }, // Should be skipped
+            Instruction::SetScore { value: 100 },  // Should be skipped
             Instruction::Return,
         ],
         ProgramMetadata::default(),
@@ -681,10 +681,7 @@ async fn test_executor_jump_if_false() {
 #[tokio::test]
 async fn test_executor_set_score() {
     let program = Program::new(
-        vec![
-            Instruction::SetScore { value: 75 },
-            Instruction::Return,
-        ],
+        vec![Instruction::SetScore { value: 75 }, Instruction::Return],
         ProgramMetadata::default(),
     );
 
@@ -973,7 +970,10 @@ fn test_decision_result_with_context() {
     let mut result = DecisionResult::new(Signal::Hold, 50);
 
     result.add_context("user_id".to_string(), Value::String("123".to_string()));
-    result.add_context("risk_level".to_string(), Value::String("medium".to_string()));
+    result.add_context(
+        "risk_level".to_string(),
+        Value::String("medium".to_string()),
+    );
 
     assert_eq!(result.context.len(), 2);
     assert_eq!(
@@ -989,7 +989,10 @@ fn test_validation_valid_event() {
     let mut event = HashMap::new();
     event.insert("user_id".to_string(), Value::String("123".to_string()));
     event.insert("amount".to_string(), Value::Number(1000.0));
-    event.insert("custom_field".to_string(), Value::String("data".to_string()));
+    event.insert(
+        "custom_field".to_string(),
+        Value::String("data".to_string()),
+    );
 
     assert!(validation::validate_event_data(&event).is_ok());
 }
@@ -1057,7 +1060,10 @@ fn test_validation_reserved_prefix_service() {
 #[test]
 fn test_validation_reserved_prefix_llm() {
     let mut event = HashMap::new();
-    event.insert("llm_analysis".to_string(), Value::String("result".to_string()));
+    event.insert(
+        "llm_analysis".to_string(),
+        Value::String("result".to_string()),
+    );
 
     assert!(validation::validate_event_data(&event).is_err());
 }
@@ -1216,9 +1222,6 @@ async fn test_integration_context_multi_namespace() {
     assert_eq!(value.unwrap(), Value::String("123".to_string()));
 
     // Verify features namespace
-    let value = ctx.load_field(&[
-        String::from("features"),
-        String::from("txn_count_7d"),
-    ]);
+    let value = ctx.load_field(&[String::from("features"), String::from("txn_count_7d")]);
     assert_eq!(value.unwrap(), Value::Number(25.0));
 }

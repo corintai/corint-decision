@@ -2,8 +2,8 @@
 
 use crate::error::{EngineError, Result};
 use corint_decision_compiler::Compiler;
-use corint_decision_model::ir::Program;
 use corint_decision_dsl_parser::{PipelineParser, RegistryParser, RuleParser, RulesetParser};
+use corint_decision_model::ir::Program;
 use std::path::Path;
 
 pub(super) struct CompilerHelper;
@@ -53,7 +53,7 @@ impl CompilerHelper {
                     return Err(EngineError::InvalidRuleFile(format!(
                         "Pipeline '{}' in file '{}' is missing mandatory 'when' condition. \
                      All pipelines must specify when conditions to filter events.",
-                        &pipeline.id,
+                        pipeline.id,
                         path.display()
                     )));
                 }
@@ -118,7 +118,9 @@ impl CompilerHelper {
         let mut pipeline_count = 0;
 
         // First, try to parse as a pipeline with imports (most common case for repository content)
-        if let Ok(document) = corint_decision_dsl_parser::PipelineParser::parse_with_imports(content) {
+        if let Ok(document) =
+            corint_decision_dsl_parser::PipelineParser::parse_with_imports(content)
+        {
             has_pipeline = true;
             pipeline_count += 1;
 
@@ -230,7 +232,7 @@ impl CompilerHelper {
                         return Err(EngineError::InvalidRuleFile(format!(
                             "Pipeline '{}' from '{}' is missing mandatory 'when' condition. \
                      All pipelines must specify when conditions to filter events.",
-                            &pipeline.id, id
+                            pipeline.id, id
                         )));
                     }
 
@@ -276,7 +278,9 @@ impl CompilerHelper {
     }
 
     /// Load registry from file
-    pub(super) async fn load_registry(path: &Path) -> Result<corint_decision_model::ast::PipelineRegistry> {
+    pub(super) async fn load_registry(
+        path: &Path,
+    ) -> Result<corint_decision_model::ast::PipelineRegistry> {
         let content = tokio::fs::read_to_string(path).await?;
         let registry = RegistryParser::parse(&content)?;
         Ok(registry)

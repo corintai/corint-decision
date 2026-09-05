@@ -52,11 +52,12 @@ mod postgres_tests {
             params: None,
             when: WhenBlock {
                 event_type: None,
-                conditions: vec![Expression::Binary {
+                conditions: Some(vec![Expression::Binary {
                     op: Operator::Gt,
                     left: Box::new(Expression::FieldAccess(vec!["amount".to_string()])),
                     right: Box::new(Expression::Literal(Value::Number(1000.0))),
-                }],
+                }]),
+                condition_group: None,
             },
             score: 50,
             metadata: None,

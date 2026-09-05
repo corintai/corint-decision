@@ -217,14 +217,16 @@ impl RuleCompiler {
             if !conditions.is_empty() {
                 let conditions_json: Vec<serde_json::Value> = conditions
                     .iter()
-                    .map(|c| ExpressionCompiler::expression_to_json(c))
+                    .map(ExpressionCompiler::expression_to_json)
                     .collect();
                 if let Ok(json_str) = serde_json::to_string(&conditions_json) {
-                    metadata.custom.insert("conditions_json".to_string(), json_str);
+                    metadata
+                        .custom
+                        .insert("conditions_json".to_string(), json_str);
                 }
                 let condition_strs: Vec<String> = conditions
                     .iter()
-                    .map(|c| ExpressionCompiler::expression_to_string(c))
+                    .map(ExpressionCompiler::expression_to_string)
                     .collect();
                 metadata
                     .custom

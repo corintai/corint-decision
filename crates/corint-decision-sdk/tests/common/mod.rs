@@ -1,6 +1,8 @@
 //! Common test utilities for SDK integration tests
 
-use corint_decision_sdk::{DecisionEngineBuilder, DecisionRequest, DecisionResponse, Signal, Value};
+use corint_decision_sdk::{
+    DecisionEngineBuilder, DecisionRequest, DecisionResponse, Signal, Value,
+};
 use std::collections::HashMap;
 
 /// Test helper to create a DecisionEngine from inline YAML definitions
@@ -8,6 +10,10 @@ pub struct TestEngine {
     contents: Vec<String>,
 }
 
+#[allow(
+    dead_code,
+    reason = "Shared integration helpers are compiled separately for each test binary"
+)]
 impl TestEngine {
     /// Create a new test engine with multiple definitions
     pub fn new() -> Self {
@@ -65,7 +71,11 @@ impl TestEngine {
         let combined = if self.contents.is_empty() {
             wrapper_pipeline
         } else {
-            format!("{}\n\n---\n\n{}", wrapper_pipeline, self.build_combined_yaml())
+            format!(
+                "{}\n\n---\n\n{}",
+                wrapper_pipeline,
+                self.build_combined_yaml()
+            )
         };
 
         // Write to temp file - the SDK loads from files correctly
@@ -140,60 +150,11 @@ macro_rules! event {
     }};
 }
 
-/// Helper trait for converting values to CORINT `Value`
-pub trait IntoValue {
-    fn into_value(self) -> Value;
-}
-
-impl IntoValue for i32 {
-    fn into_value(self) -> Value {
-        Value::Number(self as f64)
-    }
-}
-
-impl IntoValue for i64 {
-    fn into_value(self) -> Value {
-        Value::Number(self as f64)
-    }
-}
-
-impl IntoValue for f64 {
-    fn into_value(self) -> Value {
-        Value::Number(self)
-    }
-}
-
-impl IntoValue for bool {
-    fn into_value(self) -> Value {
-        Value::Bool(self)
-    }
-}
-
-impl IntoValue for &str {
-    fn into_value(self) -> Value {
-        Value::String(self.to_string())
-    }
-}
-
-impl IntoValue for String {
-    fn into_value(self) -> Value {
-        Value::String(self)
-    }
-}
-
-impl<T: IntoValue> IntoValue for Vec<T> {
-    fn into_value(self) -> Value {
-        Value::Array(self.into_iter().map(|v| v.into_value()).collect())
-    }
-}
-
-impl IntoValue for Value {
-    fn into_value(self) -> Value {
-        self
-    }
-}
-
 /// Assertion helpers for DecisionResponse
+#[allow(
+    dead_code,
+    reason = "Each integration test binary uses a different subset of these assertions"
+)]
 pub trait ResponseAssertions {
     fn assert_action(&self, expected: Signal);
     fn assert_score(&self, expected: i32);

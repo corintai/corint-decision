@@ -66,7 +66,11 @@ impl YamlParser {
 
             // Track if there's meaningful content before first definition
             // (not just comments, empty lines, or version header)
-            if !seen_definition && !is_definition_start && !trimmed.is_empty() && !trimmed.starts_with('#') {
+            if !seen_definition
+                && !is_definition_start
+                && !trimmed.is_empty()
+                && !trimmed.starts_with('#')
+            {
                 // Check if it's a YAML key (like "version:")
                 if trimmed.contains(':') {
                     has_content_before_first_def = true;
@@ -76,10 +80,11 @@ impl YamlParser {
             // Insert --- before definitions:
             // - Before first definition if there's content before it (like version:)
             // - Before subsequent definitions (unless we recently saw ---)
-            if is_definition_start && !recent_separator {
-                if seen_definition || has_content_before_first_def {
-                    result.push_str("\n---\n");
-                }
+            if is_definition_start
+                && !recent_separator
+                && (seen_definition || has_content_before_first_def)
+            {
+                result.push_str("\n---\n");
             }
 
             if is_definition_start {
@@ -262,11 +267,7 @@ impl YamlParser {
 
     /// Validate fields in a YAML object against a list of known fields
     /// Returns warnings for unknown fields with suggestions
-    pub fn validate_fields(
-        obj: &YamlValue,
-        known_fields: &[&str],
-        context: &str,
-    ) -> Vec<String> {
+    pub fn validate_fields(obj: &YamlValue, known_fields: &[&str], context: &str) -> Vec<String> {
         let mut warnings = Vec::new();
 
         if let Some(mapping) = obj.as_mapping() {
@@ -282,7 +283,9 @@ impl YamlParser {
                         // Try fuzzy matching if no exact typo match
                         let suggestion = if let Some(correct) = typo_correction {
                             format!(" Did you mean '{}'?", correct)
-                        } else if let Some(similar) = Self::find_similar_field(field_name, known_fields) {
+                        } else if let Some(similar) =
+                            Self::find_similar_field(field_name, known_fields)
+                        {
                             format!(" Did you mean '{}'?", similar)
                         } else {
                             String::new()
@@ -363,11 +366,11 @@ fn levenshtein_distance(s1: &str, s2: &str) -> usize {
     let mut matrix = vec![vec![0; len2 + 1]; len1 + 1];
 
     // Initialize first column and row
-    for i in 0..=len1 {
-        matrix[i][0] = i;
+    for (i, row) in matrix.iter_mut().enumerate() {
+        row[0] = i;
     }
-    for j in 0..=len2 {
-        matrix[0][j] = j;
+    for (j, cell) in matrix[0].iter_mut().enumerate() {
+        *cell = j;
     }
 
     // Fill in the matrix
@@ -379,10 +382,10 @@ fn levenshtein_distance(s1: &str, s2: &str) -> usize {
             let cost = if c1 == c2 { 0 } else { 1 };
             matrix[i + 1][j + 1] = std::cmp::min(
                 std::cmp::min(
-                    matrix[i][j + 1] + 1,      // deletion
-                    matrix[i + 1][j] + 1,      // insertion
+                    matrix[i][j + 1] + 1, // deletion
+                    matrix[i + 1][j] + 1, // insertion
                 ),
-                matrix[i][j] + cost,           // substitution
+                matrix[i][j] + cost, // substitution
             );
         }
     }

@@ -1,0 +1,178 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "urn:corint:feature-descriptor:1",
+  "title": "feature-descriptor v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "kind",
+    "contract_version",
+    "id",
+    "revision",
+    "provenance",
+    "entity_key",
+    "input",
+    "output",
+    "window_ms",
+    "deduplication",
+    "event_time_field",
+    "available_time_field",
+    "missing",
+    "max_age_ms",
+    "stale",
+    "offline_binding",
+    "online_binding"
+  ],
+  "properties": {
+    "kind": {
+      "const": "corint-feature-descriptor"
+    },
+    "contract_version": {
+      "const": "1"
+    },
+    "id": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "\\S"
+    },
+    "revision": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "\\S"
+    },
+    "provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "producer",
+        "reference"
+      ],
+      "properties": {
+        "producer": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "\\S"
+        },
+        "reference": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "\\S"
+        }
+      }
+    },
+    "entity_key": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "\\S"
+    },
+    "input": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "unit",
+        "meaning"
+      ],
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": [
+            "boolean",
+            "integer",
+            "number",
+            "string"
+          ]
+        },
+        "unit": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "\\S"
+        },
+        "meaning": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "\\S"
+        }
+      }
+    },
+    "output": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "unit",
+        "meaning"
+      ],
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": [
+            "boolean",
+            "integer",
+            "number",
+            "string"
+          ]
+        },
+        "unit": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "\\S"
+        },
+        "meaning": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "\\S"
+        }
+      }
+    },
+    "window_ms": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "deduplication": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "\\S"
+    },
+    "event_time_field": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "\\S"
+    },
+    "available_time_field": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "\\S"
+    },
+    "missing": {
+      "type": "string",
+      "enum": [
+        "error",
+        "null"
+      ]
+    },
+    "max_age_ms": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "stale": {
+      "type": "string",
+      "enum": [
+        "error",
+        "null"
+      ]
+    },
+    "offline_binding": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "\\S"
+    },
+    "online_binding": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "\\S"
+    }
+  }
+}

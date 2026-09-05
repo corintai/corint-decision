@@ -47,7 +47,10 @@ pub struct DecisionEngineBuilder {
     repository_content: Option<RepositoryContent>,
     // Server datasources from server.yaml (takes precedence over repository datasources)
     server_datasources: Option<
-        std::collections::HashMap<String, corint_decision_runtime::datasource::config::DataSourceConfig>,
+        std::collections::HashMap<
+            String,
+            corint_decision_runtime::datasource::config::DataSourceConfig,
+        >,
     >,
 }
 
@@ -211,7 +214,10 @@ impl DecisionEngineBuilder {
     }
 
     /// Set list service for list lookup operations
-    pub fn with_list_service(mut self, service: Arc<corint_decision_runtime::lists::ListService>) -> Self {
+    pub fn with_list_service(
+        mut self,
+        service: Arc<corint_decision_runtime::lists::ListService>,
+    ) -> Self {
         self.list_service = Some(service);
         self
     }
@@ -324,10 +330,11 @@ impl DecisionEngineBuilder {
         let list_service = self.list_service.clone();
 
         #[cfg_attr(not(feature = "sqlx"), allow(unused_mut))]
-        let mut engine = DecisionEngine::new_with_feature_executor(
+        let mut engine = DecisionEngine::new_with_repository(
             self.config,
             self.feature_executor,
             self.list_service,
+            repository_config.clone(),
         )
         .await?;
 
@@ -386,7 +393,10 @@ impl DecisionEngineBuilder {
         content: &RepositoryContent,
         repo_config: &Option<RepositoryConfig>,
         server_datasources: &Option<
-            std::collections::HashMap<String, corint_decision_runtime::datasource::config::DataSourceConfig>,
+            std::collections::HashMap<
+                String,
+                corint_decision_runtime::datasource::config::DataSourceConfig,
+            >,
         >,
     ) -> Result<Option<FeatureExecutor>> {
         use corint_decision_runtime::datasource::{
@@ -399,7 +409,7 @@ impl DecisionEngineBuilder {
             Some(config) => {
                 match &config.source {
                     corint_decision_repository::RepositorySource::FileSystem => {
-                        config.base_path.as_ref().map(|p| p.as_str())
+                        config.base_path.as_deref()
                     }
                     _ => None, // For non-filesystem repositories, we can't load feature files directly
                 }
@@ -612,7 +622,7 @@ impl DecisionEngineBuilder {
         let base_path = match repo_config {
             Some(config) => match &config.source {
                 corint_decision_repository::RepositorySource::FileSystem => {
-                    config.base_path.as_ref().map(|p| p.as_str())
+                    config.base_path.as_deref()
                 }
                 _ => None,
             },
@@ -760,9 +770,11 @@ impl DecisionEngineBuilder {
                         let list_count = backends.len();
                         let list_ids: Vec<&str> = backends.keys().map(|s| s.as_str()).collect();
                         tracing::info!("✓ Loaded {} list(s): {:?}", list_count, list_ids);
-                        Ok(Some(corint_decision_runtime::lists::ListService::new_with_backends(
-                            backends,
-                        )))
+                        Ok(Some(
+                            corint_decision_runtime::lists::ListService::new_with_backends(
+                                backends,
+                            ),
+                        ))
                     }
                 }
                 Err(e) => {

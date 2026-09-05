@@ -5,8 +5,8 @@
 
 use crate::config::{RepositoryConfig, RepositorySource};
 use crate::content::{
-    ApiConfig, ApiEndpoint, DataSourceConfig, FeatureCache, FeatureDefinition, FeatureFilter,
-    ListConfig, PoolConfig, RepositoryContent, TimeWindow,
+    ApiConfig, DataSourceConfig, FeatureCache, FeatureDefinition, FeatureFilter, ListConfig,
+    PoolConfig, RepositoryContent, TimeWindow,
 };
 use crate::error::{RepositoryError, RepositoryResult};
 use crate::Repository;
@@ -70,21 +70,18 @@ impl RepositoryLoader {
         let mut content = RepositoryContent::default();
 
         // 1. Load registry
-        if let Ok(registry) = repo.load_registry().await {
-            content.registry = Some(registry);
+        match repo.load_registry().await {
+            Ok(registry) => content.registry = Some(registry),
+            Err(RepositoryError::NotFound { .. }) => (),
+            Err(error) => return Err(error),
         }
 
         // 2. Load pipelines
-        let pipeline_ids = repo.list_pipelines().await?;
+        let mut pipeline_ids = repo.list_pipelines().await?;
+        pipeline_ids.sort();
         for id in pipeline_ids {
-            match repo.load_pipeline(&id).await {
-                Ok((_, yaml)) => {
-                    content.pipelines.push((id, yaml));
-                }
-                Err(e) => {
-                    eprintln!("[ERROR] Failed to load pipeline '{}': {:?}", id, e);
-                }
-            }
+            let (_, yaml) = repo.load_pipeline(&id).await?;
+            content.pipelines.push((id, yaml));
         }
 
         // 3. Load rules
@@ -107,7 +104,10 @@ impl RepositoryLoader {
         let configs_path = Path::new(base_path).join("configs");
         if configs_path.exists() {
             // Load API configs
-            content.api_configs = self.load_api_configs(&configs_path).await.unwrap_or_default();
+            content.api_configs = self
+                .load_api_configs(&configs_path)
+                .await
+                .unwrap_or_default();
 
             // Load datasource configs
             content.datasource_configs = self
@@ -122,7 +122,10 @@ impl RepositoryLoader {
                 .unwrap_or_default();
 
             // Load list configs
-            content.list_configs = self.load_list_configs(&configs_path).await.unwrap_or_default();
+            content.list_configs = self
+                .load_list_configs(&configs_path)
+                .await
+                .unwrap_or_default();
         }
 
         Ok(content)
@@ -137,15 +140,14 @@ impl RepositoryLoader {
 
         let mut configs = Vec::new();
 
-        let entries = std::fs::read_dir(&apis_path).map_err(|e| {
-            RepositoryError::Other(format!("Failed to read apis directory: {}", e))
-        })?;
+        let entries = std::fs::read_dir(&apis_path)
+            .map_err(|e| RepositoryError::Other(format!("Failed to read apis directory: {}", e)))?;
 
         for entry in entries.flatten() {
             let path = entry.path();
             if path
                 .extension()
-                .map_or(false, |ext| ext == "yaml" || ext == "yml")
+                .is_some_and(|ext| ext == "yaml" || ext == "yml")
             {
                 if let Ok(config) = self.load_api_config_file(&path).await {
                     configs.push(config);
@@ -158,9 +160,9 @@ impl RepositoryLoader {
 
     /// Load a single API config file
     async fn load_api_config_file(&self, path: &Path) -> RepositoryResult<ApiConfig> {
-        let content = tokio::fs::read_to_string(path).await.map_err(|e| {
-            RepositoryError::Other(format!("Failed to read {:?}: {}", path, e))
-        })?;
+        let content = tokio::fs::read_to_string(path)
+            .await
+            .map_err(|e| RepositoryError::Other(format!("Failed to read {:?}: {}", path, e)))?;
 
         // Parse YAML directly into ApiConfig structure
         // serde will handle the deserialization based on our struct definition
@@ -191,7 +193,7 @@ impl RepositoryLoader {
             let path = entry.path();
             if path
                 .extension()
-                .map_or(false, |ext| ext == "yaml" || ext == "yml")
+                .is_some_and(|ext| ext == "yaml" || ext == "yml")
             {
                 if let Ok(config) = self.load_datasource_config_file(&path).await {
                     configs.push(config);
@@ -204,9 +206,9 @@ impl RepositoryLoader {
 
     /// Load a single datasource config file
     async fn load_datasource_config_file(&self, path: &Path) -> RepositoryResult<DataSourceConfig> {
-        let content = tokio::fs::read_to_string(path).await.map_err(|e| {
-            RepositoryError::Other(format!("Failed to read {:?}: {}", path, e))
-        })?;
+        let content = tokio::fs::read_to_string(path)
+            .await
+            .map_err(|e| RepositoryError::Other(format!("Failed to read {:?}: {}", path, e)))?;
 
         let yaml: serde_yaml::Value = serde_yaml::from_str(&content).map_err(|e| {
             RepositoryError::ParseError(format!("Failed to parse {:?}: {}", path, e))
@@ -231,7 +233,10 @@ impl RepositoryLoader {
             .unwrap_or("")
             .to_string();
 
-        let entity = yaml.get("entity").and_then(|v| v.as_str()).map(String::from);
+        let entity = yaml
+            .get("entity")
+            .and_then(|v| v.as_str())
+            .map(String::from);
 
         let pool = yaml.get("pool").map(|p| PoolConfig {
             min_connections: p
@@ -277,7 +282,7 @@ impl RepositoryLoader {
             let path = entry.path();
             if path
                 .extension()
-                .map_or(false, |ext| ext == "yaml" || ext == "yml")
+                .is_some_and(|ext| ext == "yaml" || ext == "yml")
             {
                 if let Ok(defs) = self.load_feature_definitions_file(&path).await {
                     definitions.extend(defs);
@@ -293,9 +298,9 @@ impl RepositoryLoader {
         &self,
         path: &Path,
     ) -> RepositoryResult<Vec<FeatureDefinition>> {
-        let content = tokio::fs::read_to_string(path).await.map_err(|e| {
-            RepositoryError::Other(format!("Failed to read {:?}: {}", path, e))
-        })?;
+        let content = tokio::fs::read_to_string(path)
+            .await
+            .map_err(|e| RepositoryError::Other(format!("Failed to read {:?}: {}", path, e)))?;
 
         let yaml: serde_yaml::Value = serde_yaml::from_str(&content).map_err(|e| {
             RepositoryError::ParseError(format!("Failed to parse {:?}: {}", path, e))
@@ -325,7 +330,10 @@ impl RepositoryLoader {
             .and_then(|v| v.as_str())
             .map(String::from);
 
-        let entity = yaml.get("entity").and_then(|v| v.as_str()).map(String::from);
+        let entity = yaml
+            .get("entity")
+            .and_then(|v| v.as_str())
+            .map(String::from);
 
         let dimension = yaml
             .get("dimension")
@@ -400,7 +408,7 @@ impl RepositoryLoader {
             let path = entry.path();
             if path
                 .extension()
-                .map_or(false, |ext| ext == "yaml" || ext == "yml")
+                .is_some_and(|ext| ext == "yaml" || ext == "yml")
             {
                 if let Ok(list_configs) = self.load_list_configs_file(&path).await {
                     configs.extend(list_configs);
@@ -413,9 +421,9 @@ impl RepositoryLoader {
 
     /// Load list configs from a single file
     async fn load_list_configs_file(&self, path: &Path) -> RepositoryResult<Vec<ListConfig>> {
-        let content = tokio::fs::read_to_string(path).await.map_err(|e| {
-            RepositoryError::Other(format!("Failed to read {:?}: {}", path, e))
-        })?;
+        let content = tokio::fs::read_to_string(path)
+            .await
+            .map_err(|e| RepositoryError::Other(format!("Failed to read {:?}: {}", path, e)))?;
 
         let yaml: serde_yaml::Value = serde_yaml::from_str(&content).map_err(|e| {
             RepositoryError::ParseError(format!("Failed to parse {:?}: {}", path, e))
@@ -494,11 +502,11 @@ impl RepositoryLoader {
         let mut content = RepositoryContent::default();
 
         // Load pipelines
-        let pipeline_ids = repo.list_pipelines().await?;
+        let mut pipeline_ids = repo.list_pipelines().await?;
+        pipeline_ids.sort();
         for id in pipeline_ids {
-            if let Ok((_, yaml)) = repo.load_pipeline(&id).await {
-                content.pipelines.push((id, yaml));
-            }
+            let (_, yaml) = repo.load_pipeline(&id).await?;
+            content.pipelines.push((id, yaml));
         }
 
         // Load rules
@@ -538,11 +546,11 @@ impl RepositoryLoader {
         let mut content = RepositoryContent::default();
 
         // Load pipelines
-        let pipeline_ids = repo.list_pipelines().await?;
+        let mut pipeline_ids = repo.list_pipelines().await?;
+        pipeline_ids.sort();
         for id in pipeline_ids {
-            if let Ok((_, yaml)) = repo.load_pipeline(&id).await {
-                content.pipelines.push((id, yaml));
-            }
+            let (_, yaml) = repo.load_pipeline(&id).await?;
+            content.pipelines.push((id, yaml));
         }
 
         // Load rules

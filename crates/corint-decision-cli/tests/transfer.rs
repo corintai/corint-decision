@@ -210,7 +210,9 @@ fn cli_roundtrip_preserves_source_bytes_policy_identity_and_behavior() {
 fn every_core_negative_fixture_retains_shared_diagnostics_on_import() {
     let dir = setup();
     let manifest: Value = serde_yaml::from_str(&source("manifest.yaml").yaml).unwrap();
-    assert_eq!(manifest["invalid"].as_array().unwrap().len(), 24);
+    // Preserve the original 24 rejections plus five new Pipeline boundary cases;
+    // future manifest additions must also run through this adapter.
+    assert!(manifest["invalid"].as_array().unwrap().len() >= 29);
     for case in manifest["invalid"].as_array().unwrap() {
         let docs: Vec<_> = FILES.iter().map(|f| source(f)).collect();
         let mut bundle = transfer::SourceBundle::new(source("input-schema.yaml"), docs).unwrap();

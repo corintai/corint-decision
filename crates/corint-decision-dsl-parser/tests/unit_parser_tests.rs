@@ -24,7 +24,11 @@ rule:
 "#;
 
     let result = RuleParser::parse(yaml);
-    assert!(result.is_ok(), "Failed to parse simple rule: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "Failed to parse simple rule: {:?}",
+        result.err()
+    );
 
     let rule = result.unwrap();
     assert_eq!(rule.id, "test_rule");
@@ -94,7 +98,10 @@ rule:
     assert!(result.is_ok());
 
     let rule = result.unwrap();
-    assert_eq!(rule.description, Some("This rule checks for high-value transactions".to_string()));
+    assert_eq!(
+        rule.description,
+        Some("This rule checks for high-value transactions".to_string())
+    );
 }
 
 #[test]
@@ -137,7 +144,11 @@ rule:
 "#;
 
     let result = RuleParser::parse(yaml);
-    assert!(result.is_ok(), "Failed to parse rule with all conditions: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "Failed to parse rule with all conditions: {:?}",
+        result.err()
+    );
 
     let rule = result.unwrap();
     assert!(rule.when.condition_group.is_some());
@@ -204,7 +215,11 @@ rule:
 "#;
 
     let result = RuleParser::parse(yaml);
-    assert!(result.is_ok(), "Failed to parse nested condition groups: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "Failed to parse nested condition groups: {:?}",
+        result.err()
+    );
 }
 
 #[test]
@@ -262,12 +277,16 @@ ruleset:
 "#;
 
     let result = RulesetParser::parse(yaml);
-    assert!(result.is_ok(), "Failed to parse ruleset: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "Failed to parse ruleset: {:?}",
+        result.err()
+    );
 
     let ruleset = result.unwrap();
     assert_eq!(ruleset.id, "test_ruleset");
     assert_eq!(ruleset.rules.len(), 2);
-    assert!(ruleset.conclusion.len() > 0);
+    assert!(!ruleset.conclusion.is_empty());
 }
 
 #[test]
@@ -335,7 +354,10 @@ ruleset:
     assert!(result.is_ok());
 
     let ruleset = result.unwrap();
-    assert_eq!(ruleset.description, Some("This ruleset handles fraud detection".to_string()));
+    assert_eq!(
+        ruleset.description,
+        Some("This ruleset handles fraud detection".to_string())
+    );
 }
 
 #[test]
@@ -367,7 +389,6 @@ ruleset:
     let ruleset = result.unwrap();
     assert_eq!(ruleset.conclusion.len(), 4);
 }
-
 
 #[test]
 fn test_parse_ruleset_missing_id() {
@@ -448,7 +469,11 @@ pipeline:
 "#;
 
     let result = PipelineParser::parse(yaml);
-    assert!(result.is_ok(), "Failed to parse pipeline: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "Failed to parse pipeline: {:?}",
+        result.err()
+    );
 
     let pipeline = result.unwrap();
     assert_eq!(pipeline.id, "test_pipeline");
@@ -497,7 +522,11 @@ pipeline:
 "#;
 
     let result = PipelineParser::parse(yaml);
-    assert!(result.is_ok(), "Failed to parse router pipeline: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "Failed to parse router pipeline: {:?}",
+        result.err()
+    );
 
     let pipeline = result.unwrap();
     assert_eq!(pipeline.steps.len(), 4);
@@ -554,7 +583,11 @@ pipeline:
 "#;
 
     let result = PipelineParser::parse(yaml);
-    assert!(result.is_ok(), "Failed to parse service pipeline: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "Failed to parse service pipeline: {:?}",
+        result.err()
+    );
 
     let pipeline = result.unwrap();
     assert_eq!(pipeline.steps[0].step_type, "service");
@@ -671,7 +704,10 @@ pipeline:
     assert!(result.is_ok());
 
     let pipeline = result.unwrap();
-    assert_eq!(pipeline.description, Some("This pipeline handles payment processing".to_string()));
+    assert_eq!(
+        pipeline.description,
+        Some("This pipeline handles payment processing".to_string())
+    );
 }
 
 // =============================================================================
@@ -682,14 +718,22 @@ pipeline:
 fn test_parse_simple_comparison() {
     let expr = "event.amount > 1000";
     let result = ExpressionParser::parse(expr);
-    assert!(result.is_ok(), "Failed to parse comparison: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "Failed to parse comparison: {:?}",
+        result.err()
+    );
 }
 
 #[test]
 fn test_parse_complex_logical_expression() {
     let expr = "(event.amount > 1000) && (event.country == \"US\")";
     let result = ExpressionParser::parse(expr);
-    assert!(result.is_ok(), "Failed to parse complex expression: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "Failed to parse complex expression: {:?}",
+        result.err()
+    );
 }
 
 #[test]
@@ -766,10 +810,7 @@ fn test_parse_arithmetic_expression() {
 
 #[test]
 fn test_parse_unary_operators() {
-    let test_cases = vec![
-        "!event.is_verified",
-        "-event.amount",
-    ];
+    let test_cases = vec!["!event.is_verified", "-event.amount"];
 
     for expr in test_cases {
         let result = ExpressionParser::parse(expr);
@@ -858,7 +899,11 @@ import:
 
     let yaml_value = corint_decision_dsl_parser::yaml_parser::YamlParser::parse(yaml).unwrap();
     let result = ImportParser::parse_from_yaml(&yaml_value);
-    assert!(result.is_ok(), "Failed to parse imports: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "Failed to parse imports: {:?}",
+        result.err()
+    );
 
     let imports_opt = result.unwrap();
     assert!(imports_opt.is_some());
@@ -933,7 +978,11 @@ registry:
 "#;
 
     let result = RegistryParser::parse(yaml);
-    assert!(result.is_ok(), "Failed to parse registry: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "Failed to parse registry: {:?}",
+        result.err()
+    );
 
     let registry = result.unwrap();
     assert_eq!(registry.registry.len(), 2);
@@ -1171,7 +1220,8 @@ rule:
   score: 50
 "#;
 
-    let docs = corint_decision_dsl_parser::yaml_parser::YamlParser::parse_multi_document(yaml).unwrap();
+    let docs =
+        corint_decision_dsl_parser::yaml_parser::YamlParser::parse_multi_document(yaml).unwrap();
     assert_eq!(docs.len(), 2);
 }
 
@@ -1195,10 +1245,16 @@ name: "Test"
 "#;
 
     let yaml_value = corint_decision_dsl_parser::yaml_parser::YamlParser::parse(yaml).unwrap();
-    let name = corint_decision_dsl_parser::yaml_parser::YamlParser::get_optional_string(&yaml_value, "name");
+    let name = corint_decision_dsl_parser::yaml_parser::YamlParser::get_optional_string(
+        &yaml_value,
+        "name",
+    );
     assert_eq!(name, Some("Test".to_string()));
 
-    let missing = corint_decision_dsl_parser::yaml_parser::YamlParser::get_optional_string(&yaml_value, "missing");
+    let missing = corint_decision_dsl_parser::yaml_parser::YamlParser::get_optional_string(
+        &yaml_value,
+        "missing",
+    );
     assert_eq!(missing, None);
 }
 
@@ -1212,5 +1268,7 @@ value: 42
     let yaml_value = corint_decision_dsl_parser::yaml_parser::YamlParser::parse(yaml).unwrap();
     assert!(corint_decision_dsl_parser::yaml_parser::YamlParser::has_field(&yaml_value, "name"));
     assert!(corint_decision_dsl_parser::yaml_parser::YamlParser::has_field(&yaml_value, "value"));
-    assert!(!corint_decision_dsl_parser::yaml_parser::YamlParser::has_field(&yaml_value, "missing"));
+    assert!(
+        !corint_decision_dsl_parser::yaml_parser::YamlParser::has_field(&yaml_value, "missing")
+    );
 }

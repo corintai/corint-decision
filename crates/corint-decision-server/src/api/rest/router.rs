@@ -4,35 +4,28 @@
 
 use super::handlers::*;
 use super::types::AppState;
+use crate::snapshot::{EngineManager, POLICY_HEADER, REVISION_HEADER};
 use axum::{
+    http::HeaderName,
     routing::{get, post},
     Router,
 };
-use corint_decision_engine::DecisionEngine;
 use std::sync::Arc;
-use tokio::sync::RwLock;
 use tower_http::cors::CorsLayer;
 use tower_http::trace::TraceLayer;
 
 /// Create REST API router
-pub fn create_router(engine: Arc<DecisionEngine>) -> Router {
-    let state = AppState {
-        engine: Arc::new(RwLock::new(
-            Arc::try_unwrap(engine).unwrap_or_else(|_arc| {
-                // This should not happen during normal initialization
-                // If it does, log a warning and create a minimal engine
-                tracing::warn!("Arc<DecisionEngine> has multiple references during router creation");
-                // We can't clone DecisionEngine, so we panic with a clear message
-                panic!("Cannot create router: DecisionEngine Arc has multiple references. This is a programming error.");
-            })
-        )),
-    };
+pub fn create_router(engine: Arc<EngineManager>) -> Router {
+    let state = AppState { engine };
 
     Router::new()
         .route("/health", get(health))
         .route("/v1/decide", post(decide))
-        .route("/v1/repo/reload", post(reload_repository))  // Changed from GET to POST
+        .route("/v1/repo/reload", post(reload_repository)) // Changed from GET to POST
         .with_state(state)
-        .layer(CorsLayer::permissive())
+        .layer(CorsLayer::permissive().expose_headers([
+            HeaderName::from_static(REVISION_HEADER),
+            HeaderName::from_static(POLICY_HEADER),
+        ]))
         .layer(TraceLayer::new_for_http())
 }

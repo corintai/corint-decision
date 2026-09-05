@@ -7,14 +7,15 @@ pub mod config;
 pub mod core;
 pub mod engine;
 pub mod error;
+pub mod snapshot;
 
 use crate::api::grpc::pb::decision_service_server::DecisionServiceServer;
 use crate::api::grpc::DecisionGrpcService;
 use crate::config::ServerConfig;
+use crate::snapshot::EngineManager;
 use anyhow::Result;
 use std::sync::Arc;
 use tokio::net::TcpListener;
-use tokio::sync::RwLock;
 use tonic::transport::Server as TonicServer;
 use tracing::info;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
@@ -46,7 +47,8 @@ async fn main() -> Result<()> {
     info!("Decision engine initialized");
 
     // Create router
-    let app = api::create_router(Arc::new(engine));
+    let manager = Arc::new(EngineManager::new(Arc::new(engine))?);
+    let app = api::create_router(manager.clone());
 
     // Start HTTP server
     let http_addr = format!("{}:{}", config.server.host, config.server.port);
@@ -65,9 +67,7 @@ async fn main() -> Result<()> {
     if let Some(grpc_port) = config.server.grpc_port {
         let grpc_addr = format!("{}:{}", config.server.host, grpc_port).parse()?;
 
-        // Reinitialize engine for gRPC server
-        let grpc_engine = engine::init_engine(&config).await?;
-        let grpc_service = DecisionGrpcService::new(Arc::new(RwLock::new(grpc_engine)));
+        let grpc_service = DecisionGrpcService::new(manager.clone());
 
         info!("Starting gRPC server on {}", grpc_addr);
 

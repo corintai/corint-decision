@@ -7,10 +7,16 @@ This directory contains CI/CD workflows for the CORINT Decision Engine project.
 ### 1. CI Workflow (`ci.yml`)
 
 **Trigger Conditions**:
-- Push to `main` or `develop` branches
+- Push to `main`
 - Pull requests targeting `main` or `develop` branches
 
 **Execution Details**:
+
+#### CDL Core Job
+- Runs real-engine conformance, strict CLI/toolchain/generator checks and isolated server tests
+- Checks fixture mappings on three strict reference pages and scope/claim classification on compatibility pages
+- Runs fixed-model delivery through real CLI and loopback HTTP processes
+- See [Core process e2e](../../tests/CORE_E2E.md) for prerequisites and evidence boundaries
 
 #### Test Job
 - ✅ Code formatting check (`cargo fmt`)
@@ -21,7 +27,8 @@ This directory contains CI/CD workflows for the CORINT Decision Engine project.
 #### Build Job
 - ✅ Build release version on Linux and macOS
 - ✅ Build all examples
-- ✅ Check binary size
+- ✅ Check `corint-decision-server` binary size
+- Installs `protoc` explicitly on both build platforms
 
 #### Coverage Job
 - ✅ Generate code coverage using `cargo-tarpaulin`
@@ -38,6 +45,11 @@ This directory contains CI/CD workflows for the CORINT Decision Engine project.
 ---
 
 ### 2. Release Workflow (`release.yml`)
+
+The release workflow below still contains legacy package identifiers and needs a
+separate release migration before use. Passing the Core/CI checks does not validate
+this publishing workflow. These descriptions document configuration, not a completed
+remote CI or release run.
 
 **Trigger Conditions**:
 - Push tags matching `v*.*.*` (e.g., `v1.0.0`)
@@ -74,13 +86,16 @@ Before committing code, it's recommended to run the same checks locally:
 
 ```bash
 # 1. Check code formatting
-cargo fmt -- --check
+cargo fmt --all -- --check
 
 # 2. Run Clippy
-cargo clippy --all-targets --all-features -- -D warnings
+cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
 
-# 3. Run tests
-cargo test --all-features --workspace
+# 3. Build the server required by process tests, then run tests
+# Requires protoc; stop if building the server fails.
+CORINT_E2E_SERVER=$(bash tests/scripts/run_core_e2e_tests.sh --build-only) && \
+  export CORINT_E2E_SERVER && \
+  cargo test --all-features --workspace --locked
 
 # 4. Build release version
 cargo build --release --all-features --workspace

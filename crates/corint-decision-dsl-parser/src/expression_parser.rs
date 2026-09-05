@@ -48,7 +48,7 @@ impl ExpressionParser {
         if let Some((left, op, right)) = Self::split_by_keyword_operator(
             input,
             &[
-                "not in",     // Must be before "in"
+                "not in", // Must be before "in"
                 "contains",
                 "in",
                 "starts_with",
@@ -189,10 +189,10 @@ impl ExpressionParser {
 
         // Check for result access: result.field or result.ruleset_id.field
         // Support both "result." and "results." forms
-        let (is_result_access, rest_str) = if input.starts_with("results.") {
-            (true, &input[8..]) // Skip "results."
-        } else if input.starts_with("result.") {
-            (true, &input[7..]) // Skip "result."
+        let (is_result_access, rest_str) = if let Some(rest) = input.strip_prefix("results.") {
+            (true, rest) // Skip "results."
+        } else if let Some(rest) = input.strip_prefix("result.") {
+            (true, rest) // Skip "result."
         } else {
             (false, "")
         };

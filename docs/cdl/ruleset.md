@@ -1,4 +1,11 @@
 # Corint Definition Language (CDL)
+
+<!-- cdl-scope: compatibility-unverified -->
+> This page is an unverified compatibility reference. Its snippets are not Core support evidence.
+> For the executable contract and supported examples, use [CDL Core](cdl-core.md),
+> [Pipeline](pipeline.md) and the [capability inventory](schema/capabilities.json).
+> Described behavior may be incomplete in compatibility entry points; validate through the strict tools before delivery.
+
 ## Ruleset Specification (v0.1)
 
 A **Ruleset** is a named collection of rules that can be reused, grouped, and executed as a unit within CORINT's Cognitive Risk Intelligence framework.
@@ -13,7 +20,7 @@ ruleset:
   id: string
   name: string
   description: string
-  extends: string                    # ✅ Parent ruleset ID (Implemented)
+  extends: string                    # Parent ruleset ID (compatibility reference)
   rules:
     - <rule-id-1>
     - <rule-id-2>
@@ -83,7 +90,7 @@ Rules are executed **in the given order**.
 
 ---
 
-## 5.5 Ruleset Inheritance (`extends`) (✅ Implemented)
+## 5.5 Ruleset Inheritance (`extends`) (Unverified compatibility behavior)
 
 **Ruleset inheritance allows child rulesets to extend parent rulesets, inheriting their rules and optionally overriding decision logic.**
 
@@ -227,7 +234,7 @@ From `fraud_detection_core.yaml`:
 ```yaml
 import:
   rules:
-    - library/rules/fraud/fraud_farm.yaml  # ✅ Correct
+    - library/rules/fraud/fraud_farm.yaml  # Correct
 ```
 
 **ID Naming Conventions:**
@@ -348,7 +355,7 @@ Within conclusion conditions, you can access:
 - `triggered_rules` - Array of triggered rule IDs
 
 
-### 6.3 Available Signals (✅ Implemented)
+### 6.3 Available Signals (Unverified compatibility behavior)
 
 | Signal | Description | Use Case |
 |--------|-------------|----------|
@@ -529,11 +536,11 @@ Always provide clear reasons for audit and explainability:
 conclusion:
   - when: total_score >= 100
     signal: decline
-    reason: "Risk score ${total_score} exceeds threshold"  # ✅ Specific
+    reason: "Risk score ${total_score} exceeds threshold"  # Specific
 
   - when: triggered_count >= 3
     signal: review
-    reason: "Multiple risk indicators: ${triggered_rules}"  # ✅ Detailed
+    reason: "Multiple risk indicators: ${triggered_rules}"  # Detailed
 ```
 
 ### 9.3 Consider Business Context
@@ -582,7 +589,7 @@ For comprehensive understanding of rulesets and the CORINT ecosystem:
 
 A CORINT Ruleset groups multiple rules into a reusable logical unit that:
 - Evaluates rule results and **produces decision signals** (`approve`, `decline`, `review`, `hold`, `pass`)
-- Supports **inheritance** via `extends` for code reuse (✅ Implemented)
+- Supports **inheritance** via `extends` for code reuse (Unverified compatibility behavior)
 - Uses **import** to declare rule dependencies explicitly
 - Integrates with CORINT Pipelines
 

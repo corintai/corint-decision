@@ -12,6 +12,10 @@ pub fn to_c_string(s: &str) -> *mut c_char {
 }
 
 /// Helper to convert C string to Rust string
+///
+/// # Safety
+/// A non-null `s` must point to a readable, NUL-terminated byte sequence that
+/// remains valid and is not mutated for the duration of this call.
 pub unsafe fn from_c_string(s: *const c_char) -> Option<String> {
     if s.is_null() {
         return None;

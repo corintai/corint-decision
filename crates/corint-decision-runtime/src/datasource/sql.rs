@@ -77,7 +77,7 @@ impl SQLClient {
                         .options
                         .get("max_connections")
                         .and_then(|s| s.parse::<u32>().ok())
-                        .unwrap_or_else(|| pool_size.max(1).min(10)); // SQLite typically uses smaller pools
+                        .unwrap_or_else(|| pool_size.clamp(1, 10)); // SQLite typically uses smaller pools
 
                     // Parse connection string (SQLite uses file path or sqlite:// URI)
                     let connect_options = if config.connection_string.starts_with("sqlite://") {
@@ -99,7 +99,10 @@ impl SQLClient {
                         .connect_with(connect_options)
                         .await
                         .map_err(|e| {
-                            RuntimeError::RuntimeError(format!("Failed to connect to SQLite: {}", e))
+                            RuntimeError::RuntimeError(format!(
+                                "Failed to connect to SQLite: {}",
+                                e
+                            ))
                         })?;
 
                     tracing::info!(
@@ -247,17 +250,16 @@ impl SQLClient {
         let field = agg.field.as_deref().unwrap_or("*");
 
         // For PostgreSQL/SQLite, if field contains JSON access, wrap it with type cast for numeric aggregations
-        let needs_numeric_cast = matches!(
-            agg.agg_type,
-            AggregationType::Sum
-                | AggregationType::Avg
-                | AggregationType::Min
-                | AggregationType::Max
-                | AggregationType::Stddev
-                | AggregationType::Percentile { .. }
-        ) && (field.contains("->>")
-            || field == "amount"
-            || field.starts_with("attributes"));
+        let needs_numeric_cast =
+            matches!(
+                agg.agg_type,
+                AggregationType::Sum
+                    | AggregationType::Avg
+                    | AggregationType::Min
+                    | AggregationType::Max
+                    | AggregationType::Stddev
+                    | AggregationType::Percentile { .. }
+            ) && (field.contains("->>") || field == "amount" || field.starts_with("attributes"));
 
         // Build field expression with type cast if needed
         // Field path syntax:
@@ -322,7 +324,8 @@ impl SQLClient {
                                     if idx > 1 {
                                         json_path.push('.');
                                     }
-                                    json_path.push_str(part.trim_matches('"').trim_matches('\'').trim());
+                                    json_path
+                                        .push_str(part.trim_matches('"').trim_matches('\'').trim());
                                 }
                                 format!(
                                     "CAST(json_extract({}, '$.{}') AS REAL)",
@@ -339,7 +342,10 @@ impl SQLClient {
                         if parts.len() >= 2 {
                             let json_field = parts[0];
                             let json_path = parts[1..].join(".");
-                            format!("CAST(json_extract({}, '$.{}') AS REAL)", json_field, json_path)
+                            format!(
+                                "CAST(json_extract({}, '$.{}') AS REAL)",
+                                json_field, json_path
+                            )
                         } else {
                             field.to_string()
                         }
@@ -587,10 +593,13 @@ impl SQLClient {
                                     Value::Null
                                 }
                             } else if let Ok(v) = row.try_get::<Option<DateTime<Utc>>, _>(idx) {
-                                v.map(|dt| Value::String(dt.to_rfc3339())).unwrap_or(Value::Null)
+                                v.map(|dt| Value::String(dt.to_rfc3339()))
+                                    .unwrap_or(Value::Null)
                             } else if let Ok(v) = row.try_get::<DateTime<Utc>, _>(idx) {
                                 Value::String(v.to_rfc3339())
-                            } else if let Ok(v) = row.try_get::<Option<DateTime<FixedOffset>>, _>(idx) {
+                            } else if let Ok(v) =
+                                row.try_get::<Option<DateTime<FixedOffset>>, _>(idx)
+                            {
                                 v.map(|dt| Value::String(dt.with_timezone(&Utc).to_rfc3339()))
                                     .unwrap_or(Value::Null)
                             } else if let Ok(v) = row.try_get::<DateTime<FixedOffset>, _>(idx) {
@@ -605,8 +614,7 @@ impl SQLClient {
                                 .unwrap_or(Value::Null)
                             } else if let Ok(v) = row.try_get::<NaiveDateTime, _>(idx) {
                                 Value::String(
-                                    DateTime::<Utc>::from_naive_utc_and_offset(v, Utc)
-                                        .to_rfc3339(),
+                                    DateTime::<Utc>::from_naive_utc_and_offset(v, Utc).to_rfc3339(),
                                 )
                             } else if let Ok(v) = row.try_get::<Option<String>, _>(idx) {
                                 // Try String for numeric type (PostgreSQL numeric can be read as String)

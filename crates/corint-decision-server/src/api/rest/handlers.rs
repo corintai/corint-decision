@@ -6,20 +6,22 @@ use super::conversions::{extract_reason_codes, json_to_value, normalize_score, v
 use super::extractors::JsonExtractor;
 use super::types::*;
 use crate::error::ServerError;
-use axum::{
-    extract::State,
-    Json,
-};
+use crate::snapshot::{EngineSnapshot, EXPECTED_REVISION_HEADER, POLICY_HEADER, REVISION_HEADER};
+use axum::{extract::State, http::HeaderMap, Json};
 use corint_decision_engine::{DecisionRequest, Signal, Value};
 use std::collections::HashMap;
 use tracing::{error, info};
 
 /// Health check endpoint
-pub(super) async fn health() -> Json<HealthResponse> {
-    Json(HealthResponse {
-        status: "healthy".to_string(),
-        version: env!("CARGO_PKG_VERSION").to_string(),
-    })
+pub(super) async fn health(State(state): State<AppState>) -> (HeaderMap, Json<HealthResponse>) {
+    let snapshot = state.engine.snapshot().await;
+    (
+        snapshot_headers(&snapshot),
+        Json(HealthResponse {
+            status: "healthy".to_string(),
+            version: env!("CARGO_PKG_VERSION").to_string(),
+        }),
+    )
 }
 
 /// Decision endpoint
@@ -27,7 +29,7 @@ pub(super) async fn health() -> Json<HealthResponse> {
 pub(super) async fn decide(
     State(state): State<AppState>,
     JsonExtractor(payload): JsonExtractor<DecideRequestPayload>,
-) -> Result<Json<DecideResponsePayload>, ServerError> {
+) -> Result<(HeaderMap, Json<DecideResponsePayload>), ServerError> {
     let options = payload.options.unwrap_or_default();
 
     info!(
@@ -38,9 +40,7 @@ pub(super) async fn decide(
 
     // Helper function to convert namespace
     let convert_namespace = |ns: HashMap<String, serde_json::Value>| -> HashMap<String, Value> {
-        ns.into_iter()
-            .map(|(k, v)| (k, json_to_value(v)))
-            .collect()
+        ns.into_iter().map(|(k, v)| (k, json_to_value(v))).collect()
     };
 
     // Convert event data (required)
@@ -76,10 +76,8 @@ pub(super) async fn decide(
         request = request.with_trace();
     }
 
-    // Execute decision (acquire read lock - allows concurrent reads)
-    let engine = state.engine.read().await;
-    let response = engine.decide(request).await?;
-    drop(engine); // Release lock as soon as possible
+    let snapshot = state.engine.snapshot().await;
+    let response = snapshot.engine.decide(request).await?;
 
     // Convert signal to decision result string (lowercase to match test expectations)
     let result_str = response
@@ -96,59 +94,84 @@ pub(super) async fn decide(
         .to_string();
 
     // Build the response
-    Ok(Json(DecideResponsePayload {
-        request_id: response.request_id,
-        status: 200,
-        process_time_ms: response.processing_time_ms,
-        pipeline_id: response.pipeline_id.unwrap_or_else(|| "default".to_string()),
-        decision: DecisionPayload {
-            result: result_str,
-            actions: response.result.actions.clone(),
-            scores: ScoresPayload {
-                canonical: normalize_score(response.result.score),
-                raw: response.result.score,
-                confidence: None,
+    Ok((
+        snapshot_headers(&snapshot),
+        Json(DecideResponsePayload {
+            request_id: response.request_id,
+            status: 200,
+            process_time_ms: response.processing_time_ms,
+            pipeline_id: response
+                .pipeline_id
+                .unwrap_or_else(|| "default".to_string()),
+            decision: DecisionPayload {
+                result: result_str,
+                actions: response.result.actions.clone(),
+                scores: ScoresPayload {
+                    canonical: normalize_score(response.result.score),
+                    raw: response.result.score,
+                    confidence: None,
+                },
+                evidence: EvidencePayload {
+                    triggered_rules: response.result.triggered_rules,
+                },
+                cognition: CognitionPayload {
+                    summary: response.result.explanation.clone(),
+                    reason_codes: extract_reason_codes(&response.result.explanation),
+                },
             },
-            evidence: EvidencePayload {
-                triggered_rules: response.result.triggered_rules,
+            features: if options.return_features {
+                Some(
+                    response
+                        .result
+                        .context
+                        .into_iter()
+                        .map(|(k, v)| (k, value_to_json(v)))
+                        .collect(),
+                )
+            } else {
+                None
             },
-            cognition: CognitionPayload {
-                summary: response.result.explanation.clone(),
-                reason_codes: extract_reason_codes(&response.result.explanation),
-            },
-        },
-        features: if options.return_features {
-            Some(
-                response
-                    .result
-                    .context
-                    .into_iter()
-                    .map(|(k, v)| (k, value_to_json(v)))
-                    .collect(),
-            )
-        } else {
-            None
-        },
-        trace: response.trace,
-    }))
+            trace: response.trace,
+        }),
+    ))
 }
 
-/// Reload repository endpoint
-pub(super) async fn reload_repository(State(state): State<AppState>) -> Result<Json<ReloadResponse>, ServerError> {
-    info!("Received repository reload request");
+/// Reload repository endpoint. Empty requests remain valid; callers may supply
+/// x-corint-expected-revision to reject stale administrative requests.
+pub(super) async fn reload_repository(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<(HeaderMap, Json<ReloadResponse>), ServerError> {
+    let expected = headers
+        .get(EXPECTED_REVISION_HEADER)
+        .map(|value| {
+            value
+                .to_str()
+                .map_err(|_| ServerError::InvalidRequest("Invalid expected revision".into()))
+        })
+        .transpose()?;
+    let snapshot = state.engine.reload(expected).await.map_err(|error| {
+        error!("Failed to reload repository: {}", error);
+        ServerError::Reload(error)
+    })?;
+    Ok((
+        snapshot_headers(&snapshot),
+        Json(ReloadResponse {
+            success: true,
+            message: "Repository reloaded successfully".to_string(),
+        }),
+    ))
+}
 
-    // Reload engine using its reload method (acquire write lock - exclusive access)
-    {
-        let mut engine = state.engine.write().await;
-        engine.reload().await.map_err(|e| {
-            error!("Failed to reload repository: {}", e);
-            ServerError::InternalError(anyhow::anyhow!("Failed to reload repository: {}", e))
-        })?;
-    }
-
-    info!("Repository reloaded successfully");
-    Ok(Json(ReloadResponse {
-        success: true,
-        message: "Repository reloaded successfully".to_string(),
-    }))
+fn snapshot_headers(snapshot: &EngineSnapshot) -> HeaderMap {
+    let mut headers = HeaderMap::new();
+    headers.insert(
+        REVISION_HEADER,
+        snapshot.revision.parse().expect("UUID header"),
+    );
+    headers.insert(
+        POLICY_HEADER,
+        snapshot.compiled_sha256.parse().expect("SHA256 header"),
+    );
+    headers
 }

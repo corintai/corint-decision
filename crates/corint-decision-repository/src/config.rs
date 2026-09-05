@@ -8,8 +8,10 @@ use serde::{Deserialize, Serialize};
 /// Repository source type
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
+#[derive(Default)]
 pub enum RepositorySource {
     /// Load from file system
+    #[default]
     FileSystem,
     /// Load from database
     Database,
@@ -17,12 +19,6 @@ pub enum RepositorySource {
     Api,
     /// In-memory configuration (for testing or WASM with manual content)
     Memory,
-}
-
-impl Default for RepositorySource {
-    fn default() -> Self {
-        Self::FileSystem
-    }
 }
 
 /// Repository configuration
@@ -260,10 +256,7 @@ mod tests {
         let config = RepositoryConfig::api("https://api.example.com").with_api_key("secret");
 
         assert_eq!(config.source, RepositorySource::Api);
-        assert_eq!(
-            config.api_url,
-            Some("https://api.example.com".to_string())
-        );
+        assert_eq!(config.api_url, Some("https://api.example.com".to_string()));
         assert_eq!(config.api_key, Some("secret".to_string()));
         assert!(config.validate().is_ok());
     }

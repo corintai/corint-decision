@@ -1,5 +1,12 @@
 # CORINT Context Namespace Reference
 
+<!-- cdl-scope: compatibility-unverified -->
+> This page is an unverified compatibility reference. Its snippets are not Core support evidence.
+> For the executable contract and supported examples, use [CDL Core](cdl-core.md),
+> [Pipeline](pipeline.md) and the [capability inventory](schema/capabilities.json).
+> Described behavior may be incomplete in compatibility entry points; validate through the strict tools before delivery.
+
+
 > **Purpose**: This document provides a concise reference for LLM agents working with CORINT's context system. For detailed documentation, see [CONTEXT_GUIDE.md](../CONTEXT_GUIDE.md).
 
 ## Quick Reference

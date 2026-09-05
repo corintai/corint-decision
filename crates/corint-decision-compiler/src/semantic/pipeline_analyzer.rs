@@ -108,7 +108,10 @@ pub fn analyze_new_pipeline(pipeline: &Pipeline) -> Result<Vec<Warning>> {
         if !reachable.contains(step_id) {
             result.add_warning(
                 "W001",
-                format!("Unreachable step '{}' (not in execution path from entry)", step_id),
+                format!(
+                    "Unreachable step '{}' (not in execution path from entry)",
+                    step_id
+                ),
             );
         }
     }
@@ -267,7 +270,13 @@ fn check_circular_dependencies(
 
     // Start DFS from entry point
     let mut path = Vec::new();
-    dfs(&pipeline.entry, step_map, &mut visited, &mut rec_stack, &mut path)
+    dfs(
+        &pipeline.entry,
+        step_map,
+        &mut visited,
+        &mut rec_stack,
+        &mut path,
+    )
 }
 
 /// Find all reachable steps from the entry point (for W001)
@@ -347,8 +356,7 @@ fn check_dead_ends(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use corint_decision_model::ast::pipeline::{PipelineStep, Route, StepDetails, StepNext};
-    use corint_decision_model::ast::WhenBlock;
+    use corint_decision_model::ast::pipeline::{PipelineStep, StepDetails, StepNext};
 
     fn create_test_pipeline(entry: &str, steps: Vec<PipelineStep>) -> Pipeline {
         Pipeline {

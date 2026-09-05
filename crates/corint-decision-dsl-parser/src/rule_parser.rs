@@ -137,7 +137,11 @@ impl RuleParser {
         Ok(WhenBlock {
             event_type,
             condition_group,
-            conditions: if conditions.is_empty() { None } else { Some(conditions) },
+            conditions: if conditions.is_empty() {
+                None
+            } else {
+                Some(conditions)
+            },
         })
     }
 
@@ -152,7 +156,8 @@ impl RuleParser {
         } else {
             Err(ParseError::InvalidValue {
                 field: "condition".to_string(),
-                message: "Condition must be a string expression or logical group (any/all)".to_string(),
+                message: "Condition must be a string expression or logical group (any/all)"
+                    .to_string(),
             })
         }
     }
@@ -162,14 +167,14 @@ impl RuleParser {
         use corint_decision_model::ast::LogicalGroupOp;
 
         // Check if it's an 'any' or 'all' logical group
-        if let Some(any_conditions) = obj.get(&YamlValue::String("any".to_string())) {
+        if let Some(any_conditions) = obj.get(YamlValue::String("any".to_string())) {
             // Parse 'any' logical group (OR logic)
             let conditions = Self::parse_condition_list(any_conditions)?;
             Ok(Expression::LogicalGroup {
                 op: LogicalGroupOp::Any,
                 conditions,
             })
-        } else if let Some(all_conditions) = obj.get(&YamlValue::String("all".to_string())) {
+        } else if let Some(all_conditions) = obj.get(YamlValue::String("all".to_string())) {
             // Parse 'all' logical group (AND logic)
             let conditions = Self::parse_condition_list(all_conditions)?;
             Ok(Expression::LogicalGroup {
@@ -203,7 +208,8 @@ impl RuleParser {
                     } else {
                         Err(ParseError::InvalidValue {
                             field: "condition".to_string(),
-                            message: "Each condition must be a string or nested logical group".to_string(),
+                            message: "Each condition must be a string or nested logical group"
+                                .to_string(),
                         })
                     }
                 })
@@ -251,7 +257,6 @@ impl RuleParser {
 
     /// Parse a list of Condition (Expression or Group) for new format
     fn parse_new_condition_list(yaml: &YamlValue) -> Result<Vec<Condition>> {
-
         if let Some(seq) = yaml.as_sequence() {
             seq.iter()
                 .map(|item| {
@@ -261,16 +266,16 @@ impl RuleParser {
                         Ok(Condition::Expression(expr))
                     } else if let Some(obj) = item.as_mapping() {
                         // Check if it's a nested condition group (all/any/not)
-                        if obj.contains_key(&YamlValue::String("all".to_string())) {
-                            let all_yaml = obj.get(&YamlValue::String("all".to_string())).unwrap();
+                        if obj.contains_key(YamlValue::String("all".to_string())) {
+                            let all_yaml = obj.get(YamlValue::String("all".to_string())).unwrap();
                             let group = Self::parse_condition_group_all(all_yaml)?;
                             Ok(Condition::Group(Box::new(group)))
-                        } else if obj.contains_key(&YamlValue::String("any".to_string())) {
-                            let any_yaml = obj.get(&YamlValue::String("any".to_string())).unwrap();
+                        } else if obj.contains_key(YamlValue::String("any".to_string())) {
+                            let any_yaml = obj.get(YamlValue::String("any".to_string())).unwrap();
                             let group = Self::parse_condition_group_any(any_yaml)?;
                             Ok(Condition::Group(Box::new(group)))
-                        } else if obj.contains_key(&YamlValue::String("not".to_string())) {
-                            let not_yaml = obj.get(&YamlValue::String("not".to_string())).unwrap();
+                        } else if obj.contains_key(YamlValue::String("not".to_string())) {
+                            let not_yaml = obj.get(YamlValue::String("not".to_string())).unwrap();
                             let group = Self::parse_condition_group_not(not_yaml)?;
                             Ok(Condition::Group(Box::new(group)))
                         } else {

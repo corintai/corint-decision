@@ -6,8 +6,11 @@ use axum::{
 };
 use corint_decision_compiler::core::CoreSource;
 use corint_decision_server::core::{self, CoreConfig};
-use corint_decision_toolchain::{package, transfer::SourceBundle};
+use corint_decision_toolchain::transfer::SourceBundle;
+#[path = "../../../tests/support/core_repository.rs"]
+mod repository_fixture;
 use http_body_util::BodyExt;
+use repository_fixture::{identity, publish};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use std::path::{Path, PathBuf};
@@ -56,9 +59,6 @@ fn bundle(change: &str) -> SourceBundle {
 fn hash(s: &str) -> String {
     format!("{:x}", Sha256::digest(s.as_bytes()))
 }
-fn identity(bundle: &SourceBundle) -> String {
-    package::policy_identity(&bundle.sources, &bundle.input_schema).unwrap()
-}
 fn save(path: &Path, value: &Value) {
     std::fs::write(path, serde_json::to_string_pretty(value).unwrap()).unwrap();
 }
@@ -71,11 +71,11 @@ fn setup(approved: &[&str]) -> (TempDir, Value) {
     std::fs::write(dir.path().join("context.yaml"), &context).unwrap();
     std::fs::write(dir.path().join("target.json"), &target).unwrap();
     std::fs::write(dir.path().join("cases.yaml"), &cases).unwrap();
-    save(&dir.path().join("initial.json"), &json!(bundle("initial")));
+    publish(dir.path(), &bundle("initial"), "initial");
     let config = json!({
-        "config_version":"1", "listen":"127.0.0.1:0",
+        "config_version":"2", "listen":"127.0.0.1:0",
         "context":"context.yaml", "target":"target.json", "cases":"cases.yaml",
-        "initial_bundle":"initial.json", "decision_token_env":"TEST_DECISION_TOKEN",
+        "repository":"repository", "decision_token_env":"TEST_DECISION_TOKEN",
         "publisher_token_env":"TEST_PUBLISHER_TOKEN",
         "approvals":approved.iter().map(|change| json!({
             "policy_sha256":identity(&bundle(change)), "context_sha256":hash(&context),
@@ -133,8 +133,9 @@ async fn current(app: &Router) -> Value {
     assert_eq!(status, StatusCode::OK);
     value
 }
-fn candidate(revision: &Value, change: &str) -> Value {
-    json!({"expected_revision":revision["revision"], "bundle":bundle(change)})
+fn candidate(dir: &Path, revision: &Value, change: &str) -> Value {
+    publish(dir, &bundle(change), change);
+    json!({"expected_revision":revision["revision"]})
 }
 
 #[tokio::test]
@@ -143,7 +144,7 @@ async fn roles_authenticate_before_body_and_legacy_routes_are_absent() {
     let app = app(dir.path(), &config).await;
     for (path, method, good, wrong) in [
         ("/v1/core/target", "GET", PUBLISHER, DECISION),
-        ("/v1/core/policies/activate", "POST", PUBLISHER, DECISION),
+        ("/v1/core/repo/reload", "POST", PUBLISHER, DECISION),
         ("/v1/core/decide", "POST", DECISION, PUBLISHER),
     ] {
         for token in [None, Some(wrong), Some("incorrect")] {
@@ -153,7 +154,11 @@ async fn roles_authenticate_before_body_and_legacy_routes_are_absent() {
             assert!(!value.to_string().contains(good));
         }
     }
-    for path in ["/v1/decide", "/v1/repo/reload"] {
+    for path in [
+        "/v1/decide",
+        "/v1/repo/reload",
+        "/v1/core/policies/activate",
+    ] {
         assert_eq!(
             call(&app, "POST", path, Some(PUBLISHER), json!({})).await.0,
             StatusCode::NOT_FOUND
@@ -177,7 +182,7 @@ async fn active_identity_is_attached_to_real_decisions_and_input_injection_is_re
     let app = app(dir.path(), &config).await;
     let state = current(&app).await;
     assert_eq!(state["policy_sha256"], identity(&bundle("initial")));
-    assert_eq!(state["scope"], "local_operator_activation");
+    assert_eq!(state["scope"], "local_repository_reload");
     assert_eq!(state["local_engine_constructed"], true);
     assert_eq!(state["business_evaluation"], "not_performed");
     for (amount, score) in [(1001, 60), (1000, 0), (999, 0)] {
@@ -238,9 +243,9 @@ async fn unapproved_or_behaviorally_wrong_candidates_leave_active_policy_unchang
         let (actual, response) = call(
             &app,
             "POST",
-            "/v1/core/policies/activate",
+            "/v1/core/repo/reload",
             Some(PUBLISHER),
-            candidate(&original, change),
+            candidate(dir.path(), &original, change),
         )
         .await;
         assert_eq!(actual, status);
@@ -258,9 +263,9 @@ async fn activation_is_compare_and_swap_and_failed_or_stale_requests_do_not_muta
     let (status, updated) = call(
         &app,
         "POST",
-        "/v1/core/policies/activate",
+        "/v1/core/repo/reload",
         Some(PUBLISHER),
-        candidate(&original, "second"),
+        candidate(dir.path(), &original, "second"),
     )
     .await;
     assert_eq!(status, StatusCode::OK);
@@ -269,9 +274,9 @@ async fn activation_is_compare_and_swap_and_failed_or_stale_requests_do_not_muta
     let (status, value) = call(
         &app,
         "POST",
-        "/v1/core/policies/activate",
+        "/v1/core/repo/reload",
         Some(PUBLISHER),
-        candidate(&original, "third"),
+        candidate(dir.path(), &original, "third"),
     )
     .await;
     assert_eq!(status, StatusCode::CONFLICT);
@@ -300,24 +305,25 @@ async fn activation_is_compare_and_swap_and_failed_or_stale_requests_do_not_muta
 }
 
 #[tokio::test]
-async fn racing_activations_have_one_winner_and_decisions_keep_one_snapshot() {
+async fn racing_repository_reloads_have_one_winner_and_decisions_keep_one_snapshot() {
     let (dir, config) = setup(&["initial", "second", "third"]);
     let app = app(dir.path(), &config).await;
     let original = current(&app).await;
+    let request = candidate(dir.path(), &original, "second");
     let (first, second, decision) = tokio::join!(
         call(
             &app,
             "POST",
-            "/v1/core/policies/activate",
+            "/v1/core/repo/reload",
             Some(PUBLISHER),
-            candidate(&original, "second")
+            request.clone()
         ),
         call(
             &app,
             "POST",
-            "/v1/core/policies/activate",
+            "/v1/core/repo/reload",
             Some(PUBLISHER),
-            candidate(&original, "third")
+            request
         ),
         call(
             &app,
@@ -370,27 +376,28 @@ async fn client_cannot_replace_contracts_cases_or_approvals_and_payloads_are_bou
         "permissions",
         "report",
         "compatible",
+        "bundle",
+        "repository",
+        "path",
     ] {
-        let mut value = candidate(&original, "initial");
+        let mut value = candidate(dir.path(), &original, "initial");
         value[key] = json!(true);
-        let (status, error) = call(
-            &app,
-            "POST",
-            "/v1/core/policies/activate",
-            Some(PUBLISHER),
-            value,
-        )
-        .await;
+        let (status, error) =
+            call(&app, "POST", "/v1/core/repo/reload", Some(PUBLISHER), value).await;
         assert_eq!(status, StatusCode::BAD_REQUEST);
         assert_eq!(error["error"], "E_CORE_REQUEST");
     }
-    let mut invalid = candidate(&original, "initial");
-    invalid["bundle"]["sources"][0]["yaml"] = json!("version: '0.1'\nrule: {id: unsupported}\n");
+    let invalid = candidate(dir.path(), &original, "initial");
+    std::fs::write(
+        dir.path().join("repository/rule.yaml"),
+        "version: '0.1'\nrule: {id: unsupported}\n",
+    )
+    .unwrap();
     assert_eq!(
         call(
             &app,
             "POST",
-            "/v1/core/policies/activate",
+            "/v1/core/repo/reload",
             Some(PUBLISHER),
             invalid
         )
@@ -399,16 +406,15 @@ async fn client_cannot_replace_contracts_cases_or_approvals_and_payloads_are_bou
         StatusCode::UNPROCESSABLE_ENTITY
     );
     let duplicate = format!(
-        "{{\"expected_revision\":\"{}\",\"expected_revision\":\"{}\",\"bundle\":{}}}",
+        "{{\"expected_revision\":\"{}\",\"expected_revision\":\"{}\"}}",
         original["revision"].as_str().unwrap(),
-        original["revision"].as_str().unwrap(),
-        json!(bundle("initial"))
+        original["revision"].as_str().unwrap()
     );
     assert_eq!(
         raw(
             &app,
             "POST",
-            "/v1/core/policies/activate",
+            "/v1/core/repo/reload",
             Some(PUBLISHER),
             duplicate
         )
@@ -420,7 +426,7 @@ async fn client_cannot_replace_contracts_cases_or_approvals_and_payloads_are_bou
         raw(
             &app,
             "POST",
-            "/v1/core/policies/activate",
+            "/v1/core/repo/reload",
             Some(PUBLISHER),
             "x".repeat(8 * 1024 * 1024 + 1)
         )
@@ -471,7 +477,7 @@ async fn operator_bindings_and_initial_policy_fail_closed_at_startup() {
         .is_err());
     }
     let (dir, config) = setup(&["wrong"]);
-    save(&dir.path().join("initial.json"), &json!(bundle("wrong")));
+    publish(dir.path(), &bundle("wrong"), "wrong");
     assert!(core::create_router(
         serde_json::from_value(config).unwrap(),
         dir.path(),
@@ -489,7 +495,7 @@ async fn operator_bindings_and_initial_policy_fail_closed_at_startup() {
 async fn insecure_configuration_is_rejected_without_exposing_credentials() {
     let (dir, config) = setup(&["initial"]);
     for (key, value) in [
-        ("config_version", json!("2")),
+        ("config_version", json!("1")),
         ("listen", json!("0.0.0.0:8080")),
         ("approvals", json!([])),
     ] {
@@ -520,6 +526,11 @@ async fn insecure_configuration_is_rejected_without_exposing_credentials() {
     let mut invalid = config.clone();
     invalid["unknown"] = json!(true);
     assert!(serde_json::from_value::<CoreConfig>(invalid).is_err());
+    let mut legacy = config;
+    legacy["config_version"] = json!("1");
+    legacy["initial_bundle"] = json!("initial.json");
+    legacy.as_object_mut().unwrap().remove("repository");
+    assert!(serde_json::from_value::<CoreConfig>(legacy).is_err());
 }
 
 #[tokio::test]
@@ -530,9 +541,9 @@ async fn restart_creates_a_new_revision_and_rejects_old_activation_requests() {
     let (status, updated) = call(
         &first,
         "POST",
-        "/v1/core/policies/activate",
+        "/v1/core/repo/reload",
         Some(PUBLISHER),
-        candidate(&original, "second"),
+        candidate(dir.path(), &original, "second"),
     )
     .await;
     assert_eq!(status, StatusCode::OK);
@@ -541,18 +552,113 @@ async fn restart_creates_a_new_revision_and_rejects_old_activation_requests() {
     let active = current(&restarted).await;
     assert_ne!(active["revision"], original["revision"]);
     assert_ne!(active["revision"], updated["revision"]);
-    assert_eq!(active["policy_sha256"], original["policy_sha256"]);
+    assert_eq!(active["policy_sha256"], updated["policy_sha256"]);
+    assert_eq!(active["repository"], updated["repository"]);
     assert_eq!(
         call(
             &restarted,
             "POST",
-            "/v1/core/policies/activate",
+            "/v1/core/repo/reload",
             Some(PUBLISHER),
-            candidate(&updated, "second")
+            candidate(dir.path(), &updated, "second")
         )
         .await
         .0,
         StatusCode::CONFLICT
+    );
+}
+
+#[tokio::test]
+async fn rollback_and_restart_use_the_repository_without_server_writeback() {
+    let (dir, config) = setup(&["initial", "second"]);
+    let service = app(dir.path(), &config).await;
+    let original = current(&service).await;
+    let request = candidate(dir.path(), &original, "second");
+    let manifest = dir.path().join("repository/published.json");
+    let published = std::fs::read(&manifest).unwrap();
+    let (status, updated) = call(
+        &service,
+        "POST",
+        "/v1/core/repo/reload",
+        Some(PUBLISHER),
+        request,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(std::fs::read(&manifest).unwrap(), published);
+    assert_eq!(updated["repository"]["revision"], "second");
+    let (status, rolled_back) = call(
+        &service,
+        "POST",
+        "/v1/core/repo/reload",
+        Some(PUBLISHER),
+        candidate(dir.path(), &updated, "initial"),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(rolled_back["policy_sha256"], original["policy_sha256"]);
+    assert_eq!(rolled_back["repository"], original["repository"]);
+    assert_ne!(rolled_back["revision"], original["revision"]);
+    let restarted = app(dir.path(), &config).await;
+    let state = current(&restarted).await;
+    assert_eq!(state["repository"], rolled_back["repository"]);
+    assert_eq!(state["policy_sha256"], rolled_back["policy_sha256"]);
+    let (status, decision) = call(
+        &restarted,
+        "POST",
+        "/v1/core/decide",
+        Some(DECISION),
+        json!({"event":{"amount":2500}}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(decision["decision"]["result"]["score"], 60);
+    assert_eq!(decision["snapshot"], state);
+}
+
+#[tokio::test]
+async fn unpublished_repository_edits_preserve_live_snapshot_and_fail_restart() {
+    let (dir, config) = setup(&["initial", "second"]);
+    let service = app(dir.path(), &config).await;
+    let original = current(&service).await;
+    let path = dir.path().join("repository/rule.yaml");
+    let original_source = std::fs::read_to_string(&path).unwrap();
+    std::fs::write(&path, original_source.replace("> 1000", "> 1200")).unwrap();
+    let (status, error) = call(
+        &service,
+        "POST",
+        "/v1/core/repo/reload",
+        Some(PUBLISHER),
+        json!({"expected_revision":original["revision"]}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+    assert_eq!(error["error"], "E_REPOSITORY_DIGEST");
+    assert_eq!(current(&service).await, original);
+    let (status, decision) = call(
+        &service,
+        "POST",
+        "/v1/core/decide",
+        Some(DECISION),
+        json!({"event":{"amount":1001}}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(decision["decision"]["result"]["score"], 60);
+    assert_eq!(decision["snapshot"], original);
+    let error = core::create_router(
+        serde_json::from_value(config).unwrap(),
+        dir.path(),
+        DECISION,
+        PUBLISHER,
+    )
+    .await
+    .err()
+    .unwrap();
+    assert!(error.to_string().contains("E_REPOSITORY_DIGEST"));
+    assert_eq!(
+        std::fs::read_to_string(path).unwrap(),
+        original_source.replace("> 1000", "> 1200")
     );
 }
 
@@ -588,9 +694,11 @@ fn published_server_capability_scope_matches_this_gate() {
         serde_json::from_str(include_str!("../../../docs/cdl/schema/capabilities.json")).unwrap();
     let capability = &inventory["tools"]["core_server"];
     assert_eq!(capability["entry_point"], "CORINT_CORE_CONFIG");
-    assert_eq!(capability["scope"], "local_operator_activation");
+    assert_eq!(capability["scope"], "local_repository_reload");
     assert_eq!(capability["loopback_only"], true);
-    assert_eq!(capability["durable_activation"], false);
+    assert_eq!(capability["source_of_truth"], "repository");
+    assert_eq!(capability["reload_reads_repository"], true);
+    assert_eq!(capability["uploads_policy_content"], false);
     assert_eq!(capability["business_evaluation"], "not_performed");
     assert_eq!(
         capability["evidence"],
@@ -599,7 +707,7 @@ fn published_server_capability_scope_matches_this_gate() {
 }
 
 #[tokio::test]
-async fn frozen_import_closure_runs_through_server_approval_and_real_engine() {
+async fn repository_import_closure_runs_through_server_approval_and_real_engine() {
     let resolved = corint_decision_toolchain::resolve::resolve(
         &root().join("cdl_imports"),
         "input-schema.yaml",
@@ -607,9 +715,21 @@ async fn frozen_import_closure_runs_through_server_approval_and_real_engine() {
     )
     .unwrap();
     let (dir, mut config) = setup(&["initial"]);
-    save(&dir.path().join("initial.json"), &json!(resolved.bundle()));
+    for source in resolved.originals() {
+        let path = dir.path().join("repository").join(&source.path);
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(path, &source.yaml).unwrap();
+    }
+    save(
+        &dir.path().join("repository/published.json"),
+        &json!({
+            "format":"corint-core-repository", "format_version":"1", "revision":"imported",
+            "input_schema":"input-schema.yaml", "entries":["registry.yaml"],
+            "policy_sha256":resolved.receipt().policy_sha256,
+        }),
+    );
     config["approvals"][0]["policy_sha256"] = json!(resolved.receipt().policy_sha256);
-    assert!(!dir.path().join("rules/amount.yaml").exists());
+    assert!(dir.path().join("repository/rules/amount.yaml").exists());
     let app = app(dir.path(), &config).await;
     let (status, result) = call(
         &app,

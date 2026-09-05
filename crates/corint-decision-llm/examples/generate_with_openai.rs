@@ -12,7 +12,7 @@
 //! cargo run --example generate_with_openai
 //! ```
 
-use corint_decision_llm::{OpenAIProvider, RuleGenerator, RuleGeneratorConfig, InMemoryLLMCache};
+use corint_decision_llm::{InMemoryLLMCache, OpenAIProvider, RuleGenerator, RuleGeneratorConfig};
 use std::env;
 use std::sync::Arc;
 
@@ -39,7 +39,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let generator = RuleGenerator::new(provider, config);
 
     // Example rule descriptions
-    let examples = vec![
+    let examples = [
         "Block transactions over $10,000 from accounts less than 3 months old",
         "Flag users who have made more than 5 failed login attempts in the last hour",
         "Approve transactions under $100 from verified accounts",

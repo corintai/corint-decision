@@ -68,7 +68,12 @@ pub(super) fn build_steps_metadata(steps: &[&PipelineStep]) -> String {
                         info["output"] = serde_json::Value::String(out.clone());
                     }
                 }
-                StepDetails::Service { service, query, output, .. } => {
+                StepDetails::Service {
+                    service,
+                    query,
+                    output,
+                    ..
+                } => {
                     info["service"] = serde_json::Value::String(service.clone());
                     if let Some(q) = query {
                         info["query"] = serde_json::Value::String(q.clone());
@@ -117,10 +122,7 @@ pub(super) fn when_block_to_string(when: &WhenBlock) -> String {
 fn condition_group_to_string(group: &ConditionGroup) -> String {
     match group {
         ConditionGroup::All(conditions) => {
-            let parts: Vec<String> = conditions
-                .iter()
-                .map(|c| condition_to_string(c))
-                .collect();
+            let parts: Vec<String> = conditions.iter().map(condition_to_string).collect();
             if parts.len() == 1 {
                 parts[0].clone()
             } else {
@@ -128,10 +130,7 @@ fn condition_group_to_string(group: &ConditionGroup) -> String {
             }
         }
         ConditionGroup::Any(conditions) => {
-            let parts: Vec<String> = conditions
-                .iter()
-                .map(|c| condition_to_string(c))
-                .collect();
+            let parts: Vec<String> = conditions.iter().map(condition_to_string).collect();
             if parts.len() == 1 {
                 parts[0].clone()
             } else {
@@ -139,10 +138,7 @@ fn condition_group_to_string(group: &ConditionGroup) -> String {
             }
         }
         ConditionGroup::Not(conditions) => {
-            let parts: Vec<String> = conditions
-                .iter()
-                .map(|c| condition_to_string(c))
-                .collect();
+            let parts: Vec<String> = conditions.iter().map(condition_to_string).collect();
             format!("NOT ({})", parts.join(" AND "))
         }
     }
@@ -178,14 +174,17 @@ fn expression_to_string(expr: &corint_decision_model::ast::Expression) -> String
             format!("{}{}", op_symbol, expression_to_string(operand))
         }
         Expression::FunctionCall { name, args } => {
-            let args_str: Vec<String> =
-                args.iter().map(|a| expression_to_string(a)).collect();
+            let args_str: Vec<String> = args.iter().map(expression_to_string).collect();
             format!("{}({})", name, args_str.join(", "))
         }
         Expression::ListReference { list_id } => {
             format!("list.{}", list_id)
         }
-        Expression::Ternary { condition, true_expr, false_expr } => {
+        Expression::Ternary {
+            condition,
+            true_expr,
+            false_expr,
+        } => {
             format!(
                 "{} ? {} : {}",
                 expression_to_string(condition),
@@ -195,10 +194,7 @@ fn expression_to_string(expr: &corint_decision_model::ast::Expression) -> String
         }
         Expression::LogicalGroup { op, conditions } => {
             use corint_decision_model::ast::LogicalGroupOp;
-            let parts: Vec<String> = conditions
-                .iter()
-                .map(expression_to_string)
-                .collect();
+            let parts: Vec<String> = conditions.iter().map(expression_to_string).collect();
             let separator = match op {
                 LogicalGroupOp::Any => " || ",
                 LogicalGroupOp::All => " && ",
@@ -209,12 +205,10 @@ fn expression_to_string(expr: &corint_decision_model::ast::Expression) -> String
                 format!("({})", parts.join(separator))
             }
         }
-        Expression::ResultAccess { ruleset_id, field } => {
-            match ruleset_id {
-                Some(id) => format!("result.{}.{}", id, field),
-                None => format!("result.{}", field),
-            }
-        }
+        Expression::ResultAccess { ruleset_id, field } => match ruleset_id {
+            Some(id) => format!("result.{}.{}", id, field),
+            None => format!("result.{}", field),
+        },
     }
 }
 

@@ -137,10 +137,7 @@ impl ListBackend for FileBackend {
 
     async fn get_all(&self, _list_id: &str) -> Result<Vec<Value>> {
         let entries = self.entries.read().await;
-        Ok(entries
-            .iter()
-            .map(|s| Value::String(s.clone()))
-            .collect())
+        Ok(entries.iter().map(|s| Value::String(s.clone())).collect())
     }
 }
 
@@ -158,7 +155,7 @@ mod tests {
         writeln!(temp_file, "value2").unwrap();
         writeln!(temp_file, "# comment").unwrap();
         writeln!(temp_file, "value3").unwrap();
-        writeln!(temp_file, "").unwrap(); // empty line
+        writeln!(temp_file).unwrap(); // empty line
         temp_file.flush().unwrap();
 
         let backend = FileBackend::new(temp_file.path().to_path_buf());

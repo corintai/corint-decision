@@ -112,7 +112,7 @@ fn pointer(value: &str) -> String {
     value.replace('~', "~0").replace('/', "~1")
 }
 
-fn parse(source: &CoreSource, schema: &str) -> Result<Value, CoreError> {
+pub(crate) fn parse(source: &CoreSource, schema: &str) -> Result<Value, CoreError> {
     let yaml: serde_yaml::Value = serde_yaml::from_str(&source.yaml).map_err(|e| {
         let mut err = error(&source.path, "", "E_CONTRACT_FORMAT", e.to_string());
         if let Some(pos) = e.location() {

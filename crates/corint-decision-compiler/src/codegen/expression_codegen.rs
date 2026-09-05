@@ -46,7 +46,8 @@ impl ExpressionCompiler {
                         return Ok(instructions);
                     } else {
                         return Err(CompileError::InvalidExpression(
-                            "InList/NotInList operator requires ListReference on right side".to_string(),
+                            "InList/NotInList operator requires ListReference on right side"
+                                .to_string(),
                         ));
                     }
                 }
@@ -122,12 +123,10 @@ impl ExpressionCompiler {
                 Ok(instructions)
             }
 
-            Expression::LogicalGroup { op, conditions } => {
-                match op {
-                    LogicalGroupOp::Any => Self::compile_any_conditions(conditions),
-                    LogicalGroupOp::All => Self::compile_all_conditions(conditions),
-                }
-            }
+            Expression::LogicalGroup { op, conditions } => match op {
+                LogicalGroupOp::Any => Self::compile_any_conditions(conditions),
+                LogicalGroupOp::All => Self::compile_all_conditions(conditions),
+            },
 
             Expression::ListReference { list_id } => {
                 // ListReference should only appear as the right operand of InList/NotInList
@@ -329,7 +328,9 @@ impl ExpressionCompiler {
                     corint_decision_model::Value::Number(n) => json!(n),
                     corint_decision_model::Value::Bool(b) => json!(b),
                     corint_decision_model::Value::Null => json!(null),
-                    corint_decision_model::Value::Array(arr) => serde_json::to_value(arr).unwrap_or(json!([])),
+                    corint_decision_model::Value::Array(arr) => {
+                        serde_json::to_value(arr).unwrap_or(json!([]))
+                    }
                     corint_decision_model::Value::Object(obj) => {
                         serde_json::to_value(obj).unwrap_or(json!({}))
                     }
@@ -370,7 +371,7 @@ impl ExpressionCompiler {
                     LogicalGroupOp::All => "all",
                 };
                 let nested: Vec<serde_json::Value> =
-                    conditions.iter().map(|c| Self::expression_to_json(c)).collect();
+                    conditions.iter().map(Self::expression_to_json).collect();
                 json!({
                     "type": "group",
                     "group_type": group_type,
@@ -380,7 +381,7 @@ impl ExpressionCompiler {
             }
             Expression::FunctionCall { name, args } => {
                 let args_json: Vec<serde_json::Value> =
-                    args.iter().map(|a| Self::expression_to_json(a)).collect();
+                    args.iter().map(Self::expression_to_json).collect();
                 json!({
                     "type": "function",
                     "name": name,
@@ -467,7 +468,7 @@ impl ExpressionCompiler {
             Expression::FunctionCall { name, args } => {
                 let args_str = args
                     .iter()
-                    .map(|a| Self::expression_to_string(a))
+                    .map(Self::expression_to_string)
                     .collect::<Vec<_>>()
                     .join(", ");
                 format!("{}({})", name, args_str)
@@ -478,19 +479,15 @@ impl ExpressionCompiler {
                     LogicalGroupOp::Any => "any",
                     LogicalGroupOp::All => "all",
                 };
-                let cond_strs: Vec<String> = conditions
-                    .iter()
-                    .map(|c| Self::expression_to_string(c))
-                    .collect();
+                let cond_strs: Vec<String> =
+                    conditions.iter().map(Self::expression_to_string).collect();
                 format!("{}:[{}]", group_name, cond_strs.join(", "))
             }
             Expression::ListReference { list_id } => format!("list.{}", list_id),
-            Expression::ResultAccess { ruleset_id, field } => {
-                match ruleset_id {
-                    Some(id) => format!("result.{}.{}", id, field),
-                    None => format!("result.{}", field),
-                }
-            }
+            Expression::ResultAccess { ruleset_id, field } => match ruleset_id {
+                Some(id) => format!("result.{}.{}", id, field),
+                None => format!("result.{}", field),
+            },
         }
     }
 

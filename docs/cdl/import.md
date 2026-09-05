@@ -1,5 +1,12 @@
 # CDL Imports and Module System
 
+<!-- cdl-scope: compatibility-unverified -->
+> This page is an unverified compatibility reference. Its snippets are not Core support evidence.
+> For the executable contract and supported examples, use [CDL Core](cdl-core.md),
+> [Pipeline](pipeline.md) and the [capability inventory](schema/capabilities.json).
+> Described behavior may be incomplete in compatibility entry points; validate through the strict tools before delivery.
+
+
 > This page describes the compatibility module system. The strict Core execution
 > profile still rejects unresolved imports. For the explicit, conformance-tested
 > authoring profile and frozen bundle workflow, see [Strict resolution](resolution.md).
@@ -109,7 +116,7 @@ Import paths are **relative to repository root**:
 ```yaml
 import:
   rules:
-    - library/rules/fraud/fraud_farm.yaml  # ✅ Valid
+    - library/rules/fraud/fraud_farm.yaml  # Valid
     # ❌ Not supported: ../rules/fraud_farm.yaml (relative paths)
     # ❌ Not supported: ./fraud_farm.yaml (current directory)
 ```
@@ -124,7 +131,7 @@ All Rule IDs and Ruleset IDs must be **globally unique** across the entire codeb
 
 **Rule ID Uniqueness**:
 ```yaml
-# ✅ Valid - unique IDs
+# Valid - unique IDs
 rule:
   id: fraud_farm_pattern
 
@@ -138,7 +145,7 @@ rule:
 
 **Ruleset ID Uniqueness**:
 ```yaml
-# ✅ Valid - unique IDs
+# Valid - unique IDs
 ruleset:
   id: fraud_detection_core
 

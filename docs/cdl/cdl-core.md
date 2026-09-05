@@ -8,8 +8,10 @@ gate used by the offline [`corint validate` CLI](cli.md).
 [`corint test`](testing.md) executes examples through `DecisionEngine::from_core`.
 [`corint build` / `corint verify`](packages.md) use the same gates for experimental
 source snapshots and content-bound example evidence, without publication authority.
-Existing builders, server
-loading, validators and LLM generators remain compatibility entry points. Merely
+The opt-in [Core repository server](../contracts/core-server.md) uses the same gates
+for startup/reload and derives its runtime snapshot solely from the published repo.
+Existing compatibility builders, server loading, validators and LLM generators
+remain compatibility entry points. Merely
 writing `version: "0.1"` does not opt a legacy entry point into this contract.
 
 ## 1. Public artifacts and entry points
@@ -173,8 +175,9 @@ call counts, actual paths, input failures and trace parity. Negative fixtures mu
 fail at their declared stage and code. CI checks capability/fixture references.
 
 Full examples in this document are links to runnable fixtures, not manually
-copied YAML. Other existing reference pages retain their historical support labels;
-those labels are **not** certification against this new profile.
+copied YAML. The [Pipeline reference](pipeline.md) uses the same fixture gate. Historical
+reference pages are classified as `compatibility-unverified`; their examples are
+not certification against this profile, and CI rejects unverified support badges.
 
 <!-- cdl-example: payment_boundaries -->
 Supported complete example: `payment_boundaries` in the
@@ -190,8 +193,9 @@ results and assertions that unselected calls do not execute.
 Negative example: `N01_unknown_condition` in the
 [manifest](../../tests/conformance/cdl_core/manifest.yaml) must fail validation with
 `E_UNKNOWN_FIELD`; it is not a supported policy. The [example registry](examples.json)
-binds these declarations to the conformance runner. Its managed pages prohibit
-inline YAML copies; historical docs and prompts remain outside this initial gate.
+binds these declarations to the conformance runner. Its three strict pages prohibit
+inline YAML copies. Thirteen compatibility pages have a separate scope/claim gate;
+their individual snippets and compatibility prompts still await executable mappings.
 
 The separate [import authoring profile](resolution.md) now resolves bounded local
 file imports (C08) into this profile's frozen closure. This execution profile and

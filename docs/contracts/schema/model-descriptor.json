@@ -1,0 +1,161 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "urn:corint:model-descriptor:1",
+  "title": "model-descriptor v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "kind",
+    "contract_version",
+    "id",
+    "revision",
+    "provenance",
+    "artifact_sha256",
+    "features",
+    "preprocessing_sha256",
+    "output",
+    "required_capability",
+    "timeout_ms",
+    "on_failure",
+    "deployment_status"
+  ],
+  "properties": {
+    "kind": {
+      "const": "corint-model-descriptor"
+    },
+    "contract_version": {
+      "const": "1"
+    },
+    "id": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "\\S"
+    },
+    "revision": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "\\S"
+    },
+    "provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "producer",
+        "reference"
+      ],
+      "properties": {
+        "producer": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "\\S"
+        },
+        "reference": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "\\S"
+        }
+      }
+    },
+    "artifact_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "features": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "kind",
+          "id",
+          "revision",
+          "sha256"
+        ],
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "feature",
+              "model"
+            ]
+          },
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "\\S"
+          },
+          "revision": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "\\S"
+          },
+          "sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          }
+        }
+      },
+      "minItems": 1,
+      "uniqueItems": true
+    },
+    "preprocessing_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "output": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "unit",
+        "meaning"
+      ],
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": [
+            "boolean",
+            "integer",
+            "number",
+            "string"
+          ]
+        },
+        "unit": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "\\S"
+        },
+        "meaning": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "\\S"
+        }
+      }
+    },
+    "required_capability": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "\\S"
+    },
+    "timeout_ms": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9007199254740991
+    },
+    "on_failure": {
+      "type": "string",
+      "enum": [
+        "error",
+        "review"
+      ]
+    },
+    "deployment_status": {
+      "type": "string",
+      "enum": [
+        "defined",
+        "evaluated",
+        "ready"
+      ]
+    }
+  }
+}

@@ -27,7 +27,6 @@ fn test_json_to_value_conversion() {
     }
 }
 
-
 #[test]
 fn test_json_to_value_null() {
     let json = serde_json::Value::Null;
@@ -143,7 +142,6 @@ fn test_json_to_value_nested_object() {
     }
 }
 
-
 #[test]
 fn test_health_response_fields() {
     let response = HealthResponse {
@@ -229,7 +227,7 @@ fn test_normalize_score() {
     // Sigmoid normalization provides smooth S-curve
     // Center point (500) should map to ~500
     let center = normalize_score(500);
-    assert!(center >= 495 && center <= 505, "Center: {}", center);
+    assert!((495..=505).contains(&center), "Center: {}", center);
 
     // Low scores should be compressed
     let low = normalize_score(100);
@@ -241,7 +239,11 @@ fn test_normalize_score() {
 
     // Very high scores should saturate near 1000
     let very_high = normalize_score(5000);
-    assert!(very_high >= 900 && very_high <= 1000, "Very high: {}", very_high);
+    assert!(
+        (900..=1000).contains(&very_high),
+        "Very high: {}",
+        very_high
+    );
 
     // Scores should increase monotonically
     assert!(normalize_score(300) < normalize_score(500));

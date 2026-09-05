@@ -1,0 +1,18 @@
+{
+  "kind": "corint-action-receipt",
+  "contract_version": "1",
+  "id": "action-receipt-fixture",
+  "revision": "r1",
+  "provenance": {
+    "producer": "fixture-author",
+    "reference": "fixture://phase0/action-receipt"
+  },
+  "tenant_id": "fixture-tenant",
+  "decision_id": "decision-1",
+  "business_event_id": "event-1",
+  "action_id": "action-1",
+  "idempotency_key": "decision-1:action-1",
+  "status": "succeeded",
+  "executed_at_ms": 130,
+  "detail": "fixture review queued"
+}

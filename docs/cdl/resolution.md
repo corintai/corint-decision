@@ -7,7 +7,9 @@ not a new execution capability or completion of phase 0.
 `corint import` reads an already complete source bundle. `corint resolve` instead
 loads explicit local entry files and their declared transitive imports, validates
 them and emits a **frozen source bundle v1**. Existing `compile_core`, validation,
-strict generation and server activation continue to reject unresolved imports.
+strict generation and runtime execution continue to reject unresolved imports.
+The [Core repository server](../contracts/core-server.md) explicitly reuses this resolver
+during startup/reload, then validates and executes only its frozen closure.
 No runtime path reads, repository discovery, remote fetches or implicit ID lookup
 are added to those entry points.
 
@@ -67,8 +69,10 @@ cargo build -p corint-decision-cli --locked --offline
 label and all entry/import labels are root-relative. The source profile is required,
 not inferred from YAML version. No existing file is overwritten, including symlinks.
 On resolution failure no output artifact is created. Output is a regular v1 bundle
-usable by existing package/target/server gates; those gates do not need the original
-directory. Resolution itself compiles but does **not** execute acceptance cases.
+usable by existing package/target gates; those gates do not need the original
+directory. The repository server loads the published source directory itself and
+compares its frozen identity with published.json. Resolution itself compiles but
+does **not** execute acceptance cases.
 
 JSON stdout is one report with `scope: resolve`, `execution_checked: false`, and
 `resolution` containing the manifest and resolution/policy/bundle SHA-256 values.

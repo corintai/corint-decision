@@ -9,20 +9,6 @@ use corint_decision_model::ast::{Expression, Operator, WhenBlock};
 use corint_decision_model::ir::instruction::Instruction;
 use corint_decision_model::Value;
 
-/// Helper to create a simple step
-fn create_step(id: &str, step_type: &str) -> PipelineStep {
-    PipelineStep {
-        id: id.to_string(),
-        name: format!("Step {}", id),
-        step_type: step_type.to_string(),
-        routes: None,
-        default: None,
-        next: None,
-        when: None,
-        details: StepDetails::Unknown {},
-    }
-}
-
 /// Helper to create a ruleset step
 fn create_ruleset_step(id: &str, ruleset: &str, next: Option<&str>) -> PipelineStep {
     PipelineStep {
@@ -87,7 +73,11 @@ fn test_simple_linear_pipeline() {
     };
 
     let result = PipelineCompiler::compile(&pipeline);
-    assert!(result.is_ok(), "Failed to compile pipeline: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "Failed to compile pipeline: {:?}",
+        result.err()
+    );
 
     let program = result.unwrap();
     let instructions = &program.instructions;
@@ -174,16 +164,22 @@ fn test_router_with_multiple_routes() {
     let instructions = &program.instructions;
 
     // Verify we have LoadField instructions for conditions
-    let has_load_field = instructions.iter().any(|inst| {
-        matches!(inst, Instruction::LoadField { .. })
-    });
-    assert!(has_load_field, "Expected LoadField instructions for router conditions");
+    let has_load_field = instructions
+        .iter()
+        .any(|inst| matches!(inst, Instruction::LoadField { .. }));
+    assert!(
+        has_load_field,
+        "Expected LoadField instructions for router conditions"
+    );
 
     // Verify we have Compare instructions
     let has_compare = instructions
         .iter()
         .any(|inst| matches!(inst, Instruction::Compare { .. }));
-    assert!(has_compare, "Expected Compare instructions for router conditions");
+    assert!(
+        has_compare,
+        "Expected Compare instructions for router conditions"
+    );
 
     // Verify we have JumpIfFalse instructions
     let has_jump_if_false = instructions
@@ -305,7 +301,11 @@ fn test_complex_routing_logic() {
         ),
     );
 
-    let router = create_router_step("router", vec![("high_risk", complex_condition)], Some("low_risk"));
+    let router = create_router_step(
+        "router",
+        vec![("high_risk", complex_condition)],
+        Some("low_risk"),
+    );
 
     let high = create_ruleset_step("high_risk", "high_risk_rules", Some("end"));
     let low = create_ruleset_step("low_risk", "low_risk_rules", Some("end"));
@@ -335,7 +335,10 @@ fn test_complex_routing_logic() {
     let has_and = instructions
         .iter()
         .any(|inst| matches!(inst, Instruction::BinaryOp { op } if op == &Operator::And));
-    assert!(has_and, "Expected BinaryOp And instruction for complex condition");
+    assert!(
+        has_and,
+        "Expected BinaryOp And instruction for complex condition"
+    );
 }
 
 #[test]
@@ -489,8 +492,5 @@ fn test_empty_pipeline() {
     };
 
     let result = PipelineCompiler::compile(&pipeline);
-    assert!(
-        result.is_err(),
-        "Empty pipeline should fail compilation"
-    );
+    assert!(result.is_err(), "Empty pipeline should fail compilation");
 }

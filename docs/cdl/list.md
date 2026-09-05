@@ -1,4 +1,11 @@
 # Corint Definition Language (CDL)
+
+<!-- cdl-scope: compatibility-unverified -->
+> This page is an unverified compatibility reference. Its snippets are not Core support evidence.
+> For the executable contract and supported examples, use [CDL Core](cdl-core.md),
+> [Pipeline](pipeline.md) and the [capability inventory](schema/capabilities.json).
+> Described behavior may be incomplete in compatibility entry points; validate through the strict tools before delivery.
+
 ## List (Custom Lists) Specification (v0.1)
 
 **Custom lists** (blocklists, allowlists, watchlists) enable efficient membership checks against predefined sets of values during rule evaluation.

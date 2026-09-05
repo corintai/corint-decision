@@ -1,7 +1,14 @@
 # Corint Definition Language (CDL)
+
+<!-- cdl-scope: compatibility-unverified -->
+> This page is an unverified compatibility reference. Its snippets are not Core support evidence.
+> For the executable contract and supported examples, use [CDL Core](cdl-core.md),
+> [Pipeline](pipeline.md) and the [capability inventory](schema/capabilities.json).
+> Described behavior may be incomplete in compatibility entry points; validate through the strict tools before delivery.
+
 ## Internal Service Integration Specification (v0.1)
 
-This document defines how internal microservices and message queues are configured, invoked, and managed within Corint Definition Language (CDL).
+This document preserves intended internal service and message-queue syntax. Strict Core rejects Service steps. The compatibility step field validator does not accept the `endpoint` spelling used below, so these examples are not executable support evidence.
 
 **Note:** For database and cache access, use **Datasources** (defined in `config/server.yaml`). For third-party HTTP APIs, use **External APIs** (see `api.md`).
 
@@ -18,9 +25,9 @@ Internal services enable integration with:
 
 | Type | Purpose | Protocol | Authentication |
 |------|---------|----------|----------------|
-| `ms_http` | Internal HTTP/REST microservices | HTTP/HTTPS | None (internal) |
-| `ms_grpc` | Internal gRPC microservices | gRPC | None (internal) |
-| `mq` | Message queue event streaming | Kafka, RabbitMQ | None (internal) |
+| `ms_http` | Internal HTTP/REST microservices | HTTP/HTTPS | Deployment-specific; must be authorized |
+| `ms_grpc` | Internal gRPC microservices | gRPC | Deployment-specific; must be authorized |
+| `mq` | Message queue event streaming | Kafka, RabbitMQ | Deployment-specific; must be authorized |
 
 ### 1.2 Comparison with External Systems
 
@@ -28,7 +35,7 @@ Internal services enable integration with:
 |--------|-----------------|--------------|------------|
 | **Use Case** | Internal microservices, MQ | Third-party APIs | Database, Cache, Feature Store |
 | **Network** | Internal network | Public internet | Internal (DB/Cache) |
-| **Authentication** | None | Required (API keys, tokens) | Connection strings |
+| **Authentication** | Deployment-specific authorization | Required (API keys, tokens) | Connection strings |
 | **Configuration** | service.yaml | configs/apis/ | config/server.yaml (datasource section) |
 | **Retry Strategy** | Conservative (1-2) | Aggressive (3+) | Built-in |
 
@@ -46,7 +53,7 @@ Internal services enable integration with:
 
 ### 2.1 Basic Structure
 
-**Note**: `ms_http` follows the same structure as External API (see `api.md`) but **without authentication** since it's for internal services.
+**Note**: `ms_http` follows the same structure as External API (see `api.md`) but with authentication and authorization supplied by the deployment; an internal network does not grant trust.
 
 ```yaml
 services:

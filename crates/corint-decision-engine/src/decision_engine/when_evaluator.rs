@@ -351,7 +351,7 @@ impl WhenEvaluator {
         }
 
         // Special case: if path starts with "event", skip it since event_data IS the event
-        let actual_path = if path.len() > 0 && path[0] == "event" {
+        let actual_path = if !path.is_empty() && path[0] == "event" {
             &path[1..]
         } else {
             path
@@ -462,7 +462,7 @@ impl WhenEvaluator {
             Expression::FunctionCall { name, args } => {
                 let args_str = args
                     .iter()
-                    .map(|a| WhenEvaluator::expression_to_string(a))
+                    .map(WhenEvaluator::expression_to_string)
                     .collect::<Vec<_>>()
                     .join(", ");
                 format!("{}({})", name, args_str)

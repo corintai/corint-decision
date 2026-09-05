@@ -1,24 +1,31 @@
 # CORINT Feature DSL Reference (v0.2)
 
+<!-- cdl-scope: compatibility-unverified -->
+> This page is an unverified compatibility reference. Its snippets are not Core support evidence.
+> For the executable contract and supported examples, use [CDL Core](cdl-core.md),
+> [Pipeline](pipeline.md) and the [capability inventory](schema/capabilities.json).
+> Described behavior may be incomplete in compatibility entry points; validate through the strict tools before delivery.
+
+
 Quick reference for writing feature definitions in CORINT. For detailed implementation details and use cases, see `FEATURE_ENGINEERING.md`.
 
 ---
 
 ## Implementation Status
 
-| Feature Type | Status | Implemented Methods | Planned Methods |
+| Feature Type | Status | Described Methods | Planned Methods |
 |--------------|--------|---------------------|-----------------|
-| **Aggregation** | 🟢 **Implemented** | count, sum, avg, min, max, distinct, stddev, median, percentile | variance, mode, entropy |
+| **Aggregation** | **Unverified compatibility reference** | count, sum, avg, min, max, distinct, stddev, median, percentile | variance, mode, entropy |
 | **State** | 🔴 **Planned** | - | z_score, deviation_from_baseline, percentile_rank, is_outlier, timezone_consistency |
 | **Sequence** | 🔴 **Planned** | - | consecutive_count, sequence_match, percent_change, streak, pattern_frequency, trend, rate_of_change, anomaly_score, moving_average |
 | **Graph** | 🔴 **Planned** | - | graph_centrality, community_size, shared_entity_count, network_distance |
-| **Expression** | 🟢 **Implemented** | expression | - |
-| **Lookup** | 🟢 **Implemented** | lookup | - |
+| **Expression** | **Unverified compatibility reference** | expression | - |
+| **Lookup** | **Unverified compatibility reference** | lookup | - |
 
 **Legend:**
-- 🟢 **Implemented**: Ready for production use
+- **Unverified compatibility reference**: Described here; execution and production suitability require separate evidence
 - 🟡 **Partial**: Some methods implemented, others in development
-- 🔴 **Planned**: Documented but not yet implemented
+- 🔴 **Planned**: Documented but not yet available
 
 **Note:** SQL generation support exists for some advanced statistics (percentile, stddev, median), but full feature orchestration is still in development.
 
@@ -30,12 +37,12 @@ Quick reference for writing feature definitions in CORINT. For detailed implemen
 
 | Type | Status | Purpose |
 |------|--------|---------|
-| **Aggregation** | 🟢 | Count and aggregate events/values (count, sum, avg, max, min, distinct) |
+| **Aggregation** | Unverified | Count and aggregate events/values (count, sum, avg, max, min, distinct) |
 | **State** | 🔴 | Statistical comparisons (z-score, deviation, percentile) |
 | **Sequence** | 🔴 | Pattern and trend analysis (consecutive, streak, percent_change) |
 | **Graph** | 🔴 | Network and relationship analysis (centrality, community_size, shared_entity) |
-| **Expression** | 🟢 | Compute from other features (rate, ratio, ML models) |
-| **Lookup** | 🟢 | Retrieve pre-computed values (Redis cache) |
+| **Expression** | Unverified | Compute from other features (rate, ratio, ML models) |
+| **Lookup** | Unverified | Retrieve pre-computed values (Redis cache) |
 
 ### 1.2 Basic Structure
 
@@ -163,9 +170,9 @@ rule:
 ```
 ---
 
-## 2. Aggregation 🟢 Implemented
+## 2. Aggregation (unverified compatibility reference)
 
-**Implementation Status:** ✅ Core operators and most statistics production-ready | 📋 Some advanced statistics (variance, mode, entropy) in development
+**Scope:** Aggregation syntax below is an unverified compatibility reference. Advanced statistics such as variance, mode and entropy remain planned.
 
 ### 2.1 Field Semantics
 
@@ -177,12 +184,12 @@ rule:
 
 **Field requirement:**
 - `count` - ❌ No field needed
-- `sum`, `avg`, `max`, `min`, `distinct`, `stddev`, `median`, `percentile` - ✅ Field required
-- `variance`, `mode`, `entropy` - 📋 Planned (not yet implemented)
+- `sum`, `avg`, `max`, `min`, `distinct`, `stddev`, `median`, `percentile` - Field required
+- `variance`, `mode`, `entropy` - 📋 Planned (not yet available)
 
-### 2.2 Implemented Methods
+### 2.2 Described Methods
 
-**✅ count** - Count events
+**count** - Count events
 ```yaml
 - name: cnt_userid_login_1h_failed
   description: "Number of failed login attempts in last 1 hour"
@@ -199,7 +206,7 @@ rule:
       - status == "failed"             # Database field (no prefix)
 ```
 
-**✅ sum** - Sum values
+**sum** - Sum values
 ```yaml
 - name: sum_userid_txn_amt_24h
   description: "Total transaction amount in last 24 hours"
@@ -214,7 +221,7 @@ rule:
   when: type == "transaction"         # Database field (no prefix)
 ```
 
-**✅ avg** - Average values
+**avg** - Average values
 ```yaml
 - name: avg_userid_order_amt_30d
   description: "Average order amount in last 30 days"
@@ -229,7 +236,7 @@ rule:
   when: type == "order"               # Database field (no prefix)
 ```
 
-**✅ max / min** - Maximum / Minimum
+**max / min** - Maximum / Minimum
 ```yaml
 - name: max_userid_txn_amt_90d
   description: "Maximum transaction amount in last 90 days"
@@ -244,7 +251,7 @@ rule:
   when: type == "transaction"         # Database field (no prefix)
 ```
 
-**✅ distinct** - Count unique values
+**distinct** - Count unique values
 ```yaml
 - name: distinct_userid_device_24h
   description: "Number of unique devices used in last 24 hours"
@@ -258,7 +265,7 @@ rule:
   window: 24h
 ```
 
-**✅ stddev** - Standard deviation
+**stddev** - Standard deviation
 ```yaml
 - name: stddev_userid_txn_amt_30d
   description: "Standard deviation of transaction amounts (30 days)"
@@ -278,7 +285,7 @@ rule:
 > - SQLite: `STDEV(field)`
 > - ClickHouse: `stddevPop(field)`
 
-**✅ median** - Median value
+**median** - Median value
 ```yaml
 - name: median_userid_txn_amt_30d
   description: "Median transaction amount (30 days)"
@@ -298,7 +305,7 @@ rule:
 > - SQLite: Uses subquery workaround
 > - ClickHouse: `median(field)`
 
-**✅ percentile** - Nth percentile
+**percentile** - Nth percentile
 ```yaml
 - name: p95_userid_txn_amt_30d
   description: "95th percentile of transaction amounts (30 days)"
@@ -321,7 +328,7 @@ rule:
 
 ### 2.3 Planned Methods
 
-**📋 variance** - Variance (not yet implemented)
+**📋 variance** - Variance (not yet available)
 ```yaml
 # ⚠️ Not yet implemented - use stddev as workaround
 - name: variance_userid_txn_amt_30d
@@ -336,7 +343,7 @@ rule:
   when: type == "transaction"         # Database field (no prefix)
 ```
 
-**📋 mode / entropy** - Most frequent value / Shannon entropy (not yet implemented)
+**📋 mode / entropy** - Most frequent value / Shannon entropy (not yet available)
 
 
 ---
@@ -539,13 +546,13 @@ rule:
 
 ---
 
-## 6. Expression 🟢 Implemented
+## 6. Expression (unverified compatibility reference)
 
-**Implementation Status:** ✅ Production-ready | 📋 ML model integration planned
+**Scope:** Unverified compatibility reference; model integration remains planned.
 
 > **⚠️ Architecture Constraint:** Expression methods **only consume results from other features**. They do not access raw data sources or define time windows.
 
-**✅ expression** - Custom expressions
+**expression** - Custom expressions
 
 > **Note:** The `method` field is **optional** for expression type since it's always "expression". Omitting it makes the configuration more concise.
 
@@ -562,9 +569,9 @@ rule:
 
 ---
 
-## 7. Lookup 🟢 Implemented
+## 7. Lookup (unverified compatibility reference)
 
-**Implementation Status:** ✅ Production-ready
+**Scope:** Unverified compatibility reference.
 
 > **⚠️ Architecture Principle:** Lookup features only retrieve pre-computed values; they do not perform computation.
 
@@ -592,11 +599,11 @@ rule:
 
 | Type | Status | Purpose | Used By |
 |------|--------|---------|---------|
-| `postgresql` | 🟢 **Implemented** | Transactional/event data | Aggregation, Expression |
-| `clickhouse` | 🟢 **Implemented** | High-volume event storage | Aggregation |
-| `redis` | 🟢 **Implemented** | Pre-computed features | Lookup |
-| `mysql` | 🟢 **Implemented** | Transactional/event data | Aggregation |
-| `sqlite` | 🟢 **Implemented** | Embedded/testing | Aggregation |
+| `postgresql` | **Unverified compatibility reference** | Transactional/event data | Aggregation, Expression |
+| `clickhouse` | **Unverified compatibility reference** | High-volume event storage | Aggregation |
+| `redis` | **Unverified compatibility reference** | Pre-computed features | Lookup |
+| `mysql` | **Unverified compatibility reference** | Transactional/event data | Aggregation |
+| `sqlite` | **Unverified compatibility reference** | Embedded/testing | Aggregation |
 | `neo4j` | 🔴 **Planned** | Graph/relationship data | Graph (when implemented) |
 
 ### 8.2 Configuration Files
@@ -628,9 +635,9 @@ datasource:
 
 **Note:** Features use logical datasource names (`events_datasource`, `lookup_datasource`) which are automatically mapped to actual datasources defined in `config/server.yaml`.
 
-**Planned datasource (not yet implemented):** Neo4j graph database support
+**Planned datasource (not yet available):** Neo4j graph database support
 ```yaml
-# ⚠️ WARNING: Neo4j support is planned but not yet implemented
+# ⚠️ WARNING: Neo4j support is planned but not yet available
 # This configuration is for future reference only
 name: neo4j_graph
 type: neo4j
@@ -648,12 +655,12 @@ config:
 
 | Feature Type | Needs `datasource`? | Needs `method`? |
 |--------------|---------------------|-----------------|
-| Aggregation | ✅ Yes | ✅ Yes |
-| State | ✅ Yes | ✅ Yes |
-| Sequence | ✅ Yes | ✅ Yes |
-| Graph | ✅ Yes | ✅ Yes |
+| Aggregation | Yes | Yes |
+| State | Yes | Yes |
+| Sequence | Yes | Yes |
+| Graph | Yes | Yes |
 | Expression | ❌ No | ⚠️ Optional* |
-| Lookup | ✅ Yes | ❌ No |
+| Lookup | Yes | ❌ No |
 
 \* Expression `method` defaults to "expression" if omitted
 
@@ -807,20 +814,20 @@ rule:
 
 | Field | Aggregation | State | Sequence | Graph | Expression | Lookup |
 |-------|-------------|-------|----------|-------|------------|--------|
-| `name` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| `description` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| `type` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| `method` | ✅ | ✅ | ✅ | ✅ | ⚠️ | ❌ |
-| `datasource` | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ |
-| `entity` | ✅ | ✅ | ✅ | ⚠️ | ❌ | ❌ |
-| `dimension` | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ |
-| `dimension_value` | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ |
-| `field` | ⚠️ | ✅ | ⚠️ | ❌ | ❌ | ❌ |
-| `window` | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ |
-| `when` | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ |
-| `expression` | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ |
-| `key` | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ |
-| `fallback` | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ |
+| `name` | | | | | | |
+| `description` | | | | | | |
+| `type` | | | | | | |
+| `method` | | | | | ⚠️ | ❌ |
+| `datasource` | | | | | ❌ | |
+| `entity` | | | | ⚠️ | ❌ | ❌ |
+| `dimension` | | | | | ❌ | ❌ |
+| `dimension_value` | | | | | ❌ | ❌ |
+| `field` | ⚠️ | | ⚠️ | ❌ | ❌ | ❌ |
+| `window` | | | | | ❌ | ❌ |
+| `when` | | | | ❌ | ❌ | ❌ |
+| `expression` | ❌ | ❌ | ❌ | ❌ | | ❌ |
+| `key` | ❌ | ❌ | ❌ | ❌ | ❌ | |
+| `fallback` | ❌ | ❌ | ❌ | ❌ | ❌ | |
 
 > **Note:** ⚠️ = Optional. For Expression, `method` defaults to "expression" if omitted.
 

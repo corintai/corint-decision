@@ -1,0 +1,133 @@
+{
+  "version": 1,
+  "cases": [
+    {
+      "id": "W04_missing_binding",
+      "consumer": "resources",
+      "base": "resource-bindings.json",
+      "pointer": "/resources",
+      "value": [],
+      "expected_code": "E_RESOURCE_BINDING"
+    },
+    {
+      "id": "W04_not_deployed",
+      "consumer": "resources",
+      "base": "resource-bindings.json",
+      "pointer": "/resources/1/status",
+      "value": "evaluated",
+      "expected_code": "E_RESOURCE_UNAVAILABLE"
+    },
+    {
+      "id": "W04_wrong_version",
+      "consumer": "resources",
+      "base": "resource-bindings.json",
+      "pointer": "/resources/0/resource/revision",
+      "value": "r2",
+      "expected_code": "E_RESOURCE_BINDING"
+    },
+    {
+      "id": "W04_wrong_target",
+      "consumer": "resources",
+      "base": "resource-bindings.json",
+      "pointer": "/target_sha256",
+      "value": "0000000000000000000000000000000000000000000000000000000000000000",
+      "expected_code": "E_RESOURCE_TARGET"
+    },
+    {
+      "id": "W07_definition_drift",
+      "consumer": "evaluation",
+      "base": "evaluation-evidence.json",
+      "pointer": "/samples/0/online_definition_sha256",
+      "value": "0000000000000000000000000000000000000000000000000000000000000000",
+      "expected_code": "E_FEATURE_PARITY"
+    },
+    {
+      "id": "W07_value_drift",
+      "consumer": "evaluation",
+      "base": "evaluation-evidence.json",
+      "pointer": "/samples/0/online_value_sha256",
+      "value": "0000000000000000000000000000000000000000000000000000000000000000",
+      "expected_code": "E_FEATURE_PARITY"
+    },
+    {
+      "id": "W07_late_data",
+      "consumer": "evaluation",
+      "base": "evaluation-evidence.json",
+      "pointer": "/samples/0/available_time_ms",
+      "value": 121,
+      "expected_code": "E_POINT_IN_TIME"
+    },
+    {
+      "id": "W07_partition_overlap",
+      "consumer": "evaluation",
+      "base": "evaluation-evidence.json",
+      "pointer": "/dataset/tuning_partition_sha256",
+      "value": "2222222222222222222222222222222222222222222222222222222222222222",
+      "expected_code": "E_DATA_SPLIT"
+    },
+    {
+      "id": "W06_synthetic_business",
+      "consumer": "evaluation",
+      "base": "evaluation-evidence.json",
+      "pointer": "/dataset/origin",
+      "value": "synthetic",
+      "expected_code": "E_EVALUATION_SCOPE"
+    },
+    {
+      "id": "W07_missing_samples",
+      "consumer": "evaluation",
+      "base": "evaluation-evidence.json",
+      "pointer": "/samples",
+      "value": [],
+      "expected_code": "E_FEATURE_COVERAGE"
+    },
+    {
+      "id": "W05_stale_subject",
+      "consumer": "approval",
+      "base": "approval-evidence.json",
+      "pointer": "/subject/policy_sha256",
+      "value": "0000000000000000000000000000000000000000000000000000000000000000",
+      "expected_code": "E_STALE_EVIDENCE"
+    },
+    {
+      "id": "W05_stale_report",
+      "consumer": "approval",
+      "base": "approval-evidence.json",
+      "pointer": "/evaluation_sha256",
+      "value": "0000000000000000000000000000000000000000000000000000000000000000",
+      "expected_code": "E_STALE_EVIDENCE"
+    },
+    {
+      "id": "W09_untrusted_approver",
+      "consumer": "approval",
+      "base": "approval-evidence.json",
+      "pointer": "/approver",
+      "value": "agent",
+      "expected_code": "E_EVIDENCE_AUTHORITY"
+    },
+    {
+      "id": "W08_wrong_event",
+      "consumer": "outcome",
+      "base": "outcome-event.json",
+      "pointer": "/business_event_id",
+      "value": "other",
+      "expected_code": "E_EVENT_CORRELATION"
+    },
+    {
+      "id": "W08_missing_predecessor",
+      "consumer": "outcome",
+      "base": "outcome-event.json",
+      "pointer": "/label_version",
+      "value": 2,
+      "expected_code": "E_LABEL_VERSION"
+    },
+    {
+      "id": "W08_invalid_time",
+      "consumer": "outcome",
+      "base": "outcome-event.json",
+      "pointer": "/available_at_ms",
+      "value": 299,
+      "expected_code": "E_EVENT_TIME"
+    }
+  ]
+}

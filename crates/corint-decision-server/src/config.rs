@@ -57,7 +57,7 @@ impl Default for RepositoryType {
 }
 
 /// Data source configuration for server-level usage
-/// 
+///
 /// All datasources are defined here, including:
 /// - Repository storage (rules, pipelines, etc.)
 /// - Feature calculation (events, aggregations, lookups)
@@ -90,7 +90,10 @@ pub struct DatasourceConfig {
 
 impl DatasourceConfig {
     /// Convert server datasource config to runtime datasource config
-    pub fn to_runtime_config(&self, name: &str) -> anyhow::Result<corint_decision_engine::RuntimeDataSourceConfig> {
+    pub fn to_runtime_config(
+        &self,
+        name: &str,
+    ) -> anyhow::Result<corint_decision_engine::RuntimeDataSourceConfig> {
         use corint_decision_engine::{
             DataSourceType, FeatureStoreConfig, FeatureStoreProvider, OLAPConfig, OLAPProvider,
             RuntimeDataSourceConfig as RuntimeConfig, SQLConfig, SQLProvider,
@@ -102,11 +105,22 @@ impl DatasourceConfig {
                     "postgresql" | "postgres" => SQLProvider::PostgreSQL,
                     "mysql" => SQLProvider::MySQL,
                     "sqlite" => SQLProvider::SQLite,
-                    _ => return Err(anyhow::anyhow!("Unsupported SQL provider: {}", self.provider)),
+                    _ => {
+                        return Err(anyhow::anyhow!(
+                            "Unsupported SQL provider: {}",
+                            self.provider
+                        ))
+                    }
                 };
 
-                let database = self.database.clone().unwrap_or_else(|| "default".to_string());
-                let events_table = self.events_table.clone().unwrap_or_else(|| "events".to_string());
+                let database = self
+                    .database
+                    .clone()
+                    .unwrap_or_else(|| "default".to_string());
+                let events_table = self
+                    .events_table
+                    .clone()
+                    .unwrap_or_else(|| "events".to_string());
 
                 DataSourceType::SQL(SQLConfig {
                     provider,
@@ -122,11 +136,22 @@ impl DatasourceConfig {
                     "druid" => OLAPProvider::Druid,
                     "timescaledb" => OLAPProvider::TimescaleDB,
                     "influxdb" => OLAPProvider::InfluxDB,
-                    _ => return Err(anyhow::anyhow!("Unsupported OLAP provider: {}", self.provider)),
+                    _ => {
+                        return Err(anyhow::anyhow!(
+                            "Unsupported OLAP provider: {}",
+                            self.provider
+                        ))
+                    }
                 };
 
-                let database = self.database.clone().unwrap_or_else(|| "default".to_string());
-                let events_table = self.events_table.clone().unwrap_or_else(|| "events".to_string());
+                let database = self
+                    .database
+                    .clone()
+                    .unwrap_or_else(|| "default".to_string());
+                let events_table = self
+                    .events_table
+                    .clone()
+                    .unwrap_or_else(|| "events".to_string());
 
                 DataSourceType::OLAP(OLAPConfig {
                     provider,
@@ -141,13 +166,22 @@ impl DatasourceConfig {
                     "redis" => FeatureStoreProvider::Redis,
                     "feast" => FeatureStoreProvider::Feast,
                     "http" => FeatureStoreProvider::Http,
-                    _ => return Err(anyhow::anyhow!("Unsupported feature store provider: {}", self.provider)),
+                    _ => {
+                        return Err(anyhow::anyhow!(
+                            "Unsupported feature store provider: {}",
+                            self.provider
+                        ))
+                    }
                 };
 
-                let namespace = self.options.get("namespace")
+                let namespace = self
+                    .options
+                    .get("namespace")
                     .cloned()
                     .unwrap_or_else(|| "default".to_string());
-                let default_ttl = self.options.get("default_ttl")
+                let default_ttl = self
+                    .options
+                    .get("default_ttl")
                     .and_then(|v| v.parse::<u64>().ok())
                     .unwrap_or(3600);
 
@@ -159,14 +193,23 @@ impl DatasourceConfig {
                     options: self.options.clone(),
                 })
             }
-            _ => return Err(anyhow::anyhow!("Unsupported datasource type: {}", self.source_type)),
+            _ => {
+                return Err(anyhow::anyhow!(
+                    "Unsupported datasource type: {}",
+                    self.source_type
+                ))
+            }
         };
 
         // Extract pool_size and timeout_ms from options if available
-        let pool_size = self.options.get("max_connections")
+        let pool_size = self
+            .options
+            .get("max_connections")
             .and_then(|v| v.parse::<u32>().ok())
             .unwrap_or(10);
-        let timeout_ms = self.options.get("connection_timeout")
+        let timeout_ms = self
+            .options
+            .get("connection_timeout")
             .and_then(|v| v.parse::<u64>().ok())
             .map(|v| v * 1000) // Convert seconds to milliseconds
             .unwrap_or(5000);
@@ -226,7 +269,7 @@ fn default_log_level() -> String {
 }
 
 /// Server configuration
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct ServerConfig {
     /// Server settings (host, port, metrics, tracing, logging)
     #[serde(default, flatten)]
@@ -260,18 +303,6 @@ impl Default for ServerSettings {
             enable_metrics: default_true(),
             enable_tracing: default_true(),
             log_level: default_log_level(),
-        }
-    }
-}
-
-impl Default for ServerConfig {
-    fn default() -> Self {
-        Self {
-            server: ServerSettings::default(),
-            repository: RepositoryType::default(),
-            datasource: std::collections::HashMap::new(),
-            default_datasource: None,
-            database_url: None,
         }
     }
 }
@@ -351,7 +382,12 @@ mod tests {
             datasource: None,
         };
 
-        if let RepositoryType::Database { db_type, url, datasource } = repo {
+        if let RepositoryType::Database {
+            db_type,
+            url,
+            datasource,
+        } = repo
+        {
             assert!(matches!(db_type, Some(DatabaseType::PostgreSQL)));
             assert_eq!(url, Some("postgresql://localhost/db".to_string()));
             assert!(datasource.is_none());

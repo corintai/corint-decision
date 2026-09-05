@@ -18,7 +18,7 @@ fn test_codegen_literal_number() {
 
     assert!(instructions.is_ok());
     let instructions = instructions.unwrap();
-    assert!(instructions.len() > 0);
+    assert!(!instructions.is_empty());
 }
 
 #[test]
@@ -393,7 +393,7 @@ fn test_constant_folding_no_change() {
 
     // Should remain a Binary expression
     match optimized {
-        Expression::Binary { .. } => {}, // Expected
+        Expression::Binary { .. } => {} // Expected
         _ => panic!("Expected expression to remain unchanged"),
     }
 }
@@ -429,7 +429,11 @@ fn test_semantic_analyze_valid_rule() {
     let mut analyzer = semantic::SemanticAnalyzer::new();
     let result = analyzer.analyze_rule(&rule);
 
-    assert!(result.is_ok(), "Valid rule should pass semantic analysis: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "Valid rule should pass semantic analysis: {:?}",
+        result.err()
+    );
 }
 
 #[test]
@@ -472,7 +476,10 @@ rule:
     let validator = validator::DslValidator::new();
     let validation_result = validator.validate(yaml, validator::DslType::Rule);
 
-    assert!(validation_result.valid, "Valid rule YAML should pass validation");
+    assert!(
+        validation_result.valid,
+        "Valid rule YAML should pass validation"
+    );
 }
 
 #[test]
@@ -530,7 +537,7 @@ this is: not: valid: yaml:
 
     // Validation runs but should report errors
     assert!(!validation_result.valid);
-    assert!(validation_result.errors.len() > 0);
+    assert!(!validation_result.errors.is_empty());
 }
 
 #[test]
@@ -571,7 +578,10 @@ rule:
 
     assert!(validation_result.valid);
     assert!(validation_result.metadata.is_some());
-    assert_eq!(validation_result.metadata.unwrap().doc_type, validator::DslType::Rule);
+    assert_eq!(
+        validation_result.metadata.unwrap().doc_type,
+        validator::DslType::Rule
+    );
 }
 
 #[test]
@@ -593,7 +603,10 @@ ruleset:
 
     assert!(validation_result.valid);
     assert!(validation_result.metadata.is_some());
-    assert_eq!(validation_result.metadata.unwrap().doc_type, validator::DslType::Ruleset);
+    assert_eq!(
+        validation_result.metadata.unwrap().doc_type,
+        validator::DslType::Ruleset
+    );
 }
 
 // =============================================================================

@@ -3,9 +3,6 @@
 //! NOTE: These tests are ignored because the decision_template feature was removed.
 //! The functionality has been replaced by the conclusion section in rulesets.
 
-use corint_decision_compiler::ImportResolver;
-use corint_decision_dsl_parser::RulesetParser;
-
 #[test]
 #[ignore = "decision_template feature was removed"]
 fn test_template_loading_and_application() {

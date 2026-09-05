@@ -2,11 +2,11 @@
 //!
 //! Parses YAML pipeline definitions into Pipeline AST nodes.
 
+use super::step_parser::{parse_new_step, parse_step, parse_when_block};
 use crate::error::{ParseError, Result};
 use crate::import_parser::ImportParser;
 use crate::yaml_parser::YamlParser;
-use super::step_parser::{parse_new_step, parse_step, parse_when_block};
-use corint_decision_model::ast::pipeline::{PipelineStep, StepNext, StepDetails};
+use corint_decision_model::ast::pipeline::{PipelineStep, StepDetails, StepNext};
 use corint_decision_model::ast::{CdlDocument, Pipeline, Step};
 use serde_yaml::Value as YamlValue;
 
@@ -90,7 +90,9 @@ impl PipelineParser {
                 for (key, value) in mapping {
                     if let Some(key_str) = key.as_str() {
                         // Convert YAML value to serde_json::Value
-                        if let Ok(json_value) = serde_yaml::from_value::<serde_json::Value>(value.clone()) {
+                        if let Ok(json_value) =
+                            serde_yaml::from_value::<serde_json::Value>(value.clone())
+                        {
                             result.insert(key_str.to_string(), json_value);
                         }
                     }
@@ -119,12 +121,14 @@ impl PipelineParser {
             .collect::<Result<Vec<_>>>()?;
 
         // Parse optional decision rules
-        let decision = if let Some(decision_array) = pipeline_obj.get("decision").and_then(|v| v.as_sequence()) {
+        let decision = if let Some(decision_array) =
+            pipeline_obj.get("decision").and_then(|v| v.as_sequence())
+        {
             Some(
                 decision_array
                     .iter()
                     .map(Self::parse_decision_rule)
-                    .collect::<Result<Vec<_>>>()?
+                    .collect::<Result<Vec<_>>>()?,
             )
         } else {
             None
@@ -286,9 +290,9 @@ impl PipelineParser {
 
         // Update next pointers for sequential steps
         let step_count = steps.len();
-        for i in 0..step_count {
+        for (i, step) in steps.iter_mut().enumerate() {
             if i + 1 < step_count {
-                steps[i].next = Some(StepNext::StepId(format!("step_{}", i + 1)));
+                step.next = Some(StepNext::StepId(format!("step_{}", i + 1)));
             }
         }
 
@@ -312,7 +316,9 @@ impl PipelineParser {
     }
 
     /// Parse a pipeline decision rule
-    fn parse_decision_rule(yaml: &YamlValue) -> Result<corint_decision_model::ast::PipelineDecisionRule> {
+    fn parse_decision_rule(
+        yaml: &YamlValue,
+    ) -> Result<corint_decision_model::ast::PipelineDecisionRule> {
         // Check if this is a default rule
         let is_default = yaml
             .get("default")

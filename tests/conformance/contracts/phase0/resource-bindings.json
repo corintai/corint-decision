@@ -1,0 +1,37 @@
+{
+  "kind": "corint-resource-bindings",
+  "contract_version": "1",
+  "id": "resource-bindings-fixture",
+  "revision": "r1",
+  "provenance": {
+    "producer": "fixture-author",
+    "reference": "fixture://phase0/resource-bindings"
+  },
+  "target_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+  "resources": [
+    {
+      "resource": {
+        "kind": "feature",
+        "id": "feature-descriptor-fixture",
+        "revision": "r1",
+        "sha256": "9a28f42ee37f98a2a324954bee3d77942f55dd36ee90fde66175a2cfb3bbac7e"
+      },
+      "status": "ready",
+      "offline_binding": "fixture://offline/payment-sum",
+      "online_binding": "fixture://online/payment-sum",
+      "capability": "feature-read-v1"
+    },
+    {
+      "resource": {
+        "kind": "model",
+        "id": "model-descriptor-fixture",
+        "revision": "r1",
+        "sha256": "9c43fd2789eda24ab2ec82cb4f41231e74ae84240029ec9bde8bb05947d0fd5e"
+      },
+      "status": "ready",
+      "offline_binding": "fixture://offline/model",
+      "online_binding": "fixture://online/model",
+      "capability": "model-score-v1"
+    }
+  ]
+}

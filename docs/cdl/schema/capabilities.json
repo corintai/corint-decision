@@ -46,9 +46,15 @@
     "core_server": {
       "status": "experimental",
       "entry_point": "CORINT_CORE_CONFIG",
-      "scope": "local_operator_activation",
+      "scope": "local_repository_reload",
+      "config_version": "2",
+      "source_of_truth": "repository",
+      "repository_backend": "filesystem",
+      "repository_manifest_schema": "../../contracts/schema/core-repository.json",
+      "reload_reads_repository": true,
+      "uploads_policy_content": false,
       "loopback_only": true,
-      "durable_activation": false,
+      "publication_history_owner": "repository",
       "business_evaluation": "not_performed",
       "evidence": "../../../crates/corint-decision-server/tests/core_activation.rs"
     },

@@ -91,9 +91,9 @@ impl SemanticAnalyzer {
         // NOTE: Legacy pipeline analysis is temporarily broken due to Pipeline AST changes
         // The Pipeline struct now uses Vec<PipelineStep> instead of Vec<Step>
         // This will be fixed in Task 5 when the pipeline compiler is updated
-        return Err(CompileError::UnsupportedFeature(
+        Err(CompileError::UnsupportedFeature(
             "Legacy pipeline format (without entry point) is temporarily unavailable due to AST changes. Please use new pipeline format with entry point, or wait for update in Task 5.".to_string()
-        ));
+        ))
 
         // Legacy analysis code removed - will be rewritten in Task 5 to support new PipelineStep format
     }

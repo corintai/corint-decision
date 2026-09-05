@@ -1,0 +1,56 @@
+{
+  "kind": "corint-decision-record",
+  "contract_version": "1",
+  "id": "decision-record-fixture",
+  "revision": "r1",
+  "provenance": {
+    "producer": "fixture-author",
+    "reference": "fixture://phase0/decision-record"
+  },
+  "tenant_id": "fixture-tenant",
+  "decision_id": "decision-1",
+  "business_event_id": "event-1",
+  "decided_at_ms": 120,
+  "subject": {
+    "policy_sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+    "context_sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+    "target_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+    "bindings_sha256": "ac4dcdd2663360f06bd782cfedf91a21a91b621c4959cab4fbb2ef743a2e500e",
+    "checker_sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+  },
+  "engine_version": "0.1.0",
+  "input_evidence": {
+    "reference": "fixture://input-1",
+    "sha256": "5555555555555555555555555555555555555555555555555555555555555555"
+  },
+  "resources": [
+    {
+      "kind": "feature",
+      "id": "feature-descriptor-fixture",
+      "revision": "r1",
+      "sha256": "9a28f42ee37f98a2a324954bee3d77942f55dd36ee90fde66175a2cfb3bbac7e"
+    },
+    {
+      "kind": "model",
+      "id": "model-descriptor-fixture",
+      "revision": "r1",
+      "sha256": "9c43fd2789eda24ab2ec82cb4f41231e74ae84240029ec9bde8bb05947d0fd5e"
+    }
+  ],
+  "triggered_rules": [
+    "high_amount"
+  ],
+  "reasons": [
+    "threshold"
+  ],
+  "result": "review",
+  "error_code": null,
+  "duration_ms": 1,
+  "actions": [
+    {
+      "action_id": "action-1",
+      "idempotency_key": "decision-1:action-1",
+      "type": "review"
+    }
+  ]
+}

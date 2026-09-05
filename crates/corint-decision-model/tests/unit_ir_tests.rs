@@ -2,9 +2,9 @@
 //!
 //! Tests the IR instructions and program structures used by the compiler and runtime
 
+use corint_decision_model::ast::{Operator, UnaryOperator};
 use corint_decision_model::ir::*;
 use corint_decision_model::types::Value;
-use corint_decision_model::ast::{Operator, UnaryOperator};
 
 // =============================================================================
 // Instruction Tests
@@ -56,9 +56,7 @@ fn test_instruction_load_result() {
 
 #[test]
 fn test_instruction_binary_op() {
-    let instr = Instruction::BinaryOp {
-        op: Operator::Add,
-    };
+    let instr = Instruction::BinaryOp { op: Operator::Add };
 
     match instr {
         Instruction::BinaryOp { op } => assert_eq!(op, Operator::Add),
@@ -68,9 +66,7 @@ fn test_instruction_binary_op() {
 
 #[test]
 fn test_instruction_compare() {
-    let instr = Instruction::Compare {
-        op: Operator::Gt,
-    };
+    let instr = Instruction::Compare { op: Operator::Gt };
 
     match instr {
         Instruction::Compare { op } => assert_eq!(op, Operator::Gt),
@@ -159,9 +155,7 @@ fn test_instruction_equality() {
 
 #[test]
 fn test_instruction_clone() {
-    let instr = Instruction::BinaryOp {
-        op: Operator::Mul,
-    };
+    let instr = Instruction::BinaryOp { op: Operator::Mul };
     let cloned = instr.clone();
     assert_eq!(instr, cloned);
 }
@@ -201,9 +195,7 @@ fn test_instruction_serde_load_field() {
 
 #[test]
 fn test_instruction_serde_binary_op() {
-    let instr = Instruction::BinaryOp {
-        op: Operator::Add,
-    };
+    let instr = Instruction::BinaryOp { op: Operator::Add };
     let json = serde_json::to_string(&instr).unwrap();
     let deserialized: Instruction = serde_json::from_str(&json).unwrap();
     assert_eq!(instr, deserialized);
@@ -224,16 +216,14 @@ fn test_instruction_serde_jump() {
 #[test]
 fn test_simple_arithmetic_sequence() {
     // Compile: 10 + 5
-    let instructions = vec![
+    let instructions = [
         Instruction::LoadConst {
             value: Value::Number(10.0),
         },
         Instruction::LoadConst {
             value: Value::Number(5.0),
         },
-        Instruction::BinaryOp {
-            op: Operator::Add,
-        },
+        Instruction::BinaryOp { op: Operator::Add },
     ];
 
     assert_eq!(instructions.len(), 3);
@@ -242,16 +232,14 @@ fn test_simple_arithmetic_sequence() {
 #[test]
 fn test_comparison_sequence() {
     // Compile: event.amount > 1000
-    let instructions = vec![
+    let instructions = [
         Instruction::LoadField {
             path: vec!["event".to_string(), "amount".to_string()],
         },
         Instruction::LoadConst {
             value: Value::Number(1000.0),
         },
-        Instruction::Compare {
-            op: Operator::Gt,
-        },
+        Instruction::Compare { op: Operator::Gt },
     ];
 
     assert_eq!(instructions.len(), 3);
@@ -260,7 +248,7 @@ fn test_comparison_sequence() {
 #[test]
 fn test_conditional_jump_sequence() {
     // Compile: if (condition) { true_branch } else { false_branch }
-    let instructions = vec![
+    let instructions = [
         Instruction::LoadField {
             path: vec!["condition".to_string()],
         },
@@ -268,7 +256,7 @@ fn test_conditional_jump_sequence() {
         Instruction::LoadConst {
             value: Value::Number(1.0),
         }, // Then branch
-        Instruction::Jump { offset: 2 }, // Skip else
+        Instruction::Jump { offset: 2 },        // Skip else
         Instruction::LoadConst {
             value: Value::Number(2.0),
         }, // Else branch
@@ -280,7 +268,7 @@ fn test_conditional_jump_sequence() {
 #[test]
 fn test_result_access_sequence() {
     // Compile: result.action == "deny"
-    let instructions = vec![
+    let instructions = [
         Instruction::LoadResult {
             ruleset_id: None,
             field: "action".to_string(),
@@ -288,9 +276,7 @@ fn test_result_access_sequence() {
         Instruction::LoadConst {
             value: Value::String("deny".to_string()),
         },
-        Instruction::Compare {
-            op: Operator::Eq,
-        },
+        Instruction::Compare { op: Operator::Eq },
     ];
 
     assert_eq!(instructions.len(), 3);

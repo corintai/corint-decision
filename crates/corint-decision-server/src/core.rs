@@ -1,5 +1,5 @@
 //! Opt-in, single-target Core server. Local operator configuration is the trust
-//! root; caller declarations and historical reports never authorize activation.
+//! root. Policies come only from the configured repository, including on reload.
 use axum::{
     body::Bytes,
     extract::{DefaultBodyLimit, Request, State},
@@ -14,7 +14,8 @@ use corint_decision_engine::{DecisionEngine, DecisionRequest, Value};
 use corint_decision_toolchain::{
     behavior,
     contracts::{CompatibilityReport, TargetContracts},
-    package, transfer,
+    package,
+    repository::{self, RepositoryIdentity},
 };
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -41,7 +42,8 @@ pub struct CoreConfig {
     pub context: PathBuf,
     pub target: PathBuf,
     pub cases: PathBuf,
-    pub initial_bundle: PathBuf,
+    /// Filesystem repository containing published.json and the policy YAML files.
+    pub repository: PathBuf,
     pub decision_token_env: String,
     pub publisher_token_env: String,
     pub approvals: Vec<OperatorApproval>,
@@ -60,12 +62,14 @@ pub struct OperatorApproval {
 struct Policy {
     engine: DecisionEngine,
     compatibility: CompatibilityReport,
+    repository: RepositoryIdentity,
 }
 struct Active {
     revision: String,
     policy: Policy,
 }
 struct Gate {
+    repository: PathBuf,
     contracts: TargetContracts,
     cases: CoreSource,
     approvals: Vec<OperatorApproval>,
@@ -130,7 +134,7 @@ pub async fn create_router(
     publisher_token: &str,
 ) -> anyhow::Result<Router> {
     anyhow::ensure!(
-        config.config_version == "1",
+        config.config_version == "2",
         "Unsupported Core server config version"
     );
     // This increment is deliberately local-only: no unauthenticated plaintext
@@ -170,15 +174,15 @@ pub async fn create_router(
     let target = read(&root.join(&config.target))?;
     let cases = read(&root.join(&config.cases))?;
     behavior::validate_suite(&cases)?;
-    let initial = read(&root.join(&config.initial_bundle))?;
     let gate = Arc::new(Gate {
+        repository: root.join(&config.repository),
         contracts: TargetContracts::load(&context, &target)?,
         cases_sha256: hash(cases.yaml.as_bytes()),
         cases,
         approvals: config.approvals,
     });
     let worker_gate = gate.clone();
-    let policy = tokio::task::spawn_blocking(move || worker_gate.prepare(&initial))
+    let policy = tokio::task::spawn_blocking(move || worker_gate.prepare())
         .await?
         .map_err(|e| anyhow::anyhow!("Core initial policy rejected: {}", e.code))?;
     let state = CoreState {
@@ -198,7 +202,7 @@ pub async fn create_router(
         ));
     let control = Router::new()
         .route("/v1/core/target", get(target_state))
-        .route("/v1/core/policies/activate", post(activate))
+        .route("/v1/core/repo/reload", post(reload))
         .route_layer(middleware::from_fn_with_state(
             credential(publisher_token),
             authenticate,
@@ -269,8 +273,9 @@ impl IntoResponse for ApiError {
 }
 
 impl Gate {
-    fn prepare(&self, stored: &CoreSource) -> Result<Policy, ApiError> {
-        let bundle = transfer::read_bundle(stored)?;
+    fn prepare(&self) -> Result<Policy, ApiError> {
+        let snapshot = repository::load(&self.repository)?;
+        let bundle = snapshot.closure.bundle();
         let compatibility = self
             .contracts
             .check(&bundle.sources, &bundle.input_schema, None)?;
@@ -300,9 +305,11 @@ impl Gate {
             parse_core_input_schema(&bundle.input_schema)?,
         )
         .map_err(|_| ApiError::new(StatusCode::INTERNAL_SERVER_ERROR, "E_CORE_ENGINE"))?;
+        repository::verify_current(&self.repository, &snapshot.identity)?;
         Ok(Policy {
             engine,
             compatibility,
+            repository: snapshot.identity,
         })
     }
 }
@@ -316,6 +323,7 @@ struct ActiveReceipt<'a> {
     context_sha256: &'a str,
     target_sha256: &'a str,
     cases_sha256: &'a str,
+    repository: &'a RepositoryIdentity,
     scope: &'static str,
     local_engine_constructed: bool,
     server_owned_cases_passed: bool,
@@ -332,7 +340,8 @@ fn receipt<'a>(active: &'a Active, gate: &'a Gate) -> ActiveReceipt<'a> {
         context_sha256: &report.context.sha256,
         target_sha256: &report.target.sha256,
         cases_sha256: &gate.cases_sha256,
-        scope: "local_operator_activation",
+        repository: &active.policy.repository,
+        scope: "local_repository_reload",
         local_engine_constructed: true,
         server_owned_cases_passed: true,
         operator_allowlist_matched: true,
@@ -347,15 +356,14 @@ async fn target_state(State(state): State<CoreState>) -> Json<serde_json::Value>
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
-struct ActivateRequest {
+struct ReloadRequest {
     expected_revision: String,
-    bundle: transfer::SourceBundle,
 }
-async fn activate(
+async fn reload(
     State(state): State<CoreState>,
     body: Bytes,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    let request: ActivateRequest = serde_json::from_slice(&body)
+    let request: ReloadRequest = serde_json::from_slice(&body)
         .map_err(|_| ApiError::new(StatusCode::BAD_REQUEST, "E_CORE_REQUEST"))?;
     if state.active.read().await.revision != request.expected_revision {
         return Err(ApiError::new(StatusCode::CONFLICT, "E_ACTIVE_REVISION"));
@@ -364,17 +372,14 @@ async fn activate(
         .preparation
         .clone()
         .try_acquire_owned()
-        .map_err(|_| ApiError::new(StatusCode::TOO_MANY_REQUESTS, "E_ACTIVATION_BUSY"))?;
+        .map_err(|_| ApiError::new(StatusCode::TOO_MANY_REQUESTS, "E_RELOAD_BUSY"))?;
     let gate = state.gate.clone();
-    let policy = tokio::task::spawn_blocking(move || {
-        let _permit = permit;
-        gate.prepare(&CoreSource {
-            path: "<candidate>".into(),
-            yaml: serde_json::to_string(&request.bundle).expect("bundle JSON"),
-        })
-    })
-    .await
-    .map_err(|_| ApiError::new(StatusCode::INTERNAL_SERVER_ERROR, "E_CORE_WORKER"))??;
+    // The worker owns the permit even if the HTTP future is cancelled. On
+    // success, transfer it back so preparation and snapshot commit share a slot.
+    let (policy, _permit) =
+        tokio::task::spawn_blocking(move || gate.prepare().map(|policy| (policy, permit)))
+            .await
+            .map_err(|_| ApiError::new(StatusCode::INTERNAL_SERVER_ERROR, "E_CORE_WORKER"))??;
     let mut active = state.active.write().await;
     // Compare again after compilation/testing; never overwrite a newer snapshot.
     if active.revision != request.expected_revision {

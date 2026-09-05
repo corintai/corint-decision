@@ -1,0 +1,20 @@
+{
+  "kind": "corint-outcome-event",
+  "contract_version": "1",
+  "id": "outcome-event-fixture",
+  "revision": "r1",
+  "provenance": {
+    "producer": "fixture-author",
+    "reference": "fixture://phase0/outcome-event"
+  },
+  "tenant_id": "fixture-tenant",
+  "decision_id": "decision-1",
+  "business_event_id": "event-1",
+  "label_name": "fraud",
+  "label_version": 1,
+  "label": "positive",
+  "occurred_at_ms": 200,
+  "observed_at_ms": 300,
+  "available_at_ms": 310,
+  "supersedes": null
+}

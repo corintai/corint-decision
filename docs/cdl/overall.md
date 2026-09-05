@@ -1,7 +1,11 @@
 # Corint Definition Language (CDL)
-> For the opt-in executable Core increment, see [CDL Core](cdl-core.md) and its
-> [capability inventory](schema/capabilities.json). Historical support labels below
-> are not Core conformance certification.
+
+<!-- cdl-scope: compatibility-unverified -->
+> This page is an unverified compatibility reference. Its snippets are not Core support evidence.
+> For the executable contract and supported examples, use [CDL Core](cdl-core.md),
+> [Pipeline](pipeline.md) and the [capability inventory](schema/capabilities.json).
+> Described behavior may be incomplete in compatibility entry points; validate through the strict tools before delivery.
+
 > For generated strategies, use the opt-in [strict generation API](generation.md);
 > compatibility generators do not produce Core acceptance evidence.
 ## Overall Specification (v0.1)
@@ -305,7 +309,7 @@ CDL includes comprehensive feature engineering capabilities for risk control sce
 
 **Implementation Status:**
 
-**🟢 Currently Available (Production-Ready):**
+**Described compatibility capabilities (unverified):**
 - **Aggregation Features:**
   - Basic: count, sum, avg, min, max
   - Statistics: distinct, stddev, median, percentile
@@ -313,7 +317,7 @@ CDL includes comprehensive feature engineering capabilities for risk control sce
   - Expression features: compute from other features
   - Lookup features: retrieve pre-computed values from Redis/cache
 
-**📋 Planned (Not Yet Implemented):**
+**Planned capabilities:**
 - **Advanced Statistics:** variance, mode, entropy
 - **State Features:** z_score, outlier detection, baseline comparison
 - **Sequence Features:** pattern matching, consecutive counts, trends
@@ -321,7 +325,7 @@ CDL includes comprehensive feature engineering capabilities for risk control sce
 
 **Usage Examples:**
 
-**✅ Available Now:**
+**Historical examples (unverified):**
 ```yaml
 # Feature Definition
 features:
@@ -402,12 +406,12 @@ features:
     window: 90d
 ```
 
-**Common Use Cases (✅ Available Now):**
-- Login count for an account in the past 7 days ✅
-- Number of device IDs associated with the same IP in the past 5 hours ✅
-- Number of users associated with the same device ✅
-- Transaction sum/avg over time windows ✅
-- Custom velocity ratios using expression features ✅
+**Historical use cases (unverified):**
+- Login count for an account in the past 7 days unverified
+- Number of device IDs associated with the same IP in the past 5 hours unverified
+- Number of users associated with the same device unverified
+- Transaction sum/avg over time windows unverified
+- Custom velocity ratios using expression features unverified
 
 **Future Capabilities (📋 Planned):**
 - Statistical outlier detection (above 95th percentile)
@@ -469,7 +473,7 @@ Current implementation:
 - **Timeout support** - Timeout configuration for API calls and datasources
 - **Error action types** - ErrorAction enum (Fallback, Skip, Fail, Retry) defined in AST
 
-Note: Advanced error handling features (retry logic, circuit breaker, fallback chains) are planned but not yet implemented.
+Note: Advanced error handling features (retry logic, circuit breaker, fallback chains) are planned but not yet available.
 
 ---
 

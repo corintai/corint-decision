@@ -1,0 +1,15 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Published Core filesystem repository v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["format", "format_version", "revision", "input_schema", "entries", "policy_sha256"],
+  "properties": {
+    "format": {"const": "corint-core-repository"},
+    "format_version": {"const": "1"},
+    "revision": {"type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[A-Za-z0-9_.-]+$"},
+    "input_schema": {"type": "string", "minLength": 1, "maxLength": 256},
+    "entries": {"type": "array", "minItems": 1, "maxItems": 256, "uniqueItems": true, "items": {"type": "string", "minLength": 1, "maxLength": 256}},
+    "policy_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"}
+  }
+}

@@ -1,0 +1,30 @@
+{
+  "kind": "corint-feature-descriptor",
+  "contract_version": "1",
+  "id": "feature-descriptor-fixture",
+  "revision": "r1",
+  "provenance": {
+    "producer": "fixture-author",
+    "reference": "fixture://phase0/feature-descriptor"
+  },
+  "entity_key": "account_id",
+  "input": {
+    "type": "number",
+    "unit": "CNY",
+    "meaning": "payment amount"
+  },
+  "output": {
+    "type": "number",
+    "unit": "CNY",
+    "meaning": "sum before decision"
+  },
+  "window_ms": 86400000,
+  "deduplication": "business_event_id, latest version available at decision time",
+  "event_time_field": "occurred_at",
+  "available_time_field": "available_at",
+  "missing": "error",
+  "max_age_ms": 60000,
+  "stale": "error",
+  "offline_binding": "fixture://offline/payment-sum",
+  "online_binding": "fixture://online/payment-sum"
+}

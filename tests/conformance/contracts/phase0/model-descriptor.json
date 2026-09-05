@@ -1,0 +1,29 @@
+{
+  "kind": "corint-model-descriptor",
+  "contract_version": "1",
+  "id": "model-descriptor-fixture",
+  "revision": "r1",
+  "provenance": {
+    "producer": "fixture-author",
+    "reference": "fixture://phase0/model-descriptor"
+  },
+  "artifact_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "features": [
+    {
+      "kind": "feature",
+      "id": "feature-descriptor-fixture",
+      "revision": "r1",
+      "sha256": "9a28f42ee37f98a2a324954bee3d77942f55dd36ee90fde66175a2cfb3bbac7e"
+    }
+  ],
+  "preprocessing_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "output": {
+    "type": "number",
+    "unit": "probability",
+    "meaning": "fraud probability"
+  },
+  "required_capability": "model-score-v1",
+  "timeout_ms": 100,
+  "on_failure": "review",
+  "deployment_status": "ready"
+}

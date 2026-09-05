@@ -152,18 +152,18 @@ fn create_test_router(engine: Arc<corint_decision_engine::DecisionEngine>) -> Ro
     #[derive(Debug, Deserialize)]
     struct DecideRequestPayload {
         event: HashMap<String, serde_json::Value>,
-        #[serde(default)]
-        user: Option<HashMap<String, serde_json::Value>>,
-        #[serde(default)]
-        options: Option<RequestOptions>,
+        #[serde(default, rename = "user")]
+        _user: Option<HashMap<String, serde_json::Value>>,
+        #[serde(default, rename = "options")]
+        _options: Option<RequestOptions>,
     }
 
     #[derive(Debug, Default, Deserialize)]
     struct RequestOptions {
-        #[serde(default)]
-        return_features: bool,
-        #[serde(default)]
-        enable_trace: bool,
+        #[serde(default, rename = "return_features")]
+        _return_features: bool,
+        #[serde(default, rename = "enable_trace")]
+        _enable_trace: bool,
     }
 
     #[derive(Debug, Serialize)]
@@ -289,7 +289,9 @@ fn create_test_router(engine: Arc<corint_decision_engine::DecisionEngine>) -> Ro
             request_id: response.request_id,
             status: 200,
             process_time_ms: response.processing_time_ms,
-            pipeline_id: response.pipeline_id.unwrap_or_else(|| "default".to_string()),
+            pipeline_id: response
+                .pipeline_id
+                .unwrap_or_else(|| "default".to_string()),
             decision: DecisionPayload {
                 result: result_str,
                 actions: Vec::new(),

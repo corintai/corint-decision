@@ -507,15 +507,15 @@ impl TraceBuilder {
             if let Some(obj) = binary.as_object() {
                 let left = obj
                     .get("left")
-                    .map(|l| TraceBuilder::expr_json_to_string(l))
+                    .map(TraceBuilder::expr_json_to_string)
                     .unwrap_or_default();
                 let op = obj
                     .get("op")
-                    .map(|o| TraceBuilder::operator_to_symbol(o))
+                    .map(TraceBuilder::operator_to_symbol)
                     .unwrap_or("?".to_string());
                 let right = obj
                     .get("right")
-                    .map(|r| TraceBuilder::expr_json_to_string(r))
+                    .map(TraceBuilder::expr_json_to_string)
                     .unwrap_or_default();
                 return format!("{} {} {}", left, op, right);
             }
@@ -540,7 +540,7 @@ impl TraceBuilder {
                 let op = obj.get("op").and_then(|o| o.as_str()).unwrap_or("!");
                 let operand = obj
                     .get("operand")
-                    .map(|o| TraceBuilder::expr_json_to_string(o))
+                    .map(TraceBuilder::expr_json_to_string)
                     .unwrap_or_default();
                 let op_symbol = if op == "Not" {
                     "!"
@@ -571,7 +571,7 @@ impl TraceBuilder {
                     .and_then(|a| a.as_array())
                     .map(|arr| {
                         arr.iter()
-                            .map(|a| TraceBuilder::expr_json_to_string(a))
+                            .map(TraceBuilder::expr_json_to_string)
                             .collect::<Vec<_>>()
                             .join(", ")
                     })
@@ -837,13 +837,7 @@ impl TraceBuilder {
                                 return None;
                             }
                         }
-                        "%" | "Mod" => {
-                            if *r != 0.0 {
-                                l % r
-                            } else {
-                                return None;
-                            }
-                        }
+                        "%" | "Mod" if *r != 0.0 => l % r,
                         _ => return None, // Comparison operators return bool, skip
                     };
                     Some(Value::Number(result))
@@ -1108,6 +1102,10 @@ impl TraceBuilder {
     }
 
     /// Create a rule execution record
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "Compatibility record adapter mirrors the existing persistence fields"
+    )]
     pub(super) fn create_rule_execution_record(
         request_id: &str,
         ruleset_id: Option<&str>,
@@ -1121,7 +1119,7 @@ impl TraceBuilder {
         condition_group_json: Option<String>,
     ) -> corint_decision_runtime::RuleExecutionRecord {
         // Convert conditions string to JSON value for storage
-        let rule_conditions_json = rule_conditions.map(|s| serde_json::Value::String(s));
+        let rule_conditions_json = rule_conditions.map(serde_json::Value::String);
 
         corint_decision_runtime::RuleExecutionRecord {
             request_id: request_id.to_string(),

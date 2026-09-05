@@ -682,6 +682,7 @@ struct ExampleRegistry {
     profile: String,
     language_version: String,
     pages: Vec<String>,
+    compatibility_pages: Vec<String>,
     examples: Vec<DocumentExample>,
 }
 #[derive(Clone, Deserialize)]
@@ -706,10 +707,52 @@ fn check_example_mapping(
     if registered.len() != index.pages.len() || registered.is_empty() {
         return Err("duplicate/empty pages".into());
     }
+    let compatibility: BTreeSet<_> = index.compatibility_pages.iter().collect();
+    if compatibility.len() != index.compatibility_pages.len()
+        || !registered.is_disjoint(&compatibility)
+    {
+        return Err("duplicate/conflicting page classification".into());
+    }
+    for page in &index.compatibility_pages {
+        let text = pages.get(page).ok_or("missing compatibility page")?;
+        if !text.contains("<!-- cdl-scope: compatibility-unverified -->")
+            || !text.contains("This page is an unverified compatibility reference. Its snippets are not Core support evidence.")
+            || !text.contains("](cdl-core.md)")
+            || !text.contains("](schema/capabilities.json)")
+        {
+            return Err(format!("missing compatibility scope: {page}"));
+        }
+        let lower = text.to_lowercase();
+        if [
+            "✅",
+            "🟢",
+            "production-ready",
+            "production ready",
+            "ready for production",
+            "available now",
+            "cdl-example:",
+            "supported_complete",
+        ]
+        .iter()
+        .any(|claim| lower.contains(claim))
+        {
+            return Err(format!("unverified support claim: {page}"));
+        }
+    }
     let mut markers = BTreeSet::new();
     for page in &index.pages {
         let text = pages.get(page).ok_or("missing page")?;
-        if text.contains("```yaml") || text.contains("```yml") {
+        if text.lines().any(|line| {
+            let line = line.trim();
+            (line.starts_with("```") || line.starts_with("~~~"))
+                && matches!(
+                    line.trim_start_matches(['`', '~'])
+                        .trim()
+                        .to_ascii_lowercase()
+                        .as_str(),
+                    "yaml" | "yml"
+                )
+        }) {
             return Err("inline YAML must use a fixture".into());
         }
         for line in text.lines().filter(|l| l.contains("cdl-example:")) {
@@ -779,6 +822,7 @@ fn documentation_examples_are_classified_and_bound_to_executed_fixtures() {
     let pages: HashMap<_, _> = index
         .pages
         .iter()
+        .chain(&index.compatibility_pages)
         .map(|p| (p.clone(), std::fs::read_to_string(docs.join(p)).unwrap()))
         .collect();
     check_example_mapping(&index, &pages).unwrap();
@@ -797,12 +841,42 @@ fn documentation_examples_are_classified_and_bound_to_executed_fixtures() {
         "missing.yaml",
     );
     assert!(check_example_mapping(&index, &invalid).is_err());
-    let mut invalid = pages;
+    let mut invalid = pages.clone();
     invalid
         .get_mut("cdl-core.md")
         .unwrap()
         .push_str("\n```yaml\nrule: {}\n```\n");
     assert!(check_example_mapping(&index, &invalid).is_err());
+    let mut invalid = pages.clone();
+    invalid
+        .get_mut("pipeline.md")
+        .unwrap()
+        .push_str("\n~~~YAML\npipeline: {}\n~~~\n");
+    assert!(check_example_mapping(&index, &invalid).is_err());
+    for page in &index.compatibility_pages {
+        let mut invalid = pages.clone();
+        *invalid.get_mut(page).unwrap() =
+            pages[page].replace("<!-- cdl-scope: compatibility-unverified -->", "");
+        assert!(check_example_mapping(&index, &invalid).is_err(), "{page}");
+        for claim in [
+            "✅ Implemented",
+            "Production-ready",
+            "<!-- cdl-example: fake -->",
+        ] {
+            let mut invalid = pages.clone();
+            invalid.get_mut(page).unwrap().push_str(claim);
+            assert!(
+                check_example_mapping(&index, &invalid).is_err(),
+                "{page}: {claim}"
+            );
+        }
+    }
+    let mut invalid = index.clone();
+    invalid.compatibility_pages.push("pipeline.md".into());
+    assert!(check_example_mapping(&invalid, &pages).is_err());
+    let mut invalid = index;
+    invalid.examples[0].page = "api.md".into();
+    assert!(check_example_mapping(&invalid, &pages).is_err());
 }
 
 #[test]
