@@ -3,7 +3,7 @@
 普通服务启动一次 `DecisionEngine`，将同一个 `Arc<EngineManager>` 传给生产 REST router 和
 `DecisionGrpcService`。HTTP 与 gRPC 的决策、健康查询和 repo 重载都使用这一个当前版本指针。
 Rust 嵌入调用方也应按这一方式装配两个入口；`create_router` 和 `DecisionGrpcService::new`
-现在接收 `Arc<EngineManager>`。
+现在接收 `Arc<EngineManager>` 和必须显式提供的 `AccessPolicy`。管理器实现位于 engine crate，FFI 复用同一实现。
 
 ## 请求与重载
 
@@ -45,8 +45,18 @@ HTTP 成功响应 header 和 gRPC 成功响应 metadata 使用同名字段，覆
 | 已有候选准备任务 | 409 / `RELOAD_BUSY` | `ResourceExhausted` |
 | 加载、编译或 worker 失败 | 500 / `RELOAD_FAILED` | `Internal` |
 
-响应正文及已有 signal 大小写习惯保持兼容。本轮不宣称两种协议的所有可选字段、Trace、
-错误分类或 FFI 已完全等价。兼容管理接口沿用现有部署访问控制，本轮没有新增公开管理路由。
+HTTP/gRPC 的 signal 统一小写；score/actions/命中/原因沿用同一引擎结果。
+gRPC 返回请求的 features，`trace.canonical_json` 保存完整共享 Trace；旧摘要字段继续提供。
+FFI 返回原生 DecisionResponse（signal 为 tagged object），metadata 增加 `runtime_revision` / `compiled_sha256`；
+新增 `corint_engine_reload(engine, expected_revision)`，返回相同版本冲突/忙/失败语义。
+FFI 属于可信嵌入边界，宿主负责调用者授权；不是网络匿名接口。
+
+兼容服务启动必须设置 `CORINT_DECISION_TOKEN`、`CORINT_PUBLISHER_TOKEN`、`CORINT_TENANT_ID`，
+两个角色凭据必须不同。HTTP/gRPC 决策和管理操作都认证，health 仍允许本地探测。
+服务限定 loopback，移除 permissive CORS；配置 Debug 和服务端错误不输出连接凭据。
+客户端只能提交 event，user/features/api/service/llm/vars 和 event.tenant_id 不能覆盖可信数据；
+tenant 由操作员配置注入 vars。HTTP async、gRPC pipeline_id/score_normalization 及任意 metadata 覆盖明确拒绝。
+此收紧会使依赖原先未认证端点、大小写或注入字段的客户端需要迁移。
 
 ## 严格 Core 边界与验证
 

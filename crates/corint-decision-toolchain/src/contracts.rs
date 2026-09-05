@@ -112,7 +112,7 @@ fn pointer(value: &str) -> String {
     value.replace('~', "~0").replace('/', "~1")
 }
 
-pub(crate) fn parse(source: &CoreSource, schema: &str) -> Result<Value, CoreError> {
+pub(crate) fn parse(source: &CoreSource, schema: &'static str) -> Result<Value, CoreError> {
     let yaml: serde_yaml::Value = serde_yaml::from_str(&source.yaml).map_err(|e| {
         let mut err = error(&source.path, "", "E_CONTRACT_FORMAT", e.to_string());
         if let Some(pos) = e.location() {
@@ -131,13 +131,30 @@ pub(crate) fn parse(source: &CoreSource, schema: &str) -> Result<Value, CoreErro
             "Only explicit contract_version 1 is supported",
         ));
     }
-    let validator = JSONSchema::options()
-        .with_document(
-            "urn:corint:core-input".into(),
-            serde_json::from_str(CORE_INPUT_SCHEMA).expect("input schema"),
-        )
-        .compile(&serde_json::from_str(schema).expect("contract schema JSON"))
-        .expect("contract schema");
+    // Only built-in schemas reach this function; cache compiled validators, never
+    // validation outcomes or mutable caller evidence.
+    use std::sync::{Arc, Mutex, OnceLock};
+    static VALIDATORS: OnceLock<Mutex<BTreeMap<&'static str, Arc<JSONSchema>>>> = OnceLock::new();
+    let validator = {
+        let mut validators = VALIDATORS
+            .get_or_init(Default::default)
+            .lock()
+            .expect("validator cache");
+        validators
+            .entry(schema)
+            .or_insert_with(|| {
+                Arc::new(
+                    JSONSchema::options()
+                        .with_document(
+                            "urn:corint:core-input".into(),
+                            serde_json::from_str(CORE_INPUT_SCHEMA).expect("input schema"),
+                        )
+                        .compile(&serde_json::from_str(schema).expect("contract schema JSON"))
+                        .expect("contract schema"),
+                )
+            })
+            .clone()
+    };
     if let Err(mut errors) = validator.validate(&value) {
         if let Some(e) = errors.next() {
             return Err(error(
@@ -360,4 +377,24 @@ impl TargetContracts {
             authenticity: "unsigned",
         })
     }
+}
+
+/// Exact publication subject for the current resource-free Core profile.
+/// Callers must not reuse this empty closure for connector/feature/model profiles.
+pub fn core_evidence_subject(report: &CompatibilityReport) -> Result<Value, CoreError> {
+    let binding = serde_json::json!({"kind":"corint-resource-bindings","contract_version":"1",
+        "id":"core-empty-bindings","revision":"1",
+        "provenance":{"producer":"corint-core","reference":"cdl-core-risk-draft-1"},
+        "target_sha256":report.target.sha256,"resources":[]});
+    let binding = crate::phase0::Contract::load(
+        "resource-bindings",
+        &CoreSource {
+            path: "core-empty-bindings".into(),
+            yaml: binding.to_string(),
+        },
+    )?;
+    Ok(
+        serde_json::json!({"policy_sha256":report.policy_sha256,"context_sha256":report.context.sha256,
+        "target_sha256":report.target.sha256,"bindings_sha256":binding.sha256(),"checker_sha256":report.checker_sha256}),
+    )
 }

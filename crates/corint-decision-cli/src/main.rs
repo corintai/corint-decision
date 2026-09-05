@@ -1,4 +1,6 @@
 //! Thin, offline adapter over the shared Core compiler, never a second validator.
+mod candidate;
+
 use corint_decision_toolchain::{behavior, contracts, package, resolve, transfer};
 
 use corint_decision_compiler::core::{
@@ -23,13 +25,14 @@ Usage:
   corint import --bundle PATH --cases PATH --output PATH [--format text|json]
   corint check-target --input-schema PATH --context PATH --target PATH [--expected-binding SHA256] [--format text|json] FILE...
   corint resolve --source-profile cdl-core-import-draft-1 --root DIR --input-schema LABEL --output PATH [--format text|json] ENTRY...
+  corint prepare-repository --root DIR --input-schema LABEL --cases PATH --context PATH --target PATH --revision REV --output NEW_DIR [--format text|json] ENTRY...
   corint --help
   corint --version
 
 Supply the complete resource closure, including exactly one Registry.
 PATH is the strict model Schema in YAML or JSON; FILEs are CDL YAML resources.
 Paths are relative to the current directory. Use -- before dash-prefixed FILEs.
-Except resolve, only explicit local regular files are read. No imports, discovery, network access,
+Except resolve and prepare-repository, only explicit local regular files are read. No imports, discovery, network access,
 business evaluation or publication is performed. Validate compiles only; test
 executes declared cases through the real engine, with trace off/on. Build writes
 a new source package after tests pass (never overwrites); verify checks bindings
@@ -468,6 +471,9 @@ fn render(report: &Report, json: bool) -> String {
 }
 
 fn run(args: Vec<OsString>) -> (u8, String) {
+    if args.first().is_some_and(|arg| arg == "prepare-repository") {
+        return candidate::run(&args[1..]);
+    }
     if args == [OsString::from("--help")]
         || args == [OsString::from("-h")]
         || args == [OsString::from("validate"), OsString::from("--help")]

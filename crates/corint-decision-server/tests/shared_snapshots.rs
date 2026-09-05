@@ -97,6 +97,7 @@ async fn http_decide(app: &Router) -> (String, String, Value) {
         .clone()
         .oneshot(
             Request::post("/v1/decide")
+                .header("authorization", format!("Bearer {DECISION_TOKEN}"))
                 .header("content-type", "application/json")
                 .body(Body::from(r#"{"event":{"amount":100}}"#))
                 .unwrap(),
@@ -121,7 +122,7 @@ async fn http_decide(app: &Router) -> (String, String, Value) {
     (revision, hash, serde_json::from_slice(&body).unwrap())
 }
 async fn grpc_decide(grpc: &DecisionGrpcService) -> tonic::Response<pb::DecideResponse> {
-    grpc.decide(tonic::Request::new(pb::DecideRequest {
+    grpc.decide(decision_request(pb::DecideRequest {
         event: [(
             "amount".into(),
             pb::Value {
@@ -214,14 +215,15 @@ async fn assert_transports(
 async fn either_transport_reloads_both_and_restart_reads_repository() {
     let repo = repository();
     let manager = manager(repo.path()).await;
-    let app = create_router(manager.clone());
-    let grpc = DecisionGrpcService::new(manager.clone());
+    let app = create_router(manager.clone(), access());
+    let grpc = DecisionGrpcService::new(manager.clone(), access());
     let (initial, initial_hash) = assert_transports(&app, &grpc, "approve").await;
     write_rule(repo.path(), 70);
     let response = app
         .clone()
         .oneshot(
             Request::post("/v1/repo/reload")
+                .header("authorization", format!("Bearer {PUBLISHER_TOKEN}"))
                 .header(EXPECTED_REVISION_HEADER, &initial)
                 .body(Body::empty())
                 .unwrap(),
@@ -241,7 +243,7 @@ async fn either_transport_reloads_both_and_restart_reads_repository() {
 
     // Restore repo content, then reload through the other administrative entry.
     write_rule(repo.path(), 10);
-    let mut request = tonic::Request::new(pb::ReloadRepositoryRequest {});
+    let mut request = publisher_request(pb::ReloadRepositoryRequest {});
     request
         .metadata_mut()
         .insert(EXPECTED_REVISION_HEADER, updated.parse().unwrap());
@@ -264,8 +266,8 @@ async fn either_transport_reloads_both_and_restart_reads_repository() {
 async fn invalid_pipeline_registry_and_import_preserve_both_transports() {
     let repo = repository();
     let manager = manager(repo.path()).await;
-    let app = create_router(manager.clone());
-    let grpc = DecisionGrpcService::new(manager.clone());
+    let app = create_router(manager.clone(), access());
+    let grpc = DecisionGrpcService::new(manager.clone(), access());
     let before = assert_transports(&app, &grpc, "approve").await;
     for path in [
         "pipelines/payment.yaml",
@@ -279,6 +281,7 @@ async fn invalid_pipeline_registry_and_import_preserve_both_transports() {
             .clone()
             .oneshot(
                 Request::post("/v1/repo/reload")
+                    .header("authorization", format!("Bearer {PUBLISHER_TOKEN}"))
                     .body(Body::empty())
                     .unwrap(),
             )
@@ -286,7 +289,7 @@ async fn invalid_pipeline_registry_and_import_preserve_both_transports() {
             .unwrap();
         assert_eq!(http.status(), StatusCode::INTERNAL_SERVER_ERROR);
         assert_eq!(
-            grpc.reload_repository(tonic::Request::new(pb::ReloadRepositoryRequest {}))
+            grpc.reload_repository(publisher_request(pb::ReloadRepositoryRequest {}))
                 .await
                 .unwrap_err()
                 .code(),
@@ -308,8 +311,8 @@ async fn invalid_pipeline_registry_and_import_preserve_both_transports() {
 async fn stale_admin_requests_are_rejected_in_both_transports() {
     let repo = repository();
     let manager = manager(repo.path()).await;
-    let app = create_router(manager.clone());
-    let grpc = DecisionGrpcService::new(manager.clone());
+    let app = create_router(manager.clone(), access());
+    let grpc = DecisionGrpcService::new(manager.clone(), access());
     let old = manager.snapshot().await;
     write_rule(repo.path(), 70);
     let current = manager.reload(Some(&old.revision)).await.unwrap();
@@ -317,6 +320,7 @@ async fn stale_admin_requests_are_rejected_in_both_transports() {
         .clone()
         .oneshot(
             Request::post("/v1/repo/reload")
+                .header("authorization", format!("Bearer {PUBLISHER_TOKEN}"))
                 .header(EXPECTED_REVISION_HEADER, &old.revision)
                 .body(Body::empty())
                 .unwrap(),
@@ -324,7 +328,7 @@ async fn stale_admin_requests_are_rejected_in_both_transports() {
         .await
         .unwrap();
     assert_eq!(response.status(), StatusCode::CONFLICT);
-    let mut request = tonic::Request::new(pb::ReloadRepositoryRequest {});
+    let mut request = publisher_request(pb::ReloadRepositoryRequest {});
     request
         .metadata_mut()
         .insert(EXPECTED_REVISION_HEADER, old.revision.parse().unwrap());
@@ -397,13 +401,13 @@ pipeline:
     let manager = manager(repo.path()).await;
     let old_snapshot = manager.snapshot().await;
     let old_revision = old_snapshot.revision.clone();
-    let app = create_router(manager.clone());
+    let app = create_router(manager.clone(), access());
     let slow_http = tokio::spawn({
         let app = app.clone();
         async move { http_decide(&app).await }
     });
     let slow_grpc = tokio::spawn({
-        let grpc = DecisionGrpcService::new(manager.clone());
+        let grpc = DecisionGrpcService::new(manager.clone(), access());
         async move { grpc_decide(&grpc).await }
     });
     tokio::time::timeout(Duration::from_secs(10), entered.acquire_many(2))
@@ -417,7 +421,12 @@ pipeline:
         .await
         .expect("reload must not wait for the old decision")
         .unwrap();
-    assert_transports(&app, &DecisionGrpcService::new(manager.clone()), "decline").await;
+    assert_transports(
+        &app,
+        &DecisionGrpcService::new(manager.clone(), access()),
+        "decline",
+    )
+    .await;
     assert!(!slow_http.is_finished());
     assert!(!slow_grpc.is_finished());
     assert!(Arc::ptr_eq(
@@ -440,8 +449,216 @@ pipeline:
     );
     assert_eq!(
         grpc_response.into_inner().decision.unwrap().result,
-        "REVIEW"
+        "review"
     );
     assert_ne!(current.revision, old_revision);
     server.abort();
+}
+
+const DECISION_TOKEN: &str = "test-decision-token-0000000000000000";
+const PUBLISHER_TOKEN: &str = "test-publisher-token-000000000000000";
+fn access() -> corint_decision_server::access::AccessPolicy {
+    corint_decision_server::access::AccessPolicy::new(DECISION_TOKEN, PUBLISHER_TOKEN, "test")
+        .unwrap()
+}
+fn decision_request<T>(value: T) -> tonic::Request<T> {
+    authorized_request(value, DECISION_TOKEN)
+}
+fn publisher_request<T>(value: T) -> tonic::Request<T> {
+    authorized_request(value, PUBLISHER_TOKEN)
+}
+fn authorized_request<T>(value: T, token: &str) -> tonic::Request<T> {
+    let mut r = tonic::Request::new(value);
+    r.metadata_mut()
+        .insert("authorization", format!("Bearer {token}").parse().unwrap());
+    r
+}
+
+#[tokio::test]
+async fn both_transports_enforce_roles_and_reject_caller_owned_trusted_namespaces() {
+    let repo = repository();
+    let manager = manager(repo.path()).await;
+    let app = create_router(manager.clone(), access());
+    let grpc = DecisionGrpcService::new(manager.clone(), access());
+    for (path, token) in [
+        ("/v1/decide", None),
+        ("/v1/decide", Some(PUBLISHER_TOKEN)),
+        ("/v1/repo/reload", Some(DECISION_TOKEN)),
+    ] {
+        let mut request = Request::post(path).header("content-type", "application/json");
+        if let Some(t) = token {
+            request = request.header("authorization", format!("Bearer {t}"));
+        }
+        let response = app
+            .clone()
+            .oneshot(request.body(Body::from("{}")).unwrap())
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    }
+    assert_eq!(
+        grpc.decide(tonic::Request::new(pb::DecideRequest::default()))
+            .await
+            .unwrap_err()
+            .code(),
+        tonic::Code::Unauthenticated
+    );
+    assert_eq!(
+        grpc.reload_repository(decision_request(pb::ReloadRepositoryRequest {}))
+            .await
+            .unwrap_err()
+            .code(),
+        tonic::Code::Unauthenticated
+    );
+    for body in [
+        json!({"event":{"amount":100},"features":{}}),
+        json!({"event":{"amount":100,"tenant_id":"other"}}),
+        json!({"event":{"amount":100},"options":{"async":true}}),
+    ] {
+        let response = app
+            .clone()
+            .oneshot(
+                Request::post("/v1/decide")
+                    .header("authorization", format!("Bearer {DECISION_TOKEN}"))
+                    .header("content-type", "application/json")
+                    .body(Body::from(body.to_string()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    }
+    let mut req = pb::DecideRequest::default();
+    req.metadata.insert("tenant_id".into(), "other".into());
+    assert_eq!(
+        grpc.decide(decision_request(req)).await.unwrap_err().code(),
+        tonic::Code::InvalidArgument
+    );
+    assert!(manager.snapshot().await.engine.compiled_policy().is_ok());
+}
+
+#[tokio::test]
+async fn grpc_preserves_complete_trace_and_requested_features() {
+    let repo = repository();
+    let manager = manager(repo.path()).await;
+    let grpc = DecisionGrpcService::new(manager.clone(), access());
+    let request =
+        corint_decision_engine::DecisionRequest::new(std::collections::HashMap::from([(
+            "amount".into(),
+            corint_decision_engine::Value::Number(100.0),
+        )]))
+        .with_vars(std::collections::HashMap::from([(
+            "tenant_id".into(),
+            corint_decision_engine::Value::String("test".into()),
+        )]))
+        .with_trace();
+    let engine = manager
+        .snapshot()
+        .await
+        .engine
+        .decide(request)
+        .await
+        .unwrap();
+    let mut request = pb::DecideRequest::default();
+    request.event.insert(
+        "amount".into(),
+        pb::Value {
+            kind: Some(pb::value::Kind::IntValue(100)),
+        },
+    );
+    request.options = Some(pb::RequestOptions {
+        include_trace: true,
+        include_features: true,
+        ..Default::default()
+    });
+    let result = grpc
+        .decide(decision_request(request))
+        .await
+        .unwrap()
+        .into_inner();
+    let trace: Value = serde_json::from_str(&result.trace.unwrap().canonical_json).unwrap();
+    let mut expected = serde_json::to_value(engine.trace.unwrap()).unwrap();
+    // Individual execution timing is intentionally non-deterministic.
+    fn remove_times(v: &mut Value) {
+        match v {
+            Value::Object(m) => {
+                m.remove("execution_time_ms");
+                for v in m.values_mut() {
+                    remove_times(v);
+                }
+            }
+            Value::Array(a) => {
+                for v in a {
+                    remove_times(v);
+                }
+            }
+            _ => (),
+        }
+    }
+    let mut actual = trace;
+    remove_times(&mut actual);
+    remove_times(&mut expected);
+    assert_eq!(actual, expected);
+    assert_eq!(result.features.len(), engine.result.context.len());
+}
+
+#[tokio::test]
+async fn terminal_router_branch_cannot_fall_through_into_the_other_branch() {
+    let repo = repository();
+    std::fs::write(
+        repo.path().join("pipelines/payment.yaml"),
+        r#"version: "0.1"
+import:
+  rulesets: [library/rulesets/risk.yaml]
+---
+pipeline:
+  id: payment
+  name: Payment
+  entry: route
+  steps:
+    - step:
+        id: route
+        name: Route
+        type: router
+        routes:
+          - when: event.amount > 0
+            next: chosen
+        default: other
+    - step:
+        id: chosen
+        name: Chosen
+        type: ruleset
+        ruleset: risk
+    - step:
+        id: other
+        name: Other
+        type: ruleset
+        ruleset: risk
+  decision:
+    - default: true
+      result: approve
+"#,
+    )
+    .unwrap();
+    let engine = engine(repo.path()).await.unwrap();
+    let response = engine
+        .decide(
+            corint_decision_engine::DecisionRequest::new(std::collections::HashMap::from([(
+                "amount".into(),
+                corint_decision_engine::Value::Number(100.0),
+            )]))
+            .with_trace(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.result.score, 10);
+    let steps = response.trace.unwrap().pipeline.unwrap().steps;
+    assert_eq!(
+        steps
+            .iter()
+            .filter(|s| s.executed)
+            .map(|s| s.step_id.as_str())
+            .collect::<Vec<_>>(),
+        vec!["route", "chosen"]
+    );
 }

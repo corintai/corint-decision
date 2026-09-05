@@ -15,7 +15,7 @@ use corint_decision_model::ast::Signal;
 use corint_decision_model::Value;
 use serde_json;
 use std::collections::HashMap;
-use tokio::sync::mpsc;
+use tokio::sync::Semaphore;
 
 /// Rule execution record for persistence
 #[derive(Debug, Clone)]
@@ -92,77 +92,44 @@ pub struct DecisionRecord {
     pub rule_executions: Vec<RuleExecutionRecord>,
 }
 
-/// Async decision result writer that queues writes to avoid blocking decision execution
+/// Acknowledged legacy PostgreSQL persistence. A successful call means the
+/// transaction committed. Bounded admission rejects overload without losing work.
 pub struct DecisionResultWriter {
-    /// Channel sender for queuing decision records
-    sender: mpsc::UnboundedSender<DecisionRecord>,
+    #[cfg(feature = "sqlx")]
+    pool: Option<sqlx::PgPool>,
+    permits: Semaphore,
 }
-
 impl DecisionResultWriter {
-    /// Create a new decision result writer with a database connection pool
     #[cfg(feature = "sqlx")]
     pub fn new(pool: sqlx::PgPool) -> Self {
-        tracing::info!("Creating DecisionResultWriter with database connection pool");
-
-        let (sender, receiver) = mpsc::unbounded_channel();
-
-        // Spawn background task to process decision records
-        tokio::spawn(async move {
-            Self::process_records(receiver, pool).await;
-        });
-
-        tracing::info!("DecisionResultWriter created, background task spawned");
-
-        Self { sender }
+        Self {
+            pool: Some(pool),
+            permits: Semaphore::new(64),
+        }
     }
-
-    /// Create a new decision result writer without database (no-op)
     #[cfg(not(feature = "sqlx"))]
     pub fn new() -> Self {
-        let (sender, _receiver) = mpsc::unbounded_channel();
-        Self { sender }
+        Self::default()
     }
-
-    /// Write a decision result record asynchronously
-    pub fn write_decision(&self, record: DecisionRecord) -> Result<()> {
-        self.sender.send(record).map_err(|e| {
-            RuntimeError::RuntimeError(format!("Failed to queue decision record: {}", e))
-        })
-    }
-
-    /// Process decision records in background
-    #[cfg(feature = "sqlx")]
-    async fn process_records(
-        mut receiver: mpsc::UnboundedReceiver<DecisionRecord>,
-        pool: sqlx::PgPool,
-    ) {
-        tracing::info!("Decision result writer background task started");
-
-        while let Some(record) = receiver.recv().await {
-            tracing::debug!(
-                "Processing decision record for request_id: {}",
-                record.request_id
-            );
-
-            match Self::write_to_database(&pool, &record).await {
-                Ok(()) => {
-                    tracing::info!(
-                        "Successfully persisted decision record for request_id: {}",
-                        record.request_id
-                    );
-                }
-                Err(e) => {
-                    tracing::error!(
-                        "Failed to write decision record to database for request_id {}: {}",
-                        record.request_id,
-                        e
-                    );
-                    tracing::error!("Error details: {:?}", e);
-                }
-            }
+    pub async fn write_decision(&self, record: DecisionRecord) -> Result<()> {
+        let _permit = self
+            .permits
+            .try_acquire()
+            .map_err(|_| RuntimeError::RuntimeError("Persistence capacity exhausted".into()))?;
+        #[cfg(feature = "sqlx")]
+        {
+            let pool = self.pool.as_ref().ok_or_else(|| {
+                RuntimeError::RuntimeError("Persistence is not configured".into())
+            })?;
+            Self::write_to_database(pool, &record).await
         }
-
-        tracing::warn!("Decision result writer background task ended (channel closed)");
+        #[cfg(not(feature = "sqlx"))]
+        {
+            let _ = record;
+            Err(RuntimeError::RuntimeError(
+                "Persistence requires sqlx".into(),
+            ))
+        }
     }
 
     /// Write decision and rule execution records to database
@@ -351,17 +318,12 @@ impl DecisionResultWriter {
 }
 
 impl Default for DecisionResultWriter {
-    #[cfg(feature = "sqlx")]
     fn default() -> Self {
-        // Create a no-op writer if no pool is provided
-        let (sender, _receiver) = mpsc::unbounded_channel();
-        Self { sender }
-    }
-
-    #[cfg(not(feature = "sqlx"))]
-    fn default() -> Self {
-        let (sender, _receiver) = mpsc::unbounded_channel();
-        Self { sender }
+        Self {
+            #[cfg(feature = "sqlx")]
+            pool: None,
+            permits: Semaphore::new(64),
+        }
     }
 }
 
@@ -400,7 +362,7 @@ impl DecisionRecord {
             event_id,
             pipeline_id,
             risk_score: result.score,
-            decision: result.signal.clone().unwrap_or(Signal::Approve),
+            decision: result.signal.clone().unwrap_or(Signal::Pass),
             decision_reason: if result.explanation.is_empty() {
                 None
             } else {

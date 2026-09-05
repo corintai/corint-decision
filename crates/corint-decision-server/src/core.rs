@@ -1,5 +1,9 @@
 //! Opt-in, single-target Core server. Local operator configuration is the trust
 //! root. Policies come only from the configured repository, including on reload.
+use crate::{
+    evidence::{self, EvidenceConfig},
+    journal::{Journal, JournalConfig},
+};
 use axum::{
     body::Bytes,
     extract::{DefaultBodyLimit, Request, State},
@@ -15,7 +19,7 @@ use corint_decision_toolchain::{
     behavior,
     contracts::{CompatibilityReport, TargetContracts},
     package,
-    repository::{self, RepositoryIdentity},
+    repository::RepositoryIdentity,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -43,10 +47,17 @@ pub struct CoreConfig {
     pub target: PathBuf,
     pub cases: PathBuf,
     /// Filesystem repository containing published.json and the policy YAML files.
+    #[serde(default)]
     pub repository: PathBuf,
+    #[serde(default)]
+    pub repository_backend: Option<crate::repo_source::BackendConfig>,
     pub decision_token_env: String,
     pub publisher_token_env: String,
     pub approvals: Vec<OperatorApproval>,
+    #[serde(default)]
+    pub journal: Option<JournalConfig>,
+    #[serde(default)]
+    pub business_evidence: Option<EvidenceConfig>,
 }
 
 /// An explicit local operator allowlist, NOT a portable approval or signature.
@@ -63,13 +74,16 @@ struct Policy {
     engine: DecisionEngine,
     compatibility: CompatibilityReport,
     repository: RepositoryIdentity,
+    subject: serde_json::Value,
 }
 struct Active {
     revision: String,
     policy: Policy,
 }
 struct Gate {
-    repository: PathBuf,
+    root: PathBuf,
+    business_evidence: Option<EvidenceConfig>,
+    repository: crate::repo_source::Source,
     contracts: TargetContracts,
     cases: CoreSource,
     approvals: Vec<OperatorApproval>,
@@ -80,6 +94,7 @@ struct CoreState {
     gate: Arc<Gate>,
     active: Arc<RwLock<Arc<Active>>>,
     preparation: Arc<Semaphore>,
+    journal: Option<Journal>,
 }
 #[derive(Clone)]
 struct Credential([u8; 32]);
@@ -134,7 +149,7 @@ pub async fn create_router(
     publisher_token: &str,
 ) -> anyhow::Result<Router> {
     anyhow::ensure!(
-        config.config_version == "2",
+        matches!(config.config_version.as_str(), "2" | "3"),
         "Unsupported Core server config version"
     );
     // This increment is deliberately local-only: no unauthenticated plaintext
@@ -170,12 +185,39 @@ pub async fn create_router(
             "Invalid operator approval fingerprint"
         );
     }
+    anyhow::ensure!(
+        config.config_version != "3" || config.journal.is_some(),
+        "Core v3 requires a durable journal"
+    );
+    let (journal, consumer) = if let Some(journal) = &config.journal {
+        let token = std::env::var(&journal.consumer_token_env)
+            .map_err(|_| anyhow::anyhow!("Missing journal consumer credential"))?;
+        anyhow::ensure!(
+            (32..=1024).contains(&token.len())
+                && token.bytes().all(|b| b.is_ascii_graphic())
+                && token != decision_token
+                && token != publisher_token,
+            "Consumer requires an independent credential"
+        );
+        (
+            Some(Journal::open(root, journal).await?),
+            Some(Credential(Sha256::digest(token.as_bytes()).into())),
+        )
+    } else {
+        (None, None)
+    };
     let context = read(&root.join(&config.context))?;
     let target = read(&root.join(&config.target))?;
     let cases = read(&root.join(&config.cases))?;
     behavior::validate_suite(&cases)?;
     let gate = Arc::new(Gate {
-        repository: root.join(&config.repository),
+        root: root.to_owned(),
+        business_evidence: config.business_evidence,
+        repository: crate::repo_source::Source::configure(
+            root,
+            &config.repository,
+            config.repository_backend,
+        )?,
         contracts: TargetContracts::load(&context, &target)?,
         cases_sha256: hash(cases.yaml.as_bytes()),
         cases,
@@ -186,6 +228,7 @@ pub async fn create_router(
         .await?
         .map_err(|e| anyhow::anyhow!("Core initial policy rejected: {}", e.code))?;
     let state = CoreState {
+        journal,
         gate,
         active: Arc::new(RwLock::new(Arc::new(Active {
             revision: uuid::Uuid::new_v4().to_string(),
@@ -207,7 +250,19 @@ pub async fn create_router(
             credential(publisher_token),
             authenticate,
         ));
+    let feedback = if let Some(credential) = consumer {
+        Router::new()
+            .route("/v1/core/feedback/outcome", post(outcome))
+            .route("/v1/core/feedback/receipt", post(action_receipt))
+            .route("/v1/core/feedback/query", post(outcome_query))
+            .route("/v1/core/outbox/claim", post(outbox_claim))
+            .route("/v1/core/outbox/ack", post(outbox_ack))
+            .route_layer(middleware::from_fn_with_state(credential, authenticate))
+    } else {
+        Router::new()
+    };
     Ok(Router::new()
+        .merge(feedback)
         .merge(decisions)
         .merge(control)
         .with_state(state)
@@ -273,8 +328,27 @@ impl IntoResponse for ApiError {
 }
 
 impl Gate {
+    fn check_evidence(&self, subject: &serde_json::Value) -> Result<(), ApiError> {
+        if let Some(config) = &self.business_evidence {
+            evidence::check(
+                &self.root,
+                config,
+                subject,
+                chrono::Utc::now().timestamp_millis() as u64,
+            )
+            .map_err(|_| ApiError::new(StatusCode::FORBIDDEN, "E_PUBLICATION_EVIDENCE"))?;
+        }
+        Ok(())
+    }
     fn prepare(&self) -> Result<Policy, ApiError> {
-        let snapshot = repository::load(&self.repository)?;
+        let snapshot = match &self.repository {
+            crate::repo_source::Source::Filesystem(path) => {
+                corint_decision_toolchain::repository::load(path)?
+            }
+            _ => self.repository.load().map_err(|_| {
+                ApiError::new(StatusCode::UNPROCESSABLE_ENTITY, "E_REPOSITORY_LOAD")
+            })?,
+        };
         let bundle = snapshot.closure.bundle();
         let compatibility = self
             .contracts
@@ -290,6 +364,9 @@ impl Gate {
                 "E_OPERATOR_APPROVAL_REQUIRED",
             ));
         }
+        let subject = evidence::subject(&compatibility)
+            .map_err(|_| ApiError::new(StatusCode::INTERNAL_SERVER_ERROR, "E_CORE_SUBJECT"))?;
+        self.check_evidence(&subject)?;
         // This worker owns a synchronous test runtime. Never use caller cases,
         // report booleans or imported historical package evidence here.
         let (package, _) = package::prepare(&bundle.sources, &bundle.input_schema, &self.cases)?;
@@ -305,11 +382,14 @@ impl Gate {
             parse_core_input_schema(&bundle.input_schema)?,
         )
         .map_err(|_| ApiError::new(StatusCode::INTERNAL_SERVER_ERROR, "E_CORE_ENGINE"))?;
-        repository::verify_current(&self.repository, &snapshot.identity)?;
+        self.repository
+            .verify(&snapshot.identity)
+            .map_err(|_| ApiError::new(StatusCode::CONFLICT, "E_REPOSITORY_CHANGED"))?;
         Ok(Policy {
             engine,
             compatibility,
             repository: snapshot.identity,
+            subject,
         })
     }
 }
@@ -317,6 +397,7 @@ impl Gate {
 #[derive(Serialize)]
 struct ActiveReceipt<'a> {
     revision: &'a str,
+    subject: &'a serde_json::Value,
     policy_sha256: &'a str,
     target_id: &'a str,
     binding_sha256: &'a str,
@@ -334,6 +415,7 @@ fn receipt<'a>(active: &'a Active, gate: &'a Gate) -> ActiveReceipt<'a> {
     let report = &active.policy.compatibility;
     ActiveReceipt {
         revision: &active.revision,
+        subject: &active.policy.subject,
         policy_sha256: &report.policy_sha256,
         target_id: &report.target.id,
         binding_sha256: &report.binding_sha256,
@@ -345,7 +427,11 @@ fn receipt<'a>(active: &'a Active, gate: &'a Gate) -> ActiveReceipt<'a> {
         local_engine_constructed: true,
         server_owned_cases_passed: true,
         operator_allowlist_matched: true,
-        business_evaluation: "not_performed",
+        business_evaluation: if gate.business_evidence.is_some() {
+            "verified_operator_attestation"
+        } else {
+            "not_performed"
+        },
     }
 }
 
@@ -395,6 +481,8 @@ async fn reload(
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct EventRequest {
+    #[serde(default)]
+    business_event_id: Option<String>,
     event: HashMap<String, Value>,
     #[serde(default)]
     enable_trace: bool,
@@ -407,17 +495,155 @@ async fn decide(
         .map_err(|_| ApiError::new(StatusCode::BAD_REQUEST, "E_CORE_REQUEST"))?;
     // Keep the engine and identity from ONE snapshot; no lock during evaluation.
     let active = state.active.read().await.clone();
+    if state.journal.is_some()
+        && !event
+            .business_event_id
+            .as_ref()
+            .is_some_and(|s| !s.trim().is_empty() && s.len() <= 256)
+    {
+        return Err(ApiError::new(
+            StatusCode::BAD_REQUEST,
+            "E_BUSINESS_EVENT_ID",
+        ));
+    }
+    // Re-read trusted evidence so expiry/revocation also stops new decisions.
+    let gate = state.gate.clone();
+    let subject = active.policy.subject.clone();
+    tokio::task::spawn_blocking(move || gate.check_evidence(&subject))
+        .await
+        .map_err(|_| ApiError::new(StatusCode::INTERNAL_SERVER_ERROR, "E_CORE_WORKER"))??;
+    let mut input = json!(event.event);
+    input.sort_all_objects();
     let mut request = DecisionRequest::new(event.event);
     if event.enable_trace {
         request = request.with_trace();
     }
-    let response = active
-        .policy
-        .engine
-        .decide(request)
+    let now = chrono::Utc::now().timestamp_millis();
+    let started = std::time::Instant::now();
+    let result = active.policy.engine.decide(request).await;
+    let record = if let Some(journal) = &state.journal {
+        let id = uuid::Uuid::new_v4().to_string();
+        let (signal, pipeline, rules, reasons, actions, error) = match &result {
+            Ok(response) => (
+                if response.pipeline_id.is_none() { "no_match".into() } else { response.result.signal.as_ref().map(|s| format!("{s:?}").to_lowercase()).unwrap_or_else(|| "pass".into()) },
+                response.pipeline_id.clone(), response.result.triggered_rules.clone(),
+                if response.result.explanation.trim().is_empty() { vec![] } else { vec![response.result.explanation.clone()] },
+                response.result.actions.iter().enumerate().map(|(i,a)| json!({"action_id":format!("{id}:{i}"),"idempotency_key":format!("{}:{id}:{i}",journal.tenant_id),"type":a})).collect::<Vec<_>>(), None),
+            Err(_) => ("error".to_owned(), None, vec![], vec![], vec![], Some("E_CORE_DECISION")),
+        };
+        let record = json!({"kind":"corint-decision-record","contract_version":"1","id":id,"revision":"1",
+            "provenance":{"producer":"corint-core","reference":active.revision},
+            "tenant_id":journal.tenant_id,"decision_id":id,"business_event_id":event.business_event_id,
+            "decided_at_ms":now,"subject":active.policy.subject,"engine_version":corint_decision_engine::ENGINE_VERSION,
+            "input_evidence":{"reference":format!("journal:{id}"),"sha256":hash(input.to_string().as_bytes())},
+            "runtime":{"revision":active.revision,"repository_revision":active.policy.repository.revision,
+                "repository_manifest_sha256":active.policy.repository.manifest_sha256,"pipeline_id":pipeline},
+            "resources":[],"triggered_rules":rules,"reasons":reasons,"result":signal,"error_code":error,
+            "duration_ms":started.elapsed().as_millis() as u64,"actions":actions});
+        journal
+            .append("decision-record", &record, Some(&input))
+            .await
+            .map_err(|_| ApiError::new(StatusCode::SERVICE_UNAVAILABLE, "E_JOURNAL_UNAVAILABLE"))?;
+        Some(record)
+    } else {
+        None
+    };
+    match result {
+        Ok(response) => Ok(Json(
+            json!({"snapshot":receipt(&active, &state.gate),"decision":response,"record":record}),
+        )),
+        Err(_) => Err(ApiError {
+            status: StatusCode::UNPROCESSABLE_ENTITY,
+            code: "E_CORE_DECISION".into(),
+            diagnostic: Some(json!({"record":record,"snapshot":receipt(&active,&state.gate)})),
+        }),
+    }
+}
+
+fn journal(state: &CoreState) -> Result<&Journal, ApiError> {
+    state
+        .journal
+        .as_ref()
+        .ok_or_else(|| ApiError::new(StatusCode::NOT_FOUND, "E_JOURNAL_DISABLED"))
+}
+async fn ingest(
+    state: CoreState,
+    body: Bytes,
+    kind: &str,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    // Validate original bytes before materializing JSON, so duplicate keys cannot
+    // disappear into a last-value-wins map before contract validation.
+    let value = corint_decision_toolchain::phase0::Contract::load(
+        kind,
+        &CoreSource {
+            path: "feedback".into(),
+            yaml: String::from_utf8(body.to_vec())
+                .map_err(|_| ApiError::new(StatusCode::BAD_REQUEST, "E_FEEDBACK_REQUEST"))?,
+        },
+    )
+    .map_err(|_| ApiError::new(StatusCode::UNPROCESSABLE_ENTITY, "E_FEEDBACK_REJECTED"))?;
+    let value = value.value();
+    let result = journal(&state)?
+        .append(kind, value, None)
         .await
-        .map_err(|_| ApiError::new(StatusCode::UNPROCESSABLE_ENTITY, "E_CORE_DECISION"))?;
+        .map_err(|_| ApiError::new(StatusCode::UNPROCESSABLE_ENTITY, "E_FEEDBACK_REJECTED"))?;
     Ok(Json(
-        json!({"snapshot":receipt(&active, &state.gate), "decision":response}),
+        json!({"status": if result == corint_decision_toolchain::phase0::Ingest::Duplicate { "duplicate" } else { "inserted" }}),
     ))
+}
+async fn outcome(
+    State(state): State<CoreState>,
+    body: Bytes,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    ingest(state, body, "outcome-event").await
+}
+async fn action_receipt(
+    State(state): State<CoreState>,
+    body: Bytes,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    ingest(state, body, "action-receipt").await
+}
+async fn outbox_claim(State(state): State<CoreState>) -> Result<Json<serde_json::Value>, ApiError> {
+    journal(&state)?
+        .claim(chrono::Utc::now().timestamp_millis())
+        .await
+        .map(Json)
+        .map_err(|_| ApiError::new(StatusCode::SERVICE_UNAVAILABLE, "E_JOURNAL_UNAVAILABLE"))
+}
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Ack {
+    lease: String,
+    idempotency_keys: Vec<String>,
+}
+async fn outbox_ack(
+    State(state): State<CoreState>,
+    Json(ack): Json<Ack>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    journal(&state)?
+        .acknowledge(
+            &ack.lease,
+            &ack.idempotency_keys,
+            chrono::Utc::now().timestamp_millis(),
+        )
+        .await
+        .map_err(|_| ApiError::new(StatusCode::CONFLICT, "E_OUTBOX_LEASE"))?;
+    Ok(Json(json!({"acknowledged":true})))
+}
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct OutcomeQuery {
+    decision_id: String,
+    label_name: String,
+    available_at_ms: u64,
+}
+async fn outcome_query(
+    State(state): State<CoreState>,
+    Json(q): Json<OutcomeQuery>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    let result = journal(&state)?
+        .outcome_as_of(&q.decision_id, &q.label_name, q.available_at_ms)
+        .await
+        .map_err(|_| ApiError::new(StatusCode::SERVICE_UNAVAILABLE, "E_JOURNAL_UNAVAILABLE"))?;
+    Ok(Json(json!({"outcome":result})))
 }

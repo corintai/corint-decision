@@ -49,6 +49,10 @@ CorintEngine corint_engine_new_from_database(const char* database_url);
  */
 char* corint_engine_decide(CorintEngine engine, const char* request_json);
 
+/** Reload configured repo using metadata.runtime_revision from a prior decision.
+ * Returns JSON; free with corint_string_free. Concurrent calls require a live handle. */
+char* corint_engine_reload(CorintEngine engine, const char* expected_revision);
+
 /**
  * Free a decision engine
  *

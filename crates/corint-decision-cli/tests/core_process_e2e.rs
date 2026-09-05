@@ -302,6 +302,10 @@ fn server_command(config: &Path) -> Command {
         .env("CORINT_CORE_CONFIG", config)
         .env("E2E_DECISION_TOKEN", DECISION)
         .env("E2E_PUBLISHER_TOKEN", PUBLISHER)
+        .env(
+            "E2E_CONSUMER_TOKEN",
+            "e2e-consumer-credential-0000000000000000",
+        )
         .env("RUST_LOG", "corint_decision_server=info")
         .env("NO_COLOR", "1");
     command
@@ -398,6 +402,16 @@ impl Server {
         result
     }
     async fn assert_decision(&self, snapshot: &Value, amount: i32, decline: bool) {
+        self.assert_decision_with_source(snapshot, amount, decline, EXPORTED_RULE)
+            .await;
+    }
+    async fn assert_decision_with_source(
+        &self,
+        snapshot: &Value,
+        amount: i32,
+        decline: bool,
+        source: &str,
+    ) {
         let mut baseline = None;
         for trace in [false, true] {
             let (status, body) = self
@@ -405,11 +419,22 @@ impl Server {
                     Method::POST,
                     "/v1/core/decide",
                     Some(DECISION),
-                    &json!({"event":{"amount":amount},"enable_trace":trace}),
+                    &json!({"business_event_id":format!("amount-{amount}"),"event":{"amount":amount},"enable_trace":trace}),
                 )
                 .await;
             assert_eq!(status, 200, "{body}");
             assert_eq!(&body["snapshot"], snapshot);
+            if body["record"].is_object() {
+                assert_eq!(body["record"]["runtime"]["revision"], snapshot["revision"]);
+                assert_eq!(
+                    body["record"]["runtime"]["repository_manifest_sha256"],
+                    snapshot["repository"]["manifest_sha256"]
+                );
+                assert_eq!(
+                    body["record"]["result"],
+                    if decline { "decline" } else { "approve" }
+                );
+            }
             let decision = &body["decision"];
             let result = &decision["result"];
             assert_eq!(decision["pipeline_id"], "payment");
@@ -457,7 +482,7 @@ impl Server {
             if trace {
                 let records = decision["trace"]["core_conditions_v1"].as_array().unwrap();
                 assert!(
-                    records.iter().any(|r| r["source"] == EXPORTED_RULE
+                    records.iter().any(|r| r["source"] == source
                         && r["field_path"] == "/rule/when"
                         && r["node_path"] == ""
                         && r["outcome"] == json!({"status":"evaluated","result":decline})),
@@ -686,4 +711,135 @@ fn rejected_bootstrap_exits_without_listening_or_legacy_fallback() {
         "{log}"
     );
     assert!(!log.contains("listening") && !log.contains("Loaded configuration"));
+}
+
+/// Agent-neutral public path: ordinary source files -> public CLI -> operator
+/// deployment -> real HTTP. No generator SDK and no repository fixture publisher.
+#[test]
+fn public_candidate_command_runs_without_work_or_generator_sdk() {
+    let temp = TempDir::new().unwrap();
+    let dir = temp.path();
+    fs::create_dir(dir.join("author")).unwrap();
+    for name in FILES.into_iter().chain(["input-schema.yaml"]) {
+        fs::write(
+            dir.join("author").join(name),
+            fixture(&format!("cdl_core/{name}")),
+        )
+        .unwrap();
+    }
+    for (name, source) in [
+        ("context.yaml", "contracts/business-context.yaml"),
+        ("target.json", "contracts/target-capabilities.json"),
+        ("cases.yaml", "cdl_core/behavior.yaml"),
+    ] {
+        fs::write(dir.join(name), fixture(source)).unwrap();
+    }
+    let prepared = cli(
+        dir,
+        "public-candidate",
+        &[
+            "prepare-repository",
+            "--root",
+            "author",
+            "--input-schema",
+            "input-schema.yaml",
+            "--cases",
+            "cases.yaml",
+            "--context",
+            "context.yaml",
+            "--target",
+            "target.json",
+            "--revision",
+            "agent-v1",
+            "--output",
+            "repository",
+            FILES[0],
+            FILES[1],
+            FILES[2],
+            FILES[3],
+        ],
+        0,
+    );
+    assert_eq!(prepared["activated"], false);
+    assert_eq!(prepared["publication_approval"], "not_granted");
+    let policy = &prepared["candidate"]["policy_sha256"];
+    // This test's operator owns the independent acceptance suite and approves the
+    // exact synthetic policy. The CLI neither writes nor supplies this authority.
+    let config = dir.join("core.json");
+    save(
+        &config,
+        &json!({"config_version":"3", "listen":"127.0.0.1:0",
+            "context":"context.yaml", "target":"target.json", "cases":"cases.yaml", "repository":"repository",
+            "decision_token_env":"E2E_DECISION_TOKEN", "publisher_token_env":"E2E_PUBLISHER_TOKEN",
+            "journal":{"path":"events.sqlite","tenant_id":"e2e","max_records":100,"max_bytes":1000000,"consumer_token_env":"E2E_CONSUMER_TOKEN"},
+            "approvals":[{"policy_sha256":policy,
+                "context_sha256":hash(&fs::read(dir.join("context.yaml")).unwrap()),
+                "target_sha256":hash(&fs::read(dir.join("target.json")).unwrap()),
+                "cases_sha256":hash(&fs::read(dir.join("cases.yaml")).unwrap())}]
+        }),
+    );
+    tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap()
+        .block_on(async {
+            let mut server = Server::start(&config, "agent-public-server").await;
+            let initial = server.state().await;
+            assert_eq!(initial["repository"]["revision"], "agent-v1");
+            assert_eq!(&initial["policy_sha256"], policy);
+            server
+                .assert_decision_with_source(&initial, 1000, false, "rule.yaml")
+                .await;
+            server
+                .assert_decision_with_source(&initial, 1001, true, "rule.yaml")
+                .await;
+            let (status, _) = server
+                .call(
+                    Method::POST,
+                    "/v1/core/repo/reload",
+                    Some(DECISION),
+                    &json!({"expected_revision":initial["revision"]}),
+                )
+                .await;
+            assert_eq!(status, 401);
+            let (status, reloaded) = server
+                .call(
+                    Method::POST,
+                    "/v1/core/repo/reload",
+                    Some(PUBLISHER),
+                    &json!({"expected_revision":initial["revision"]}),
+                )
+                .await;
+            assert_eq!(status, 200);
+            assert_ne!(reloaded["revision"], initial["revision"]);
+            assert_eq!(reloaded["repository"], initial["repository"]);
+            server
+                .assert_decision_with_source(&reloaded, 1001, true, "rule.yaml")
+                .await;
+            server.process.stop();
+            let mut restarted = Server::start(&config, "agent-public-restart").await;
+            let state = restarted.state().await;
+            assert_eq!(state["repository"], initial["repository"]);
+            assert_eq!(&state["policy_sha256"], policy);
+            restarted
+                .assert_decision_with_source(&state, 1001, true, "rule.yaml")
+                .await;
+            let (status, outbox) = restarted
+                .call(
+                    Method::POST,
+                    "/v1/core/outbox/claim",
+                    Some("e2e-consumer-credential-0000000000000000"),
+                    &json!({}),
+                )
+                .await;
+            assert_eq!(status, 200, "{outbox}");
+            let events = outbox["events"].as_array().unwrap();
+            assert_eq!(events.len(), 8);
+            assert_eq!(
+                events[0]["event"]["runtime"]["revision"],
+                initial["revision"]
+            );
+            assert_eq!(events[7]["event"]["runtime"]["revision"], state["revision"]);
+            restarted.process.stop();
+        });
 }

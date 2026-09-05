@@ -204,7 +204,9 @@
         "decline",
         "review",
         "no_match",
-        "error"
+        "error",
+        "hold",
+        "pass"
       ]
     },
     "error_code": {
@@ -249,6 +251,36 @@
       },
       "minItems": 0,
       "uniqueItems": true
+    },
+    "runtime": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "revision",
+        "repository_revision",
+        "repository_manifest_sha256",
+        "pipeline_id"
+      ],
+      "properties": {
+        "revision": {
+          "type": "string",
+          "minLength": 1
+        },
+        "repository_revision": {
+          "type": "string",
+          "minLength": 1
+        },
+        "repository_manifest_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "pipeline_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
     }
   }
 }

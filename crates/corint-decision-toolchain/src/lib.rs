@@ -2,6 +2,7 @@
 //! Synchronous entry points create a runtime; async callers must use a blocking
 //! worker. No Work dependency, LLM call, deployment or business evaluation.
 pub mod behavior;
+pub mod candidate;
 pub mod contracts;
 pub mod package;
 pub mod phase0;

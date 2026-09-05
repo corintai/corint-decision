@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
 /// Repository type for loading rules
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "lowercase")]
 pub enum RepositoryType {
     /// File system repository
@@ -63,7 +63,7 @@ impl Default for RepositoryType {
 /// - Feature calculation (events, aggregations, lookups)
 /// - User authentication/authorization
 /// - System-level data storage
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct DatasourceConfig {
     /// Data source type (sql, feature_store, olap)
     #[serde(rename = "type")]
@@ -269,7 +269,7 @@ fn default_log_level() -> String {
 }
 
 /// Server configuration
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[derive(Clone, Serialize, Deserialize, Default)]
 pub struct ServerConfig {
     /// Server settings (host, port, metrics, tracing, logging)
     #[serde(default, flatten)]
@@ -322,13 +322,36 @@ impl ServerConfig {
         match config_result {
             Ok(cfg) => cfg
                 .try_deserialize()
-                .map_err(|e| anyhow::anyhow!("Failed to deserialize config: {}", e)),
+                .map_err(|_| anyhow::anyhow!("Failed to deserialize server configuration")),
             Err(_) => {
                 // Use default config if no config file found
                 tracing::info!("No config file found, using default configuration");
                 Ok(Self::default())
             }
         }
+    }
+}
+
+impl std::fmt::Debug for RepositoryType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            Self::FileSystem { .. } => "FileSystem",
+            Self::Database { .. } => "Database([redacted])",
+            Self::Api { .. } => "Api([redacted])",
+        })
+    }
+}
+impl std::fmt::Debug for DatasourceConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("DatasourceConfig([redacted])")
+    }
+}
+impl std::fmt::Debug for ServerConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ServerConfig")
+            .field("server", &self.server)
+            .field("repository", &self.repository)
+            .finish_non_exhaustive()
     }
 }
 

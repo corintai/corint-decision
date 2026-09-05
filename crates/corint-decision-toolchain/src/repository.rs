@@ -158,3 +158,54 @@ pub fn verify_current(root: &Path, identity: &RepositoryIdentity) -> Result<(), 
     }
     Ok(())
 }
+
+/// One atomic publication document for database/API repositories. Manifest bytes
+/// remain exact; resources are original YAML, with the same confined labels and
+/// closure resolver used by filesystem publication. No filesystem fallback.
+#[derive(Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct PublishedSources {
+    pub manifest: String,
+    pub sources: Vec<corint_decision_compiler::core::CoreSource>,
+}
+pub fn load_sources(document: &[u8]) -> Result<RepositorySnapshot, CoreError> {
+    if document.len() > 32 * 1024 * 1024 {
+        return Err(error(
+            "E_REPOSITORY_SIZE",
+            "Publication document exceeds 32 MiB",
+        ));
+    }
+    let published: PublishedSources = serde_json::from_slice(document)
+        .map_err(|_| error("E_REPOSITORY_DOCUMENT", "Invalid publication document"))?;
+    if published.manifest.len() > MAX_MANIFEST_BYTES as usize || published.sources.len() > 256 {
+        return Err(error(
+            "E_REPOSITORY_SIZE",
+            "Publication exceeds manifest/source limits",
+        ));
+    }
+    let manifest = parse_manifest(published.manifest.as_bytes())?;
+    let closure = resolve::resolve_sources(
+        &manifest.input_schema,
+        &manifest.entries,
+        &published.sources,
+    )?;
+    if closure.receipt().policy_sha256 != manifest.policy_sha256 {
+        return Err(error(
+            "E_REPOSITORY_DIGEST",
+            "Publication content differs from policy fingerprint",
+        ));
+    }
+    if closure.originals().len() != published.sources.len() {
+        return Err(error(
+            "E_REPOSITORY_CLOSURE",
+            "Publication includes unreferenced sources",
+        ));
+    }
+    Ok(RepositorySnapshot {
+        identity: RepositoryIdentity {
+            revision: manifest.revision,
+            manifest_sha256: sha256(published.manifest.as_bytes()),
+        },
+        closure,
+    })
+}

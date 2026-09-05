@@ -98,12 +98,12 @@ impl IntoResponse for ServerError {
                     ReloadError::Stale => (StatusCode::CONFLICT, "REVISION_CONFLICT"),
                     _ => (StatusCode::INTERNAL_SERVER_ERROR, "RELOAD_FAILED"),
                 };
-                (status, code, error.to_string(), None, None)
+                (status, code, code.to_string(), None, None)
             }
-            ServerError::EngineError(e) => (
+            ServerError::EngineError(_) => (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "INTERNAL_ERROR",
-                format!("An error occurred while processing your request: {}", e),
+                "Decision execution failed".to_string(),
                 Some(
                     json!({ "hint": format!("Please contact support with request_id: {}", request_id) }),
                 ),
@@ -123,10 +123,10 @@ impl IntoResponse for ServerError {
                 Some(json!(errors)),
                 None,
             ),
-            ServerError::InternalError(e) => (
+            ServerError::InternalError(_) => (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "INTERNAL_ERROR",
-                format!("An unexpected error occurred: {}", e),
+                "Internal server error".to_string(),
                 Some(
                     json!({ "hint": format!("Please contact support with request_id: {}", request_id) }),
                 ),

@@ -2,7 +2,7 @@
 
 本页交付 W04、W07、W08 的离线公共契约，并覆盖相关 W05/W06/W09 证据约束。
 8 份自包含 JSON Schema Draft 7、完整正例和反例清单由共享工具链执行。
-这是实验性接口验收：未接入真实 Work、在线 Feature/Model、业务评估后端或持久化反馈服务。
+这是实验性接口验收；Core 已接入持久反馈、真实记录和操作员评估审批门禁，见 [运行保障](core-operations.md)。真实 Work、在线 Feature/Model 与业务评估后端仍未集成。
 Core draft-1 的运行时能力与 `TargetCapabilities v1.resources: []` 保持原有约束。
 
 ## 三项独立交付
@@ -76,7 +76,7 @@ EvaluationEvidence 分开记录 `behavior` 和 `business`；合成数据不能�
 
 参考消费者只演示本地信任域准入。宿主负责认证、可信时钟、撤销/更新允许集合和证据访问控制；
 本模块不实现签名基础设施，不读取来源 URL，也不替代现有 server 的激活授权。
-`check-target` 和现有 server 尚未消费这些新评估/审批契约；已有兼容性报告继续声明
+`check-target` 不授予发布权限；Core server 已可通过 business_evidence 配置消费这些契约。已有离线兼容性报告继续声明
 `business_evaluation: not_performed`、`publication_approval: not_granted`。
 
 ## W08：关联、迟到、更正和动作回执

@@ -576,10 +576,12 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_yaml",
+ "sha2",
  "sqlx",
  "thiserror 1.0.69",
  "tokio",
  "tracing",
+ "uuid",
 ]
 
 [[package]]
@@ -587,11 +589,13 @@ name = "corint-decision-ffi"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "corint-decision-engine",
  "corint-decision-sdk",
  "env_logger",
  "libc",
  "log",
  "serde_json",
+ "tempfile",
  "tokio",
 ]
 
@@ -699,10 +703,12 @@ dependencies = [
  "hyper 1.8.1",
  "prost",
  "rand 0.8.5",
+ "reqwest",
  "serde",
  "serde_json",
  "serde_yaml",
  "sha2",
+ "sqlx",
  "subtle",
  "tempfile",
  "thiserror 1.0.69",

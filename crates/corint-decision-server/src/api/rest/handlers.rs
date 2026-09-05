@@ -30,7 +30,25 @@ pub(super) async fn decide(
     State(state): State<AppState>,
     JsonExtractor(payload): JsonExtractor<DecideRequestPayload>,
 ) -> Result<(HeaderMap, Json<DecideResponsePayload>), ServerError> {
+    if payload.user.is_some()
+        || payload.features.is_some()
+        || payload.api.is_some()
+        || payload.service.is_some()
+        || payload.llm.is_some()
+        || payload.vars.is_some()
+        || payload.event.contains_key("tenant_id")
+    {
+        return Err(ServerError::InvalidRequest(
+            "Only event data is caller-owned; tenant and computed namespaces are operator-owned"
+                .into(),
+        ));
+    }
     let options = payload.options.unwrap_or_default();
+    if options.async_mode {
+        return Err(ServerError::InvalidRequest(
+            "async is not implemented".into(),
+        ));
+    }
 
     info!(
         "Received decision request with {} event fields, enable_trace={}",
@@ -47,7 +65,10 @@ pub(super) async fn decide(
     let event_data = convert_namespace(payload.event);
 
     // Create decision request with multi-namespace support
-    let mut request = DecisionRequest::new(event_data);
+    let mut request = DecisionRequest::new(event_data).with_vars(HashMap::from([(
+        "tenant_id".into(),
+        Value::String(state.access.tenant_id.clone()),
+    )]));
 
     // Add user namespace if provided
     if let Some(user) = payload.user {

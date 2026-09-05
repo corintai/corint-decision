@@ -10,6 +10,7 @@ pub mod config;
 pub mod decision_engine;
 pub mod error;
 pub mod score;
+pub mod snapshot;
 pub mod validator;
 
 pub use builder::DecisionEngineBuilder;

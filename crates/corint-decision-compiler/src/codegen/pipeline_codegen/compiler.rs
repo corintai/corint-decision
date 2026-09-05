@@ -3,7 +3,7 @@
 //! Main compilation logic for pipelines with DAG structure.
 
 use super::condition_compiler::compile_when_block;
-use super::instruction_gen::compile_step;
+use super::instruction_gen::{compile_step, validate_step};
 use super::metadata_builder::build_steps_metadata;
 use super::validator::topological_sort;
 use crate::error::{CompileError, Result};
@@ -82,6 +82,9 @@ impl PipelineCompiler {
             ));
         }
 
+        for step in &pipeline.steps {
+            validate_step(step)?;
+        }
         let mut ctx = CompileContext::new();
 
         // Step 0: Compile pipeline-level when condition if present

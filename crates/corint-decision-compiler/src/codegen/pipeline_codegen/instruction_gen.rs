@@ -5,51 +5,81 @@
 use super::compiler::CompileContext;
 use super::condition_compiler::compile_when_block;
 use super::validator::get_next_step_id;
-use crate::error::Result;
+use crate::error::{CompileError, Result};
 use corint_decision_model::ast::pipeline::{PipelineStep, StepDetails, StepNext};
-use corint_decision_model::ast::WhenBlock;
 use corint_decision_model::ir::Instruction;
 use std::collections::HashMap;
 
 /// Compile a single pipeline step
 pub(super) fn compile_step(step: &PipelineStep, ctx: &mut CompileContext) -> Result<()> {
-    // Check step-level when condition if present
-    if let Some(when) = &step.when {
-        compile_step_when_guard(when, step, ctx)?;
-    }
-
-    // Compile based on step type
+    validate_step(step)?;
     match step.step_type.as_str() {
         "router" => compile_router_step(step, ctx),
         "ruleset" => compile_ruleset_step(step, ctx),
-        "function" => compile_function_step(step, ctx),
-        "service" => compile_service_step(step, ctx),
         "api" => compile_api_step(step, ctx),
-        "trigger" => compile_trigger_step(step, ctx),
-        "rule" => compile_rule_step(step, ctx),
-        "pipeline" => compile_subpipeline_step(step, ctx),
-        _ => {
-            // Unknown step types are allowed but do nothing
-            compile_next_jump(step, ctx)
-        }
+        _ => Err(CompileError::UnsupportedFeature(format!(
+            "step {}: {}",
+            step.id, step.step_type
+        ))),
     }
 }
 
-/// Compile step-level when condition as a guard
-fn compile_step_when_guard(
-    _when: &WhenBlock,
-    _step: &PipelineStep,
-    _ctx: &mut CompileContext,
-) -> Result<()> {
-    // TODO: Implement proper step-level when guards
-    // For now, step-level when conditions are not used in comprehensive_dsl_demo.yaml
-    // So we'll leave this as a no-op to avoid breaking existing functionality
-    //
-    // When implementing, we need to:
-    // 1. Compile the when condition
-    // 2. Add JumpIfFalse with proper offset calculation
-    // 3. Handle the case where the step should be skipped
-
+/// Reject unsupported semantics before reachability filtering, including dead nodes.
+pub(super) fn validate_step(step: &PipelineStep) -> Result<()> {
+    use corint_decision_model::ast::pipeline::ApiTarget;
+    let reject = |field: &str| {
+        CompileError::UnsupportedFeature(format!("step {}: {} is not implemented", step.id, field))
+    };
+    if step.when.is_some() {
+        return Err(reject("when"));
+    }
+    if step.step_type != "router" && (step.routes.is_some() || step.default.is_some()) {
+        return Err(reject("routes/default on a non-router"));
+    }
+    match (step.step_type.as_str(), &step.details) {
+        ("router", StepDetails::Router {}) => {
+            if step.next.is_some() {
+                return Err(reject("router.next"));
+            }
+            for route in step.routes.iter().flatten() {
+                let instructions = compile_when_block(&route.when)?;
+                if instructions.iter().any(|i| match i {
+                    Instruction::LoadResult { .. } => true,
+                    Instruction::LoadField { path } => path.first().is_some_and(|p| {
+                        ["results", "ruleset", "rule", "score", "total_score"].contains(&p.as_str())
+                    }),
+                    _ => false,
+                }) {
+                    return Err(reject("result-dependent router (use strict Core)"));
+                }
+            }
+        }
+        ("ruleset", StepDetails::Ruleset { ruleset }) if !ruleset.is_empty() => {}
+        (
+            "api",
+            StepDetails::Api {
+                api_target,
+                params,
+                on_error,
+                min_success,
+                ..
+            },
+        ) => {
+            if !matches!(api_target, ApiTarget::Single { api } if !api.is_empty()) {
+                return Err(reject("api.any/all/empty target"));
+            }
+            if params.is_some() {
+                return Err(reject("api.params"));
+            }
+            if on_error.is_some() {
+                return Err(reject("api.on_error"));
+            }
+            if min_success.is_some() {
+                return Err(reject("api.min_success"));
+            }
+        }
+        _ => return Err(reject(&step.step_type)),
+    }
     Ok(())
 }
 
@@ -96,6 +126,8 @@ fn compile_router_step(step: &PipelineStep, ctx: &mut CompileContext) -> Result<
             is_default_route: true,
         });
         ctx.add_pending_jump(default.clone());
+    } else {
+        ctx.add_pending_jump("end".into());
     }
 
     Ok(())
@@ -121,71 +153,6 @@ fn compile_ruleset_step(step: &PipelineStep, ctx: &mut CompileContext) -> Result
         ctx.instructions.push(Instruction::CallRuleset {
             ruleset_id: ruleset.clone(),
         });
-    }
-
-    compile_next_jump(step, ctx)
-}
-
-/// Compile a function step
-fn compile_function_step(step: &PipelineStep, ctx: &mut CompileContext) -> Result<()> {
-    let next_step_id = get_next_step_id(step);
-
-    // Mark step as executed
-    ctx.instructions.push(Instruction::MarkStepExecuted {
-        step_id: step.id.clone(),
-        next_step_id: next_step_id.clone(),
-        route_index: None,
-        is_default_route: false,
-    });
-
-    if let StepDetails::Function {
-        function,
-        params: _,
-    } = &step.details
-    {
-        // TODO: Implement function call compilation
-        // For now, we'll just add a placeholder comment via Store
-        ctx.instructions.push(Instruction::Store {
-            name: format!("function.{}", function),
-        });
-    }
-
-    compile_next_jump(step, ctx)
-}
-
-/// Compile a service step
-fn compile_service_step(step: &PipelineStep, ctx: &mut CompileContext) -> Result<()> {
-    let next_step_id = get_next_step_id(step);
-
-    // Mark step as executed
-    ctx.instructions.push(Instruction::MarkStepExecuted {
-        step_id: step.id.clone(),
-        next_step_id: next_step_id.clone(),
-        route_index: None,
-        is_default_route: false,
-    });
-
-    if let StepDetails::Service {
-        service,
-        query,
-        params: _,
-        output,
-        ..
-    } = &step.details
-    {
-        // Compile service call
-        ctx.instructions.push(Instruction::CallService {
-            service: service.clone(),
-            operation: query.clone().unwrap_or_default(),
-            params: HashMap::new(), // TODO: Compile params
-        });
-
-        // Store result to output variable (convention: service.<name>)
-        let output_var = output
-            .clone()
-            .unwrap_or_else(|| format!("service.{}", service));
-        ctx.instructions
-            .push(Instruction::Store { name: output_var });
     }
 
     compile_next_jump(step, ctx)
@@ -219,8 +186,7 @@ fn compile_api_step(step: &PipelineStep, ctx: &mut CompileContext) -> Result<()>
 
         let api_name = match api_target {
             ApiTarget::Single { api } => api.clone(),
-            ApiTarget::Any { any } => any.first().unwrap_or(&String::new()).clone(),
-            ApiTarget::All { all } => all.first().unwrap_or(&String::new()).clone(),
+            _ => return Err(CompileError::UnsupportedFeature("api.any/all".into())),
         };
 
         ctx.instructions.push(Instruction::CallExternal {
@@ -247,65 +213,13 @@ fn compile_api_step(step: &PipelineStep, ctx: &mut CompileContext) -> Result<()>
     compile_next_jump(step, ctx)
 }
 
-/// Compile a trigger step
-fn compile_trigger_step(step: &PipelineStep, ctx: &mut CompileContext) -> Result<()> {
-    let next_step_id = get_next_step_id(step);
-
-    // Mark step as executed
-    ctx.instructions.push(Instruction::MarkStepExecuted {
-        step_id: step.id.clone(),
-        next_step_id,
-        route_index: None,
-        is_default_route: false,
-    });
-
-    // Trigger steps don't produce output
-    // TODO: Add CallTrigger instruction to IR
-
-    compile_next_jump(step, ctx)
-}
-
-/// Compile a rule step (single rule execution)
-fn compile_rule_step(step: &PipelineStep, ctx: &mut CompileContext) -> Result<()> {
-    let next_step_id = get_next_step_id(step);
-
-    // Mark step as executed
-    ctx.instructions.push(Instruction::MarkStepExecuted {
-        step_id: step.id.clone(),
-        next_step_id,
-        route_index: None,
-        is_default_route: false,
-    });
-
-    // TODO: Implement single rule execution
-    // For now, treat it similar to ruleset but with single rule
-
-    compile_next_jump(step, ctx)
-}
-
-/// Compile a sub-pipeline step
-fn compile_subpipeline_step(step: &PipelineStep, ctx: &mut CompileContext) -> Result<()> {
-    let next_step_id = get_next_step_id(step);
-
-    // Mark step as executed
-    ctx.instructions.push(Instruction::MarkStepExecuted {
-        step_id: step.id.clone(),
-        next_step_id,
-        route_index: None,
-        is_default_route: false,
-    });
-
-    // TODO: Implement sub-pipeline call
-    // This would require CallPipeline instruction in IR
-
-    compile_next_jump(step, ctx)
-}
-
 /// Compile the unconditional next jump for a step
 fn compile_next_jump(step: &PipelineStep, ctx: &mut CompileContext) -> Result<()> {
     if let Some(next) = &step.next {
         let StepNext::StepId(next_id) = next;
         ctx.add_pending_jump(next_id.clone());
+    } else {
+        ctx.add_pending_jump("end".into());
     }
     Ok(())
 }

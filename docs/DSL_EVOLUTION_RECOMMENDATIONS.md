@@ -37,13 +37,13 @@ Corint 解决方案包含两个产品：**Corint Work** 是 Agentic Risk Operati
 | 核对项 | 严格 Core 当前状态 | 兼容入口遗留问题 | 验收证据 |
 |---|---|---|---|
 | 版本校验 | 拒绝未知、缺失和非字符串版本 | `parse_with_imports` 仍保留读取/默认版本语义，不能作为严格发布门禁 | `N02_unknown_version` / `N02_missing_version` / `N02_numeric_version` |
-| 未知条件字段 | 未知字段、重复键及错误结构在执行前拒绝 | 原始 Rule parser 的未知条件键问题不能因 Core 外层校验而视为已修复 | `N01_unknown_condition` / `N01_unknown_field` / `N01_duplicate_key` |
-| Step guard | 明确拒绝 `step.when`，不是已支持的 guard | `compile_step_when_guard` 仍为空操作；条件为 false 不会据此跳过步骤 | N07_step_guard |
-| API 调用 | Connector 整体拒绝，包括参数、失败策略和组合调用 | Pipeline 编译器仍丢弃 `params / on_error / min_success`；`any / all` 只选第一项 | `N08_api_params` / `N08_api_any` / `N08_api_all` |
-| 子 Pipeline | 明确拒绝子调用节点 | 兼容编译器仅标记步骤并跳转，没有真实子调用 | N07_subpipeline |
+| 未知条件字段 | 未知字段、重复键及错误结构在执行前拒绝 | Rule / Pipeline parser 已拒绝未知键、混合条件表示及错误字段类型 | `N01_unknown_condition` / `N01_unknown_field` / `N01_duplicate_key` |
+| Step guard | 明确拒绝 `step.when`，不是已支持的 guard | 兼容编译器也在可达性筛选前拒绝，包括不可达节点；已删除空操作 | N07_step_guard |
+| API 调用 | Connector 整体拒绝，包括参数、失败策略和组合调用 | 兼容编译器明确拒绝 `params / on_error / min_success / any / all`；解析器拒绝歧义目标和错误类型 | `N08_api_params` / `N08_api_any` / `N08_api_all` |
+| 子 Pipeline | 明确拒绝子调用节点 | 兼容编译器明确拒绝子调用、function、单 rule、trigger、Service 和未知步骤 | N07_subpipeline |
 | Service 字段 | Service 节点及历史 `endpoint` 写法均拒绝 | `endpoint` 不在兼容 step 字段白名单，参考示例不代表可执行支持 | N08_service_endpoint |
 | 默认与必填 | Registry 必须显式 `when`；Pipeline 必须 `decision`；conclusion/decision 唯一末尾 default | 兼容 parser 的默认/必填行为仍需单独迁移；文档中省略 Registry `when` 的兜底例已更正 | N03/N04；malformed_defaults_and_ids_are_rejected；input_errors_and_registry_no_match_are_not_approval |
-| 调用执行时序 | Core `CallRuleset` 同步完成求值，后续 router 能看到真实结果 | 兼容路径仍收集 ID 并由上层 DecisionEngine 补执行，不具备同一时序保证 | result_dependent_router；node_order_does_not_change_control_flow |
+| 调用执行时序 | Core `CallRuleset` 同步完成求值，后续 router 能看到真实结果 | 兼容编译器明确拒绝依赖规则集结果的 router，需使用严格 Core；其最终 decision 仍使用兼容后处理 | result_dependent_router；node_order_does_not_change_control_flow |
 
 上述 Nxx / 完整场景来自 [conformance manifest](../tests/conformance/cdl_core/manifest.yaml)，具名测试来自 [真实引擎 runner](../crates/corint-decision-engine/tests/cdl_core_conformance.rs)。实现落点是 [Core 编译门禁](../crates/corint-decision-compiler/src/core.rs)、[Pipeline 指令生成](../crates/corint-decision-compiler/src/codegen/pipeline_codegen/instruction_gen.rs) 与 [Pipeline Runtime](../crates/corint-decision-runtime/src/engine/pipeline_executor.rs)。拒绝某项能力证明门禁有效，不证明该能力已实现。
 
@@ -64,6 +64,12 @@ Corint 解决方案包含两个产品：**Corint Work** 是 Agentic Risk Operati
 
 ### 1.4 进度标记（2026-09-05）
 
+**本轮范围调整：先跑通通用 Agent，真实 Work 客户端集成移出当前 P0/P1。**
+验收主线为“Agent 编写/修改 → 共享 CLI 严格校验与行为测试 → repo 发布 → 授权重载 → 真实决策与追溯”。
+不要求 Work 账号、客户端或测试环境；保留该主线必需的源码包、导入/导出、目标检查与发布授权。
+完整跨产品 PolicyPackage 和 Work 双向集成留待后续产品阶段，不作为本轮完成条件。
+通用 Agent 不拥有隐式审批权限，repo 仍是策略唯一权威来源。见 [通用 Agent 执行流程](cdl/agent-workflow.md)。
+
 **“已完成”仅指下表写明的交付范围**；“契约已完成”表示 schema、正反例及离线消费者已验收，不表示在线资源或真实产品集成已完成。语言能力是否 `supported` 仍以 §1.3 的能力清单和对应入口为准。
 
 | 优化项 | 状态 | 已完成范围与证据 | 剩余工作 |
@@ -71,13 +77,38 @@ Corint 解决方案包含两个产品：**Corint Work** 是 Agentic Risk Operati
 | 验收基线与 CI 配置修正 | **已完成（配置与基线修复）** | 修正 server 二进制名、安装 `protoc`、统一 fmt/Clippy 命令，修复已发现的基线失败；见 [CI](../.github/workflows/ci.yml) | 后续并发改动需重新验收；不代表远端 CI 已通过，release 工作流迁移另行处理 |
 | 文档支持声明与示例门禁 | **已完成（登记范围内）** | 3 个严格参考页绑定 fixture；13 个兼容参考页统一范围声明；补充 5 个 guard/API/Service 反例；见 [示例清单](cdl/examples.json) 与 §11.3 | 历史片段逐例包装、LLM 兼容模板映射仍待补齐 |
 | 严格 Core 校验与执行语义 | **已完成（首批 Core 范围）** | 版本/未知字段/必填/default 门禁、同步 Ruleset 调用、显式跳转及条件 Trace；见 §1.2 与 [conformance](../crates/corint-decision-engine/tests/cdl_core_conformance.rs) | 兼容入口收敛和未启用扩展仍待实现；拒绝能力不等于实现能力 |
-| 独立工具链、生成校验与源码交换 | **已完成（离线首批）** | validate/test/build/verify、严格生成/修改、export/import 与冻结文件 import；见 [CLI](cdl/cli.md)、[生成接口](cdl/generation.md)、[源码交换](cdl/exchange.md) | 真实 Work 客户端、完整 PolicyPackage 与跨宿主可信证据仍待接入 |
+| 独立工具链、生成校验与源码交换 | **已完成（离线首批）** | validate/test/build/verify、严格生成/修改、export/import 与冻结文件 import；见 [CLI](cdl/cli.md)、[生成接口](cdl/generation.md)、[源码交换](cdl/exchange.md) | 本轮优先验收通用 Agent 的 repo 发布与运行闭环；真实 Work 客户端、完整跨产品 PolicyPackage 移出本轮 |
 | 业务上下文与目标兼容性 | **已完成（声明契约）** | BusinessContext / TargetCapabilities v1、共享 check-target 与旧绑定拒绝；见 [公共契约](contracts/README.md) | 远端就绪证明与生产权限治理仍待完善 |
+| 严格 Core repo 发布 | **已完成（单实例）** | 发布声明与内容指纹、共用启动/重载验收、失败保留旧快照、repo 回滚与重启；见 [Core server](contracts/core-server.md) | 新增文件/SQLite/PostgreSQL/HTTP 完整发布文档消费；多节点与现有客户后端迁移后续处理 |
+| 兼容 HTTP/gRPC/FFI 共享快照 | **已完成（现有协议）** | 一次初始化、锁外候选准备、原子切换、版本冲突与慢请求测试；见 [快照契约](contracts/compatibility-server-snapshots.md) | 共享引擎管理器、FFI 条件重载、gRPC 完整 Trace/特征与不支持参数拒绝已补齐；严格 Core 其他协议适配后续独立验收 |
+| 通用 Agent 候选准备与执行 | **已完成（本地合成场景）** | 公开 `prepare-repository` 冻结源码、校验目标、运行样例并生成新 repo；普通文件经真实 CLI、独立操作员批准与真实 HTTP 执行/重载/重启；见 [流程](cdl/agent-workflow.md) | 后续补真实业务数据评估；新增运行保障见 §1.5 |
 | W04：Feature / Model 描述与绑定 | **契约已完成** | 3 份 v1 schema、精确版本/内容/目标/能力检查、缺失或未部署绑定反例；见 [阶段 0 契约](contracts/phase0.md) | 在线 Feature/Model、真实部署状态校验及发布入口接入 |
-| W07 及 W05/W06/W09：评估与审批证据 | **契约已完成** | 2 份 v1 schema、固定样例口径与历史可用时间、证据绑定、外部信任与审批有效期检查；见 [契约测试](../crates/corint-decision-toolchain/tests/phase0_contracts.rs) | 真实评估后端、签名/认证基础设施及发布入口接入 |
-| W08：决策记录、标签与动作回执 | **契约已完成** | 3 份 v1 schema、内存消费者、关联/去重/更正/历史查询与回执校验；见 [阶段 0 契约](contracts/phase0.md) | HTTP 事件产出、持久化投递及真实反馈消费者接入 |
+| W07 及 W05/W06/W09：评估与审批证据 | **契约已完成** | 2 份 v1 schema、固定样例口径与历史可用时间、证据绑定、外部信任与审批有效期检查；见 [契约测试](../crates/corint-decision-toolchain/tests/phase0_contracts.rs) | 发布入口与本地信任/期限/撤销已接入；真实评估后端与签名身份服务仍由部署方提供 |
+| W08：决策记录、标签与动作回执 | **契约已完成** | 3 份 v1 schema、内存消费者、关联/去重/更正/历史查询与回执校验；见 [阶段 0 契约](contracts/phase0.md) | Core HTTP 记录、SQLite 日志、租约投递、反馈消费者与重启恢复已完成；规模化存储/外部业务执行后续处理 |
 
 本轮公共契约验收：新增 **8 组测试（包含 16 个清单反例）**、CLI 契约 **9 项**、Core conformance **16 项**通过，全仓 Clippy 通过。本次新增文件格式通过；全仓格式检查曾发现并发引擎文件差异，后续以最新工作区检查为准。这里记录本地验收结果，不将阶段 0 或 W01–W10 整体标为完成。
+
+### 1.5 剩余 P0/P1 实施清单（本轮）
+
+本轮以通用 Agent、单实例、操作员固定租户为验收范围，Work 与完整跨产品 PolicyPackage 不属于完成条件。
+代码、配置及迁移说明见 [Core 运行保障](contracts/core-operations.md)。下表区分机制实现和外部生产接入。
+
+| 优先级 | 优化项 | 状态 | 本轮交付与验收 |
+|---|---|---|---|
+| P0 | 兼容编译器不再静默忽略语义 | 已完成 | 全量步骤先验收再筛选可达节点；拒绝未实现 guard/调用/API 参数与组合；未知/混合 when、错误参数类型拒绝；终止分支不再穿透，结果依赖 router 在兼容入口明确拒绝；`compatibility_admission`、`when_admission` |
+| P0 | 访问权限、凭据和可信输入边界 | 已完成（单租户本地信任根） | HTTP/gRPC 决策/发布角色分离、认证先于正文；禁用任意 CORS；客户端只提交 event，tenant 来自操作员；配置 Debug 与外部错误脱敏；`both_transports_enforce_roles...` |
+| P1 | 实际版本绑定的 DecisionRecord | 已完成（Core HTTP） | 同一执行快照产出业务事件 ID、repo/runtime/完整 subject、输入证据、hold/pass/no_match/error 与动作幂等身份；v3 强制日志 |
+| P1 | 持久化和可靠投递 | 已完成（单实例） | SQLite 原子提交、容量限制、租约/退避/重启恢复/确认；满或失败返回错误；旧 PostgreSQL writer 改为有界、等待事务确认；`durable_feedback` |
+| P1 | 反馈与动作回执消费者 | 已完成（通用 HTTP） | 单租户关联、持久去重、冲突拒绝、标签更正及历史查询；回执匹配意图；并发标签只有一个成功；不依赖 Work |
+| P1 | 评估/审批接入发布门禁 | 已完成（消费操作员认证结果） | 精确 subject、证据哈希、期限和角色检查；启动/重载/新决策重读信任文件以消费撤销；未配置业务评估不声称通过 |
+| P1 | 共享领域执行与现有协议收敛 | 已完成（兼容 HTTP/gRPC/FFI） | manager 下沉引擎层；FFI 决策绑定版本、原子 repo 重载；gRPC signal/score/actions/完整 Trace/特征等价，不支持 options 明确拒绝；`shared_snapshots`、FFI ABI 测试 |
+| P1 | 非文件 repo 的冻结发布消费 | 已完成（单文档协议） | 文件、SQLite、PostgreSQL、HTTP 共用严格闭包和发布身份；候选 CLI 输出 publication.json；SQLite/HTTP 与临时真实 PostgreSQL 事务测试 |
+
+本地验证：全仓测试 1428 项通过、0 失败；全仓 Clippy（含所有 targets，warnings 为错误）、格式检查通过。另有 3 个真实进程端到端用例、临时 PostgreSQL 事务测试，以及本轮补充的控制流/持久化反例。忽略的历史外部集成用例不计入通过数；这不代表远端 CI 或客户环境已验证。
+
+后续仍待推进：Work/完整 PolicyPackage、在线 Feature/Model 与真实业务评估、企业身份联合和多租户、
+多节点发布、严格 Core 的 gRPC/FFI 适配、日志归档与高吞吐消费者。上述能力不因本轮局部验收升级为 supported。
+已有数据库/API repo 的逐资源接口不会自动获得新协议保证，需发布方迁移到完整 publication.json 消费协议。
 
 ## 2. 目标架构与产品边界
 
@@ -144,7 +175,7 @@ Work 的差异化在于业务上下文、数据证据与运营闭环，而不是
 - 回滚由发布方在 repo 恢复历史版本，再触发同一验收和重载流程；回滚不绕过当前授权或验收。
 - HTTP 重载请求不接受策略正文、文件路径、审批或验收样例。发布历史和版本存储由 repo 后端承担，服务端仅报告实际加载的 repo 版本及指纹。
 
-当前增量已将上述流程接入严格 Core 服务端的文件 repository（配置 v2 与 published.json），启动和重载复用同一验收链路。兼容 HTTP/gRPC 已共享同一进程快照与 repo 重载管理器，见 §10.2；数据库/API repository 的严格验收、FFI 和完整跨协议语义仍另行验收。文件后端增量不代表所有后端已经具备严格 Core 语义。
+当前增量已将上述流程接入严格 Core 服务端的文件 repository（配置 v2 与 published.json），启动和重载复用同一验收链路。兼容 HTTP/gRPC 已共享同一进程快照与 repo 重载管理器，见 §10.2；新增 SQLite/PostgreSQL/HTTP 完整发布文档已共用严格验收，FFI 已共用兼容快照；旧逐资源后端与严格 Core 的其他协议适配仍需迁移。
 
 ## 3. CDL 的职责边界
 
@@ -662,16 +693,18 @@ runs:
 - 以 repo 为策略唯一权威来源，沿用严格 Core 文件 repo 的启动/重载验收；逐步收敛 `ResolvedRepository` 与 `CompiledRepository`，运行时快照是 repo 确定版本的派生产物；
 - 将完整的 Rule / Ruleset / Pipeline 调用模型纳入 Runtime，沿用阶段 0 的行为测试验证等价性；
 - 对 guard、子调用、API 参数等扩展逐项实现、测试，再更新能力清单；
-- 将首期策略包构建与导入/导出契约接入真实发布流程及 Work 客户端，落实可信报告、审批校验和目标依赖绑定；不要求把 Work 作为唯一入口；
+- 将首期源码包构建与导入/导出接入通用 Agent 的真实 repo 发布流程，落实可信报告、审批校验和目标依赖绑定；本轮不接入真实 Work 客户端，不以完整跨产品 PolicyPackage 为前置条件；
 - 根据实际接入场景实现首批 Feature / Model 在线绑定，验证与离线口径一致，再纳入支持清单；
 - 完善 `ruleset.conclusion` 的局部输出契约与 `pipeline.decision` 的最终映射，验证优先级、默认结果和动作语义，不增加独立决策层；
-- 沿用已完成的兼容 HTTP/gRPC 共享快照与失败保留旧版本机制，继续统一完整 REST/gRPC/FFI 契约并接入 FFI；严格 Core 的跨协议支持独立验收；
+- 兼容 HTTP/gRPC/FFI 共享快照、版本、Trace/特征映射及失败保留旧版本机制已落地；严格 Core 的跨协议支持后续独立验收；
 - 生产上线前记录最小 DecisionRecord、动作回执与后验结果关联字段，提供不依赖 Work 在线的异步反馈接口；
 - 移除硬编码仓库路径和明文 token-like 配置，补齐管理入口的认证、授权和审计。
 
 安全整改不应等待阶段 1 才开始；凭据、授权、租户隔离等是生产发布的独立阻断项。Core 一致性通过不等于系统已经适合生产。
 
 ### 阶段 2：平台能力
+
+- 后续再接入真实 Work 客户端与完整跨产品 PolicyPackage，复用通用 Agent 已验收的工具链和 repo 发布流程；
 
 - 完善包分发、签名、版本与依赖治理，沿用首期锁定与兼容性契约；
 - Connector 能力模型、Secret Provider、超时/熔断/fallback；
@@ -747,12 +780,12 @@ runs:
 | W02 | 外部修改 → 导入 → 修改 → 导出；并发编辑 | 纯往返不改变语义，业务修改仅产生预期差异；ID 稳定、冲突不覆盖；附属信息不影响结果 | **契约往返已完成**；Work 接入后补完整流程与协作冲突验收 |
 | W03 | Agent 编造字段，或上下文/目标能力版本不匹配 | 给出明确诊断，不用猜测、隐式转换或宽松解析补齐 | **首批 Core 契约已完成**；后续扩展沿用同一门禁 |
 | W04 | 特征/模型有定义，但未部署、版本不符或绑定缺失 | 目标检查阻断发布，不自动运行研究任务或换版本 | **契约已完成**：v1 schema 与离线消费者；扩展启用后验证真实依赖 |
-| W05 | 阈值、依赖或绑定变更后复用旧报告/审批 | 保留历史证据，但不能为不匹配的新版本提供有效授权 | **契约已完成**：旧报告/审批失效检查；新证据契约接入发布流程后补端到端验证 |
+| W05 | 阈值、依赖或绑定变更后复用旧报告/审批 | 保留历史证据，但不能为不匹配的新版本提供有效授权 | **Core 门禁已完成**：启动/重载/新决策消费精确证据、失效与撤销；外部评估系统后续接入 |
 | W06 | 只有合成样例，却声明真实数据效果已验证 | 行为测试与业务评估状态分开；拒绝伪造来源和越权审批 | **契约已完成**：行为/业务评估分离及伪造反例；真实数据来源核验待接入 |
 | W07 | 离线/在线特征同名不同口径，或使用事后补录数据 | 固定样例暴露差异；按历史可用时间取证，不能把泄漏数据当成有效回测 | **契约已完成**：v1 固定样例与证据消费者；后续真实计算后端对照 |
-| W08 | 后验标签迟到、重复、更正或尚未到达 | 按决策/事件 ID 正确关联和去重；保留标签版本；缺失不等同于安全 | **契约已完成**：v1 事件与内存消费者；持久化反馈接入后集成验证 |
-| W09 | 越权数据查询、伪造可信特征、冒充 Work 发布 | 按主体/租户/环境权限拒绝；Agent 来源或 YAML 自述不授予权限 | **部分完成**：契约与本地信任域反例；生产权限、数据访问及租户隔离仍待验收 |
-| W10 | Work 断连或反馈消费滞后 | Decision 不同步调用 Work、不自动更换策略；反馈故障按声明策略处理 | **待集成验收**：部署与反馈集成阶段 |
+| W08 | 后验标签迟到、重复、更正或尚未到达 | 按决策/事件 ID 正确关联和去重；保留标签版本；缺失不等同于安全 | **Core 持久消费者已完成**：真实 HTTP 记录、SQLite 日志、关联/去重/更正与历史查询；Work 消费后续接入 |
+| W09 | 越权数据查询、伪造可信特征、冒充 Work 发布 | 按主体/租户/环境权限拒绝；Agent 来源或 YAML 自述不授予权限 | **单实例本地边界已完成**：HTTP/gRPC 角色鉴权、固定租户、可信 namespace 拒绝覆盖；企业身份与跨租户治理后续处理 |
+| W10 | Work 断连或反馈消费滞后 | Decision 不同步调用 Work、不自动更换策略；反馈故障按声明策略处理 | **通用消费者路径已完成**：持久出箱与故障重试不依赖 Work；真实 Work 断连场景后续集成验收 |
 
 ### 12.4 CI 与支持声明
 

@@ -26,6 +26,31 @@ pub(super) fn parse_new_step(yaml: &YamlValue) -> Result<PipelineStep> {
     let name = YamlParser::get_string(step_obj, "name")?;
     let step_type = YamlParser::get_string(step_obj, "type")?;
 
+    for field in ["default", "next", "endpoint", "output", "on_error"] {
+        if step_obj.get(field).is_some_and(|v| v.as_str().is_none()) {
+            return Err(ParseError::InvalidValue {
+                field: field.into(),
+                message: "Expected a string".into(),
+            });
+        }
+    }
+    for field in ["timeout", "min_success"] {
+        if step_obj.get(field).is_some_and(|v| v.as_u64().is_none()) {
+            return Err(ParseError::InvalidValue {
+                field: field.into(),
+                message: "Expected a non-negative integer".into(),
+            });
+        }
+    }
+    if step_obj
+        .get("routes")
+        .is_some_and(|v| v.as_sequence().is_none())
+    {
+        return Err(ParseError::InvalidValue {
+            field: "routes".into(),
+            message: "Expected a route array".into(),
+        });
+    }
     // Parse optional routes
     let routes = if let Some(routes_array) = step_obj.get("routes").and_then(|v| v.as_sequence()) {
         Some(
@@ -165,6 +190,28 @@ pub(super) fn parse_step_details(step_obj: &YamlValue, step_type: &str) -> Resul
 
 /// Parse API target (single, any, all)
 pub(super) fn parse_api_target(step_obj: &YamlValue) -> Result<ApiTarget> {
+    if ["api", "any", "all"]
+        .iter()
+        .filter(|k| step_obj.get(**k).is_some())
+        .count()
+        != 1
+    {
+        return Err(ParseError::InvalidValue {
+            field: "api".into(),
+            message: "Exactly one of api/any/all is required".into(),
+        });
+    }
+    for field in ["any", "all"] {
+        if step_obj.get(field).is_some_and(|v| {
+            !v.as_sequence()
+                .is_some_and(|a| !a.is_empty() && a.iter().all(|v| v.as_str().is_some()))
+        }) {
+            return Err(ParseError::InvalidValue {
+                field: field.into(),
+                message: "Expected non-empty array of API names".into(),
+            });
+        }
+    }
     // Try single API
     if let Some(api) = YamlParser::get_optional_string(step_obj, "api") {
         return Ok(ApiTarget::Single { api });
@@ -197,6 +244,15 @@ pub(super) fn parse_api_target(step_obj: &YamlValue) -> Result<ApiTarget> {
 pub(super) fn parse_params(
     step_obj: &YamlValue,
 ) -> Result<Option<HashMap<String, corint_decision_model::ast::Expression>>> {
+    if step_obj
+        .get("params")
+        .is_some_and(|v| v.as_mapping().is_none())
+    {
+        return Err(ParseError::InvalidValue {
+            field: "params".into(),
+            message: "Expected a parameter map".into(),
+        });
+    }
     if let Some(params_obj) = step_obj.get("params").and_then(|v| v.as_mapping()) {
         let mut map = HashMap::new();
         for (key, value) in params_obj {
@@ -254,6 +310,7 @@ pub(super) fn parse_when_block(when_obj: &YamlValue) -> Result<WhenBlock> {
         });
     }
 
+    RuleParser::validate_when_shape(when_obj)?;
     // Parse event type (optional)
     // Try three formats: 1) flat "event.type" key, 2) "event_type" key, 3) nested path
     let event_type = YamlParser::get_optional_string(when_obj, "event.type")

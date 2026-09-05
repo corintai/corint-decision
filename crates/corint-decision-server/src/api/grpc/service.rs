@@ -26,12 +26,22 @@ pub mod pb {
 /// gRPC service implementation
 pub struct DecisionGrpcService {
     engine: Arc<EngineManager>,
+    access: crate::access::AccessPolicy,
 }
 
 impl DecisionGrpcService {
     /// Create a new gRPC service
-    pub fn new(engine: Arc<EngineManager>) -> Self {
-        Self { engine }
+    pub fn new(engine: Arc<EngineManager>, access: crate::access::AccessPolicy) -> Self {
+        Self { engine, access }
+    }
+    fn authorized<T>(&self, request: &Request<T>, publisher: bool) -> bool {
+        let values = request.metadata().get_all("authorization");
+        let mut values = values.iter();
+        let token = values.next().and_then(|v| v.to_str().ok());
+        if values.next().is_some() || !self.access.permits(token, publisher) {
+            return false;
+        }
+        true
     }
 }
 
@@ -41,7 +51,26 @@ impl DecisionService for DecisionGrpcService {
         &self,
         request: Request<DecideRequest>,
     ) -> Result<Response<DecideResponse>, Status> {
+        if !self.authorized(&request, false) {
+            return Err(Status::unauthenticated("UNAUTHORIZED"));
+        }
         let req = request.into_inner();
+        if !req.user.is_empty()
+            || !req.features.is_empty()
+            || !req.metadata.is_empty()
+            || req.event.contains_key("tenant_id")
+        {
+            return Err(Status::invalid_argument("Only event data is caller-owned; tenant and computed namespaces are operator-owned"));
+        }
+        if req
+            .options
+            .as_ref()
+            .is_some_and(|o| o.pipeline_id.is_some() || o.score_normalization.is_some())
+        {
+            return Err(Status::invalid_argument(
+                "pipeline_id/score_normalization overrides are not implemented",
+            ));
+        }
 
         info!(
             "Received gRPC decision request with {} event fields",
@@ -53,7 +82,11 @@ impl DecisionService for DecisionGrpcService {
             .map_err(|e| Status::invalid_argument(format!("Invalid event data: {}", e)))?;
 
         // Create engine decision request
-        let mut engine_request = EngineDecisionRequest::new(event_data);
+        let mut engine_request =
+            EngineDecisionRequest::new(event_data).with_vars(HashMap::from([(
+                "tenant_id".into(),
+                Value::String(self.access.tenant_id.clone()),
+            )]));
 
         // Add user namespace if provided
         if !req.user.is_empty() {
@@ -69,6 +102,7 @@ impl DecisionService for DecisionGrpcService {
             engine_request = engine_request.with_features(features_data);
         }
 
+        let include_features = req.options.as_ref().is_some_and(|o| o.include_features);
         // Apply request options
         if let Some(opts) = req.options {
             if opts.include_trace {
@@ -80,15 +114,15 @@ impl DecisionService for DecisionGrpcService {
         let snapshot = self.engine.snapshot().await;
         let response = snapshot.engine.decide(engine_request).await.map_err(|e| {
             error!("Decision execution failed: {}", e);
-            Status::internal(format!("Decision execution failed: {}", e))
+            Status::internal("Decision execution failed")
         })?;
 
         // Convert response
         let result_str = response
             .result
             .signal
-            .map(|s| format!("{:?}", s).to_uppercase())
-            .unwrap_or_else(|| "PASS".to_string());
+            .map(|s| format!("{:?}", s).to_lowercase())
+            .unwrap_or_else(|| "pass".to_string());
 
         let decision = Decision {
             result: result_str,
@@ -125,8 +159,52 @@ impl DecisionService for DecisionGrpcService {
                 .unwrap_or_else(|| "default".to_string()),
             decision: Some(decision),
             error: None,
-            trace: None, // TODO: Convert trace if requested
-            features: HashMap::new(),
+            trace: response
+                .trace
+                .as_ref()
+                .map(|trace| crate::api::grpc::pb::ExecutionTrace {
+                    canonical_json: serde_json::to_string(trace).expect("serializable trace"),
+                    pipeline: trace.pipeline.as_ref().map(|p| {
+                        crate::api::grpc::pb::PipelineTrace {
+                            id: p.pipeline_id.clone(),
+                            name: String::new(),
+                            status: "executed".into(),
+                        }
+                    }),
+                    steps: trace
+                        .pipeline
+                        .as_ref()
+                        .map(|p| {
+                            p.steps
+                                .iter()
+                                .map(|s| crate::api::grpc::pb::StepTrace {
+                                    id: s.step_id.clone(),
+                                    step_type: s.step_type.clone(),
+                                    status: if s.executed { "executed" } else { "skipped" }.into(),
+                                    result: HashMap::from([(
+                                        "detail".into(),
+                                        json_to_proto(serde_json::to_value(s).expect("step trace")),
+                                    )]),
+                                })
+                                .collect()
+                        })
+                        .unwrap_or_default(),
+                }),
+            features: if include_features {
+                response
+                    .result
+                    .context
+                    .into_iter()
+                    .map(|(k, v)| {
+                        (
+                            k,
+                            json_to_proto(serde_json::to_value(v).expect("engine value")),
+                        )
+                    })
+                    .collect()
+            } else {
+                HashMap::new()
+            },
         };
 
         Ok(with_snapshot(grpc_response, &snapshot))
@@ -150,6 +228,9 @@ impl DecisionService for DecisionGrpcService {
         &self,
         request: Request<ReloadRepositoryRequest>,
     ) -> Result<Response<ReloadRepositoryResponse>, Status> {
+        if !self.authorized(&request, true) {
+            return Err(Status::unauthenticated("UNAUTHORIZED"));
+        }
         let expected = request
             .metadata()
             .get(EXPECTED_REVISION_HEADER)
@@ -163,7 +244,7 @@ impl DecisionService for DecisionGrpcService {
             .map_err(|error| match error {
                 ReloadError::Busy => Status::resource_exhausted(error.to_string()),
                 ReloadError::Stale => Status::aborted(error.to_string()),
-                _ => Status::internal(error.to_string()),
+                _ => Status::internal("Repository reload failed"),
             })?;
         Ok(with_snapshot(
             ReloadRepositoryResponse {
@@ -257,4 +338,21 @@ fn extract_reason_codes(explanation: &str) -> Vec<String> {
     }
 
     codes
+}
+
+fn json_to_proto(value: serde_json::Value) -> ProtoValue {
+    use crate::api::grpc::pb::{value::Kind, ListValue, MapValue, NullValue};
+    let kind = match value {
+        serde_json::Value::Null => Kind::NullValue(NullValue::NullValue as i32),
+        serde_json::Value::Bool(v) => Kind::BoolValue(v),
+        serde_json::Value::Number(v) => Kind::DoubleValue(v.as_f64().expect("JSON number")),
+        serde_json::Value::String(v) => Kind::StringValue(v),
+        serde_json::Value::Array(v) => Kind::ListValue(ListValue {
+            values: v.into_iter().map(json_to_proto).collect(),
+        }),
+        serde_json::Value::Object(v) => Kind::MapValue(MapValue {
+            fields: v.into_iter().map(|(k, v)| (k, json_to_proto(v))).collect(),
+        }),
+    };
+    ProtoValue { kind: Some(kind) }
 }

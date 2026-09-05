@@ -11,6 +11,8 @@ corint-decision-compiler = { path = "../corint-decision-compiler" }
 corint-decision-toolchain = { path = "../corint-decision-toolchain" }
 sha2 = "0.10"
 subtle = "2.6"
+reqwest = { version = "0.11", features = ["json"] }
+sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio-native-tls", "sqlite", "postgres"] }
 
 # Async runtime
 tokio = { version = "1.35", features = ["full"] }

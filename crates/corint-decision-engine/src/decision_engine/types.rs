@@ -7,6 +7,7 @@ use std::collections::HashMap;
 
 /// Decision request options
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct DecisionOptions {
     /// Enable detailed execution tracing
     #[serde(default)]
@@ -15,6 +16,7 @@ pub struct DecisionOptions {
 
 /// Decision request (supports Phase 5 multi-namespace format)
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct DecisionRequest {
     /// Event data (required)
     pub event_data: HashMap<String, Value>,

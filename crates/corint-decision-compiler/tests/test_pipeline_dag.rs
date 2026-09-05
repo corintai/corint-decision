@@ -51,7 +51,7 @@ fn create_router_step(
         default: default.map(|d| d.to_string()),
         next: None,
         when: None,
-        details: StepDetails::Unknown {},
+        details: StepDetails::Router {},
     }
 }
 

@@ -758,3 +758,444 @@ async fn repository_import_closure_runs_through_server_approval_and_real_engine(
         .iter()
         .any(|s| r["source"] == s.path)));
 }
+
+#[tokio::test]
+async fn journal_records_real_decisions_errors_and_recovers_outbox_on_restart() {
+    let (dir, mut config) = setup(&["initial"]);
+    let consumer = "test-consumer-credential-0000000000000000";
+    std::env::set_var("CORE_JOURNAL_TEST_CONSUMER", consumer);
+    config["config_version"] = json!("3");
+    config["journal"] = json!({"path":"events.sqlite","tenant_id":"test","max_records":10,"max_bytes":1_000_000,"consumer_token_env":"CORE_JOURNAL_TEST_CONSUMER"});
+    let router = app(dir.path(), &config).await;
+    let (status, value) = call(
+        &router,
+        "POST",
+        "/v1/core/decide",
+        Some(DECISION),
+        json!({"business_event_id":"payment-1","event":{"amount":1500}}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{value}");
+    let record = &value["record"];
+    assert_eq!(record["business_event_id"], "payment-1");
+    assert_eq!(record["runtime"]["revision"], value["snapshot"]["revision"]);
+    assert_eq!(
+        record["runtime"]["repository_manifest_sha256"],
+        value["snapshot"]["repository"]["manifest_sha256"]
+    );
+    assert_eq!(
+        record["subject"]["policy_sha256"],
+        value["snapshot"]["policy_sha256"]
+    );
+    let (status, error) = call(
+        &router,
+        "POST",
+        "/v1/core/decide",
+        Some(DECISION),
+        json!({"business_event_id":"bad-1","event":{"amount":"wrong"}}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{error}");
+    assert_eq!(error["diagnostic"]["record"]["result"], "error");
+    assert_eq!(
+        call(
+            &router,
+            "POST",
+            "/v1/core/outbox/claim",
+            Some(DECISION),
+            json!({})
+        )
+        .await
+        .0,
+        StatusCode::UNAUTHORIZED
+    );
+    assert_eq!(record["result"], "decline");
+    let mut outcome: Value = serde_json::from_str(
+        &std::fs::read_to_string(root().join("contracts/phase0/outcome-event.json")).unwrap(),
+    )
+    .unwrap();
+    outcome["tenant_id"] = record["tenant_id"].clone();
+    outcome["decision_id"] = record["decision_id"].clone();
+    outcome["business_event_id"] = record["business_event_id"].clone();
+    let duplicate = format!("{{\"tenant_id\":\"wrong\",{}", &outcome.to_string()[1..]);
+    assert_eq!(
+        raw(
+            &router,
+            "POST",
+            "/v1/core/feedback/outcome",
+            Some(consumer),
+            duplicate
+        )
+        .await
+        .0,
+        StatusCode::UNPROCESSABLE_ENTITY
+    );
+    assert_eq!(
+        call(
+            &router,
+            "POST",
+            "/v1/core/feedback/outcome",
+            Some(consumer),
+            outcome.clone()
+        )
+        .await
+        .1["status"],
+        "inserted"
+    );
+    assert_eq!(
+        call(
+            &router,
+            "POST",
+            "/v1/core/feedback/outcome",
+            Some(consumer),
+            outcome
+        )
+        .await
+        .1["status"],
+        "duplicate"
+    );
+    let mut action: Value = serde_json::from_str(
+        &std::fs::read_to_string(root().join("contracts/phase0/action-receipt.json")).unwrap(),
+    )
+    .unwrap();
+    for key in ["tenant_id", "decision_id", "business_event_id"] {
+        action[key] = record[key].clone();
+    }
+    action["action_id"] = record["actions"][0]["action_id"].clone();
+    action["idempotency_key"] = record["actions"][0]["idempotency_key"].clone();
+    action["executed_at_ms"] = record["decided_at_ms"].clone();
+    assert_eq!(
+        call(
+            &router,
+            "POST",
+            "/v1/core/feedback/receipt",
+            Some(consumer),
+            action
+        )
+        .await
+        .1["status"],
+        "inserted"
+    );
+    drop(router);
+    let router = app(dir.path(), &config).await;
+    let (status, claimed) = call(
+        &router,
+        "POST",
+        "/v1/core/outbox/claim",
+        Some(consumer),
+        json!({}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(claimed["events"].as_array().unwrap().len(), 4);
+    assert_eq!(claimed["events"][0]["event"], *record);
+}
+
+#[tokio::test]
+async fn configured_business_evidence_is_required_and_revocation_stops_new_requests() {
+    use corint_decision_server::journal::contract;
+    let (dir, mut config) = setup(&["initial"]);
+    let router = app(dir.path(), &config).await;
+    let (_, target) = call(
+        &router,
+        "GET",
+        "/v1/core/target",
+        Some(PUBLISHER),
+        json!({}),
+    )
+    .await;
+    drop(router);
+    let load_fixture = |name: &str| -> Value {
+        serde_json::from_str(
+            &std::fs::read_to_string(root().join(format!("contracts/phase0/{name}.json"))).unwrap(),
+        )
+        .unwrap()
+    };
+    // Fixtures exercise operator attestation handling, not actual business data.
+    let mut evaluation = load_fixture("evaluation-evidence");
+    evaluation["subject"] = target["subject"].clone();
+    evaluation["features"] = json!([]);
+    evaluation["samples"] = json!([]);
+    let mut approval = load_fixture("approval-evidence");
+    approval["subject"] = target["subject"].clone();
+    approval["evaluation_sha256"] = json!(contract("evaluation-evidence", &evaluation)
+        .unwrap()
+        .sha256());
+    approval["expires_at_ms"] = json!(chrono::Utc::now().timestamp_millis() + 60_000);
+    let approval_hash = contract("approval-evidence", &approval).unwrap().sha256();
+    let trust = json!({"evaluations":{evaluation["subject"]["policy_sha256"].as_str().unwrap():"fixture-author"},"approvals":{approval_hash.clone():"fixture-reviewer"},"approvers":["fixture-reviewer"]});
+    let mut trust = trust;
+    trust["evaluations"] =
+        json!({approval["evaluation_sha256"].as_str().unwrap():"fixture-author"});
+    save(&dir.path().join("evaluation.json"), &evaluation);
+    save(&dir.path().join("approval.json"), &approval);
+    save(&dir.path().join("trust.json"), &trust);
+    config["business_evidence"] =
+        json!({"evaluation":"evaluation.json","approval":"approval.json","trust":"trust.json"});
+    let router = app(dir.path(), &config).await;
+    assert_eq!(
+        call(
+            &router,
+            "POST",
+            "/v1/core/decide",
+            Some(DECISION),
+            json!({"event":{"amount":10}})
+        )
+        .await
+        .0,
+        StatusCode::OK
+    );
+    trust["approvals"] = json!({});
+    save(&dir.path().join("trust.json"), &trust);
+    assert_eq!(
+        call(
+            &router,
+            "POST",
+            "/v1/core/decide",
+            Some(DECISION),
+            json!({"event":{"amount":10}})
+        )
+        .await
+        .0,
+        StatusCode::FORBIDDEN
+    );
+    let result = core::create_router(
+        serde_json::from_value(config).unwrap(),
+        dir.path(),
+        DECISION,
+        PUBLISHER,
+    )
+    .await;
+    assert!(result.is_err());
+}
+
+fn publication_document(dir: &Path) -> String {
+    let snapshot = corint_decision_toolchain::repository::load(&dir.join("repository")).unwrap();
+    serde_json::to_string(&corint_decision_toolchain::repository::PublishedSources {
+        manifest: std::fs::read_to_string(dir.join("repository/published.json")).unwrap(),
+        sources: snapshot.closure.originals().to_vec(),
+    })
+    .unwrap()
+}
+#[tokio::test]
+async fn sqlite_repository_uses_one_atomic_document_and_same_strict_reload_gate() {
+    use sqlx::Connection;
+    let (dir, mut config) = setup(&["initial", "second"]);
+    let db = dir.path().join("policies.sqlite");
+    let mut conn = sqlx::SqliteConnection::connect_with(
+        &sqlx::sqlite::SqliteConnectOptions::new()
+            .filename(&db)
+            .create_if_missing(true),
+    )
+    .await
+    .unwrap();
+    sqlx::query(
+        "CREATE TABLE corint_core_publication(slot TEXT PRIMARY KEY,document TEXT NOT NULL)",
+    )
+    .execute(&mut conn)
+    .await
+    .unwrap();
+    sqlx::query("INSERT INTO corint_core_publication VALUES('published',?)")
+        .bind(publication_document(dir.path()))
+        .execute(&mut conn)
+        .await
+        .unwrap();
+    config.as_object_mut().unwrap().remove("repository");
+    config["repository_backend"] = json!({"type":"sqlite","path":"policies.sqlite"});
+    let router = app(dir.path(), &config).await;
+    let (_, before) = call(
+        &router,
+        "GET",
+        "/v1/core/target",
+        Some(PUBLISHER),
+        json!({}),
+    )
+    .await;
+    publish(dir.path(), &bundle("second"), "second");
+    sqlx::query("UPDATE corint_core_publication SET document=? WHERE slot='published'")
+        .bind(publication_document(dir.path()))
+        .execute(&mut conn)
+        .await
+        .unwrap();
+    let (status, after) = call(
+        &router,
+        "POST",
+        "/v1/core/repo/reload",
+        Some(PUBLISHER),
+        json!({"expected_revision":before["revision"]}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{after}");
+    assert_eq!(after["repository"]["revision"], "second");
+    let mut broken: Value = serde_json::from_str(&publication_document(dir.path())).unwrap();
+    broken["sources"][0]["yaml"] = json!("invalid");
+    sqlx::query("UPDATE corint_core_publication SET document=? WHERE slot='published'")
+        .bind(broken.to_string())
+        .execute(&mut conn)
+        .await
+        .unwrap();
+    assert_eq!(
+        call(
+            &router,
+            "POST",
+            "/v1/core/repo/reload",
+            Some(PUBLISHER),
+            json!({"expected_revision":after["revision"]})
+        )
+        .await
+        .0,
+        StatusCode::UNPROCESSABLE_ENTITY
+    );
+    assert_eq!(
+        call(
+            &router,
+            "GET",
+            "/v1/core/target",
+            Some(PUBLISHER),
+            json!({})
+        )
+        .await
+        .1["revision"],
+        after["revision"]
+    );
+}
+#[tokio::test]
+async fn http_repository_loads_exact_document_and_detects_changed_publication() {
+    use corint_decision_server::repo_source::{BackendConfig, Source};
+    let (dir, _) = setup(&["initial"]);
+    let document = std::sync::Arc::new(tokio::sync::RwLock::new(publication_document(dir.path())));
+    let data = document.clone();
+    let api = axum::Router::new().route(
+        "/published",
+        axum::routing::get(move |headers: axum::http::HeaderMap| {
+            let data = data.clone();
+            async move {
+                assert_eq!(
+                    headers["authorization"],
+                    "Bearer test-repository-token-0000000000000000"
+                );
+                data.read().await.clone()
+            }
+        }),
+    );
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let server = tokio::spawn(async move { axum::serve(listener, api).await.unwrap() });
+    std::env::set_var(
+        "CORE_TEST_REPOSITORY_TOKEN",
+        "test-repository-token-0000000000000000",
+    );
+    let source = Source::configure(
+        dir.path(),
+        Path::new(""),
+        Some(BackendConfig::Http {
+            url: format!("http://{address}/published"),
+            token_env: "CORE_TEST_REPOSITORY_TOKEN".into(),
+        }),
+    )
+    .unwrap();
+    let reader = source.clone();
+    let snapshot = tokio::task::spawn_blocking(move || reader.load())
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(snapshot.identity.revision, "initial");
+    publish(dir.path(), &bundle("second"), "second");
+    *document.write().await = publication_document(dir.path());
+    assert!(
+        tokio::task::spawn_blocking(move || source.verify(&snapshot.identity))
+            .await
+            .unwrap()
+            .is_err()
+    );
+    server.abort();
+}
+
+/// Run against the isolated database created by run_p1_postgres_tests.py.
+#[tokio::test]
+#[ignore = "requires isolated CORINT_TEST_POSTGRES_URL; run tests/scripts/run_p1_postgres_tests.py"]
+async fn postgres_repository_uses_atomic_publication_and_rejects_stale_or_invalid_data() {
+    let url = std::env::var("CORINT_TEST_POSTGRES_URL").expect("isolated PostgreSQL URL required");
+    let pool = sqlx::PgPool::connect(&url).await.unwrap();
+    let (dir, mut config) = setup(&["initial", "second"]);
+    sqlx::query(
+        "CREATE TABLE corint_core_publication(slot TEXT PRIMARY KEY,document TEXT NOT NULL)",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+    sqlx::query("INSERT INTO corint_core_publication VALUES('published',$1)")
+        .bind(publication_document(dir.path()))
+        .execute(&pool)
+        .await
+        .unwrap();
+    config.as_object_mut().unwrap().remove("repository");
+    config["repository_backend"] = json!({"type":"postgres","url_env":"CORINT_TEST_POSTGRES_URL"});
+    let router = app(dir.path(), &config).await;
+    let (_, before) = call(
+        &router,
+        "GET",
+        "/v1/core/target",
+        Some(PUBLISHER),
+        json!({}),
+    )
+    .await;
+    publish(dir.path(), &bundle("second"), "second");
+    let mut tx = pool.begin().await.unwrap();
+    sqlx::query("UPDATE corint_core_publication SET document=$1 WHERE slot='published'")
+        .bind(publication_document(dir.path()))
+        .execute(&mut *tx)
+        .await
+        .unwrap();
+    // Readers see the committed old document while an unpublished writer holds a transaction.
+    let source = corint_decision_server::repo_source::Source::Postgres(url.clone());
+    assert_eq!(
+        tokio::task::spawn_blocking(move || source.load())
+            .await
+            .unwrap()
+            .unwrap()
+            .identity
+            .revision,
+        "initial"
+    );
+    tx.commit().await.unwrap();
+    let (status, after) = call(
+        &router,
+        "POST",
+        "/v1/core/repo/reload",
+        Some(PUBLISHER),
+        json!({"expected_revision":before["revision"]}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{after}");
+    assert_eq!(after["repository"]["revision"], "second");
+    sqlx::query("UPDATE corint_core_publication SET document='{}' WHERE slot='published'")
+        .execute(&pool)
+        .await
+        .unwrap();
+    assert_eq!(
+        call(
+            &router,
+            "POST",
+            "/v1/core/repo/reload",
+            Some(PUBLISHER),
+            json!({"expected_revision":after["revision"]})
+        )
+        .await
+        .0,
+        StatusCode::UNPROCESSABLE_ENTITY
+    );
+    assert_eq!(
+        call(
+            &router,
+            "GET",
+            "/v1/core/target",
+            Some(PUBLISHER),
+            json!({})
+        )
+        .await
+        .1["revision"],
+        after["revision"]
+    );
+    pool.close().await;
+}

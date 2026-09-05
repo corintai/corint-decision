@@ -107,6 +107,10 @@ Those cross-product contracts remain planned work.
 
 ## Agent workflow and evidence
 
+For the public `corint prepare-repository` command and the complete generic Agent
+workflow through an operator-owned repo and real HTTP service, see
+[Agent workflow](agent-workflow.md). No Work client or generator SDK is required.
+
 Give an Agent the [Core specification](cdl-core.md), [capability inventory](schema/capabilities.json),
 resource/input schemas, explicit business requirements and a caller-supplied field schema.
 After each YAML edit, run `corint validate --format json ...`, inspect the exit code
@@ -118,7 +122,9 @@ inputs and expected decisions in the real engine. Threshold quality, business
 impact, publication approval and production safety require separate evidence.
 Use [`corint test`](testing.md) for declared behavioral expectations and
 [`corint build` / `corint verify`](packages.md) for the experimental source-package
-workflow. Generator integration and production publication checks remain unimplemented.
+workflow. Strict generator integration is documented in [generation](generation.md). The
+Core server independently enforces its local operator approvals and acceptance
+cases; full production publication governance remains outside this increment.
 
 The [CLI process tests](../../crates/corint-decision-cli/tests/validate.rs) reuse both
 positive bundles and every negative mutation from the real-engine fixture manifest.

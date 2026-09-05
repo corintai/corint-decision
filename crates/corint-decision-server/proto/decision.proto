@@ -133,6 +133,8 @@ message Cognition {
 
 // Execution trace
 message ExecutionTrace {
+  // Lossless shared engine trace JSON; legacy fields below remain available.
+  string canonical_json = 3;
   // Pipeline trace
   PipelineTrace pipeline = 1;
 

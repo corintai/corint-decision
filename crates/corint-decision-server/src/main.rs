@@ -2,11 +2,15 @@
 //!
 //! Provides REST API for executing decision rules.
 
+pub mod access;
 pub mod api;
 pub mod config;
 pub mod core;
 pub mod engine;
 pub mod error;
+pub mod evidence;
+pub mod journal;
+pub mod repo_source;
 pub mod snapshot;
 
 use crate::api::grpc::pb::decision_service_server::DecisionServiceServer;
@@ -40,15 +44,26 @@ async fn main() -> Result<()> {
 
     // Load configuration
     let config = ServerConfig::load()?;
-    info!("Loaded configuration: {:?}", config);
+    let access = access::AccessPolicy::from_env()?;
+    anyhow::ensure!(
+        config
+            .server
+            .host
+            .parse::<std::net::IpAddr>()?
+            .is_loopback(),
+        "Compatibility mode requires a loopback listener; terminate TLS at an authenticated edge"
+    );
+    info!("Loaded server configuration");
 
     // Initialize decision engine
-    let engine = engine::init_engine(&config).await?;
+    let engine = engine::init_engine(&config).await.map_err(|_| {
+        anyhow::anyhow!("Decision engine initialization failed; check operator configuration")
+    })?;
     info!("Decision engine initialized");
 
     // Create router
     let manager = Arc::new(EngineManager::new(Arc::new(engine))?);
-    let app = api::create_router(manager.clone());
+    let app = api::create_router(manager.clone(), access.clone());
 
     // Start HTTP server
     let http_addr = format!("{}:{}", config.server.host, config.server.port);
@@ -67,12 +82,13 @@ async fn main() -> Result<()> {
     if let Some(grpc_port) = config.server.grpc_port {
         let grpc_addr = format!("{}:{}", config.server.host, grpc_port).parse()?;
 
-        let grpc_service = DecisionGrpcService::new(manager.clone());
+        let grpc_service = DecisionGrpcService::new(manager.clone(), access.clone());
 
         info!("Starting gRPC server on {}", grpc_addr);
 
         // Build reflection service
-        let file_descriptor_set = include_bytes!("../proto/decision_descriptor.bin");
+        let file_descriptor_set =
+            include_bytes!(concat!(env!("OUT_DIR"), "/decision_descriptor.bin"));
         let reflection_service = tonic_reflection::server::Builder::configure()
             .register_encoded_file_descriptor_set(file_descriptor_set)
             .build_v1()

@@ -12,6 +12,7 @@ use std::sync::Arc;
 #[derive(Clone)]
 pub struct AppState {
     pub engine: Arc<EngineManager>,
+    pub access: crate::access::AccessPolicy,
 }
 
 /// Health check response
@@ -23,6 +24,7 @@ pub struct HealthResponse {
 
 /// Decision request payload (matches API_REQUEST.md spec)
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct DecideRequestPayload {
     /// Event data (required)
     pub event: HashMap<String, serde_json::Value>,
@@ -59,6 +61,7 @@ pub struct DecideRequestPayload {
 
 /// Request options
 #[derive(Debug, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct RequestOptions {
     /// Whether to return computed feature values
     #[serde(default)]

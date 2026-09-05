@@ -106,6 +106,8 @@ impl RuleParser {
             });
         }
 
+        Self::validate_when_shape(when_obj)?;
+
         // Parse event type (optional)
         // Try three formats: 1) flat "event.type" key, 2) "event_type" key, 3) nested path
         let event_type = YamlParser::get_optional_string(when_obj, "event.type")
@@ -145,6 +147,68 @@ impl RuleParser {
         })
     }
 
+    /// Validate every key before selecting the legacy or grouped representation.
+    pub(crate) fn validate_when_shape(value: &YamlValue) -> Result<()> {
+        let invalid = || ParseError::InvalidValue {
+            field: "when".into(),
+            message:
+                "Expected known when fields, one condition representation and one string event type"
+                    .into(),
+        };
+        let map = value.as_mapping().ok_or_else(invalid)?;
+        if map.keys().any(|k| {
+            !k.as_str().is_some_and(|s| {
+                [
+                    "event.type",
+                    "event_type",
+                    "event",
+                    "conditions",
+                    "all",
+                    "any",
+                    "not",
+                ]
+                .contains(&s)
+            })
+        }) {
+            return Err(invalid());
+        }
+        if ["conditions", "all", "any", "not"]
+            .iter()
+            .filter(|k| value.get(**k).is_some())
+            .count()
+            > 1
+        {
+            return Err(invalid());
+        }
+        if ["event.type", "event_type", "event"]
+            .iter()
+            .filter(|k| value.get(**k).is_some())
+            .count()
+            > 1
+        {
+            return Err(invalid());
+        }
+        for key in ["event.type", "event_type"] {
+            if value.get(key).is_some_and(|v| v.as_str().is_none()) {
+                return Err(invalid());
+            }
+        }
+        if let Some(event) = value.get("event") {
+            if !event.as_mapping().is_some_and(|m| {
+                m.len() == 1 && event.get("type").is_some_and(|v| v.as_str().is_some())
+            }) {
+                return Err(invalid());
+            }
+        }
+        if value
+            .get("conditions")
+            .is_some_and(|v| v.as_sequence().is_none())
+        {
+            return Err(invalid());
+        }
+        Ok(())
+    }
+
     /// Parse a single condition
     fn parse_condition(yaml: &YamlValue) -> Result<Expression> {
         if let Some(s) = yaml.as_str() {
@@ -166,6 +230,12 @@ impl RuleParser {
     fn parse_logical_group(obj: &serde_yaml::Mapping) -> Result<Expression> {
         use corint_decision_model::ast::LogicalGroupOp;
 
+        if obj.len() != 1 {
+            return Err(ParseError::InvalidValue {
+                field: "condition".into(),
+                message: "Expected exactly one logical operator".into(),
+            });
+        }
         // Check if it's an 'any' or 'all' logical group
         if let Some(any_conditions) = obj.get(YamlValue::String("any".to_string())) {
             // Parse 'any' logical group (OR logic)
@@ -265,6 +335,7 @@ impl RuleParser {
                         let expr = ExpressionParser::parse(s)?;
                         Ok(Condition::Expression(expr))
                     } else if let Some(obj) = item.as_mapping() {
+                        if obj.len() != 1 { return Err(ParseError::InvalidValue {field:"condition".into(),message:"Expected exactly one logical operator".into()}); }
                         // Check if it's a nested condition group (all/any/not)
                         if obj.contains_key(YamlValue::String("all".to_string())) {
                             let all_yaml = obj.get(YamlValue::String("all".to_string())).unwrap();

@@ -36,7 +36,12 @@ not recursively invoke Cargo. `--build-only` also accepts `--offline`.
 
 ## Assertions
 
-The two Rust tests cover:
+The three Rust tests cover:
+
+- Agent-neutral ordinary YAML files → public `prepare-repository` CLI → new candidate
+  repo → independent operator approval → real server startup, decisions, authorized
+  reload and restart. This test uses neither the generator SDK nor a test-only repo
+  publication helper. It does not depend on Work or a live model.
 
 - Fixed, synthetic model output → actual `CoreGenerator` acceptance → YAML files
   → CLI `validate`, `build`, `verify`, `export` → source bundle. CLI JSON reports,
@@ -92,5 +97,7 @@ CI run, and subprocess execution is not a claim that coverage instrumentation
 measures every line executed inside those children.
 
 These tests prove the synthetic Core delivery/execution path, **not** live model
-quality, real Corint Work integration, production data effectiveness, distributed rollout, audit persistence or datasource compatibility.
+quality, real Corint Work integration, production data effectiveness, distributed rollout or general datasource compatibility. The Core v3 Agent test also verifies local audit persistence across restart.
 `business_evaluation` remains `not_performed`.
+
+通用 Agent 用例现使用 Core v3：消费者凭据由进程启动器显式传入，真实决策记录绑定 repo/runtime 身份；终止并重启服务后可从持久出箱领取重启前后的记录。

@@ -1240,7 +1240,7 @@ impl DecisionEngine {
         }
         let processing_time_ms = start.elapsed().as_millis() as u64;
 
-        // Persist decision result asynchronously if result writer is configured
+        // Commit legacy persistence before reporting success, when configured
         tracing::debug!("Checking result_writer in DecisionEngine.decide()...");
         tracing::debug!(
             "  Engine has result_writer: {}",
@@ -1261,27 +1261,10 @@ impl DecisionEngine {
 
             tracing::debug!("Request ID: {}, Event ID: {:?}", request_id, event_id);
 
-            // Determine pipeline_id (use first matched pipeline or default)
-            let pipeline_id = if let Some(ref registry) = self.registry {
-                // Find the matched pipeline from registry
-                registry
-                    .registry
-                    .iter()
-                    .find(|entry| {
-                        WhenEvaluator::evaluate_when_block(&entry.when, &request.event_data)
-                    })
-                    .map(|entry| entry.pipeline.clone())
-                    .unwrap_or("unknown".to_string())
-            } else if !self.pipeline_map.is_empty() {
-                // Use first pipeline ID
-                self.pipeline_map
-                    .keys()
-                    .next()
-                    .cloned()
-                    .unwrap_or("unknown".to_string())
-            } else {
-                "unknown".to_string()
-            };
+            // Use the executed pipeline, never reevaluate routing or HashMap order.
+            let pipeline_id = matched_pipeline_id
+                .clone()
+                .unwrap_or_else(|| "no_match".into());
 
             tracing::debug!("Pipeline ID: {}", pipeline_id);
 
@@ -1296,28 +1279,14 @@ impl DecisionEngine {
             );
 
             tracing::info!(
-                "Queuing decision record for persistence: request_id={}, score={}, action={:?}",
+                "Persisting decision record: request_id={}, score={}, action={:?}",
                 request_id,
                 combined_result.score,
                 combined_result.signal
             );
 
-            // Write asynchronously (non-blocking)
-            match result_writer.write_decision(decision_record) {
-                Ok(()) => {
-                    tracing::info!(
-                        "Decision record queued successfully for request_id: {}",
-                        request_id
-                    );
-                }
-                Err(e) => {
-                    tracing::error!(
-                        "Failed to queue decision record for request_id {}: {}",
-                        request_id,
-                        e
-                    );
-                }
-            }
+            // Fail the decision response if durable persistence did not commit.
+            result_writer.write_decision(decision_record).await?;
         } else {
             tracing::debug!("Result writer not configured, skipping persistence");
         }
