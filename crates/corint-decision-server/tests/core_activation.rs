@@ -39,6 +39,12 @@ fn bundle(change: &str) -> SourceBundle {
     .map(source)
     .collect();
     match change {
+        "arithmetic" => {
+            sources[0].yaml = sources[0].yaml.replace(
+                "event.amount > 1000",
+                "event.amount > 1000 && 1 / (event.amount - 2000) != 0",
+            )
+        }
         "wrong" => sources[0].yaml = sources[0].yaml.replace("> 1000", ">= 1000"),
         // Different behavior outside the fixed acceptance cases makes mixed
         // identity/engine snapshots observable. This is synthetic test data.
@@ -1198,4 +1204,130 @@ async fn postgres_repository_uses_atomic_publication_and_rejects_stale_or_invali
         after["revision"]
     );
     pool.close().await;
+}
+
+#[tokio::test]
+async fn core_runtime_error_details_are_bound_to_durable_records() {
+    let (dir, mut config) = setup(&["arithmetic"]);
+    let consumer = "test-runtime-error-consumer-000000000000000";
+    std::env::set_var("CORE_RUNTIME_ERROR_CONSUMER", consumer);
+    config["config_version"] = json!("3");
+    config["journal"] = json!({"path":"events.sqlite","tenant_id":"test","max_records":10,"max_bytes":1_000_000,"consumer_token_env":"CORE_RUNTIME_ERROR_CONSUMER"});
+    publish(dir.path(), &bundle("arithmetic"), "arithmetic");
+    let router = app(dir.path(), &config).await;
+    for trace in [false, true] {
+        let (status, response) = call(
+            &router,
+            "POST",
+            "/v1/core/decide",
+            Some(DECISION),
+            json!({"business_event_id":"fault-2000","event":{"amount":2000},"enable_trace":trace}),
+        )
+        .await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+        assert_eq!(
+            response["diagnostic"]["cause"]["code"],
+            "E_DIVISION_BY_ZERO"
+        );
+        assert_eq!(response["diagnostic"]["cause"]["source"], "rule.yaml");
+        assert_eq!(response["diagnostic"]["record"]["result"], "error");
+        assert_eq!(
+            response["diagnostic"]["record"]["error_code"],
+            "E_DIVISION_BY_ZERO"
+        );
+        assert_eq!(
+            response["diagnostic"]["record"]["runtime"]["repository_revision"],
+            "arithmetic"
+        );
+        assert_eq!(response["diagnostic"]["record"]["actions"], json!([]));
+    }
+    drop(router);
+    let router = app(dir.path(), &config).await;
+    let (status, claimed) = call(
+        &router,
+        "POST",
+        "/v1/core/outbox/claim",
+        Some(consumer),
+        json!({}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(claimed["events"].as_array().unwrap().len(), 2);
+    assert!(claimed["events"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .all(|e| e["event"]["error_code"] == "E_DIVISION_BY_ZERO"));
+}
+
+#[tokio::test]
+async fn nested_agent_repository_executes_through_core_http() {
+    let (dir, mut config) = setup(&[]);
+    let fixtures = root().join("core_extensions");
+    let read = |name: &str| CoreSource {
+        path: name.into(),
+        yaml: std::fs::read_to_string(fixtures.join(name)).unwrap(),
+    };
+    let bundle = SourceBundle::new(
+        read("input-schema.yaml"),
+        [
+            "rule.yaml",
+            "marker.yaml",
+            "ruleset.yaml",
+            "child.yaml",
+            "pipeline.yaml",
+            "registry.yaml",
+        ]
+        .into_iter()
+        .map(read)
+        .collect(),
+    )
+    .unwrap();
+    let context = read("business-context.yaml").yaml;
+    let target = read("target-capabilities.json").yaml;
+    let cases = read("behavior.yaml").yaml;
+    for (name, content) in [
+        ("context.yaml", &context),
+        ("target.json", &target),
+        ("cases.yaml", &cases),
+    ] {
+        std::fs::write(dir.path().join(name), content).unwrap();
+    }
+    config["approvals"] = json!([{"policy_sha256":identity(&bundle),"context_sha256":hash(&context),"target_sha256":hash(&target),"cases_sha256":hash(&cases)}]);
+    publish(dir.path(), &bundle, "nested-v1");
+    let router = app(dir.path(), &config).await;
+    for enabled in [true, false] {
+        let (status, response) = call(
+            &router,
+            "POST",
+            "/v1/core/decide",
+            Some(DECISION),
+            json!({"event":{"enabled":enabled,"payment":{"amount":1001}},"enable_trace":true}),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{response}");
+        assert_eq!(
+            response["decision"]["result"]["score"],
+            if enabled { 67 } else { 7 }
+        );
+        assert_eq!(
+            response["decision"]["result"]["actions"],
+            if enabled {
+                json!(["parent_action"])
+            } else {
+                json!([])
+            }
+        );
+        let child = response["decision"]["trace"]["core_calls_v1"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|c| c["resource_id"] == "child")
+            .unwrap();
+        assert_eq!(child["call_path"], json!(["parent", "child"]));
+        assert_eq!(
+            child["status"],
+            if enabled { "completed" } else { "skipped" }
+        );
+    }
 }

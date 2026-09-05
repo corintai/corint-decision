@@ -203,17 +203,13 @@ fn capability_gate(source: &str, path: &str, value: &Json) -> CoreResult<()> {
                 let p = format!("{path}/{key}");
                 let unsupported = (path.is_empty()
                     && ["import", "imports"].contains(&key.as_str()))
-                    || (path == "/pipeline" && key == "when")
-                    || (path.starts_with("/pipeline/steps/")
-                        && !path.contains("/routes/")
-                        && key == "when")
                     || (path == "/ruleset" && key == "extends")
                     || (path == "/rule" && key == "params")
                     || (path.starts_with("/pipeline/steps/")
                         && key == "type"
-                        && child
-                            .as_str()
-                            .is_some_and(|v| !["ruleset", "router"].contains(&v)));
+                        && child.as_str().is_some_and(|v| {
+                            !["ruleset", "router", "rule", "pipeline"].contains(&v)
+                        }));
                 if unsupported {
                     return Err(diagnostic(
                         source,
@@ -305,6 +301,7 @@ pub fn compile_core(sources: &[CoreSource], input_schema: Schema) -> CoreResult<
             "Exactly one registry is required",
         )
     })?;
+    check_call_graph(&resources)?;
     let empty = BTreeSet::new();
     // Core source maps address the emitted instruction stream. The legacy
     // optimizer removes instructions without relocating jumps or debug maps.
@@ -391,7 +388,13 @@ pub fn compile_core(sources: &[CoreSource], input_schema: Schema) -> CoreResult<
             "pipeline" => {
                 check_pipeline(body, &resources, &input_schema, &doc.source)?;
                 let mut pipeline = PipelineParser::parse_from_yaml(&yaml).map_err(parse_error)?;
+                if let Some(when) = &mut pipeline.when {
+                    normalize_when(when);
+                }
                 for step in &mut pipeline.steps {
+                    if let Some(when) = &mut step.when {
+                        normalize_when(when);
+                    }
                     if let Some(routes) = &mut step.routes {
                         for route in routes {
                             normalize_when(&mut route.when);
@@ -403,12 +406,10 @@ pub fn compile_core(sources: &[CoreSource], input_schema: Schema) -> CoreResult<
                         normalize_when(when);
                     }
                 }
-                compiler
-                    .compile_pipeline(&pipeline)
-                    .and_then(|mut program| {
-                        map_pipeline(&mut program, &pipeline)?;
-                        Ok(program)
-                    })
+                crate::codegen::PipelineCompiler::compile_core(&pipeline).and_then(|mut program| {
+                    map_pipeline(&mut program, &pipeline)?;
+                    Ok(program)
+                })
             }
             _ => unreachable!(),
         }
@@ -515,7 +516,28 @@ fn map_pipeline(
     pipeline: &corint_decision_model::ast::Pipeline,
 ) -> crate::Result<()> {
     let mut maps = Vec::new();
+    if let Some(when) = &pipeline.when {
+        let end = program.metadata.custom["core_pipeline_guard"]
+            .parse()
+            .unwrap();
+        maps.push(crate::core_trace::condition_map(
+            &program.instructions,
+            normalized_condition(when),
+            end,
+            "/pipeline/when".into(),
+        )?);
+    }
+    let positions: HashMap<String, usize> =
+        serde_json::from_str(&program.metadata.custom["core_guard_positions"]).unwrap();
     for (index, step) in pipeline.steps.iter().enumerate() {
+        if let Some(when) = &step.when {
+            maps.push(crate::core_trace::condition_map(
+                &program.instructions,
+                normalized_condition(when),
+                positions[&step.id],
+                format!("/pipeline/steps/{index}/step/when"),
+            )?);
+        }
         for (route_index, route) in step.routes.iter().flatten().enumerate() {
             let end = program
                 .instructions
@@ -627,18 +649,31 @@ fn check_pipeline(
     source: &str,
 ) -> CoreResult<()> {
     check_defaults(&body["decision"], source, "/pipeline/decision")?;
+    if let Some(when) = body.get("when") {
+        check_condition(
+            when,
+            schema,
+            false,
+            &BTreeSet::new(),
+            source,
+            "/pipeline/when",
+        )?;
+    }
     let mut steps = BTreeMap::new();
     let mut called_rulesets = BTreeSet::new();
     for (i, wrapper) in body["steps"].as_array().unwrap().iter().enumerate() {
         let step = &wrapper["step"];
-        if let Some(id) = step.get("ruleset").and_then(Json::as_str) {
+        if let Some(id) = step
+            .get(step["type"].as_str().unwrap())
+            .and_then(Json::as_str)
+        {
             if !called_rulesets.insert(id) {
                 return Err(diagnostic(
                     source,
                     &format!("/pipeline/steps/{i}/step/ruleset"),
                     "resolve",
                     "E_INVALID_GRAPH",
-                    "Increment 1 allows one call site per ruleset in a pipeline",
+                    "One call site per resource in each pipeline is required",
                 ));
             }
         }
@@ -669,11 +704,12 @@ fn check_pipeline(
     let mut incoming: BTreeMap<&str, usize> = steps.keys().map(|id| (*id, 0)).collect();
     incoming.insert("end", 0);
     for (id, (i, step)) in &steps {
-        let targets = if step["type"] == "ruleset" {
+        let targets = if step["type"] != "router" {
+            let kind = step["type"].as_str().unwrap();
             require_resource(
                 resources,
-                step["ruleset"].as_str().unwrap(),
-                "ruleset",
+                step[kind].as_str().unwrap(),
+                kind,
                 source,
                 &format!("/pipeline/steps/{i}/step/ruleset"),
             )?;
@@ -723,14 +759,27 @@ fn check_pipeline(
         visited += 1;
         let (i, step) = steps[id];
         let mut output = available[id].clone();
-        if step["type"] == "ruleset" {
-            if !output.insert(step["ruleset"].as_str().unwrap().to_owned()) {
+        if let Some(when) = step.get("when") {
+            check_condition(
+                when,
+                schema,
+                true,
+                &output,
+                source,
+                &format!("/pipeline/steps/{i}/step/when"),
+            )?;
+        }
+        if step["type"] != "router" {
+            let kind = step["type"].as_str().unwrap();
+            let called = step[kind].as_str().unwrap();
+            output.insert(format!("{kind}:{called}"));
+            if !output.insert(called.to_owned()) {
                 return Err(diagnostic(
                     source,
                     &format!("/pipeline/steps/{i}"),
                     "resolve",
                     "E_INVALID_GRAPH",
-                    "A ruleset may execute at most once per path in this increment",
+                    "A resource may execute at most once per path in its caller",
                 ));
             }
         } else {
@@ -738,7 +787,7 @@ fn check_pipeline(
                 check_condition(
                     &route["when"],
                     schema,
-                    false,
+                    true,
                     &output,
                     source,
                     &format!("/pipeline/steps/{i}/step/routes/{j}/when"),
@@ -770,7 +819,7 @@ fn check_pipeline(
             check_condition(
                 when,
                 schema,
-                false,
+                true,
                 &available["end"],
                 source,
                 &format!("/pipeline/decision/{i}/when"),
@@ -835,17 +884,29 @@ fn expression_type(
         Expression::FieldAccess(fields) if aggregate && fields == &["total_score"] => {
             Ok(FieldType::Number)
         }
-        Expression::FieldAccess(fields) if fields.len() == 2 && fields[0] == "event" => schema
-            .fields
-            .get(&fields[1])
-            .map(|f| f.field_type.clone())
-            .ok_or_else(|| err("E_INVALID_REF", "Undeclared event field")),
+        Expression::FieldAccess(fields) if fields.len() >= 2 && fields[0] == "event" => {
+            event_field_type(schema, &fields[1..])
+                .ok_or_else(|| err("E_INVALID_REF", "Undeclared event field"))
+        }
+        Expression::FunctionCall { name, args } if name == "exists" => match args.as_slice() {
+            [Expression::FieldAccess(fields)] if fields.len() >= 2 && fields[0] == "event" => {
+                event_field_type(schema, &fields[1..])
+                    .ok_or_else(|| err("E_INVALID_REF", "Undeclared exists field"))?;
+                Ok(FieldType::Boolean)
+            }
+            _ => Err(err(
+                "E_TYPE",
+                "exists requires one declared event field path",
+            )),
+        },
         Expression::ResultAccess {
             ruleset_id: Some(id),
             field,
         } if available.contains(id) => match field.as_str() {
             "score" | "total_score" => Ok(FieldType::Number),
-            "signal" => Ok(FieldType::String),
+            "status" => Ok(FieldType::String),
+            "signal" if !available.contains(&format!("rule:{id}")) => Ok(FieldType::String),
+            "matched" if available.contains(&format!("rule:{id}")) => Ok(FieldType::Boolean),
             _ => Err(err("E_INVALID_REF", "Unsupported result field")),
         },
         Expression::FieldAccess(_) | Expression::ResultAccess { .. } => Err(err(
@@ -864,7 +925,20 @@ fn expression_type(
             let l = expression_type(left, schema, aggregate, available, source, path)?;
             let r = expression_type(right, schema, aggregate, available, source, path)?;
             let valid = match op {
-                Operator::Eq | Operator::Ne => l == r,
+                Operator::Eq | Operator::Ne => {
+                    l == r
+                        && matches!(
+                            l,
+                            FieldType::Number | FieldType::String | FieldType::Boolean
+                        )
+                }
+                Operator::Add | Operator::Sub | Operator::Mul | Operator::Div | Operator::Mod => {
+                    return if l == FieldType::Number && r == l {
+                        Ok(FieldType::Number)
+                    } else {
+                        Err(err("E_TYPE", "Arithmetic operands must be numbers"))
+                    };
+                }
                 Operator::Gt | Operator::Ge | Operator::Lt | Operator::Le => {
                     l == FieldType::Number && r == l
                 }
@@ -961,61 +1035,202 @@ fn normalize_when(when: &mut WhenBlock) {
     when.conditions = Some(vec![expr]);
 }
 
+fn event_field_type(schema: &Schema, path: &[String]) -> Option<FieldType> {
+    let field = schema.fields.get(path.first()?)?;
+    if path.len() == 1 {
+        return Some(field.field_type.clone());
+    }
+    match &field.field_type {
+        FieldType::Object {
+            schema: Some(nested),
+        } => event_field_type(nested, &path[1..]),
+        _ => None,
+    }
+}
+
 fn validate_input_schema(schema: &Schema) -> CoreResult<()> {
-    // Stable first-error order across processes, including CLI/Agent retries.
-    for (name, field) in schema.fields.iter().collect::<BTreeMap<_, _>>() {
-        if name != &field.name
-            || name.is_empty()
-            || !name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
-            || !field.required
-            || field.default.is_some()
-            || !matches!(
-                field.field_type,
-                FieldType::Boolean | FieldType::Number | FieldType::String
-            )
-        {
+    fn visit(schema: &Schema, path: &str, depth: usize, count: &mut usize) -> CoreResult<()> {
+        if depth > 16 || *count > 1024 {
             return Err(diagnostic(
                 "<input-schema>",
-                &format!("/fields/{}", name.replace('~', "~0").replace('/', "~1")),
+                path,
                 "type",
-                "E_UNSUPPORTED_CAPABILITY",
-                "Increment 1 requires flat, required, non-null scalar fields without defaults",
+                "E_INPUT_SCHEMA",
+                "Input schema exceeds depth 16 or 1024 fields",
             ));
         }
+        for (name, field) in schema.fields.iter().collect::<BTreeMap<_, _>>() {
+            *count += 1;
+            let path = format!(
+                "{path}/fields/{}",
+                name.replace('~', "~0").replace('/', "~1")
+            );
+            if *count > 1024
+                || name != &field.name
+                || name.is_empty()
+                || !name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
+                || field.default.is_some()
+            {
+                return Err(diagnostic(
+                    "<input-schema>",
+                    &path,
+                    "type",
+                    "E_INPUT_SCHEMA",
+                    "Invalid field name, default or field count",
+                ));
+            }
+            match &field.field_type {
+                FieldType::Boolean | FieldType::Number | FieldType::String => (),
+                FieldType::Object {
+                    schema: Some(child),
+                } => visit(child, &path, depth + 1, count)?,
+                _ => {
+                    return Err(diagnostic(
+                        "<input-schema>",
+                        &path,
+                        "type",
+                        "E_UNSUPPORTED_CAPABILITY",
+                        "Only non-null scalars and closed objects are enabled",
+                    ))
+                }
+            }
+        }
+        Ok(())
     }
-    Ok(())
+    visit(schema, "", 0, &mut 0)
 }
 
 pub fn validate_core_input(schema: &Schema, event: &HashMap<String, Value>) -> CoreResult<()> {
-    for (name, field) in schema.fields.iter().collect::<BTreeMap<_, _>>() {
-        let valid = match (event.get(name), &field.field_type) {
-            (Some(Value::Bool(_)), FieldType::Boolean)
-            | (Some(Value::String(_)), FieldType::String) => true,
-            (Some(Value::Number(n)), FieldType::Number) => n.is_finite(),
-            _ => false,
-        };
-        if !valid {
+    fn visit(schema: &Schema, event: &HashMap<String, Value>, path: &str) -> CoreResult<()> {
+        for (name, field) in schema.fields.iter().collect::<BTreeMap<_, _>>() {
+            let p = format!("{path}/{name}");
+            let valid = match (event.get(name), &field.field_type) {
+                (None, _) if !field.required => true,
+                (Some(Value::Bool(_)), FieldType::Boolean)
+                | (Some(Value::String(_)), FieldType::String) => true,
+                (Some(Value::Number(n)), FieldType::Number) => n.is_finite(),
+                (
+                    Some(Value::Object(values)),
+                    FieldType::Object {
+                        schema: Some(child),
+                    },
+                ) => {
+                    visit(child, values, &p)?;
+                    true
+                }
+                _ => false,
+            };
+            if !valid {
+                return Err(diagnostic(
+                    "<request>",
+                    &p,
+                    "input",
+                    "E_INPUT_SCHEMA",
+                    "Missing required input or invalid type; null is not absence",
+                ));
+            }
+        }
+        if let Some(name) = event
+            .keys()
+            .filter(|k| !schema.fields.contains_key(*k))
+            .min()
+        {
             return Err(diagnostic(
                 "<request>",
-                &format!("/event/{name}"),
+                &format!("{path}/{}", name.replace('~', "~0").replace('/', "~1")),
                 "input",
                 "E_INPUT_SCHEMA",
-                "Missing or invalid required input",
+                "Undeclared event input",
             ));
         }
+        Ok(())
     }
-    if let Some(name) = event
-        .keys()
-        .filter(|k| !schema.fields.contains_key(*k))
-        .min()
-    {
-        return Err(diagnostic(
-            "<request>",
-            &format!("/event/{}", name.replace('~', "~0").replace('/', "~1")),
-            "input",
-            "E_INPUT_SCHEMA",
-            "Undeclared event input",
-        ));
+    visit(schema, event, "/event")
+}
+
+// Check every supplied pipeline, including unregistered ones. Memoized expansion
+// bounds avoid exponential execution through a shallow, branching call graph.
+fn check_call_graph(resources: &Resources<'_>) -> CoreResult<()> {
+    fn visit<'a>(
+        id: &'a str,
+        resources: &Resources<'a>,
+        active: &mut BTreeSet<&'a str>,
+        memo: &mut BTreeMap<&'a str, (usize, usize)>,
+    ) -> CoreResult<(usize, usize)> {
+        if let Some(value) = memo.get(id) {
+            return Ok(*value);
+        }
+        let (_, doc) = resources[id];
+        if !active.insert(id) {
+            return Err(diagnostic(
+                &doc.source,
+                "/pipeline/steps",
+                "resolve",
+                "E_CALL_CYCLE",
+                "Recursive pipeline calls are forbidden",
+            ));
+        }
+        if active.len() > 16 {
+            return Err(diagnostic(
+                &doc.source,
+                "/pipeline/steps",
+                "resolve",
+                "E_CALL_LIMIT",
+                "Call depth exceeds 16",
+            ));
+        }
+        let mut cost = 1;
+        let mut depth = 1;
+        for wrapper in doc.value["pipeline"]["steps"].as_array().unwrap() {
+            let step = &wrapper["step"];
+            let kind = step["type"].as_str().unwrap();
+            if kind == "router" {
+                cost += 1;
+                continue;
+            }
+            let target = step[kind].as_str().unwrap();
+            require_resource(resources, target, kind, &doc.source, "/pipeline/steps")?;
+            if kind == "pipeline" {
+                let (child_cost, child_depth) = visit(target, resources, active, memo)?;
+                cost += child_cost;
+                depth = depth.max(child_depth + 1);
+            } else if kind == "ruleset" {
+                cost += resources[target].1.value["ruleset"]["rules"]
+                    .as_array()
+                    .unwrap()
+                    .len()
+                    + 1;
+            } else {
+                cost += 1;
+            }
+            if cost > 4096 || depth > 16 {
+                return Err(diagnostic(
+                    &doc.source,
+                    "/pipeline/steps",
+                    "resolve",
+                    "E_CALL_LIMIT",
+                    "Expanded execution exceeds 4096 nodes or depth 16",
+                ));
+            }
+        }
+        if cost > 4096 {
+            return Err(diagnostic(
+                &doc.source,
+                "/pipeline/steps",
+                "resolve",
+                "E_CALL_LIMIT",
+                "Expanded execution exceeds 4096 nodes",
+            ));
+        }
+        active.remove(id);
+        memo.insert(id, (cost, depth));
+        Ok((cost, depth))
+    }
+    let mut memo = BTreeMap::new();
+    for (id, (kind, _)) in resources {
+        if *kind == "pipeline" {
+            visit(id, resources, &mut BTreeSet::new(), &mut memo)?;
+        }
     }
     Ok(())
 }

@@ -144,17 +144,17 @@ fn snapshot(response: DecisionResponse, traced: bool) -> Result<Json, CoreError>
     let mut local = serde_json::Map::new();
     for (key, value) in context.as_object().ok_or_else(bad)? {
         if let Some(id) = key.strip_prefix("__ruleset_result__.") {
-            if !value["score"].is_number() || !value["signal"].is_string() {
+            let output = if value["status"] == "skipped" {
+                json!({"status":"skipped"})
+            } else if value["score"].is_number() && value["matched"].is_boolean() {
+                json!({"score":value["score"],"matched":value["matched"]})
+            } else if value["score"].is_number() && value["signal"].is_string() {
+                json!({"score":value["score"],"signal":value["signal"]})
+            } else {
                 return Err(bad());
-            }
-            local.insert(
-                id.into(),
-                json!({"score": value["score"], "signal": value["signal"]}),
-            );
+            };
+            local.insert(id.into(), output);
         }
-    }
-    if !local.is_empty() && context.get("__core_rule_executions__").is_none() {
-        return Err(bad());
     }
     if let Some(trace) = &response.trace {
         let pipeline = trace.pipeline.as_ref().ok_or_else(bad)?;

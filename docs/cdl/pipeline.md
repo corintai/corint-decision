@@ -24,8 +24,7 @@ signals. Only the selected Pipeline decision emits the final result and action i
 | `steps` | Required nonempty array of `step` objects with unique IDs |
 | `decision` | Required ordered array; exactly one default, at the end |
 
-Every step requires `id`, `name` and `type`. Core accepts only `ruleset` and
-`router` types. Unknown fields, unsupported capabilities, missing references,
+Every step requires `id`, `name` and `type`. Core accepts `ruleset`, `router`, `rule` and `pipeline` types. Unknown fields, unsupported capabilities, missing references,
 unreachable steps and cycles fail before execution. `end` is reserved.
 
 ## 2. Supported steps and executable examples
@@ -63,11 +62,13 @@ Node order in YAML never determines successors. `next: end` terminates step
 execution and proceeds to `decision` once; omitting `next` is invalid on a Ruleset
 step. Use a router to select or bypass work explicitly.
 
+Single Rule calls, sub-Pipeline calls, Pipeline/step guards and their executable examples are specified in [Runtime extensions](runtime-extensions.md). Call steps require an explicit `next`; guarded routers use `default` when skipped.
+
 ## 3. Results, decisions and actions
 
 Conditions may read declared `event` fields. Router and decision conditions may
 also read `results.<ruleset_id>.score`, `.total_score` and `.signal`, but only when
-that Ruleset has completed on every incoming path. Implicit last-result references
+that Ruleset has completed on every incoming path. `status` distinguishes completed and guarded calls; Rule results use `matched` instead of signal. Implicit last-result references
 and reads from unexecuted branches are rejected.
 
 Decision rows use `when` or `default: true`, with required `result` and optional
@@ -77,47 +78,41 @@ be exactly one final default row. Only that row's actions and reason are selecte
 Actions are intent strings; the engine does not execute external side effects.
 
 Ruleset signals do not implicitly override the final decision. The response score
-sums executed Rulesets' local scores with checked i32 accumulation. The
+sums direct Rule/Ruleset/sub-Pipeline call scores once with checked i32 accumulation. The
 `payment_boundaries` fixture above verifies first-match behavior even when two
 conditional decision rows match. See [condition Trace](condition-trace.md) for
 observed conditions and skipped branches.
 
-## 4. Unsupported capabilities and compatibility gaps
+## 4. Invalid structures and unsupported capabilities
 
 The following examples are **negative cases**, not supported policies. Each is a
-mutation of the complete Core fixture and must fail at `validate` with
-`E_UNSUPPORTED_CAPABILITY` in the
+mutation of the complete Core fixture and must fail at `validate` with the code declared in the
 [conformance manifest](../../tests/conformance/cdl_core/manifest.yaml).
 
 <!-- cdl-example: pipeline_guard_rejected -->
-`N07_pipeline_guard`: Pipeline `when` is outside Core; choose the entry through Registry conditions.
+`N07_pipeline_guard`: malformed Pipeline `when: []` is rejected as `E_INVALID_STRUCTURE`; valid conditions are supported.
 
 <!-- cdl-example: step_guard_rejected -->
-`N07_step_guard`: `step.when` is outside Core. The compatibility compiler currently
-ignores this guard; it does not skip the step when the condition is false.
+`N07_step_guard`: malformed step `when: []` is rejected as `E_INVALID_STRUCTURE`; valid guards skip execution when false.
 
 <!-- cdl-example: subpipeline_rejected -->
-`N07_subpipeline`: sub-Pipeline calls are outside Core. The compatibility compiler
-only marks the step and jumps; it does not perform a subcall.
+`N07_subpipeline`: changing only the type while retaining `ruleset` fields is rejected as `E_INVALID_STRUCTURE`; a correctly declared `pipeline` target is supported.
 
 <!-- cdl-example: api_params_rejected -->
 `N08_api_params`: API steps, including `params`, `on_error` and fallback, are outside
-Core. The compatibility compiler currently drops step parameters/error policy and
-emits an empty parameter map without a step fallback.
+Core. The compatibility compiler also rejects unsupported parameters and error policies.
 
 <!-- cdl-example: api_any_rejected -->
-`N08_api_any`: API `any` is outside Core. The compatibility compiler selects only
-the first target; no complete combination/fallback semantics are certified.
+`N08_api_any`: API `any` is outside Core. The compatibility compiler also rejects this combination.
 
 <!-- cdl-example: api_all_rejected -->
-`N08_api_all`: API `all` and `min_success` are outside Core. The compatibility compiler
-selects only the first target and does not enforce the declared success threshold.
+`N08_api_all`: API `all` and `min_success` are outside Core. The compatibility compiler also rejects this combination.
 
 <!-- cdl-example: service_endpoint_rejected -->
 `N08_service_endpoint`: Service steps are outside Core. The historical `endpoint`
 spelling is also absent from the compatibility step field whitelist.
 
-Single Rule steps, metadata, rule parameters, inheritance, dynamic Feature/List
+Metadata, rule parameters, inheritance, dynamic Feature/List
 access and structured actions remain outside this Core profile. Their presence in
 an AST or in compatibility documentation is not execution evidence.
 

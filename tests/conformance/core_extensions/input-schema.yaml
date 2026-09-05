@@ -1,0 +1,28 @@
+{
+  "name": "event",
+  "fields": {
+    "enabled": {
+      "name": "enabled",
+      "field_type": "boolean",
+      "required": true
+    },
+    "payment": {
+      "name": "payment",
+      "required": false,
+      "field_type": {
+        "object": {
+          "schema": {
+            "name": "payment",
+            "fields": {
+              "amount": {
+                "name": "amount",
+                "field_type": "number",
+                "required": false
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

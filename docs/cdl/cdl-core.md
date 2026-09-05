@@ -1,7 +1,7 @@
-# CDL Core Risk — first executable increment
+# CDL Core Risk — executable profile
 
 Status: **experimental profile `cdl-core-risk-draft-1`**, language version `"0.1"`.
-This is the first bounded implementation of [phase 0](../DSL_EVOLUTION_RECOMMENDATIONS.md#阶段-0公共契约cdl-core-与一致性门禁), not completion of phase 0 or a production certification.
+This is a bounded implementation of [phase 0](../DSL_EVOLUTION_RECOMMENDATIONS.md#阶段-0公共契约cdl-core-与一致性门禁), not completion of phase 0 or a production certification.
 
 The contract applies to `DecisionEngine::from_core` and the shared `compile_core`
 gate used by the offline [`corint validate` CLI](cli.md).
@@ -13,6 +13,8 @@ for startup/reload and derives its runtime snapshot solely from the published re
 Existing compatibility builders, server loading, validators and LLM generators
 remain compatibility entry points. Merely
 writing `version: "0.1"` does not opt a legacy entry point into this contract.
+
+The [Runtime extensions](runtime-extensions.md) add synchronous Rule/sub-Pipeline calls, guards, optional closed objects, `exists`, checked arithmetic and structured execution errors.
 
 ## 1. Public artifacts and entry points
 
@@ -65,7 +67,7 @@ Pipeline. `end` is reserved as the terminal target. Whitespace-only names are in
 |---|---|---|
 | Rule | Required `id`, `name`, `when`, `score`; optional description. Score is an i32 integer. Add it once iff the rule matches. | C01, N01, N03, N09 |
 | Ruleset | Required `id`, nonempty unique ordered `rules`, `conclusion`; optional name/description. Only `when` or `default`, and `signal`, are accepted in a conclusion row. | C03, N04, N05 |
-| Pipeline | Required `id`, `name`, `entry`, nonempty `steps`, `decision`; optional description. Keep existing `- step: {id, name, type, ...}` wrappers. | C04, C06, C07, N03, N05 |
+| Pipeline | Required `id`, `name`, `entry`, nonempty `steps`, `decision`; optional description and `when`. Keep existing `- step: {id, name, type, ...}` wrappers. | C04, C06, C07, N03, N05 |
 | Ruleset step | Required `ruleset`, explicit `next` including `next: end`. At most one call site per ruleset per Pipeline in this increment. | C06, C07, N05 |
 | Router step | Nonempty ordered `routes` of `{when, next}` and explicit `default` target; no simultaneous `next`. First matching route wins. | C06, C07 |
 | Registry | Ordered `{pipeline, when}` entries. First match wins. Explicit `when: "true"` can provide a fallback. No match returns `E_NO_PIPELINE_MATCH`, not approval. | C05 |
@@ -89,7 +91,7 @@ Accepted forms: string expressions, nonempty `all`/`any`, and `not` with exactly
 one item (the existing one-element sequence spelling). Nested groups are allowed.
 Expressions support scalar literals, declared fields, comparisons, boolean
 `&& / || / !`, unary numeric negation and parentheses. No coercion, arbitrary
-functions, arithmetic binary operators, templates or implicit feature access.
+functions, templates or implicit feature access. Numeric `+ - * / %` and `exists(event.path)` are supported.
 `Ruleset.conclusion.when` remains string-only in this increment; use `&& / || / !`
 there. Group objects are accepted in the other condition positions defined by the schema.
 
@@ -100,22 +102,23 @@ The VM fault-injection test for short-circuiting intentionally bypasses input
 validation; this does not make malformed inputs valid at the public engine entry.
 
 Input schema uses the existing model `Schema`/`SchemaField` types. This increment
-accepts only flat, required, non-null `number / string / boolean` fields without
-defaults. Inputs must contain exactly the declared fields; nonfinite numbers are
+accepts non-null `number / string / boolean` fields and closed nested objects, with explicit required/optional fields and no defaults. Inputs may omit optional fields; undeclared fields and nonfinite numbers are
 invalid. Numbers use the existing IEEE-754 binary64 representation, not decimal
 money arithmetic. Business field units must be supplied by the caller; a full
-versioned BusinessContext contract is still pending.
+versioned BusinessContext contract is described in [public contracts](../contracts/README.md).
 
 Allowed references:
 
-- `event.<declared_field>` in all condition scopes;
-- `total_score` in Ruleset conclusion only, referring to that Ruleset's local score;
+- `event.<declared_path>` and `exists(event.<declared_path>)` in all condition scopes;
+- `total_score` in Ruleset conclusion, step guard, Router and Pipeline decision, referring to the current resource's accumulated local score;
 - `results.<ruleset_id>.score / total_score / signal` in Router and Pipeline
   decision only, and only after that result is available on **every incoming path**.
   The existing parser also recognizes the singular `result.<ruleset_id>` alias;
   new examples use `results`. Implicit last-result references are rejected.
 
-Unknown fields/namespaces and reads of a conditionally executed result fail at
+Guarded calls additionally expose `status`; skipped calls have no score or signal. Single Rules expose `matched` instead of signal. See [Runtime extensions](runtime-extensions.md) for result scoping and safe reads.
+
+Unknown fields/namespaces and reads of a result absent on some incoming paths fail at
 compile time. All nodes must be reachable; cycles, missing targets, duplicate IDs
 and unresolved dependencies fail. Node ordering in YAML never determines execution.
 
@@ -123,8 +126,7 @@ and unresolved dependencies fail. Node ordering in YAML never determines executi
 
 `CallRuleset` executes its ordered rules and conclusion **before returning** to
 the Pipeline. Local scores start at zero for each Ruleset; completed result objects
-remain visible to subsequent routing. The response score is the sum of executed
-Rulesets' local scores. A rule shared by two different Rulesets contributes once
+remain visible to subsequent routing. The response score sums each direct Rule/Ruleset/sub-Pipeline call exactly once. A rule shared by two different Rulesets contributes once
 per invocation, not once globally. Every accumulation checks i32 overflow and
 returns `E_SCORE_OVERFLOW` rather than wrapping or panicking.
 
@@ -202,8 +204,7 @@ file imports (C08) into this profile's frozen closure. This execution profile an
 strict generator response contract still reject unresolved imports; no runtime
 filesystem access is enabled. Portable import provenance/locking remains pending.
 
-Still pending: optional or nested input types, complete
-C02 raw operand traces, full source spans, all legacy example/prompt mappings,
+Still pending: complete C02 raw operand traces, full source spans, all legacy example/prompt mappings,
 live-provider/Work generator integration, production publication enforcement, complete cross-product
 Feature/Model/full PolicyPackage/report/feedback contracts, and W01–W10 product-level
 interoperability. The local validate/test/source-build workflow covers part of W01;

@@ -72,7 +72,7 @@ fn cli_capability_and_input_artifacts_are_in_sync() {
         false
     );
     assert_eq!(
-        public_schema["definitions"]["field"]["properties"]["field_type"]["enum"],
+        public_schema["definitions"]["field"]["properties"]["field_type"]["oneOf"][0]["enum"],
         json!(["number", "string", "boolean"])
     );
 }
@@ -218,9 +218,8 @@ fn input_schema_rejects_typos_duplicates_and_unsupported_semantics() {
         ("name: event\nfields: {amount: {name: amount, field_type: number}}", "E_MISSING_FIELD", "validate"),
         ("name: event\nfields: {amount: {name: amount, field_type: number, required: 'true'}}", "E_INVALID_STRUCTURE", "validate"),
         ("name: event\nfields: {amount: {name: amount, field_type: any, required: true}}", "E_INVALID_STRUCTURE", "validate"),
-        ("name: event\nfields: {amount: {name: amount, field_type: number, required: false}}", "E_UNSUPPORTED_CAPABILITY", "type"),
-        ("name: event\nfields: {amount: {name: other, field_type: number, required: true}}", "E_UNSUPPORTED_CAPABILITY", "type"),
-        ("name: event\nfields: {amount: {name: amount, field_type: number, required: true, default: '0'}}", "E_UNSUPPORTED_CAPABILITY", "type"),
+        ("name: event\nfields: {amount: {name: other, field_type: number, required: true}}", "E_INPUT_SCHEMA", "type"),
+        ("name: event\nfields: {amount: {name: amount, field_type: number, required: true, default: '0'}}", "E_INPUT_SCHEMA", "type"),
     ];
     let dir = setup(FILES);
     for (yaml, code, stage) in invalid {

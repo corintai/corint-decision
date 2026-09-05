@@ -38,9 +38,9 @@ Corint 解决方案包含两个产品：**Corint Work** 是 Agentic Risk Operati
 |---|---|---|---|
 | 版本校验 | 拒绝未知、缺失和非字符串版本 | `parse_with_imports` 仍保留读取/默认版本语义，不能作为严格发布门禁 | `N02_unknown_version` / `N02_missing_version` / `N02_numeric_version` |
 | 未知条件字段 | 未知字段、重复键及错误结构在执行前拒绝 | Rule / Pipeline parser 已拒绝未知键、混合条件表示及错误字段类型 | `N01_unknown_condition` / `N01_unknown_field` / `N01_duplicate_key` |
-| Step guard | 明确拒绝 `step.when`，不是已支持的 guard | 兼容编译器也在可达性筛选前拒绝，包括不可达节点；已删除空操作 | N07_step_guard |
+| Step guard | 已实现短路条件与显式 skipped；调用走 next、router 走 default | 兼容编译器仍在可达性筛选前拒绝，包括不可达节点；已删除空操作 | core_zero_score_match_and_guarded_router_do_not_fall_through；N07_step_guard |
 | API 调用 | Connector 整体拒绝，包括参数、失败策略和组合调用 | 兼容编译器明确拒绝 `params / on_error / min_success / any / all`；解析器拒绝歧义目标和错误类型 | `N08_api_params` / `N08_api_any` / `N08_api_all` |
-| 子 Pipeline | 明确拒绝子调用节点 | 兼容编译器明确拒绝子调用、function、单 rule、trigger、Service 和未知步骤 | N07_subpipeline |
+| 子 Pipeline | 已实现同步调用、局部结果隔离、单次分数汇总和有界调用图 | 兼容编译器明确拒绝子调用、function、单 rule、trigger、Service 和未知步骤 | core_calls_guards_and_nested_optional_inputs_share_the_vm；N07_subpipeline |
 | Service 字段 | Service 节点及历史 `endpoint` 写法均拒绝 | `endpoint` 不在兼容 step 字段白名单，参考示例不代表可执行支持 | N08_service_endpoint |
 | 默认与必填 | Registry 必须显式 `when`；Pipeline 必须 `decision`；conclusion/decision 唯一末尾 default | 兼容 parser 的默认/必填行为仍需单独迁移；文档中省略 Registry `when` 的兜底例已更正 | N03/N04；malformed_defaults_and_ids_are_rejected；input_errors_and_registry_no_match_are_not_approval |
 | 调用执行时序 | Core `CallRuleset` 同步完成求值，后续 router 能看到真实结果 | 兼容编译器明确拒绝依赖规则集结果的 router，需使用严格 Core；其最终 decision 仍使用兼容后处理 | result_dependent_router；node_order_does_not_change_control_flow |
@@ -109,6 +109,12 @@ Corint 解决方案包含两个产品：**Corint Work** 是 Agentic Risk Operati
 后续仍待推进：Work/完整 PolicyPackage、在线 Feature/Model 与真实业务评估、企业身份联合和多租户、
 多节点发布、严格 Core 的 gRPC/FFI 适配、日志归档与高吞吐消费者。上述能力不因本轮局部验收升级为 supported。
 已有数据库/API repo 的逐资源接口不会自动获得新协议保证，需发布方迁移到完整 publication.json 消费协议。
+
+### 1.6 统一 Runtime 与表达式扩展
+
+**已完成（严格 Core 共享执行路径）**：单 Rule、子 Pipeline、Pipeline/step guard、嵌套/可选输入、`exists`、数值算术和结构化错误。Rule/Ruleset/Pipeline 由同一个 Runtime 执行器同步求值；父子局部结果隔离，分数只汇总一次，子 actions 不隐式进入最终输出。
+
+验收与边界见 [Runtime 扩展](cdl/runtime-extensions.md)：Trace 开/关的真实引擎测试、循环/深度/展开预算门禁、缺失输入/除零/溢出诊断，以及公开 CLI 候选 repo 验收。能力清单只升级这些已验收能力；兼容入口、Connector、在线资源和完整跨协议扩展仍需分别推进。
 
 ## 2. 目标架构与产品边界
 
@@ -199,7 +205,7 @@ Runtime 应持有只读的 `ProgramRegistry`，并原生支持：
 CallRule → CallRuleset → CallPipeline → CallConnector
 ```
 
-Pipeline 的 `CallRuleset` 必须具有实际调用语义：返回时规则集结果已可供后续节点读取，不能仅向上下文写入约定名称，再在整个 Pipeline 扫描完毕后补执行。当前这部分装配位于上层 DecisionEngine，需要与 Runtime 一起收敛。SDK 的职责应限于装配、请求入口、版本切换、结果封装和观测；它不应重演 Runtime 的控制流。
+Pipeline 的 `CallRuleset` 必须具有实际调用语义：返回时规则集结果已可供后续节点读取，不能仅向上下文写入约定名称，再在整个 Pipeline 扫描完毕后补执行。严格 Core 已将 Rule/Ruleset/Pipeline 同步调用下沉 Runtime；兼容路径的历史后处理仍需独立迁移。SDK 的职责应限于装配、请求入口、版本切换、结果封装和观测；它不应重演 Runtime 的控制流。
 
 这样可以让以下行为拥有唯一语义：
 
@@ -628,7 +634,7 @@ Decision Worker 应尽量无状态：规则包和版本来自受控分发，持�
 
 Core 草案要求非 router 节点显式声明 `next`（包括 `next: end`）；router 必须有明确的 routes 和 default。旧写法中省略 `next` 的含义必须先在兼容入口归一化并验证，不能依赖 YAML 中步骤排列顺序来推断后继。
 
-Pipeline / step guard、单 Rule 节点、子 Pipeline、Connector、动态 Feature / List、结构化 action 等暂不进入首期支持集。它们的既有实现不因此被删除，但在严格 Core 中必须拒绝；具备完整契约与测试后，再以能力扩展纳入。若 `ruleset / router` 等候选项仍不满足执行时序，也不能仅因列在表中而标为支持。
+Pipeline / step guard、单 Rule 节点、子 Pipeline 与嵌套/可选输入已作为后续增量通过严格 Core 验收，见 §1.6。Connector、动态 Feature / List、结构化 action 等仍未进入支持集。它们的既有实现不因此被删除，但在严格 Core 中必须拒绝；具备完整契约与测试后，再以能力扩展纳入。若 `ruleset / router` 等候选项仍不满足执行时序，也不能仅因列在表中而标为支持。
 
 Feature / Model 的资源描述和就绪性契约在首期设计，不代表首期 Core 接受相应运行时调用。包与上下文 schema 可以描述未来依赖，发布检查仍必须拒绝目标环境不支持的执行能力。
 
@@ -759,7 +765,7 @@ runs:
 | N04 | default 缺失、重复、非末尾，空条件组、多组键、多条件 `not` | 拒绝含糊结构；`E_INVALID_STRUCTURE` |
 | N05 | 重复 ID、未解析引用、越界 import、循环引用或 DAG 环 | 加载/编译失败；`E_DUPLICATE_ID / E_UNRESOLVED_REF / E_INVALID_GRAPH / E_INVALID_IMPORT` |
 | N06 | 读取未执行分支结果、非法命名空间、写只读输入 | 编译或权限校验失败；`E_INVALID_REF / E_FORBIDDEN_WRITE` |
-| N07 | `step.when`、子 Pipeline、单 Rule 等未启用节点能力 | 严格 Core 拒绝；`E_UNSUPPORTED_CAPABILITY`，不得编译为空操作 |
+| N07 | guard 错误结构、调用 type/字段不匹配 | 严格 Core 拒绝；`E_INVALID_STRUCTURE`。正确 guard/单 Rule/子调用已由 §1.6 正反例验收 |
 | N08 | API `params / on_error / any / all` 与 Service endpoint | 首期 Core 拒绝 Connector；扩展启用后必须分别验证参数、fallback、调用次数和输出，不能只删除反例 |
 | N09 | 必填输入缺失、错误类型、未经保护的可空值、数值越界 | 输入/类型检查或受控执行错误，不静默转为 false 或放行 |
 | G01 | LLM 生成合法 YAML，但遗漏 `name` 或生成旧 Ruleset 字段 | 复用同一校验入口失败；不得以 YAML 合法或前缀正确判定可发布 |

@@ -438,12 +438,28 @@ pub enum CoreSkipReason {
     NotReached,
 }
 
+/// A completed or guarded resource call. Nested actions remain local intents.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CoreCallTrace {
+    pub source: String,
+    pub resource_type: String,
+    pub resource_id: String,
+    pub call_path: Vec<String>,
+    pub status: String,
+    pub score: Option<i32>,
+    pub signal: Option<String>,
+    pub actions: Vec<String>,
+}
+
 /// Complete execution trace for a decision request
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ExecutionTrace {
     /// Opt-in Core observation v1; absent on compatibility traces.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub core_conditions_v1: Option<Vec<CoreConditionTrace>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub core_calls_v1: Option<Vec<CoreCallTrace>>,
     /// Pipeline execution trace
     #[serde(skip_serializing_if = "Option::is_none")]
     pub pipeline: Option<PipelineTrace>,
@@ -466,6 +482,7 @@ impl ExecutionTrace {
     pub fn new() -> Self {
         Self {
             core_conditions_v1: None,
+            core_calls_v1: None,
             pipeline: None,
             total_time_ms: 0,
             rules_evaluated: 0,

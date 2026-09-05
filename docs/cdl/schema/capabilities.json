@@ -14,8 +14,13 @@
     "field": "trace.core_conditions_v1",
     "schema": "condition-trace.json",
     "raw_operand_values": false,
-    "cases": ["condition_trace_short_circuit"],
-    "tests": ["boolean_forms_share_short_circuit_execution", "condition_trace_covers_scopes_skips_and_shared_rule_invocations"]
+    "cases": [
+      "condition_trace_short_circuit"
+    ],
+    "tests": [
+      "boolean_forms_share_short_circuit_execution",
+      "condition_trace_covers_scopes_skips_and_shared_rule_invocations"
+    ]
   },
   "example_registry": "../examples.json",
   "tools": {
@@ -53,7 +58,9 @@
       "command": "corint resolve --source-profile cdl-core-import-draft-1 --root DIR --input-schema LABEL --output PATH ENTRY...",
       "entry_point": "corint-decision-toolchain::resolve",
       "scope": "authoring_import_resolution",
-      "cases": ["C08"],
+      "cases": [
+        "C08"
+      ],
       "execution_checked": false,
       "runtime_filesystem_access": false,
       "publication_approval": "not_granted",
@@ -64,10 +71,18 @@
       "entry_point": "CORINT_CORE_CONFIG",
       "scope": "local_repository_reload",
       "config_version": "3",
-      "supported_config_versions": ["2", "3"],
+      "supported_config_versions": [
+        "2",
+        "3"
+      ],
       "durable_audit_required_in_v3": true,
       "source_of_truth": "repository",
-      "repository_backends": ["filesystem", "sqlite", "postgres", "http"],
+      "repository_backends": [
+        "filesystem",
+        "sqlite",
+        "postgres",
+        "http"
+      ],
       "non_file_protocol": "atomic_publication_document_v1",
       "business_evidence_gate": "operator_attestation_with_expiry_and_revocation",
       "feedback_transport": "authenticated_http",
@@ -93,7 +108,10 @@
     },
     "source_exchange_cli": {
       "status": "experimental",
-      "commands": ["corint export", "corint import"],
+      "commands": [
+        "corint export",
+        "corint import"
+      ],
       "entry_point": "corint-decision-toolchain::transfer",
       "scope": "editable_source_exchange_and_fresh_local_evidence",
       "historical_evidence_transferred": false,
@@ -116,15 +134,24 @@
       "command": "corint test --input-schema PATH --cases PATH --format json FILE...",
       "entry_point": "DecisionEngine::from_core",
       "scope": "declared_examples_only",
-      "trace_modes": [false, true],
+      "trace_modes": [
+        false,
+        true
+      ],
       "business_evaluation": "not_performed",
       "evidence": "../../../crates/corint-decision-cli/tests/behavior.rs"
     },
     "core_generator": {
       "status": "experimental",
       "feature": "corint-decision-llm/core-generation",
-      "entry_points": ["CoreGenerator::generate", "CoreGenerator::revise"],
-      "targeted_entry_points": ["CoreGenerator::generate_for_target", "CoreGenerator::revise_for_target"],
+      "entry_points": [
+        "CoreGenerator::generate",
+        "CoreGenerator::revise"
+      ],
+      "targeted_entry_points": [
+        "CoreGenerator::generate_for_target",
+        "CoreGenerator::revise_for_target"
+      ],
       "shared_toolchain": "corint-decision-toolchain",
       "scope": "complete_closure_and_caller_owned_examples",
       "acceptance_cases_sent_to_model": false,
@@ -135,7 +162,10 @@
     },
     "source_package_cli": {
       "status": "experimental",
-      "commands": ["corint build", "corint verify"],
+      "commands": [
+        "corint build",
+        "corint verify"
+      ],
       "entry_point": "DecisionEngine::from_core",
       "scope": "source_snapshot_and_fresh_example_evidence",
       "authenticity": "unsigned",
@@ -146,16 +176,155 @@
   },
   "evidence_scope": "Only the named increment-1 fixtures and tests; not full phase-0 certification",
   "capabilities": [
-    {"id": "rule.score", "status": "supported", "cases": ["payment_boundaries"], "tests": []},
-    {"id": "ruleset.local_score_and_first_match", "status": "supported", "cases": ["payment_boundaries", "result_dependent_router"], "tests": []},
-    {"id": "pipeline.first_match_and_action_intents", "status": "supported", "cases": ["payment_boundaries"], "tests": []},
-    {"id": "pipeline.synchronous_ruleset_router", "status": "supported", "cases": ["result_dependent_router"], "tests": ["node_order_does_not_change_control_flow", "graph_and_reference_guards"]},
-    {"id": "registry.first_match", "status": "supported", "cases": ["payment_boundaries"], "tests": ["input_errors_and_registry_no_match_are_not_approval"]},
-    {"id": "expressions.pure_boolean", "status": "supported", "cases": [], "tests": ["boolean_forms_share_short_circuit_execution", "boolean_conditions_work_across_public_scopes"]},
-    {"id": "strict.version_shape_references", "status": "supported", "cases": [], "tests": ["manifest_invalid_documents_fail_at_expected_stage", "graph_and_reference_guards", "imports_and_legacy_generator_shapes_are_not_silently_accepted"]},
-    {"id": "input.required_flat_scalars", "status": "supported", "cases": [], "tests": ["input_errors_and_registry_no_match_are_not_approval"]},
-    {"id": "score.checked_accumulation", "status": "supported", "cases": [], "tests": ["score_overflow_is_a_controlled_error"]}
+    {
+      "id": "rule.score",
+      "status": "supported",
+      "cases": [
+        "payment_boundaries"
+      ],
+      "tests": []
+    },
+    {
+      "id": "ruleset.local_score_and_first_match",
+      "status": "supported",
+      "cases": [
+        "payment_boundaries",
+        "result_dependent_router"
+      ],
+      "tests": []
+    },
+    {
+      "id": "pipeline.first_match_and_action_intents",
+      "status": "supported",
+      "cases": [
+        "payment_boundaries"
+      ],
+      "tests": []
+    },
+    {
+      "id": "pipeline.synchronous_ruleset_router",
+      "status": "supported",
+      "cases": [
+        "result_dependent_router"
+      ],
+      "tests": [
+        "node_order_does_not_change_control_flow",
+        "graph_and_reference_guards"
+      ]
+    },
+    {
+      "id": "registry.first_match",
+      "status": "supported",
+      "cases": [
+        "payment_boundaries"
+      ],
+      "tests": [
+        "input_errors_and_registry_no_match_are_not_approval"
+      ]
+    },
+    {
+      "id": "expressions.pure_boolean",
+      "status": "supported",
+      "cases": [],
+      "tests": [
+        "boolean_forms_share_short_circuit_execution",
+        "boolean_conditions_work_across_public_scopes"
+      ]
+    },
+    {
+      "id": "strict.version_shape_references",
+      "status": "supported",
+      "cases": [],
+      "tests": [
+        "manifest_invalid_documents_fail_at_expected_stage",
+        "graph_and_reference_guards",
+        "imports_and_legacy_generator_shapes_are_not_silently_accepted"
+      ]
+    },
+    {
+      "id": "input.required_flat_scalars",
+      "status": "supported",
+      "cases": [],
+      "tests": [
+        "input_errors_and_registry_no_match_are_not_approval"
+      ]
+    },
+    {
+      "id": "score.checked_accumulation",
+      "status": "supported",
+      "cases": [],
+      "tests": [
+        "score_overflow_is_a_controlled_error"
+      ]
+    },
+    {
+      "id": "pipeline.synchronous_rule_and_subpipeline",
+      "status": "supported",
+      "cases": [],
+      "tests": [
+        "core_calls_guards_and_nested_optional_inputs_share_the_vm"
+      ]
+    },
+    {
+      "id": "pipeline.guards_and_scoped_results",
+      "status": "supported",
+      "cases": [],
+      "tests": [
+        "core_zero_score_match_and_guarded_router_do_not_fall_through"
+      ]
+    },
+    {
+      "id": "input.optional_closed_objects",
+      "status": "supported",
+      "cases": [],
+      "tests": [
+        "core_calls_guards_and_nested_optional_inputs_share_the_vm"
+      ]
+    },
+    {
+      "id": "expressions.exists_and_checked_arithmetic",
+      "status": "supported",
+      "cases": [],
+      "tests": [
+        "core_extension_errors_are_structured_and_trace_invariant"
+      ]
+    },
+    {
+      "id": "runtime.bounded_calls_and_structured_errors",
+      "status": "supported",
+      "cases": [],
+      "tests": [
+        "core_call_graph_and_expression_extensions_fail_closed"
+      ]
+    }
   ],
-  "not_enabled": ["import", "pipeline_guard", "step_guard", "single_rule_step", "subpipeline", "connector", "dynamic_feature", "list", "model", "rule_parameters", "ruleset_inheritance", "structured_action", "optional_or_nested_input"],
-  "pending": ["import_dependency_version_ranges", "full_operand_trace", "production_package_distribution_and_activation", "live_provider_and_Work_generator_integration", "publication_gate", "complete_cross_product_contracts", "full_W01_W10"]
+  "not_enabled": [
+    "import",
+    "connector",
+    "dynamic_feature",
+    "list",
+    "model",
+    "rule_parameters",
+    "ruleset_inheritance",
+    "structured_action"
+  ],
+  "pending": [
+    "import_dependency_version_ranges",
+    "full_operand_trace",
+    "production_package_distribution_and_activation",
+    "live_provider_and_Work_generator_integration",
+    "publication_gate",
+    "complete_cross_product_contracts",
+    "full_W01_W10"
+  ],
+  "call_trace": {
+    "status": "experimental",
+    "field": "trace.core_calls_v1",
+    "schema": "call-trace.json",
+    "tests": [
+      "core_calls_guards_and_nested_optional_inputs_share_the_vm"
+    ],
+    "order": "completion",
+    "actions": "local_intents_not_executed"
+  }
 }

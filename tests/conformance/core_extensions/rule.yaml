@@ -1,0 +1,9 @@
+{
+  "version": "0.1",
+  "rule": {
+    "id": "large_amount",
+    "name": "Amount",
+    "when": "exists(event.payment.amount) && event.payment.amount / 2 > 500",
+    "score": 60
+  }
+}

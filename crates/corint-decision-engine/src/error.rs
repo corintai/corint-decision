@@ -30,11 +30,7 @@ pub enum EngineError {
 
     /// Runtime error.
     #[error("Runtime error: {0}")]
-    RuntimeError(
-        #[from]
-        #[source]
-        corint_decision_runtime::RuntimeError,
-    ),
+    RuntimeError(#[source] corint_decision_runtime::RuntimeError),
 
     /// I/O error.
     #[error("I/O error: {0}")]
@@ -55,6 +51,27 @@ pub enum EngineError {
     /// Generic engine error.
     #[error("Engine error: {0}")]
     GenericError(String),
+}
+
+impl From<corint_decision_runtime::RuntimeError> for EngineError {
+    fn from(error: corint_decision_runtime::RuntimeError) -> Self {
+        match error {
+            corint_decision_runtime::RuntimeError::CoreExecution {
+                code,
+                source_file,
+                resource_id,
+                field_path,
+                message,
+            } => Self::Core(corint_decision_compiler::core::diagnostic(
+                &source_file,
+                &field_path,
+                "execute",
+                &code,
+                format!("{resource_id}: {message}"),
+            )),
+            other => Self::RuntimeError(other),
+        }
+    }
 }
 
 /// Result type for decision-engine operations.

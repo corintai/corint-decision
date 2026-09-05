@@ -184,21 +184,21 @@ invalid:
   - id: N07_step_guard
     document: pipeline.yaml
     find: 'next: end'
-    replace: "when: 'false'\n        next: end"
+    replace: "when: []\n        next: end"
     stage: validate
-    code: E_UNSUPPORTED_CAPABILITY
+    code: E_INVALID_STRUCTURE
   - id: N07_subpipeline
     document: pipeline.yaml
     find: 'type: ruleset'
     replace: 'type: pipeline'
     stage: validate
-    code: E_UNSUPPORTED_CAPABILITY
+    code: E_INVALID_STRUCTURE
   - id: N07_single_rule
     document: pipeline.yaml
     find: 'type: ruleset'
     replace: 'type: rule'
     stage: validate
-    code: E_UNSUPPORTED_CAPABILITY
+    code: E_INVALID_STRUCTURE
   - id: N08_api
     document: pipeline.yaml
     find: 'type: ruleset'
@@ -226,9 +226,9 @@ invalid:
   - id: N07_pipeline_guard
     document: pipeline.yaml
     find: "  entry: check"
-    replace: "  when: 'true'\n  entry: check"
+    replace: "  when: []\n  entry: check"
     stage: validate
-    code: E_UNSUPPORTED_CAPABILITY
+    code: E_INVALID_STRUCTURE
   - id: N08_api_params
     document: pipeline.yaml
     find: "        type: ruleset\n        ruleset: risk"

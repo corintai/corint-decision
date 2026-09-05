@@ -32,6 +32,19 @@ pub enum Instruction {
         field: String,
     },
 
+    /// Test a declared event path without reading a missing optional value.
+    FieldExists { path: Vec<String> },
+    /// Synchronous strict Core call with a local result scope.
+    CallResource {
+        resource_type: String,
+        resource_id: String,
+    },
+    /// Explicit guard skip; does not produce a score, signal or action.
+    SkipStep {
+        step_id: String,
+        resource_id: Option<String>,
+    },
+
     // ===== Operations =====
     /// Perform a binary operation (+ - * / etc.)
     BinaryOp {

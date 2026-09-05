@@ -1,0 +1,236 @@
+{
+  "version": "1",
+  "profile": "cdl-core-risk-draft-1",
+  "cases": [
+    {
+      "id": "above",
+      "input": {
+        "event": {
+          "enabled": true,
+          "payment": {
+            "amount": 1001
+          }
+        }
+      },
+      "expect": {
+        "pipeline_id": "parent",
+        "score": 67,
+        "signal": "review",
+        "actions": [
+          "parent_action"
+        ],
+        "triggered_rules": [
+          "marker",
+          "large_amount"
+        ],
+        "steps": [
+          "single",
+          "nested"
+        ],
+        "calls": [
+          {
+            "ruleset_id": null,
+            "rule_id": "marker",
+            "triggered": true,
+            "score": 7
+          },
+          {
+            "ruleset_id": "risk",
+            "rule_id": "large_amount",
+            "triggered": true,
+            "score": 60
+          }
+        ],
+        "local_results": {
+          "marker": {
+            "score": 7,
+            "matched": true
+          },
+          "child": {
+            "score": 60,
+            "signal": "decline"
+          }
+        }
+      }
+    },
+    {
+      "id": "equal",
+      "input": {
+        "event": {
+          "enabled": true,
+          "payment": {
+            "amount": 1000
+          }
+        }
+      },
+      "expect": {
+        "pipeline_id": "parent",
+        "score": 0,
+        "signal": "pass",
+        "actions": [],
+        "triggered_rules": [],
+        "steps": [
+          "single",
+          "nested"
+        ],
+        "calls": [
+          {
+            "ruleset_id": null,
+            "rule_id": "marker",
+            "triggered": false,
+            "score": 0
+          },
+          {
+            "ruleset_id": "risk",
+            "rule_id": "large_amount",
+            "triggered": false,
+            "score": 0
+          }
+        ],
+        "local_results": {
+          "marker": {
+            "score": 0,
+            "matched": false
+          },
+          "child": {
+            "score": 0,
+            "signal": "pass"
+          }
+        }
+      }
+    },
+    {
+      "id": "optional_leaf",
+      "input": {
+        "event": {
+          "enabled": true,
+          "payment": {}
+        }
+      },
+      "expect": {
+        "pipeline_id": "parent",
+        "score": 0,
+        "signal": "pass",
+        "actions": [],
+        "triggered_rules": [],
+        "steps": [
+          "single",
+          "nested"
+        ],
+        "calls": [
+          {
+            "ruleset_id": null,
+            "rule_id": "marker",
+            "triggered": false,
+            "score": 0
+          },
+          {
+            "ruleset_id": "risk",
+            "rule_id": "large_amount",
+            "triggered": false,
+            "score": 0
+          }
+        ],
+        "local_results": {
+          "marker": {
+            "score": 0,
+            "matched": false
+          },
+          "child": {
+            "score": 0,
+            "signal": "pass"
+          }
+        }
+      }
+    },
+    {
+      "id": "optional_parent",
+      "input": {
+        "event": {
+          "enabled": true
+        }
+      },
+      "expect": {
+        "pipeline_id": "parent",
+        "score": 0,
+        "signal": "hold",
+        "actions": [],
+        "triggered_rules": [],
+        "steps": [
+          "single"
+        ],
+        "calls": [
+          {
+            "ruleset_id": null,
+            "rule_id": "marker",
+            "triggered": false,
+            "score": 0
+          }
+        ],
+        "local_results": {
+          "marker": {
+            "score": 0,
+            "matched": false
+          },
+          "child": {
+            "status": "skipped"
+          }
+        }
+      }
+    },
+    {
+      "id": "child_guard",
+      "input": {
+        "event": {
+          "enabled": false,
+          "payment": {
+            "amount": 1001
+          }
+        }
+      },
+      "expect": {
+        "pipeline_id": "parent",
+        "score": 7,
+        "signal": "hold",
+        "actions": [],
+        "triggered_rules": [
+          "marker"
+        ],
+        "steps": [
+          "single",
+          "nested"
+        ],
+        "calls": [
+          {
+            "ruleset_id": null,
+            "rule_id": "marker",
+            "triggered": true,
+            "score": 7
+          }
+        ],
+        "local_results": {
+          "marker": {
+            "score": 7,
+            "matched": true
+          },
+          "child": {
+            "status": "skipped"
+          }
+        }
+      }
+    },
+    {
+      "id": "null_is_not_missing",
+      "input": {
+        "event": {
+          "enabled": true,
+          "payment": null
+        }
+      },
+      "expect_error": {
+        "stage": "input",
+        "code": "E_INPUT_SCHEMA"
+      }
+    }
+  ]
+}

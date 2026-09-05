@@ -4,26 +4,112 @@
   "description": "Strict file representation of the existing model Schema, not a BusinessContext contract. Semantic constraints are also checked by the Core compiler.",
   "type": "object",
   "additionalProperties": false,
-  "required": ["name", "fields"],
+  "required": [
+    "name",
+    "fields"
+  ],
   "properties": {
-    "name": {"type": "string"},
-    "description": {"type": ["string", "null"]},
+    "name": {
+      "type": "string"
+    },
+    "description": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
     "fields": {
       "type": "object",
-      "additionalProperties": {"$ref": "#/definitions/field"}
+      "additionalProperties": {
+        "$ref": "#/definitions/field"
+      }
     }
   },
   "definitions": {
     "field": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["name", "field_type", "required"],
+      "required": [
+        "name",
+        "field_type",
+        "required"
+      ],
       "properties": {
-        "name": {"type": "string"},
-        "field_type": {"enum": ["number", "string", "boolean"]},
-        "required": {"type": "boolean"},
-        "description": {"type": ["string", "null"]},
-        "default": {"type": ["string", "null"]}
+        "name": {
+          "type": "string"
+        },
+        "field_type": {
+          "oneOf": [
+            {
+              "enum": [
+                "number",
+                "string",
+                "boolean"
+              ]
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "object"
+              ],
+              "properties": {
+                "object": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "schema"
+                  ],
+                  "properties": {
+                    "schema": {
+                      "$ref": "#/definitions/schema"
+                    }
+                  }
+                }
+              }
+            }
+          ]
+        },
+        "required": {
+          "type": "boolean"
+        },
+        "description": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "default": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "schema": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "fields"
+      ],
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "description": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "fields": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/definitions/field"
+          }
+        }
       }
     }
   }

@@ -30,14 +30,14 @@
     ]
   },
   "context": {
-    "id": "payment-context",
+    "id": "nested-payment-context",
     "revision": "1",
-    "sha256": "3f87d07b3dd76d625f12073d25c20b013409cf441741e64bee00d624ec2635bd"
+    "sha256": "523a4fcc5b4831fd489271ba153086fe465c778ae2feacf0dd566eb5ceae6e71"
   },
   "status": "ready",
   "actions": [
-    "BLOCK",
-    "REVIEW"
+    "child_only",
+    "parent_action"
   ],
   "max_sources": 100,
   "resources": []

@@ -1,0 +1,9 @@
+{
+  "version": "0.1",
+  "rule": {
+    "id": "marker",
+    "name": "Marker",
+    "when": "exists(event.payment.amount) && event.payment.amount > 1000",
+    "score": 7
+  }
+}

@@ -174,3 +174,43 @@ fn candidate_cannot_overwrite_or_follow_existing_symlink() {
     );
     assert!(!protected.join("published.json").exists());
 }
+
+#[test]
+fn extended_runtime_candidate_runs_public_cli_and_repo_loader() {
+    let dir = setup();
+    let fixtures =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/conformance/core_extensions");
+    for name in [
+        "rule.yaml",
+        "marker.yaml",
+        "ruleset.yaml",
+        "pipeline.yaml",
+        "child.yaml",
+        "registry.yaml",
+        "input-schema.yaml",
+    ] {
+        fs::copy(fixtures.join(name), dir.path().join("author").join(name)).unwrap();
+    }
+    fs::copy(
+        fixtures.join("behavior.yaml"),
+        dir.path().join("cases.yaml"),
+    )
+    .unwrap();
+    fs::copy(
+        fixtures.join("business-context.yaml"),
+        dir.path().join("context.yaml"),
+    )
+    .unwrap();
+    fs::copy(
+        fixtures.join("target-capabilities.json"),
+        dir.path().join("target.json"),
+    )
+    .unwrap();
+    let report = run(dir.path(), &["marker.yaml", "child.yaml"], 0);
+    assert_eq!(report["business_evaluation"], "not_performed");
+    let loaded = repository::load(&dir.path().join("candidate")).unwrap();
+    assert_eq!(
+        loaded.closure.receipt().policy_sha256,
+        report["candidate"]["policy_sha256"]
+    );
+}

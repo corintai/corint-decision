@@ -12,11 +12,54 @@ use std::collections::HashMap;
 
 /// Compile a single pipeline step
 pub(super) fn compile_step(step: &PipelineStep, ctx: &mut CompileContext) -> Result<()> {
-    validate_step(step)?;
+    if !ctx.strict_core {
+        validate_step(step)?;
+    }
+    if ctx.strict_core {
+        if let Some(when) = &step.when {
+            ctx.instructions.extend(compile_when_block(when)?);
+            let pos = ctx.instructions.len();
+            ctx.guard_positions.insert(step.id.clone(), pos);
+            ctx.instructions.push(Instruction::JumpIfTrue { offset: 3 });
+            let resource_id = match &step.details {
+                StepDetails::Ruleset { ruleset } => Some(ruleset.clone()),
+                StepDetails::Rule { rule } => Some(rule.clone()),
+                StepDetails::SubPipeline { pipeline_id } => Some(pipeline_id.clone()),
+                _ => None,
+            };
+            ctx.instructions.push(Instruction::SkipStep {
+                step_id: step.id.clone(),
+                resource_id,
+            });
+            ctx.add_pending_jump(
+                get_next_step_id(step)
+                    .or_else(|| step.default.clone())
+                    .unwrap_or_else(|| "end".into()),
+            );
+        }
+    }
     match step.step_type.as_str() {
         "router" => compile_router_step(step, ctx),
         "ruleset" => compile_ruleset_step(step, ctx),
         "api" => compile_api_step(step, ctx),
+        "rule" | "pipeline" if ctx.strict_core => {
+            let resource_id = match &step.details {
+                StepDetails::Rule { rule } => rule.clone(),
+                StepDetails::SubPipeline { pipeline_id } => pipeline_id.clone(),
+                _ => return Err(CompileError::InvalidExpression("Invalid Core call".into())),
+            };
+            ctx.instructions.push(Instruction::MarkStepExecuted {
+                step_id: step.id.clone(),
+                next_step_id: get_next_step_id(step),
+                route_index: None,
+                is_default_route: false,
+            });
+            ctx.instructions.push(Instruction::CallResource {
+                resource_type: step.step_type.clone(),
+                resource_id,
+            });
+            compile_next_jump(step, ctx)
+        }
         _ => Err(CompileError::UnsupportedFeature(format!(
             "step {}: {}",
             step.id, step.step_type

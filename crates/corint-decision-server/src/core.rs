@@ -529,6 +529,7 @@ async fn decide(
                 response.pipeline_id.clone(), response.result.triggered_rules.clone(),
                 if response.result.explanation.trim().is_empty() { vec![] } else { vec![response.result.explanation.clone()] },
                 response.result.actions.iter().enumerate().map(|(i,a)| json!({"action_id":format!("{id}:{i}"),"idempotency_key":format!("{}:{id}:{i}",journal.tenant_id),"type":a})).collect::<Vec<_>>(), None),
+            Err(corint_decision_engine::EngineError::Core(error)) => ("error".to_owned(), None, vec![], vec![], vec![], Some(error.diagnostic.code.as_str())),
             Err(_) => ("error".to_owned(), None, vec![], vec![], vec![], Some("E_CORE_DECISION")),
         };
         let record = json!({"kind":"corint-decision-record","contract_version":"1","id":id,"revision":"1",
@@ -552,10 +553,12 @@ async fn decide(
         Ok(response) => Ok(Json(
             json!({"snapshot":receipt(&active, &state.gate),"decision":response,"record":record}),
         )),
-        Err(_) => Err(ApiError {
+        Err(error) => Err(ApiError {
             status: StatusCode::UNPROCESSABLE_ENTITY,
             code: "E_CORE_DECISION".into(),
-            diagnostic: Some(json!({"record":record,"snapshot":receipt(&active,&state.gate)})),
+            diagnostic: Some(
+                json!({"record":record,"snapshot":receipt(&active,&state.gate),"cause":match error { corint_decision_engine::EngineError::Core(error) => Some(error.diagnostic), _ => None }}),
+            ),
         }),
     }
 }

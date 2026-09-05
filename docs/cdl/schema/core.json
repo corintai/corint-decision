@@ -3,100 +3,538 @@
   "title": "CDL Core Risk draft, increment 1",
   "type": "object",
   "additionalProperties": false,
-  "required": ["version"],
+  "required": [
+    "version"
+  ],
   "properties": {
-    "version": {"const": "0.1"},
-    "rule": {"$ref": "#/definitions/rule"},
-    "ruleset": {"$ref": "#/definitions/ruleset"},
-    "pipeline": {"$ref": "#/definitions/pipeline"},
-    "registry": {"type": "array", "minItems": 1, "items": {"$ref": "#/definitions/registryEntry"}}
+    "version": {
+      "const": "0.1"
+    },
+    "rule": {
+      "$ref": "#/definitions/rule"
+    },
+    "ruleset": {
+      "$ref": "#/definitions/ruleset"
+    },
+    "pipeline": {
+      "$ref": "#/definitions/pipeline"
+    },
+    "registry": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/definitions/registryEntry"
+      }
+    }
   },
   "oneOf": [
-    {"required": ["rule"]}, {"required": ["ruleset"]},
-    {"required": ["pipeline"]}, {"required": ["registry"]}
+    {
+      "required": [
+        "rule"
+      ]
+    },
+    {
+      "required": [
+        "ruleset"
+      ]
+    },
+    {
+      "required": [
+        "pipeline"
+      ]
+    },
+    {
+      "required": [
+        "registry"
+      ]
+    }
   ],
   "definitions": {
-    "id": {"type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]*$", "not": {"const": "end"}},
-    "text": {"type": "string", "pattern": "\\S"},
-    "target": {"type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"},
-    "signal": {"enum": ["approve", "decline", "review", "hold", "pass"]},
+    "id": {
+      "type": "string",
+      "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
+      "not": {
+        "const": "end"
+      }
+    },
+    "text": {
+      "type": "string",
+      "pattern": "\\S"
+    },
+    "target": {
+      "type": "string",
+      "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+    },
+    "signal": {
+      "enum": [
+        "approve",
+        "decline",
+        "review",
+        "hold",
+        "pass"
+      ]
+    },
     "condition": {
       "oneOf": [
-        {"$ref": "#/definitions/text"},
         {
-          "type": "object", "minProperties": 1, "maxProperties": 1,
+          "$ref": "#/definitions/text"
+        },
+        {
+          "type": "object",
+          "minProperties": 1,
+          "maxProperties": 1,
           "additionalProperties": false,
           "properties": {
-            "all": {"type": "array", "minItems": 1, "items": {"$ref": "#/definitions/condition"}},
-            "any": {"type": "array", "minItems": 1, "items": {"$ref": "#/definitions/condition"}},
-            "not": {"type": "array", "minItems": 1, "maxItems": 1, "items": {"$ref": "#/definitions/condition"}}
+            "all": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "$ref": "#/definitions/condition"
+              }
+            },
+            "any": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "$ref": "#/definitions/condition"
+              }
+            },
+            "not": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 1,
+              "items": {
+                "$ref": "#/definitions/condition"
+              }
+            }
           }
         }
       ]
     },
     "rule": {
-      "type": "object", "additionalProperties": false,
-      "required": ["id", "name", "when", "score"],
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "name",
+        "when",
+        "score"
+      ],
       "properties": {
-        "id": {"$ref": "#/definitions/id"}, "name": {"$ref": "#/definitions/text"},
-        "description": {"type": "string"}, "when": {"$ref": "#/definitions/condition"},
-        "score": {"type": "integer", "minimum": -2147483648, "maximum": 2147483647}
+        "id": {
+          "$ref": "#/definitions/id"
+        },
+        "name": {
+          "$ref": "#/definitions/text"
+        },
+        "description": {
+          "type": "string"
+        },
+        "when": {
+          "$ref": "#/definitions/condition"
+        },
+        "score": {
+          "type": "integer",
+          "minimum": -2147483648,
+          "maximum": 2147483647
+        }
       }
     },
     "conclusion": {
-      "type": "object", "additionalProperties": false, "required": ["signal"],
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "signal"
+      ],
       "properties": {
-        "when": {"$ref": "#/definitions/text"}, "default": {"const": true},
-        "signal": {"$ref": "#/definitions/signal"}
+        "when": {
+          "$ref": "#/definitions/text"
+        },
+        "default": {
+          "const": true
+        },
+        "signal": {
+          "$ref": "#/definitions/signal"
+        }
       },
-      "oneOf": [{"required": ["when"]}, {"required": ["default"]}]
+      "oneOf": [
+        {
+          "required": [
+            "when"
+          ]
+        },
+        {
+          "required": [
+            "default"
+          ]
+        }
+      ]
     },
     "ruleset": {
-      "type": "object", "additionalProperties": false, "required": ["id", "rules", "conclusion"],
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "rules",
+        "conclusion"
+      ],
       "properties": {
-        "id": {"$ref": "#/definitions/id"}, "name": {"$ref": "#/definitions/text"},
-        "description": {"type": "string"},
-        "rules": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"$ref": "#/definitions/id"}},
-        "conclusion": {"type": "array", "minItems": 1, "items": {"$ref": "#/definitions/conclusion"}}
+        "id": {
+          "$ref": "#/definitions/id"
+        },
+        "name": {
+          "$ref": "#/definitions/text"
+        },
+        "description": {
+          "type": "string"
+        },
+        "rules": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/definitions/id"
+          }
+        },
+        "conclusion": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/definitions/conclusion"
+          }
+        }
       }
     },
     "route": {
-      "type": "object", "additionalProperties": false, "required": ["when", "next"],
-      "properties": {"when": {"$ref": "#/definitions/condition"}, "next": {"$ref": "#/definitions/target"}}
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "when",
+        "next"
+      ],
+      "properties": {
+        "when": {
+          "$ref": "#/definitions/condition"
+        },
+        "next": {
+          "$ref": "#/definitions/target"
+        }
+      }
     },
     "step": {
-      "type": "object", "additionalProperties": false, "required": ["id", "name", "type"],
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "name",
+        "type"
+      ],
       "properties": {
-        "id": {"$ref": "#/definitions/id"}, "name": {"$ref": "#/definitions/text"},
-        "type": {"enum": ["ruleset", "router"]}, "ruleset": {"$ref": "#/definitions/id"},
-        "next": {"$ref": "#/definitions/target"}, "default": {"$ref": "#/definitions/target"},
-        "routes": {"type": "array", "minItems": 1, "items": {"$ref": "#/definitions/route"}}
+        "id": {
+          "$ref": "#/definitions/id"
+        },
+        "name": {
+          "$ref": "#/definitions/text"
+        },
+        "type": {
+          "enum": [
+            "ruleset",
+            "router",
+            "rule",
+            "pipeline"
+          ]
+        },
+        "ruleset": {
+          "$ref": "#/definitions/id"
+        },
+        "next": {
+          "$ref": "#/definitions/target"
+        },
+        "default": {
+          "$ref": "#/definitions/target"
+        },
+        "routes": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/definitions/route"
+          }
+        },
+        "rule": {
+          "$ref": "#/definitions/id"
+        },
+        "pipeline": {
+          "$ref": "#/definitions/id"
+        },
+        "when": {
+          "$ref": "#/definitions/condition"
+        }
       },
-      "if": {"properties": {"type": {"const": "ruleset"}}},
-      "then": {"required": ["ruleset", "next"], "not": {"anyOf": [{"required": ["routes"]}, {"required": ["default"]}]}},
-      "else": {"required": ["routes", "default"], "not": {"anyOf": [{"required": ["ruleset"]}, {"required": ["next"]}]}}
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "rule"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "rule",
+              "next"
+            ],
+            "not": {
+              "anyOf": [
+                {
+                  "required": [
+                    "ruleset"
+                  ]
+                },
+                {
+                  "required": [
+                    "pipeline"
+                  ]
+                },
+                {
+                  "required": [
+                    "routes"
+                  ]
+                },
+                {
+                  "required": [
+                    "default"
+                  ]
+                }
+              ]
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "ruleset"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "ruleset",
+              "next"
+            ],
+            "not": {
+              "anyOf": [
+                {
+                  "required": [
+                    "rule"
+                  ]
+                },
+                {
+                  "required": [
+                    "pipeline"
+                  ]
+                },
+                {
+                  "required": [
+                    "routes"
+                  ]
+                },
+                {
+                  "required": [
+                    "default"
+                  ]
+                }
+              ]
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "pipeline"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "pipeline",
+              "next"
+            ],
+            "not": {
+              "anyOf": [
+                {
+                  "required": [
+                    "rule"
+                  ]
+                },
+                {
+                  "required": [
+                    "ruleset"
+                  ]
+                },
+                {
+                  "required": [
+                    "routes"
+                  ]
+                },
+                {
+                  "required": [
+                    "default"
+                  ]
+                }
+              ]
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "router"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "routes",
+              "default"
+            ],
+            "not": {
+              "anyOf": [
+                {
+                  "required": [
+                    "rule"
+                  ]
+                },
+                {
+                  "required": [
+                    "ruleset"
+                  ]
+                },
+                {
+                  "required": [
+                    "pipeline"
+                  ]
+                },
+                {
+                  "required": [
+                    "next"
+                  ]
+                }
+              ]
+            }
+          }
+        }
+      ]
     },
     "decision": {
-      "type": "object", "additionalProperties": false, "required": ["result"],
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "result"
+      ],
       "properties": {
-        "when": {"$ref": "#/definitions/condition"}, "default": {"const": true},
-        "result": {"$ref": "#/definitions/signal"}, "reason": {"type": "string"},
-        "actions": {"type": "array", "uniqueItems": true, "items": {"$ref": "#/definitions/text"}}
+        "when": {
+          "$ref": "#/definitions/condition"
+        },
+        "default": {
+          "const": true
+        },
+        "result": {
+          "$ref": "#/definitions/signal"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "actions": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/definitions/text"
+          }
+        }
       },
-      "oneOf": [{"required": ["when"]}, {"required": ["default"]}]
+      "oneOf": [
+        {
+          "required": [
+            "when"
+          ]
+        },
+        {
+          "required": [
+            "default"
+          ]
+        }
+      ]
     },
     "pipeline": {
-      "type": "object", "additionalProperties": false, "required": ["id", "name", "entry", "steps", "decision"],
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "name",
+        "entry",
+        "steps",
+        "decision"
+      ],
       "properties": {
-        "id": {"$ref": "#/definitions/id"}, "name": {"$ref": "#/definitions/text"},
-        "description": {"type": "string"}, "entry": {"$ref": "#/definitions/id"},
-        "steps": {"type": "array", "minItems": 1, "items": {"type": "object", "additionalProperties": false, "required": ["step"], "properties": {"step": {"$ref": "#/definitions/step"}}}},
-        "decision": {"type": "array", "minItems": 1, "items": {"$ref": "#/definitions/decision"}}
+        "id": {
+          "$ref": "#/definitions/id"
+        },
+        "name": {
+          "$ref": "#/definitions/text"
+        },
+        "description": {
+          "type": "string"
+        },
+        "entry": {
+          "$ref": "#/definitions/id"
+        },
+        "steps": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "step"
+            ],
+            "properties": {
+              "step": {
+                "$ref": "#/definitions/step"
+              }
+            }
+          }
+        },
+        "decision": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/definitions/decision"
+          }
+        },
+        "when": {
+          "$ref": "#/definitions/condition"
+        }
       }
     },
     "registryEntry": {
-      "type": "object", "additionalProperties": false, "required": ["pipeline", "when"],
-      "properties": {"pipeline": {"$ref": "#/definitions/id"}, "when": {"$ref": "#/definitions/condition"}}
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "pipeline",
+        "when"
+      ],
+      "properties": {
+        "pipeline": {
+          "$ref": "#/definitions/id"
+        },
+        "when": {
+          "$ref": "#/definitions/condition"
+        }
+      }
     }
   }
 }

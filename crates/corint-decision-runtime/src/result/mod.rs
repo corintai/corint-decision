@@ -8,6 +8,6 @@ mod trace;
 pub use persistence::{DecisionRecord, DecisionResultWriter, RuleExecutionRecord};
 pub use result::{DecisionResult, ExecutionResult};
 pub use trace::{
-    ConclusionTrace, ConditionTrace, CoreConditionOutcome, CoreConditionTrace, CoreSkipReason,
-    ExecutionTrace, PipelineTrace, RuleTrace, RulesetTrace, StepTrace,
+    ConclusionTrace, ConditionTrace, CoreCallTrace, CoreConditionOutcome, CoreConditionTrace,
+    CoreSkipReason, ExecutionTrace, PipelineTrace, RuleTrace, RulesetTrace, StepTrace,
 };

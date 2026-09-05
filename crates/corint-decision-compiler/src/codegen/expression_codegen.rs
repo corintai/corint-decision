@@ -80,6 +80,14 @@ impl ExpressionCompiler {
                 Ok(instructions)
             }
 
+            Expression::FunctionCall { name, args } if name == "exists" => match args.as_slice() {
+                [Expression::FieldAccess(path)] if path.first().is_some_and(|p| p == "event") => {
+                    Ok(vec![Instruction::FieldExists { path: path.clone() }])
+                }
+                _ => Err(CompileError::InvalidExpression(
+                    "exists requires one event field path".into(),
+                )),
+            },
             Expression::FunctionCall { name, args: _ } => {
                 // For now, we'll handle function calls as a placeholder
                 // In a real implementation, this would analyze the function

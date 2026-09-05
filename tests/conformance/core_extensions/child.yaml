@@ -1,0 +1,33 @@
+{
+  "version": "0.1",
+  "pipeline": {
+    "id": "child",
+    "name": "Child",
+    "when": "event.enabled",
+    "entry": "check",
+    "steps": [
+      {
+        "step": {
+          "id": "check",
+          "name": "Check",
+          "type": "ruleset",
+          "ruleset": "risk",
+          "next": "end"
+        }
+      }
+    ],
+    "decision": [
+      {
+        "when": "results.risk.score > 0",
+        "result": "decline",
+        "actions": [
+          "child_only"
+        ]
+      },
+      {
+        "default": true,
+        "result": "pass"
+      }
+    ]
+  }
+}

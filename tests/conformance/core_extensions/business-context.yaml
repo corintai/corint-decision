@@ -1,0 +1,65 @@
+{
+  "kind": "corint-business-context",
+  "contract_version": "1",
+  "id": "nested-payment-context",
+  "revision": "1",
+  "provenance": {
+    "producer": "business-owner-example",
+    "reference": "synthetic-example"
+  },
+  "input_schema": {
+    "name": "event",
+    "fields": {
+      "enabled": {
+        "name": "enabled",
+        "field_type": "boolean",
+        "required": true
+      },
+      "payment": {
+        "name": "payment",
+        "required": false,
+        "field_type": {
+          "object": {
+            "schema": {
+              "name": "payment",
+              "fields": {
+                "amount": {
+                  "name": "amount",
+                  "field_type": "number",
+                  "required": false
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "entities": {
+    "transaction": "Current synthetic payment"
+  },
+  "fields": {
+    "enabled": {
+      "description": "Whether child policy is applicable",
+      "unit": "boolean",
+      "entity": "transaction",
+      "time_basis": "Value at request time"
+    },
+    "payment": {
+      "description": "Optional payment object; amount is optional and measured in CNY yuan",
+      "unit": "object",
+      "entity": "transaction",
+      "time_basis": "Value at request time"
+    }
+  },
+  "objectives": [
+    "Review synthetic payment risk"
+  ],
+  "constraints": [
+    "Independent boundary cases must pass"
+  ],
+  "actions": [
+    "child_only",
+    "parent_action"
+  ]
+}

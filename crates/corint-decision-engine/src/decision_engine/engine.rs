@@ -97,7 +97,11 @@ impl DecisionEngine {
                 .collect();
             calls.insert(id.clone(), (rules, conclusion.clone()));
         }
-        let executor = Arc::new(PipelineExecutor::new_offline().with_ruleset_programs(calls));
+        let executor = Arc::new(
+            PipelineExecutor::new_offline()
+                .with_ruleset_programs(calls)
+                .with_core_programs(compiled.programs.clone()),
+        );
         let metrics = executor.metrics();
         Ok(Self {
             programs: compiled.programs,
@@ -437,6 +441,16 @@ impl DecisionEngine {
                             )
                             .await?;
 
+                        if self.core_input_schema.is_some() && result.signal.is_none() {
+                            return Err(corint_decision_compiler::core::diagnostic(
+                                &pipeline_program.metadata.custom["core_source"],
+                                "/pipeline/when",
+                                "execute",
+                                "E_PIPELINE_SKIPPED",
+                                "Selected pipeline guard was false; no business decision produced",
+                            )
+                            .into());
+                        }
                         pipeline_matched = true;
 
                         // Update execution_result with pipeline context
@@ -456,7 +470,7 @@ impl DecisionEngine {
                                 for record in records {
                                     if let Value::Object(record) = record {
                                         if let (
-                                            Some(Value::String(ruleset)),
+                                            ruleset,
                                             Some(Value::String(rule)),
                                             Some(Value::Bool(triggered)),
                                             Some(Value::Number(score)),
@@ -469,7 +483,13 @@ impl DecisionEngine {
                                             rule_executions.push(
                                                 TraceBuilder::create_rule_execution_record(
                                                     &request_id,
-                                                    Some(ruleset),
+                                                    ruleset.and_then(|v| {
+                                                        if let Value::String(s) = v {
+                                                            Some(s.as_str())
+                                                        } else {
+                                                            None
+                                                        }
+                                                    }),
                                                     rule,
                                                     None,
                                                     *triggered,
@@ -843,6 +863,16 @@ impl DecisionEngine {
                         || !result.context.is_empty();
 
                     if matched {
+                        if self.core_input_schema.is_some() && result.signal.is_none() {
+                            return Err(corint_decision_compiler::core::diagnostic(
+                                &pipeline_program.metadata.custom["core_source"],
+                                "/pipeline/when",
+                                "execute",
+                                "E_PIPELINE_SKIPPED",
+                                "Selected pipeline guard was false; no business decision produced",
+                            )
+                            .into());
+                        }
                         pipeline_matched = true;
                     }
 
@@ -888,6 +918,16 @@ impl DecisionEngine {
                             rulesets_to_execute.len(),
                             rulesets_to_execute
                         );
+                        if self.core_input_schema.is_some() && result.signal.is_none() {
+                            return Err(corint_decision_compiler::core::diagnostic(
+                                &pipeline_program.metadata.custom["core_source"],
+                                "/pipeline/when",
+                                "execute",
+                                "E_PIPELINE_SKIPPED",
+                                "Selected pipeline guard was false; no business decision produced",
+                            )
+                            .into());
+                        }
                         pipeline_matched = true;
 
                         // Execute ALL rulesets in order
@@ -1198,6 +1238,7 @@ impl DecisionEngine {
         }
 
         let mut core_conditions = None;
+        let mut core_calls = None;
         if self.core_input_schema.is_some() {
             if !pipeline_matched {
                 return Err(corint_decision_compiler::core::diagnostic(
@@ -1233,6 +1274,21 @@ impl DecisionEngine {
                 // Invocation order and source-map preorder, not wall-clock ordering.
                 records.sort_by_key(|record| record.invocation);
                 core_conditions = Some(records);
+                let calls = match execution_result.variables.remove("__core_calls__") {
+                    Some(Value::Array(v)) => v,
+                    _ => vec![],
+                };
+                core_calls = Some(
+                    calls
+                        .into_iter()
+                        .map(|v| match v {
+                            Value::String(json) => serde_json::from_str(&json).map_err(|_| {
+                                EngineError::GenericError("Invalid Core call trace".into())
+                            }),
+                            _ => Err(EngineError::GenericError("Invalid Core call trace".into())),
+                        })
+                        .collect::<Result<Vec<_>>>()?,
+                );
             }
             execution_result.variables.remove(TRACE_ENABLED);
             execution_result.variables.remove(TRACE_INVOCATION);
@@ -1467,6 +1523,7 @@ impl DecisionEngine {
                 .with_pipeline(pipeline_trace)
                 .with_time(processing_time_ms);
             trace.core_conditions_v1 = core_conditions;
+            trace.core_calls_v1 = core_calls;
             Some(trace)
         } else {
             None

@@ -1,0 +1,46 @@
+{
+  "version": "0.1",
+  "pipeline": {
+    "id": "parent",
+    "name": "Parent",
+    "entry": "single",
+    "steps": [
+      {
+        "step": {
+          "id": "single",
+          "name": "Single",
+          "type": "rule",
+          "rule": "marker",
+          "next": "nested"
+        }
+      },
+      {
+        "step": {
+          "id": "nested",
+          "name": "Nested",
+          "type": "pipeline",
+          "pipeline": "child",
+          "when": "exists(event.payment)",
+          "next": "end"
+        }
+      }
+    ],
+    "decision": [
+      {
+        "when": "results.child.status == \"skipped\"",
+        "result": "hold"
+      },
+      {
+        "when": "results.marker.matched && results.child.score > 0 && total_score == 67",
+        "result": "review",
+        "actions": [
+          "parent_action"
+        ]
+      },
+      {
+        "default": true,
+        "result": "pass"
+      }
+    ]
+  }
+}

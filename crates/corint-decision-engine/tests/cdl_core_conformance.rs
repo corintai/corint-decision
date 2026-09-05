@@ -964,3 +964,433 @@ fn malformed_defaults_and_ids_are_rejected() {
         );
     }
 }
+
+fn extension_schema() -> Schema {
+    Schema::new("event".into())
+        .add_field(SchemaField::new("enabled".into(), FieldType::Boolean).required())
+        .add_field(SchemaField::new(
+            "payment".into(),
+            FieldType::object_with_schema(
+                Schema::new("payment".into())
+                    .add_field(SchemaField::new("amount".into(), FieldType::Number)),
+            ),
+        ))
+}
+
+fn extension_sources() -> Vec<CoreSource> {
+    [
+        "rule.yaml",
+        "marker.yaml",
+        "ruleset.yaml",
+        "child.yaml",
+        "pipeline.yaml",
+        "registry.yaml",
+    ]
+    .into_iter()
+    .map(|path| CoreSource {
+        path: path.into(),
+        yaml: std::fs::read_to_string(root().join("../core_extensions").join(path)).unwrap(),
+    })
+    .collect()
+}
+
+fn extension_request(event: Json, trace: bool) -> DecisionRequest {
+    let mut request = DecisionRequest::new(serde_json::from_value(event).unwrap());
+    request.options.enable_trace = trace;
+    request
+}
+
+#[tokio::test]
+async fn core_calls_guards_and_nested_optional_inputs_share_the_vm() {
+    let engine = DecisionEngine::from_core(&extension_sources(), extension_schema()).unwrap();
+    for trace in [false, true] {
+        for (event, score, signal, actions) in [
+            (
+                serde_json::json!({"enabled":true,"payment":{"amount":1001}}),
+                67,
+                "review",
+                vec!["parent_action"],
+            ),
+            (
+                serde_json::json!({"enabled":true,"payment":{"amount":1000}}),
+                0,
+                "pass",
+                vec![],
+            ),
+            (
+                serde_json::json!({"enabled":true,"payment":{}}),
+                0,
+                "pass",
+                vec![],
+            ),
+            (serde_json::json!({"enabled":true}), 0, "hold", vec![]),
+            (
+                serde_json::json!({"enabled":false,"payment":{"amount":1001}}),
+                7,
+                "hold",
+                vec![],
+            ),
+        ] {
+            let result = engine
+                .decide(extension_request(event, trace))
+                .await
+                .unwrap();
+            assert_eq!(result.result.score, score);
+            assert_eq!(
+                serde_json::to_value(&result.result.signal).unwrap()["type"],
+                signal
+            );
+            assert_eq!(result.result.actions, actions);
+            assert!(
+                !result
+                    .result
+                    .context
+                    .contains_key("__ruleset_result__.risk"),
+                "callee results must not leak"
+            );
+            if trace {
+                let calls = result
+                    .trace
+                    .as_ref()
+                    .unwrap()
+                    .core_calls_v1
+                    .as_ref()
+                    .unwrap();
+                let child = calls.iter().find(|c| c.resource_id == "child").unwrap();
+                assert_eq!(child.call_path, ["parent", "child"]);
+                if signal == "hold" {
+                    assert_eq!(child.status, "skipped");
+                    assert_eq!(child.score, None);
+                    assert_eq!(child.signal, None);
+                } else {
+                    assert!(calls
+                        .iter()
+                        .any(|c| c.call_path == ["parent", "child", "risk"]));
+                    if score > 0 {
+                        assert_eq!(child.actions, ["child_only"]);
+                    }
+                }
+            } else {
+                assert!(result.trace.is_none());
+            }
+        }
+    }
+}
+
+#[tokio::test]
+async fn core_extension_errors_are_structured_and_trace_invariant() {
+    let base = extension_sources();
+    for (expression, event, code) in [
+        (
+            "event.payment.amount > 0",
+            serde_json::json!({"enabled":true}),
+            "E_MISSING_INPUT",
+        ),
+        (
+            "event.payment.amount / 0 > 0",
+            serde_json::json!({"enabled":true,"payment":{"amount":1}}),
+            "E_DIVISION_BY_ZERO",
+        ),
+        (
+            "event.payment.amount * event.payment.amount > 0",
+            serde_json::json!({"enabled":true,"payment":{"amount":1e308}}),
+            "E_NUMBER_OVERFLOW",
+        ),
+    ] {
+        let mut docs = base.clone();
+        modify(&mut docs, "marker.yaml", |d| {
+            d["rule"]["when"] = expression.into()
+        });
+        let engine = DecisionEngine::from_core(&docs, extension_schema()).unwrap();
+        let mut errors = Vec::new();
+        for trace in [false, true] {
+            let error = engine
+                .decide(extension_request(event.clone(), trace))
+                .await
+                .unwrap_err();
+            let EngineError::Core(error) = error else {
+                panic!("Expected structured Core error: {error}")
+            };
+            assert_eq!(error.diagnostic.code, code);
+            assert_eq!(error.diagnostic.source.as_deref(), Some("marker.yaml"));
+            assert_eq!(error.diagnostic.stage.as_deref(), Some("execute"));
+            errors.push(serde_json::to_value(error).unwrap());
+        }
+        assert_eq!(errors[0], errors[1]);
+    }
+    let engine = DecisionEngine::from_core(&base, extension_schema()).unwrap();
+    for event in [
+        serde_json::json!({"enabled":true,"payment":null}),
+        serde_json::json!({"enabled":true,"payment":{"amount":"1"}}),
+        serde_json::json!({"enabled":true,"payment":{"unknown":1}}),
+        serde_json::json!({"payment":{}}),
+    ] {
+        let EngineError::Core(error) = engine
+            .decide(extension_request(event, false))
+            .await
+            .unwrap_err()
+        else {
+            panic!("Expected Core error")
+        };
+        assert_eq!(error.diagnostic.code, "E_INPUT_SCHEMA");
+    }
+    let mut docs = base.clone();
+    modify(&mut docs, "pipeline.yaml", |d| {
+        d["pipeline"]["when"] = "false".into()
+    });
+    let engine = DecisionEngine::from_core(&docs, extension_schema()).unwrap();
+    for trace in [false, true] {
+        let EngineError::Core(error) = engine
+            .decide(extension_request(
+                serde_json::json!({"enabled":true}),
+                trace,
+            ))
+            .await
+            .unwrap_err()
+        else {
+            panic!("Expected Core error")
+        };
+        assert_eq!(error.diagnostic.code, "E_PIPELINE_SKIPPED");
+    }
+    modify(&mut docs, "pipeline.yaml", |d| {
+        d["pipeline"].as_object_mut().unwrap().remove("when");
+        d["pipeline"]["decision"] = serde_json::json!([{"when":"results.child.score > 0","result":"decline"},{"default":true,"result":"pass"}]);
+    });
+    let engine = DecisionEngine::from_core(&docs, extension_schema()).unwrap();
+    let EngineError::Core(error) = engine
+        .decide(extension_request(
+            serde_json::json!({"enabled":true}),
+            false,
+        ))
+        .await
+        .unwrap_err()
+    else {
+        panic!("Expected Core error")
+    };
+    assert_eq!(error.diagnostic.code, "E_RESULT_UNAVAILABLE");
+}
+
+#[test]
+fn core_call_graph_and_expression_extensions_fail_closed() {
+    for (file, field, expression, code) in [
+        (
+            "marker.yaml",
+            "rule",
+            "exists(event.unknown)",
+            "E_INVALID_REF",
+        ),
+        (
+            "marker.yaml",
+            "rule",
+            "exists(event.payment, event.enabled)",
+            "E_TYPE",
+        ),
+        (
+            "marker.yaml",
+            "rule",
+            "event.payment == event.payment",
+            "E_TYPE",
+        ),
+        ("marker.yaml", "rule", "event.enabled + 1 > 0", "E_TYPE"),
+    ] {
+        let mut docs = extension_sources();
+        modify(&mut docs, file, |d| d[field]["when"] = expression.into());
+        assert_eq!(
+            core_error(DecisionEngine::from_core(&docs, extension_schema()))
+                .diagnostic
+                .code,
+            code
+        );
+    }
+    let mut docs = extension_sources();
+    modify(&mut docs, "child.yaml", |d| {
+        d["pipeline"]["steps"][0]["step"] = serde_json::json!({"id":"check","name":"Recurse","type":"pipeline","pipeline":"parent","next":"end"})
+    });
+    assert_eq!(
+        core_error(DecisionEngine::from_core(&docs, extension_schema()))
+            .diagnostic
+            .code,
+        "E_CALL_CYCLE"
+    );
+    let mut docs = extension_sources();
+    modify(&mut docs, "pipeline.yaml", |d| {
+        d["pipeline"]["steps"][1]["step"]["pipeline"] = "unknown".into()
+    });
+    assert_eq!(
+        core_error(DecisionEngine::from_core(&docs, extension_schema()))
+            .diagnostic
+            .code,
+        "E_UNRESOLVED_REF"
+    );
+    let mut docs = extension_sources();
+    modify(&mut docs, "pipeline.yaml", |d| {
+        d["pipeline"]["decision"][0]["when"] = "results.risk.score > 0".into()
+    });
+    assert_eq!(
+        core_error(DecisionEngine::from_core(&docs, extension_schema()))
+            .diagnostic
+            .code,
+        "E_INVALID_REF"
+    );
+    let mut nested = extension_schema();
+    for _ in 0..17 {
+        nested = Schema::new("nested".into()).add_field(SchemaField::new(
+            "child".into(),
+            FieldType::object_with_schema(nested),
+        ));
+    }
+    assert_eq!(
+        core_error(DecisionEngine::from_core(&extension_sources(), nested))
+            .diagnostic
+            .code,
+        "E_INPUT_SCHEMA"
+    );
+}
+
+#[tokio::test]
+async fn core_zero_score_match_and_guarded_router_do_not_fall_through() {
+    let mut docs = extension_sources();
+    modify(&mut docs, "marker.yaml", |d| d["rule"]["score"] = 0.into());
+    modify(&mut docs, "pipeline.yaml", |d| {
+        d["pipeline"]["entry"] = "route".into();
+        d["pipeline"]["steps"].as_array_mut().unwrap().push(serde_json::json!({"step":{"id":"route","name":"Guarded router","type":"router","when":"event.enabled","routes":[{"when":"true","next":"single"}],"default":"end"}}));
+        d["pipeline"]["decision"] = serde_json::json!([{"default":true,"result":"review"}]);
+    });
+    let engine = DecisionEngine::from_core(&docs, extension_schema()).unwrap();
+    for trace in [false, true] {
+        let response = engine
+            .decide(extension_request(
+                serde_json::json!({"enabled":false,"payment":{"amount":1001}}),
+                trace,
+            ))
+            .await
+            .unwrap();
+        assert_eq!(response.result.score, 0);
+        assert!(response.result.triggered_rules.is_empty());
+        assert_eq!(
+            response.result.context["__core_skipped_steps__"],
+            Value::Array(vec![Value::String("route".into())])
+        );
+        let response = engine
+            .decide(extension_request(
+                serde_json::json!({"enabled":true,"payment":{"amount":1001}}),
+                trace,
+            ))
+            .await
+            .unwrap();
+        assert!(response.result.triggered_rules.contains(&"marker".into()));
+        assert_eq!(response.result.score, 60);
+        if trace {
+            assert!(response
+                .trace
+                .unwrap()
+                .core_conditions_v1
+                .unwrap()
+                .iter()
+                .any(|r| r.field_path.ends_with("/step/when")));
+        }
+    }
+}
+
+#[test]
+fn core_call_expansion_and_depth_are_bounded_before_execution() {
+    for branching in [false, true] {
+        let mut docs = extension_sources();
+        let levels = if branching { 13 } else { 17 };
+        for level in 0..levels {
+            for sibling in 0..if branching { 2 } else { 1 } {
+                let id = format!("bounded_{level}_{sibling}");
+                let steps = if level + 1 == levels {
+                    serde_json::json!([{"step":{"id":"last","name":"End","type":"router","routes":[{"when":"true","next":"end"}],"default":"end"}}])
+                } else {
+                    let mut steps = vec![
+                        serde_json::json!({"step":{"id":"first","name":"Call","type":"pipeline","pipeline":format!("bounded_{}_0",level+1),"next":if branching {"second"} else {"end"}}}),
+                    ];
+                    if branching {
+                        steps.push(serde_json::json!({"step":{"id":"second","name":"Call","type":"pipeline","pipeline":format!("bounded_{}_1",level+1),"next":"end"}}));
+                    }
+                    serde_json::json!(steps)
+                };
+                docs.push(CoreSource { path:format!("{id}.yaml"), yaml:serde_json::json!({"version":"0.1","pipeline":{"id":id,"name":"Bounded","entry":if level+1==levels {"last"} else {"first"},"steps":steps,"decision":[{"default":true,"result":"pass"}]}}).to_string() });
+            }
+        }
+        assert_eq!(
+            core_error(DecisionEngine::from_core(&docs, extension_schema()))
+                .diagnostic
+                .code,
+            "E_CALL_LIMIT"
+        );
+    }
+}
+
+#[tokio::test]
+async fn core_call_trace_schema_rejects_fabricated_skipped_outputs() {
+    let schema: Json =
+        serde_json::from_str(include_str!("../../../docs/cdl/schema/call-trace.json")).unwrap();
+    let validator = jsonschema::JSONSchema::compile(&schema).unwrap();
+    let engine = DecisionEngine::from_core(&extension_sources(), extension_schema()).unwrap();
+    let response = engine
+        .decide(extension_request(serde_json::json!({"enabled":true}), true))
+        .await
+        .unwrap();
+    let mut trace = serde_json::to_value(response.trace.unwrap().core_calls_v1.unwrap()).unwrap();
+    assert!(validator.is_valid(&trace));
+    let skipped = trace
+        .as_array_mut()
+        .unwrap()
+        .iter_mut()
+        .find(|t| t["status"] == "skipped")
+        .unwrap();
+    skipped["score"] = 0.into();
+    assert!(!validator.is_valid(&trace));
+}
+
+#[test]
+fn optional_object_still_enforces_required_children_and_schema_size() {
+    use corint_decision_compiler::core::{compile_core, validate_core_input};
+    let schema = Schema::new("event".into()).add_field(SchemaField::new(
+        "payment".into(),
+        FieldType::object_with_schema(
+            Schema::new("payment".into())
+                .add_field(SchemaField::new("amount".into(), FieldType::Number).required()),
+        ),
+    ));
+    assert!(validate_core_input(&schema, &HashMap::new()).is_ok());
+    let error = validate_core_input(
+        &schema,
+        &HashMap::from([("payment".into(), Value::Object(HashMap::new()))]),
+    )
+    .unwrap_err();
+    assert_eq!(error.diagnostic.code, "E_INPUT_SCHEMA");
+    assert_eq!(
+        error.diagnostic.field_path.as_deref(),
+        Some("/event/payment/amount")
+    );
+    let mut schema = Schema::new("oversized".into());
+    for i in 0..1025 {
+        schema = schema.add_field(SchemaField::new(format!("f_{i}"), FieldType::Boolean));
+    }
+    assert_eq!(
+        compile_core(&extension_sources(), schema)
+            .unwrap_err()
+            .diagnostic
+            .code,
+        "E_INPUT_SCHEMA"
+    );
+}
+
+#[test]
+fn multiple_guard_source_maps_produce_deterministic_programs() {
+    use corint_decision_compiler::core::compile_core;
+    let mut docs = extension_sources();
+    modify(&mut docs, "pipeline.yaml", |d| {
+        d["pipeline"]["steps"][0]["step"]["when"] = "true".into()
+    });
+    let expected = compile_core(&docs, extension_schema()).unwrap().programs;
+    for _ in 0..12 {
+        assert_eq!(
+            compile_core(&docs, extension_schema()).unwrap().programs,
+            expected
+        );
+    }
+}

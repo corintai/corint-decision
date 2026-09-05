@@ -2,6 +2,8 @@
 //!
 //! Executes IR programs with support for async operations (features, services).
 
+#[path = "core_calls.rs"]
+mod core_calls;
 #[cfg(test)]
 #[path = "tests/mod.rs"]
 mod tests;
@@ -36,6 +38,7 @@ pub struct PipelineExecutor {
     metrics: Arc<MetricsCollector>,
     /// Opt-in synchronous calls: rule programs followed by the conclusion program.
     ruleset_programs: Option<Arc<RulesetPrograms>>,
+    core_programs: HashMap<String, Program>,
 }
 
 impl PipelineExecutor {
@@ -49,6 +52,7 @@ impl PipelineExecutor {
             list_service: None,
             metrics: Arc::new(MetricsCollector::new()),
             ruleset_programs: None,
+            core_programs: HashMap::new(),
         }
     }
 
@@ -63,6 +67,7 @@ impl PipelineExecutor {
             list_service: None,
             metrics: Arc::new(MetricsCollector::new()),
             ruleset_programs: None,
+            core_programs: HashMap::new(),
         }
     }
 
@@ -76,6 +81,7 @@ impl PipelineExecutor {
             list_service: None,
             metrics: Arc::new(MetricsCollector::new()),
             ruleset_programs: None,
+            core_programs: HashMap::new(),
         }
     }
 
@@ -105,7 +111,22 @@ impl PipelineExecutor {
 
     /// Install an immutable validated call registry and enable synchronous calls.
     pub fn with_ruleset_programs(mut self, programs: RulesetPrograms) -> Self {
+        for (rules, conclusion) in programs.values() {
+            for program in rules.iter().chain(std::iter::once(conclusion)) {
+                self.core_programs
+                    .insert(program.metadata.source_id.clone(), program.clone());
+            }
+        }
         self.ruleset_programs = Some(Arc::new(programs));
+        self
+    }
+
+    /// Install the immutable closed-world Core call registry.
+    pub fn with_core_programs(mut self, programs: Vec<Program>) -> Self {
+        self.core_programs = programs
+            .into_iter()
+            .map(|p| (p.metadata.source_id.clone(), p))
+            .collect();
         self
     }
 
@@ -132,10 +153,66 @@ impl PipelineExecutor {
         context_input: crate::ContextInput,
         existing_result: ExecutionResult,
     ) -> Result<DecisionResult> {
+        self.execute_inner(program, context_input, existing_result)
+            .await
+            .map_err(|error| {
+                if !program.metadata.custom.contains_key("core_source")
+                    || matches!(error, RuntimeError::CoreExecution { .. })
+                {
+                    return error;
+                }
+                let (code, field_path) = match &error {
+                    RuntimeError::DivisionByZero => ("E_DIVISION_BY_ZERO", String::new()),
+                    RuntimeError::FieldNotFound(path) => {
+                        ("E_MISSING_INPUT", format!("/{}", path.replace('.', "/")))
+                    }
+                    RuntimeError::InvalidOperation(message)
+                        if message.starts_with("E_SCORE_OVERFLOW:") =>
+                    {
+                        ("E_SCORE_OVERFLOW", String::new())
+                    }
+                    RuntimeError::InvalidOperation(message)
+                        if message.starts_with("E_NUMBER_OVERFLOW:") =>
+                    {
+                        ("E_NUMBER_OVERFLOW", String::new())
+                    }
+                    RuntimeError::InvalidOperation(message)
+                        if message.starts_with("E_RESULT_UNAVAILABLE:") =>
+                    {
+                        ("E_RESULT_UNAVAILABLE", String::new())
+                    }
+                    _ => ("E_RUNTIME", String::new()),
+                };
+                RuntimeError::CoreExecution {
+                    code: code.into(),
+                    source_file: program.metadata.custom["core_source"].clone(),
+                    resource_id: program.metadata.source_id.clone(),
+                    field_path,
+                    message: error.to_string(),
+                }
+            })
+    }
+
+    async fn execute_inner(
+        &self,
+        program: &Program,
+        context_input: crate::ContextInput,
+        existing_result: ExecutionResult,
+    ) -> Result<DecisionResult> {
         let start_time = Instant::now();
         self.metrics.counter("executions_total").inc();
 
         let mut ctx = ExecutionContext::with_result(context_input.clone(), existing_result)?;
+        if program.decision_instructions.is_some() && self.ruleset_programs.is_some() {
+            ctx.store_variable("__executed_steps__".into(), Value::Array(Vec::new()));
+            ctx.store_variable("__core_pipeline_entered__".into(), Value::Bool(false));
+            if !ctx.result.variables.contains_key("__core_call_path__") {
+                ctx.store_variable(
+                    "__core_call_path__".into(),
+                    Value::Array(vec![Value::String(program.metadata.source_id.clone())]),
+                );
+            }
+        }
         let mut condition_observer = ConditionObserver::new(program, &mut ctx)?;
         let mut pc = 0; // Program Counter
 
@@ -153,10 +230,48 @@ impl PipelineExecutor {
             match instruction {
                 Instruction::LoadField { path } => {
                     let value = self.handle_load_field(&mut ctx, path).await?;
+                    if self.ruleset_programs.is_some() && value == Value::Null {
+                        return Err(RuntimeError::FieldNotFound(path.join(".")));
+                    }
                     ctx.push(value);
                     pc += 1;
                 }
 
+                Instruction::FieldExists { path } => {
+                    let value = ctx.load_field(path)?;
+                    ctx.push(Value::Bool(value != Value::Null));
+                    pc += 1;
+                }
+                Instruction::CallResource {
+                    resource_type,
+                    resource_id,
+                } => {
+                    self.execute_core_call(resource_type, resource_id, &context_input, &mut ctx)
+                        .await?;
+                    pc += 1;
+                }
+                Instruction::SkipStep {
+                    step_id,
+                    resource_id,
+                } => {
+                    let mut skipped = match ctx.result.variables.remove("__core_skipped_steps__") {
+                        Some(Value::Array(v)) => v,
+                        _ => vec![],
+                    };
+                    skipped.push(Value::String(step_id.clone()));
+                    ctx.store_variable("__core_skipped_steps__".into(), Value::Array(skipped));
+                    if let Some(id) = resource_id {
+                        ctx.store_variable(
+                            format!("__ruleset_result__.{id}"),
+                            Value::Object(HashMap::from([(
+                                "status".into(),
+                                Value::String("skipped".into()),
+                            )])),
+                        );
+                        self.record_core_call(id, "skipped", None, &mut ctx)?;
+                    }
+                    pc += 1;
+                }
                 Instruction::LoadConst { value } => {
                     ctx.push(value.clone());
                     pc += 1;
@@ -187,6 +302,12 @@ impl PipelineExecutor {
                         }
                     };
 
+                    if self.ruleset_programs.is_some() && value == Value::Null {
+                        return Err(RuntimeError::InvalidOperation(format!(
+                            "E_RESULT_UNAVAILABLE: {}.{field}",
+                            ruleset_id.as_deref().unwrap_or("last")
+                        )));
+                    }
                     tracing::debug!(
                         "LoadResult: {}.{} = {:?}",
                         ruleset_id.as_deref().unwrap_or("(last)"),
@@ -201,6 +322,13 @@ impl PipelineExecutor {
                     let right = ctx.pop()?;
                     let left = ctx.pop()?;
                     let result = operators::execute_binary_op(&left, op, &right)?;
+                    if self.ruleset_programs.is_some()
+                        && matches!(&result, Value::Number(n) if !n.is_finite())
+                    {
+                        return Err(RuntimeError::InvalidOperation(
+                            "E_NUMBER_OVERFLOW: non-finite arithmetic result".into(),
+                        ));
+                    }
                     ctx.push(result);
                     pc += 1;
                 }
@@ -429,85 +557,9 @@ impl PipelineExecutor {
                 }
 
                 Instruction::CallRuleset { ruleset_id } => {
-                    if let Some(programs) = &self.ruleset_programs {
-                        let (rules, conclusion) = programs.get(ruleset_id).ok_or_else(|| {
-                            RuntimeError::InvalidOperation(format!("Unknown ruleset: {ruleset_id}"))
-                        })?;
-                        // Each ruleset starts with a local score. Previously completed
-                        // results remain available, but local signals/actions never leak.
-                        let mut local = ExecutionResult::new();
-                        local.variables = ctx.result.variables.clone();
-                        let mut records = match local.variables.remove("__core_rule_executions__") {
-                            Some(Value::Array(items)) => items,
-                            _ => Vec::new(),
-                        };
-                        for rule in rules {
-                            let previous_score = local.score;
-                            let result = Box::pin(self.execute_with_result(
-                                rule,
-                                context_input.clone(),
-                                local,
-                            ))
+                    if self.ruleset_programs.is_some() {
+                        self.execute_core_call("ruleset", ruleset_id, &context_input, &mut ctx)
                             .await?;
-                            let triggered =
-                                result.triggered_rules.contains(&rule.metadata.source_id);
-                            records.push(Value::Object(HashMap::from([
-                                ("ruleset_id".into(), Value::String(ruleset_id.clone())),
-                                (
-                                    "rule_id".into(),
-                                    Value::String(rule.metadata.source_id.clone()),
-                                ),
-                                ("triggered".into(), Value::Bool(triggered)),
-                                (
-                                    "score".into(),
-                                    Value::Number(
-                                        f64::from(result.score) - f64::from(previous_score),
-                                    ),
-                                ),
-                            ])));
-                            local = ExecutionResult::new();
-                            local.score = result.score;
-                            local.triggered_rules = result.triggered_rules;
-                            local.variables = result.context;
-                        }
-                        let result = Box::pin(self.execute_with_result(
-                            conclusion,
-                            context_input.clone(),
-                            local,
-                        ))
-                        .await?;
-                        ctx.result.score =
-                            ctx.result.score.checked_add(result.score).ok_or_else(|| {
-                                RuntimeError::InvalidOperation(
-                                    "E_SCORE_OVERFLOW: i32 aggregate overflow".into(),
-                                )
-                            })?;
-                        ctx.result.triggered_rules.extend(result.triggered_rules);
-                        ctx.result.variables.extend(result.context);
-                        let signal = result.signal.ok_or_else(|| {
-                            RuntimeError::InvalidOperation("Missing ruleset conclusion".into())
-                        })?;
-                        let signal = match signal {
-                            corint_decision_model::ast::Signal::Approve => "approve",
-                            corint_decision_model::ast::Signal::Decline => "decline",
-                            corint_decision_model::ast::Signal::Review => "review",
-                            corint_decision_model::ast::Signal::Hold => "hold",
-                            corint_decision_model::ast::Signal::Pass => "pass",
-                        };
-                        let output = Value::Object(HashMap::from([
-                            ("signal".into(), Value::String(signal.to_owned())),
-                            ("score".into(), Value::Number(f64::from(result.score))),
-                            ("total_score".into(), Value::Number(f64::from(result.score))),
-                        ]));
-                        ctx.store_variable(
-                            format!("__ruleset_result__.{ruleset_id}"),
-                            output.clone(),
-                        );
-                        ctx.store_variable("__last_ruleset_result__".into(), output);
-                        ctx.store_variable(
-                            "__core_rule_executions__".into(),
-                            Value::Array(records),
-                        );
                         pc += 1;
                         continue;
                     }
@@ -710,7 +762,14 @@ impl PipelineExecutor {
         }
 
         // Execute decision logic if present
-        if let Some(ref decision_instructions) = program.decision_instructions {
+        let pipeline_skipped = self.ruleset_programs.is_some()
+            && program.metadata.custom.contains_key("core_pipeline_guard")
+            && ctx.result.variables.get("__core_pipeline_entered__") != Some(&Value::Bool(true));
+        if let Some(decision_instructions) = program
+            .decision_instructions
+            .as_ref()
+            .filter(|_| !pipeline_skipped)
+        {
             if self.ruleset_programs.is_some() {
                 // Core final decisions use the SAME VM instruction set after all
                 // selected calls complete, never the legacy reduced interpreter.

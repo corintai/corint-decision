@@ -9,11 +9,13 @@ use super::validator::topological_sort;
 use crate::error::{CompileError, Result};
 use corint_decision_model::ast::pipeline::Pipeline;
 use corint_decision_model::ir::{Instruction, Program, ProgramMetadata};
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 
 /// Compilation context for tracking state during compilation
 pub(super) struct CompileContext {
     /// Step ID -> starting instruction index
+    pub(super) strict_core: bool,
+    pub(super) guard_positions: BTreeMap<String, usize>,
     pub(super) step_positions: HashMap<String, usize>,
 
     /// Pending jumps to be resolved: (instruction_index, target_step_id)
@@ -29,6 +31,8 @@ pub(super) struct CompileContext {
 impl CompileContext {
     pub(super) fn new() -> Self {
         Self {
+            strict_core: false,
+            guard_positions: BTreeMap::new(),
             step_positions: HashMap::new(),
             pending_jumps: Vec::new(),
             instructions: Vec::new(),
@@ -75,6 +79,15 @@ pub struct PipelineCompiler;
 impl PipelineCompiler {
     /// Compile a pipeline into an IR program
     pub fn compile(pipeline: &Pipeline) -> Result<Program> {
+        Self::compile_mode(pipeline, false)
+    }
+
+    /// Only called after the closed-world Core graph/type/capability gate.
+    pub(crate) fn compile_core(pipeline: &Pipeline) -> Result<Program> {
+        Self::compile_mode(pipeline, true)
+    }
+
+    fn compile_mode(pipeline: &Pipeline, strict_core: bool) -> Result<Program> {
         // Check if this is the new DAG format
         if pipeline.entry.is_empty() {
             return Err(CompileError::UnsupportedFeature(
@@ -82,10 +95,13 @@ impl PipelineCompiler {
             ));
         }
 
-        for step in &pipeline.steps {
-            validate_step(step)?;
+        if !strict_core {
+            for step in &pipeline.steps {
+                validate_step(step)?;
+            }
         }
         let mut ctx = CompileContext::new();
+        ctx.strict_core = strict_core;
 
         // Step 0: Compile pipeline-level when condition if present
         // This acts as a guard - if condition fails, skip entire pipeline
@@ -101,6 +117,15 @@ impl PipelineCompiler {
             // Mark the position where we'll jump to (after all steps)
             // We'll backfill this offset after we know the total instruction count
             ctx.mark_pipeline_when_guard(jump_if_false_pos);
+        }
+
+        if strict_core && pipeline.when.is_some() {
+            ctx.instructions.push(Instruction::LoadConst {
+                value: corint_decision_model::Value::Bool(true),
+            });
+            ctx.instructions.push(Instruction::Store {
+                name: "__core_pipeline_entered__".into(),
+            });
         }
 
         // Step 1: Topological sort - get ordered list of reachable steps from entry
@@ -131,6 +156,18 @@ impl PipelineCompiler {
         // Step 6: Build program metadata
         let mut metadata =
             ProgramMetadata::for_pipeline(pipeline.id.clone()).with_name(pipeline.name.clone());
+
+        if strict_core {
+            metadata.custom.insert(
+                "core_guard_positions".into(),
+                serde_json::to_string(&ctx.guard_positions).unwrap(),
+            );
+            if let Some(pos) = ctx.pipeline_when_guard_pos {
+                metadata
+                    .custom
+                    .insert("core_pipeline_guard".into(), pos.to_string());
+            }
+        }
 
         // Step 7: Add step information to metadata for tracing
         let steps_json = build_steps_metadata(&sorted_steps);

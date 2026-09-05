@@ -5,6 +5,15 @@ use thiserror::Error;
 /// Runtime error
 #[derive(Error, Debug)]
 pub enum RuntimeError {
+    /// Structured error from a strict Core program; no raw operands are included.
+    #[error("{code} in {source_file} ({resource_id}) at {field_path}: {message}")]
+    CoreExecution {
+        code: String,
+        source_file: String,
+        resource_id: String,
+        field_path: String,
+        message: String,
+    },
     /// Stack underflow
     #[error("Stack underflow")]
     StackUnderflow,
