@@ -1,4 +1,4 @@
-# CORINT Risk Definition Language (RDL)
+# Corint Definition Language (CDL)
 ## Pipeline Specification (v0.1)
 
 A **Pipeline** defines the full risk‑processing flow in CORINT's Cognitive Risk Intelligence framework.
@@ -805,7 +805,7 @@ For comprehensive understanding of pipelines and the CORINT ecosystem:
 - [LLM_GUIDE.md](../LLM_GUIDE.md) - LLM code generation guide (development-time only)
 
 ### Architecture
-- [overall.md](overall.md) - High-level RDL overview
+- [overall.md](overall.md) - High-level CDL overview
 - [ARCHITECTURE.md](../ARCHITECTURE.md) - Three-layer decision architecture
 
 ---
@@ -882,4 +882,4 @@ Rules (Individual Risk Pattern Detection)
 - ✅ Reusable rulesets across pipelines
 - ✅ Clear separation of concerns
 
-It is the highest-level construct of CORINT's Risk Definition Language (RDL).
+It is the highest-level construct of Corint Definition Language (CDL).

@@ -6,7 +6,7 @@ use crate::error::{ParseError, Result};
 use crate::expression_parser::ExpressionParser;
 use crate::import_parser::ImportParser;
 use crate::yaml_parser::YamlParser;
-use corint_decision_model::ast::{DecisionRule, RdlDocument, Ruleset, Signal};
+use corint_decision_model::ast::{CdlDocument, DecisionRule, Ruleset, Signal};
 use serde_yaml::Value as YamlValue;
 
 /// Ruleset parser
@@ -27,8 +27,8 @@ impl RulesetParser {
     /// 1. Legacy single-document format (backward compatible)
     /// 2. New multi-document format with imports
     ///
-    /// Returns an RdlDocument<Ruleset> containing both the ruleset and its imports (if any)
-    pub fn parse_with_imports(yaml_str: &str) -> Result<RdlDocument<Ruleset>> {
+    /// Returns a CdlDocument<Ruleset> containing both the ruleset and its imports (if any)
+    pub fn parse_with_imports(yaml_str: &str) -> Result<CdlDocument<Ruleset>> {
         let (imports, definition_yaml) = ImportParser::parse_with_imports(yaml_str)?;
 
         // Parse the ruleset from the definition document
@@ -38,11 +38,11 @@ impl RulesetParser {
         let version = YamlParser::get_optional_string(&definition_yaml, "version")
             .unwrap_or_else(|| "0.1".to_string());
 
-        // Create RdlDocument
+        // Create CdlDocument
         if let Some(imports) = imports {
-            Ok(RdlDocument::with_imports(version, imports, ruleset))
+            Ok(CdlDocument::with_imports(version, imports, ruleset))
         } else {
-            Ok(RdlDocument::new(version, ruleset))
+            Ok(CdlDocument::new(version, ruleset))
         }
     }
 

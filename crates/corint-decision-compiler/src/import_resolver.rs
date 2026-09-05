@@ -5,8 +5,8 @@
 //! transitively, and validates ID uniqueness.
 
 use crate::error::{CompileError, Result};
-use corint_decision_model::ast::{RdlDocument, Rule, Ruleset};
 use corint_decision_dsl_parser::{RuleParser, RulesetParser};
+use corint_decision_model::ast::{CdlDocument, Rule, Ruleset};
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
@@ -43,7 +43,7 @@ impl ImportResolver {
     /// 2. Recursively loads dependencies (e.g., rules imported by rulesets)
     /// 3. Deduplicates rules and rulesets
     /// 4. Validates ID uniqueness
-    pub fn resolve_imports<T>(&mut self, document: &RdlDocument<T>) -> Result<ResolvedDocument> {
+    pub fn resolve_imports<T>(&mut self, document: &CdlDocument<T>) -> Result<ResolvedDocument> {
         let mut resolved_rules = Vec::new();
         let mut resolved_rulesets = Vec::new();
 
@@ -86,7 +86,7 @@ impl ImportResolver {
     /// loading its dependencies.
     pub fn resolve_ruleset_imports(
         &mut self,
-        document: &RdlDocument<Ruleset>,
+        document: &CdlDocument<Ruleset>,
     ) -> Result<ResolvedDocument> {
         let mut resolved_rules = Vec::new();
         let mut resolved_rulesets = Vec::new();

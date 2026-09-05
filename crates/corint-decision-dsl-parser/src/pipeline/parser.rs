@@ -7,7 +7,7 @@ use crate::import_parser::ImportParser;
 use crate::yaml_parser::YamlParser;
 use super::step_parser::{parse_new_step, parse_step, parse_when_block};
 use corint_decision_model::ast::pipeline::{PipelineStep, StepNext, StepDetails};
-use corint_decision_model::ast::{Pipeline, RdlDocument, Step};
+use corint_decision_model::ast::{CdlDocument, Pipeline, Step};
 use serde_yaml::Value as YamlValue;
 
 /// Pipeline parser
@@ -28,8 +28,8 @@ impl PipelineParser {
     /// 1. Legacy single-document format (backward compatible)
     /// 2. New multi-document format with imports
     ///
-    /// Returns an RdlDocument<Pipeline> containing both the pipeline and its imports (if any)
-    pub fn parse_with_imports(yaml_str: &str) -> Result<RdlDocument<Pipeline>> {
+    /// Returns a CdlDocument<Pipeline> containing both the pipeline and its imports (if any)
+    pub fn parse_with_imports(yaml_str: &str) -> Result<CdlDocument<Pipeline>> {
         let (imports, definition_yaml) = ImportParser::parse_with_imports(yaml_str)?;
 
         // Parse the pipeline from the definition document
@@ -39,11 +39,11 @@ impl PipelineParser {
         let version = YamlParser::get_optional_string(&definition_yaml, "version")
             .unwrap_or_else(|| "0.1".to_string());
 
-        // Create RdlDocument
+        // Create CdlDocument
         if let Some(imports) = imports {
-            Ok(RdlDocument::with_imports(version, imports, pipeline))
+            Ok(CdlDocument::with_imports(version, imports, pipeline))
         } else {
-            Ok(RdlDocument::new(version, pipeline))
+            Ok(CdlDocument::new(version, pipeline))
         }
     }
 

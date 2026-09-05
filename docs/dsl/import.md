@@ -1,8 +1,8 @@
-# RDL Imports and Module System
+# CDL Imports and Module System
 
 ## Overview
 
-RDL provides a module system for code reuse. The `import` mechanism allows importing rules and rulesets from library files.
+CDL provides a module system for code reuse. The `import` mechanism allows importing rules and rulesets from library files.
 
 ---
 
@@ -10,7 +10,7 @@ RDL provides a module system for code reuse. The `import` mechanism allows impor
 
 ### Import Declaration
 
-Imports are declared at the top of an RDL file using YAML multi-document format:
+Imports are declared at the top of a CDL file using YAML multi-document format:
 
 ```yaml
 version: "0.1"
@@ -56,7 +56,7 @@ ruleset:
 
 <file_path>       ::= <string>  // Relative to repository root, e.g., "library/rules/fraud/fraud_farm.yaml"
 
-<rdl_document>    ::= <version>? <import>? "---" <definition>
+<cdl_document>    ::= <version>? <import>? "---" <definition>
 
 <definition>      ::= <rule> | <ruleset> | <pipeline>
 ```

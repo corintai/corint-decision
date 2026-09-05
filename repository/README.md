@@ -38,7 +38,7 @@ repository/
 
 ### Three-Layer Decision Architecture
 
-RDL uses a three-layer decision architecture with clear separation of concerns:
+CDL uses a three-layer decision architecture with clear separation of concerns:
 
 ```
 ┌─────────────────────────────────────┐

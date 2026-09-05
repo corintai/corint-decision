@@ -1,4 +1,4 @@
-# CORINT Risk Definition Language (RDL)
+# Corint Definition Language (CDL)
 ## List (Custom Lists) Specification (v0.1)
 
 **Custom lists** (blocklists, allowlists, watchlists) enable efficient membership checks against predefined sets of values during rule evaluation.

@@ -1,4 +1,4 @@
-# CORINT Risk Definition Language (RDL)
+# Corint Definition Language (CDL)
 ## Rule Specification (v0.1)
 
 A **Rule** is the smallest executable logic unit within CORINT's Cognitive Risk Intelligence framework.

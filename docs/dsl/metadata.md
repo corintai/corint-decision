@@ -1,13 +1,13 @@
-# CORINT Risk Definition Language (RDL)
+# Corint Definition Language (CDL)
 ## Metadata Specification (v0.1)
 
-Metadata provides versioning, authorship, and management information for all RDL components (Rules, Rulesets, and Pipelines).
+Metadata provides versioning, authorship, and management information for all CDL components (Rules, Rulesets, and Pipelines).
 
 ---
 
 ## 1. Overview
 
-All RDL components **may** include an optional `metadata` field. **Strongly recommended** for production use.
+All CDL components **may** include an optional `metadata` field. **Strongly recommended** for production use.
 
 When included, metadata should contain:
 - **Recommended fields**: `version`, `author`, `updated`

@@ -1,14 +1,14 @@
-# CORINT Risk Definition Language (RDL)
+# Corint Definition Language (CDL)
 ## Overall Specification (v0.1)
 
-**RDL is the domain-specific language used by CORINT (Cognitive Risk Intelligence) to define rules, rule groups, and full risk‑processing pipelines.**
+**CDL is the domain-specific language used by CORINT (Cognitive Risk Intelligence) to define rules, rule groups, and full risk-processing pipelines.**
 It enables modern hybrid risk engines to combine deterministic logic with external data sources and APIs in a unified, explainable, high‑performance format.
 
 ---
 
-## 1. Goals of RDL
+## 1. Goals of CDL
 
-RDL is designed to:
+CDL is designed to:
 
 - Provide a declarative, human-readable format for risk logic
 - Be LLM-friendly for automated generation and modification  
@@ -22,7 +22,7 @@ RDL is designed to:
 
 ## 2. Top-Level Components
 
-An RDL file may contain one of the following:
+A CDL file may contain one of the following:
 
 ```yaml
 version: "0.1"
@@ -57,7 +57,7 @@ Components:
 
 ### 2.1 Import (Module System)
 
-RDL supports a module system for code reuse and maintainability:
+CDL supports a module system for code reuse and maintainability:
 
 ```yaml
 version: "0.1"
@@ -280,7 +280,7 @@ The registry serves as the centralized entry point for all event processing, ena
 
 ## 4. Expression Language
 
-RDL provides a powerful expression language for defining conditions and computations.
+CDL provides a powerful expression language for defining conditions and computations.
 
 Key features:
 - Logical operators (AND, OR, NOT)
@@ -296,7 +296,7 @@ Key features:
 
 ## 5. Feature Engineering and Statistical Analysis
 
-RDL includes comprehensive feature engineering capabilities for risk control scenarios.
+CDL includes comprehensive feature engineering capabilities for risk control scenarios.
 
 **Implementation Status:**
 
@@ -470,7 +470,7 @@ Note: Advanced error handling features (retry logic, circuit breaker, fallback c
 
 ## 8. Internal Service Integration
 
-RDL provides integration with internal microservices and message queues.
+CDL provides integration with internal microservices and message queues.
 
 Service types:
 - **HTTP microservices** (`ms_http`) - Internal RESTful services
@@ -540,7 +540,7 @@ api.Chainalysis.risk_score > 80
 
 ## 10. Documentation Structure
 
-RDL documentation is organized as follows:
+CDL documentation is organized as follows:
 
 ### Overview & Architecture
 - **overall.md** (this file) - High-level overview and introduction
@@ -620,7 +620,7 @@ rule:
 ## 12. BNF Grammar (Formal)
 
 ```
-RDL ::= "version" ":" STRING
+CDL ::= "version" ":" STRING
         (RULE | RULESET | PIPELINE | REGISTRY)
 
 RULE ::= "rule:" RULE_BODY
@@ -704,7 +704,7 @@ PARAMS_MAP ::= KEY ":" VALUE { KEY ":" VALUE }
 
 ## 13. Decision Architecture
 
-RDL uses a three-layer decision architecture with clear separation of concerns:
+CDL uses a three-layer decision architecture with clear separation of concerns:
 
 ### Layer 1: Rules (Pattern Detectors)
 - Detect individual risk factors and patterns
@@ -739,7 +739,7 @@ Rules (detect) → Scores → Ruleset (conclude) → Signals → Pipeline (decid
 
 ## 14. Compilation Model
 
-RDL compiles into:
+CDL compiles into:
 
 1. **AST (Abstract Syntax Tree)** - Intermediate representation
 2. **Rust IR** - High-performance execution format
@@ -759,7 +759,7 @@ The compilation process includes:
 
 ## 15. Summary
 
-RDL provides a modern, explainable DSL for advanced risk engines:
+CDL provides a modern, explainable DSL for advanced risk engines:
 
 - Declarative rule definition with powerful expressions
 - Modular (Rule → Ruleset → Pipeline)

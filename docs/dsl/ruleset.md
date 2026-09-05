@@ -1,4 +1,4 @@
-# CORINT Risk Definition Language (RDL)
+# Corint Definition Language (CDL)
 ## Ruleset Specification (v0.1)
 
 A **Ruleset** is a named collection of rules that can be reused, grouped, and executed as a unit within CORINT's Cognitive Risk Intelligence framework.
@@ -68,7 +68,7 @@ description: Detect account takeover through multi-signal pattern analysis
 
 An ordered list of rule identifiers that belong to this ruleset.
 
-The rules referenced here must exist in the system, typically defined in separate RDL rule files.
+The rules referenced here must exist in the system, typically defined in separate CDL rule files.
 
 Example:
 
@@ -573,7 +573,7 @@ For comprehensive understanding of rulesets and the CORINT ecosystem:
 - [feature.md](feature.md) - Feature engineering for rule conditions
 
 ### Architecture
-- [overall.md](overall.md) - High-level RDL overview
+- [overall.md](overall.md) - High-level CDL overview
 - [ARCHITECTURE.md](../ARCHITECTURE.md) - Three-layer decision architecture
 
 ---
@@ -591,4 +591,4 @@ A CORINT Ruleset groups multiple rules into a reusable logical unit that:
 - **Rulesets** evaluate rule results and produce decision signals
 - **Pipelines** route events to rulesets and use ruleset results
 
-Rulesets are the signal-producing layer of CORINT's Risk Definition Language (RDL).
+Rulesets are the signal-producing layer of Corint Definition Language (CDL).

@@ -91,7 +91,7 @@ pipeline:
 
 ## ✨ Key Features
 
-### 🎯 Unified Risk Definition Language (RDL)
+### 🎯 Corint Definition Language (CDL)
 
 Define your entire risk stack in a single, declarative language:
 

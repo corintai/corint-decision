@@ -4,8 +4,8 @@
 //! library components.
 
 use corint_decision_compiler::{Compiler, CompilerOptions, ImportResolver};
-use corint_decision_model::ast::RdlDocument;
 use corint_decision_dsl_parser::RuleParser;
+use corint_decision_model::ast::CdlDocument;
 use std::path::PathBuf;
 
 #[test]
@@ -66,7 +66,7 @@ fn test_import_resolver_cache_clearing() {
 }
 
 // Helper function to create a test document
-fn create_test_document() -> RdlDocument<()> {
+fn create_test_document() -> CdlDocument<()> {
     use corint_decision_model::ast::Imports;
 
     let mut imports = Imports::default();
@@ -74,7 +74,7 @@ fn create_test_document() -> RdlDocument<()> {
         .rules
         .push("library/rules/fraud/fraud_farm.yaml".to_string());
 
-    RdlDocument::with_imports("0.1".to_string(), imports, ())
+    CdlDocument::with_imports("0.1".to_string(), imports, ())
 }
 
 #[test]
@@ -133,7 +133,7 @@ fn test_import_resolver_error_messages() {
     let mut imports = corint_decision_model::ast::Imports::default();
     imports.rules.push("nonexistent/rule.yaml".to_string());
 
-    let document = RdlDocument::with_imports("0.1".to_string(), imports, ());
+    let document = CdlDocument::with_imports("0.1".to_string(), imports, ());
 
     let result = resolver.resolve_imports(&document);
 

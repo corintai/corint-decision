@@ -1,14 +1,14 @@
-# CORINT RDL Architecture
+# Corint Definition Language (CDL) Architecture
 
 > **⚠️ Note:** This document describes the original design architecture. Some syntax examples use earlier terminology that has since evolved. For the latest DSL specifications, please refer to:
-> - `dsl/overall.md` - Complete RDL specification
+> - `dsl/overall.md` - Complete CDL specification
 > - `dsl/pipeline.md` - Pipeline specification
 > - `dsl/ruleset.md` - Ruleset specification
 > - `docs/ARCHITECTURE.md` - Current implementation architecture
 
 ## Three-Layer Decision Architecture
 
-RDL adopts a clear three-layer architecture with distinct responsibilities:
+CDL adopts a clear three-layer architecture with distinct responsibilities:
 
 ```
 ┌─────────────────────────────────────────────────────────┐
@@ -375,13 +375,13 @@ pipeline:
 
 ## Complete Documentation Structure
 
-CORINT RDL documentation is organized into five categories for clarity and ease of navigation.
+Corint Definition Language documentation is organized into five categories for clarity and ease of navigation.
 
 ```
-📚 CORINT RDL Documentation
+📚 Corint Definition Language (CDL) Documentation
 
 ├─ 📖 Overview & Architecture
-│  ├─ overall.md          High-level overview of RDL, goals, components, and features
+│  ├─ overall.md          High-level overview of CDL, goals, components, and features
 │  
 │
 ├─ 🔧 Core Components (Fundamental building blocks)

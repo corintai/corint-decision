@@ -27,9 +27,9 @@ pub struct Imports {
     pub templates: Vec<String>,
 }
 
-/// RDL Document wraps the actual definition with optional imports
+/// CDL document wraps the actual definition with optional imports.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct RdlDocument<T> {
+pub struct CdlDocument<T> {
     /// File format version (defaults to "0.1" if not specified)
     #[serde(default = "default_version")]
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -134,8 +134,8 @@ impl Imports {
     }
 }
 
-impl<T> RdlDocument<T> {
-    /// Create a new RDL document without imports
+impl<T> CdlDocument<T> {
+    /// Create a new CDL document without imports
     pub fn new(version: String, definition: T) -> Self {
         Self {
             version: Some(version),
@@ -144,7 +144,7 @@ impl<T> RdlDocument<T> {
         }
     }
 
-    /// Create a new RDL document with imports
+    /// Create a new CDL document with imports
     pub fn with_imports(version: String, imports: Imports, definition: T) -> Self {
         Self {
             version: Some(version),
@@ -259,13 +259,13 @@ mod tests {
     }
 
     #[test]
-    fn test_rdl_document_without_imports() {
+    fn test_cdl_document_without_imports() {
         #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
         struct TestDef {
             id: String,
         }
 
-        let doc = RdlDocument::new(
+        let doc = CdlDocument::new(
             "0.1".to_string(),
             TestDef {
                 id: "test".to_string(),
@@ -278,14 +278,14 @@ mod tests {
     }
 
     #[test]
-    fn test_rdl_document_with_imports() {
+    fn test_cdl_document_with_imports() {
         #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
         struct TestDef {
             id: String,
         }
 
         let imports = Imports::new().add_rule("test_rule.yaml".to_string());
-        let doc = RdlDocument::with_imports(
+        let doc = CdlDocument::with_imports(
             "0.1".to_string(),
             imports.clone(),
             TestDef {

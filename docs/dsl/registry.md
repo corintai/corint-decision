@@ -1,4 +1,4 @@
-# CORINT Risk Definition Language (RDL)
+# Corint Definition Language (CDL)
 ## Pipeline Registry Specification (v0.1)
 
 A **Pipeline Registry** defines the entry point routing for event processing in CORINT's Cognitive Risk Intelligence framework.  

@@ -1,7 +1,7 @@
-# CORINT Risk Definition Language (RDL)
+# Corint Definition Language (CDL)
 ## Internal Service Integration Specification (v0.1)
 
-This document defines how internal microservices and message queues are configured, invoked, and managed within CORINT's Risk Definition Language.
+This document defines how internal microservices and message queues are configured, invoked, and managed within Corint Definition Language (CDL).
 
 **Note:** For database and cache access, use **Datasources** (defined in `config/server.yaml`). For third-party HTTP APIs, use **External APIs** (see `api.md`).
 

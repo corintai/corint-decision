@@ -11,7 +11,7 @@ use corint_decision_model::ast::pipeline::{
     ApiTarget, ErrorAction, ErrorHandling, PipelineStep, Route, StepDetails, StepNext,
 };
 use corint_decision_model::ast::{
-    Branch, FeatureDefinition, MergeStrategy, Pipeline, RdlDocument, Step, WhenBlock,
+    Branch, CdlDocument, FeatureDefinition, MergeStrategy, Pipeline, Step, WhenBlock,
 };
 use serde_yaml::Value as YamlValue;
 use std::collections::HashMap;
@@ -76,8 +76,8 @@ impl PipelineParser {
     /// 1. Legacy single-document format (backward compatible)
     /// 2. New multi-document format with imports
     ///
-    /// Returns an RdlDocument<Pipeline> containing both the pipeline and its imports (if any)
-    pub fn parse_with_imports(yaml_str: &str) -> Result<RdlDocument<Pipeline>> {
+    /// Returns a CdlDocument<Pipeline> containing both the pipeline and its imports (if any)
+    pub fn parse_with_imports(yaml_str: &str) -> Result<CdlDocument<Pipeline>> {
         let (imports, definition_yaml) = ImportParser::parse_with_imports(yaml_str)?;
 
         // Parse the pipeline from the definition document
@@ -87,11 +87,11 @@ impl PipelineParser {
         let version = YamlParser::get_optional_string(&definition_yaml, "version")
             .unwrap_or_else(|| "0.1".to_string());
 
-        // Create RdlDocument
+        // Create CdlDocument
         if let Some(imports) = imports {
-            Ok(RdlDocument::with_imports(version, imports, pipeline))
+            Ok(CdlDocument::with_imports(version, imports, pipeline))
         } else {
-            Ok(RdlDocument::new(version, pipeline))
+            Ok(CdlDocument::new(version, pipeline))
         }
     }
 

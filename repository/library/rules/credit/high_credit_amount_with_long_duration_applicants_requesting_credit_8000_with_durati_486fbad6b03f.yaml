@@ -10,5 +10,5 @@ rule:
   score: 85
   metadata:
     version: 1.0.0
-    author: ComposeRDL
+    author: ComposeCDL
     updated: 2026-03-26 10:09:41

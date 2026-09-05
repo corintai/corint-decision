@@ -17,7 +17,7 @@ pub mod rule;
 pub mod ruleset;
 
 pub use expression::{Expression, LogicalGroupOp, UnaryOperator};
-pub use import::{ImportContext, Imports, RdlDocument};
+pub use import::{CdlDocument, ImportContext, Imports};
 pub use operator::Operator;
 pub use pipeline::{
     Branch, FeatureDefinition, MergeStrategy, Pipeline, PipelineDecisionRule, Step,
