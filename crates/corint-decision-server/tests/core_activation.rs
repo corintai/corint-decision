@@ -616,7 +616,7 @@ async fn frozen_import_closure_runs_through_server_approval_and_real_engine() {
         "POST",
         "/v1/core/decide",
         Some(DECISION),
-        json!({"event":{"amount":1001}}),
+        json!({"event":{"amount":1001}, "enable_trace": true}),
     )
     .await;
     assert_eq!(status, StatusCode::OK);
@@ -625,4 +625,16 @@ async fn frozen_import_closure_runs_through_server_approval_and_real_engine() {
         resolved.receipt().policy_sha256
     );
     assert_eq!(result["decision"]["result"]["score"], 60);
+    let records = result["decision"]["trace"]["core_conditions_v1"]
+        .as_array()
+        .unwrap();
+    assert!(records.iter().any(|r| r["source"] == "rules/amount.yaml"
+        && r["field_path"] == "/rule/when"
+        && r["node_path"] == ""
+        && r["outcome"] == json!({"status":"evaluated","result":true})));
+    assert!(records.iter().all(|r| resolved
+        .bundle()
+        .sources
+        .iter()
+        .any(|s| r["source"] == s.path)));
 }

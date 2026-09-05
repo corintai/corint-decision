@@ -1,13 +1,33 @@
 # CORINT Decision Engine - E2E Tests
 
-Complete end-to-end testing suite for the CORINT Decision Engine.
+There are separate Core and legacy datasource test suites; neither certifies the
+entire Corint solution.
+
+## Strict CDL Core process e2e
+
+```bash
+bash tests/scripts/run_core_e2e_tests.sh
+```
+
+Fixed model output → real generator → real CLI → real loopback HTTP server,
+including activation rejection, decision/Trace parity and process restart.
+Uses temporary directories and dynamic ports, without business databases.
+See [Core e2e instructions and evidence boundaries](CORE_E2E.md).
+
+## Legacy datasource suite
+
+The remainder of this page describes `run_e2e_tests.sh`, not the Core suite.
+Run it only in an isolated test environment: it can modify repository config and
+shared test files, terminate matching server processes, and reset configured
+database tables/cache keys. It is not a safe default against an existing workspace
+or business datasource, and it is not currently invoked by the Core CI job.
 
 ## Quick Start
 
-Run all tests with a single command:
+Run the legacy datasource tests:
 
 ```bash
-# From project root directory - ONE COMMAND TO RUN ALL TESTS
+# From an isolated test checkout with disposable datasources
 ./tests/scripts/run_e2e_tests.sh
 ```
 

@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "profile": "cdl-core-risk-draft-1",
+  "language_version": "0.1",
+  "pages": ["cdl-core.md", "condition-trace.md"],
+  "examples": [
+    {"id": "payment_boundaries", "kind": "supported_complete", "page": "cdl-core.md", "fixture": "../../tests/conformance/cdl_core/manifest.yaml", "case_id": "payment_boundaries"},
+    {"id": "result_dependent_router", "kind": "supported_complete", "page": "cdl-core.md", "fixture": "../../tests/conformance/cdl_core/manifest.yaml", "case_id": "result_dependent_router"},
+    {"id": "unknown_condition", "kind": "negative", "page": "cdl-core.md", "fixture": "../../tests/conformance/cdl_core/manifest.yaml", "case_id": "N01_unknown_condition"},
+    {"id": "condition_trace_short_circuit", "kind": "supported_complete", "page": "condition-trace.md", "fixture": "../../tests/conformance/cdl_core/manifest.yaml", "case_id": "condition_trace_short_circuit"}
+  ]
+}

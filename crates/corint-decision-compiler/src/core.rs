@@ -10,6 +10,10 @@ use corint_decision_model::ast::{
     Condition, ConditionGroup, Expression, LogicalGroupOp, Operator, PipelineRegistry,
     UnaryOperator, WhenBlock,
 };
+use corint_decision_model::ir::condition_map::{
+    ConditionMap, CONDITION_MAP, DECISION_CONDITION_MAP,
+};
+use corint_decision_model::ir::Instruction;
 use corint_decision_model::ir::Program;
 use corint_decision_model::types::{FieldType, Schema};
 use corint_decision_model::Value;
@@ -302,7 +306,12 @@ pub fn compile_core(sources: &[CoreSource], input_schema: Schema) -> CoreResult<
         )
     })?;
     let empty = BTreeSet::new();
-    let mut compiler = Compiler::new();
+    // Core source maps address the emitted instruction stream. The legacy
+    // optimizer removes instructions without relocating jumps or debug maps.
+    let mut compiler = Compiler::with_options(crate::CompilerOptions {
+        enable_dead_code_elimination: false,
+        ..Default::default()
+    });
     let mut programs = Vec::new();
     for (kind, doc) in resources.values() {
         let body = &doc.value[*kind];
@@ -316,7 +325,7 @@ pub fn compile_core(sources: &[CoreSource], input_schema: Schema) -> CoreResult<
                 e.to_string(),
             )
         };
-        let program = match *kind {
+        let mut program = match *kind {
             "rule" => {
                 check_condition(
                     &body["when"],
@@ -328,7 +337,10 @@ pub fn compile_core(sources: &[CoreSource], input_schema: Schema) -> CoreResult<
                 )?;
                 let mut rule = RuleParser::parse_from_yaml(&yaml).map_err(parse_error)?;
                 normalize_when(&mut rule.when);
-                compiler.compile_rule(&rule)
+                compiler.compile_rule(&rule).and_then(|mut program| {
+                    map_rule(&mut program, &rule.when, "/rule/when".into())?;
+                    Ok(program)
+                })
             }
             "ruleset" => {
                 for id in body["rules"].as_array().unwrap() {
@@ -359,7 +371,22 @@ pub fn compile_core(sources: &[CoreSource], input_schema: Schema) -> CoreResult<
                         row.condition = Some(normalize_expression(expr));
                     }
                 }
-                compiler.compile_ruleset(&ruleset)
+                compiler.compile_ruleset(&ruleset).and_then(|mut program| {
+                    let ends = signal_positions(&program.instructions);
+                    let mut maps = Vec::new();
+                    for (index, row) in ruleset.conclusion.iter().enumerate() {
+                        if let Some(expr) = &row.condition {
+                            maps.push(crate::core_trace::condition_map(
+                                &program.instructions,
+                                expr,
+                                ends[index] - 1,
+                                format!("/ruleset/conclusion/{index}/when"),
+                            )?);
+                        }
+                    }
+                    store_maps(&mut program, CONDITION_MAP, maps);
+                    Ok(program)
+                })
             }
             "pipeline" => {
                 check_pipeline(body, &resources, &input_schema, &doc.source)?;
@@ -376,7 +403,12 @@ pub fn compile_core(sources: &[CoreSource], input_schema: Schema) -> CoreResult<
                         normalize_when(when);
                     }
                 }
-                compiler.compile_pipeline(&pipeline)
+                compiler
+                    .compile_pipeline(&pipeline)
+                    .and_then(|mut program| {
+                        map_pipeline(&mut program, &pipeline)?;
+                        Ok(program)
+                    })
             }
             _ => unreachable!(),
         }
@@ -389,6 +421,10 @@ pub fn compile_core(sources: &[CoreSource], input_schema: Schema) -> CoreResult<
                 e.to_string(),
             )
         })?;
+        program
+            .metadata
+            .custom
+            .insert("core_source".into(), doc.source.clone());
         programs.push(program);
     }
     for (i, entry) in registry_doc.value["registry"]
@@ -438,15 +474,27 @@ pub fn compile_core(sources: &[CoreSource], input_schema: Schema) -> CoreResult<
             when: entry.when.clone(),
             score: 1,
         };
-        registry_guards.push(crate::RuleCompiler::compile(&rule).map_err(|e| {
-            diagnostic(
-                &registry_doc.source,
-                &format!("/registry/{i}/when"),
-                "compile",
-                "E_COMPILE",
-                e.to_string(),
-            )
-        })?);
+        let mut guard = crate::RuleCompiler::compile(&rule)
+            .and_then(|mut guard| {
+                map_rule(&mut guard, &entry.when, format!("/registry/{i}/when"))?;
+                Ok(guard)
+            })
+            .map_err(|e| {
+                diagnostic(
+                    &registry_doc.source,
+                    &format!("/registry/{i}/when"),
+                    "compile",
+                    "E_COMPILE",
+                    e.to_string(),
+                )
+            })?;
+        guard.metadata.source_type = "registry".into();
+        guard.metadata.source_id = "registry".into();
+        guard
+            .metadata
+            .custom
+            .insert("core_source".into(), registry_doc.source.clone());
+        registry_guards.push(guard);
     }
     Ok(CompiledCore {
         programs,
@@ -457,6 +505,80 @@ pub fn compile_core(sources: &[CoreSource], input_schema: Schema) -> CoreResult<
 }
 
 type Resources<'a> = BTreeMap<&'a str, (&'a str, &'a CoreDocument)>;
+
+fn normalized_condition(when: &WhenBlock) -> &Expression {
+    &when.conditions.as_ref().expect("normalized when")[0]
+}
+
+fn map_pipeline(
+    program: &mut Program,
+    pipeline: &corint_decision_model::ast::Pipeline,
+) -> crate::Result<()> {
+    let mut maps = Vec::new();
+    for (index, step) in pipeline.steps.iter().enumerate() {
+        for (route_index, route) in step.routes.iter().flatten().enumerate() {
+            let end = program
+                .instructions
+                .iter()
+                .position(|inst| {
+                    matches!(inst, Instruction::MarkStepExecuted {
+                    step_id, route_index: Some(i), ..
+                } if step_id == &step.id && *i == route_index)
+                })
+                .and_then(|i| i.checked_sub(1))
+                .ok_or_else(|| {
+                    crate::CompileError::InvalidExpression(
+                        "Missing Core route observation boundary".into(),
+                    )
+                })?;
+            maps.push(crate::core_trace::condition_map(
+                &program.instructions,
+                normalized_condition(&route.when),
+                end,
+                format!("/pipeline/steps/{index}/step/routes/{route_index}/when"),
+            )?);
+        }
+    }
+    store_maps(program, CONDITION_MAP, maps);
+    let instructions = program.decision_instructions.as_ref().unwrap();
+    let ends = signal_positions(instructions);
+    let mut maps = Vec::new();
+    for (index, row) in pipeline.decision.as_ref().unwrap().iter().enumerate() {
+        if let Some(when) = &row.when {
+            maps.push(crate::core_trace::condition_map(
+                instructions,
+                normalized_condition(when),
+                ends[index] - 1,
+                format!("/pipeline/decision/{index}/when"),
+            )?);
+        }
+    }
+    store_maps(program, DECISION_CONDITION_MAP, maps);
+    Ok(())
+}
+
+fn signal_positions(instructions: &[Instruction]) -> Vec<usize> {
+    instructions
+        .iter()
+        .enumerate()
+        .filter_map(|(i, inst)| matches!(inst, Instruction::SetSignal { .. }).then_some(i))
+        .collect()
+}
+
+fn store_maps(program: &mut Program, key: &str, maps: Vec<ConditionMap>) {
+    program.metadata.custom.insert(
+        key.into(),
+        serde_json::to_string(&maps).expect("source map JSON"),
+    );
+}
+
+fn map_rule(program: &mut Program, when: &WhenBlock, path: String) -> crate::Result<()> {
+    let expr = normalized_condition(when);
+    let end = crate::codegen::ExpressionCompiler::compile(expr)?.len();
+    let map = crate::core_trace::condition_map(&program.instructions, expr, end, path)?;
+    store_maps(program, CONDITION_MAP, vec![map]);
+    Ok(())
+}
 
 fn require_resource(
     resources: &Resources<'_>,

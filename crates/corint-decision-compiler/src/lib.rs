@@ -5,6 +5,7 @@
 pub mod codegen;
 pub mod compiler;
 pub mod core;
+mod core_trace;
 pub mod error;
 pub mod import_resolver;
 pub mod optimizer;

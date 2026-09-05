@@ -187,6 +187,8 @@ results.payment_rules.score
 
 ### 5.3 首期表达式与求值契约（待实现验收）
 
+当前增量：[条件观察 v1](cdl/condition-trace.md) 已从真实 VM 收集五类 Core 条件作用域的布尔树结果，区分 `evaluated(false)`、`short_circuit` 与 `not_reached`，并以完整结果比较和故障注入验证 Trace 不改变求值。该字段不暴露原始操作数；未调用资源不生成伪造记录，执行失败仍返回错误。完整操作数、失败部分 Trace、脱敏/采样与审计存储仍待设计。
+
 - 首期覆盖布尔、字符串和有限数值的字面量、已声明字段、比较、布尔组合和括号；函数、隐式类型转换和非确定性求值不自动进入 Core。
 - `all / any` 必须为非空条件列表；`not` 只接受一个条件，可通过嵌套 `all / any` 表达组合取反。空条件组、多个组键并存、未知键均报错；旧版多条件 `not` 不得在未提示的情况下改变含义。
 - 布尔组合从左到右短路；启用 Trace 不得使原本不求值的条件被执行，也不得改变最终结果。
@@ -574,12 +576,15 @@ Feature / Model 的资源描述和就绪性契约在首期设计，不代表首�
 | 严格校验入口 | 现有 parser / compiler / repository 装配链 | 拒绝未知版本、字段、类型、引用和不支持能力，输出结构化诊断；已有宽松入口不能绕过发布门禁 |
 | 用例与真实示例 | `tests/conformance/cdl_core/` | 每例包含完整依赖、输入、预期输出或预期错误；不依赖在线服务或本机私有仓库 |
 | 端到端 runner | `crates/corint-decision-engine/tests/cdl_core_conformance.rs` | 使用公开解析器、编译器及真实 DecisionEngine 执行，不另写测试专用解释器 |
+| Core 进程级 e2e | `tests/scripts/run_core_e2e_tests.sh`、`crates/corint-decision-cli/tests/core_process_e2e.rs` | 固定模型响应经真实生成器、CLI、服务进程和 TCP HTTP；验证激活失败保持旧状态、决策/Trace 等价和重启语义，不代表真实 Work/在线模型集成 |
 | 互操作与证据测试 | `tests/conformance/contracts/` | 验证上下文/依赖检查、规范化往返、报告与版本绑定、事件关联；与真实 Work/在线依赖集成测试分开报告 |
 | 文档与生成器同步 | `docs/cdl/`、LLM prompt templates、现有 CI | 支持示例引用同一份 fixture；更改语义、示例、schema 或 prompt 都触发门禁 |
 
 schema 约束 YAML 对象形状；符号、类型、引用和控制流检查约束语义；行为用例验证实际执行。三者不能互相代替。需对 schema 接受集与解析器接受集作一致性检查，避免再形成两套定义。
 
 #### 11.3 示例即测试资产
+
+首批 [example registry](cdl/examples.json) 已约束 `cdl-core.md` 和 `condition-trace.md`：完整支持例与反例绑定同一 conformance manifest；CI 校验分类、标记、fixture 链接和可执行用例，并禁止在受管页面复制内联 YAML。新增条件例还绑定精确的布尔节点结果/跳过原因。该有界门禁不等于所有历史文档、片段、提案与 LLM prompt 都已完成映射。
 
 每个示例必须声明用途：完整支持例、片段、反例或未来提案。完整支持例直接来自 fixture；片段必须有可运行的包装用例；反例绑定预期错误；未来提案不得进入可发布清单。CI 应拒绝没有分类或 fixture 映射的支持声明。
 
@@ -665,7 +670,7 @@ runs:
 
 ### 12.2 首期必备用例
 
-以下为完整验收要求，不是整体已通过的测试报告。首批覆盖范围以 [能力清单](cdl/schema/capabilities.json) 及所绑定用例为准；C08 已有独立 `cdl-core-import-draft-1` 创作入口的多级文件解析、隔离读取、真实引擎等价性和冻结包互操作证据，运行时 draft-1 仍拒绝未解析 import。完整条件级 Trace 等仍未完成。首批已复用现有 Diagnostic 并补充来源、字段路径与阶段，其余错误码仍需逐项收敛。
+以下为完整验收要求，不是整体已通过的测试报告。首批覆盖范围以 [能力清单](cdl/schema/capabilities.json) 及所绑定用例为准；C08 已有独立 `cdl-core-import-draft-1` 创作入口的多级文件解析、隔离读取、真实引擎等价性和冻结包互操作证据，运行时 draft-1 仍拒绝未解析 import。C02 新增条件树观察、短路故障注入、共享规则调用区分与冻结 import 经 HTTP 返回 Trace 的证据；原始操作数和完整审计 Trace 仍未完成。首批已复用现有 Diagnostic 并补充来源、字段路径与阶段，其余错误码仍需逐项收敛。
 
 | ID | 场景 | 预期断言 |
 |---|---|---|
@@ -711,9 +716,9 @@ runs:
 
 ### 12.4 CI 与支持声明
 
-严格 Core server 的独立 HTTP 鉴权/激活测试现已加入 Core job，并安装其构建所需的 `protoc`。测试不启动外部监听，不使用真实客户数据；运行时依赖的业务与发布治理仍须独立验收。
+严格 Core server 的独立 HTTP 鉴权/激活测试已加入 Core job，并安装其构建所需的 `protoc`。router 集成测试不启动外部监听；另有 [Core 进程级 e2e](../tests/CORE_E2E.md) 启动真实 CLI/server 二进制，在临时目录和随机 loopback 端口验证固定模型生成、构建/验证/导出、服务端独立验收、鉴权激活、失败不切换、决策与条件 Trace、重启恢复初始策略。两类测试均不使用真实客户数据或在线模型；运行时依赖的业务与生产发布治理仍须独立验收。
 
-现有 [CI 配置](../.github/workflows/ci.yml) 在推送 main 和 PR 到 main/develop 时触发。独立 Core job 已包含真实引擎 conformance、CLI、共享工具链和固定模型响应生成器测试，本轮目标契约测试纳入现有命令；另有 workspace tests。这是已配置的门禁，不是本地修改已在远端 CI 通过的声明，也不等于覆盖全部文档示例。尚需扩充完整 schema/fixture 映射与跨产品集成证据。产品集成测试与公共契约测试分别报告，不通过移除某个适配入口来隐藏语义差异。
+现有 [CI 配置](../.github/workflows/ci.yml) 在推送 main 和 PR 到 main/develop 时触发。独立 Core job 已包含真实引擎 conformance、CLI、共享工具链和固定模型响应生成器测试；条件 Trace schema、受管页面示例映射及反例门禁已纳入 conformance 目标；另有 workspace tests。这是已配置的门禁，不是本地修改已在远端 CI 通过的声明，也不等于覆盖全部文档示例。尚需扩充历史示例/片段、生成模板映射与跨产品集成证据。产品集成测试与公共契约测试分别报告，不通过移除某个适配入口来隐藏语义差异。
 
 门禁应阻断：支持例解析失败、编译失败、行为不符、反例意外被接受、示例未映射、能力状态与测试不符，以及未经兼容性说明的语义变更。不得用 `ignore`、只解析不执行，或无说明地修改期望输出来维持绿色结果。
 

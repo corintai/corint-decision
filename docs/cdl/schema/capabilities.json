@@ -9,7 +9,27 @@
   "source_package_schema": "source-package.json",
   "generation_response_schema": "generation-response.json",
   "source_bundle_schema": "source-bundle.json",
+  "condition_trace": {
+    "status": "experimental",
+    "field": "trace.core_conditions_v1",
+    "schema": "condition-trace.json",
+    "raw_operand_values": false,
+    "cases": ["condition_trace_short_circuit"],
+    "tests": ["boolean_forms_share_short_circuit_execution", "condition_trace_covers_scopes_skips_and_shared_rule_invocations"]
+  },
+  "example_registry": "../examples.json",
   "tools": {
+    "core_process_e2e": {
+      "status": "experimental",
+      "command": "bash tests/scripts/run_core_e2e_tests.sh",
+      "scope": "synthetic_core_delivery_and_execution",
+      "model_provider": "fixed_mock_response",
+      "real_cli_and_server_processes": true,
+      "transport": "loopback_tcp_http",
+      "live_work_integration": false,
+      "business_evaluation": "not_performed",
+      "evidence": "../../../crates/corint-decision-cli/tests/core_process_e2e.rs"
+    },
     "resolve_cli": {
       "status": "experimental",
       "source_profile": "cdl-core-import-draft-1",

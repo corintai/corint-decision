@@ -49,6 +49,35 @@ cases:
         steps: [check, route]
         local_scores: {risk: 0}
         calls: [large_amount]
+  - id: condition_trace_short_circuit
+    requirements: [C02]
+    documents: [trace_rule.yaml, ruleset.yaml, pipeline.yaml, registry.yaml]
+    runs:
+      - amount: 1000
+        score: 0
+        signal: approve
+        actions: []
+        triggered: []
+        steps: [check]
+        local_scores: {risk: 0}
+        calls: [large_amount]
+        conditions:
+          - {source: trace_rule.yaml, field_path: /rule/when, node_path: '', outcome: {status: evaluated, result: false}}
+          - {source: trace_rule.yaml, field_path: /rule/when, node_path: /children/0, outcome: {status: evaluated, result: false}}
+          - {source: trace_rule.yaml, field_path: /rule/when, node_path: /children/1, outcome: {status: skipped, reason: short_circuit}}
+          - {source: trace_rule.yaml, field_path: /rule/when, node_path: /children/1/children/0/children/0, outcome: {status: skipped, reason: short_circuit}}
+      - amount: 1001
+        score: 60
+        signal: decline
+        actions: [BLOCK]
+        triggered: [large_amount]
+        steps: [check]
+        local_scores: {risk: 60}
+        calls: [large_amount]
+        conditions:
+          - {source: trace_rule.yaml, field_path: /rule/when, node_path: '', outcome: {status: evaluated, result: true}}
+          - {source: trace_rule.yaml, field_path: /rule/when, node_path: /children/1/children/0/children/0, outcome: {status: evaluated, result: false}}
+          - {source: ruleset.yaml, field_path: /ruleset/conclusion/1/when, node_path: '', outcome: {status: skipped, reason: not_reached}}
 invalid:
   - id: N01_unknown_condition
     document: rule.yaml

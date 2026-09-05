@@ -6,6 +6,7 @@
 #[path = "tests/mod.rs"]
 mod tests;
 
+use super::condition_observer::ConditionObserver;
 use super::operators;
 use crate::context::ExecutionContext;
 use crate::error::{Result, RuntimeError};
@@ -15,6 +16,7 @@ use crate::observability::{Metrics, MetricsCollector};
 use crate::result::{DecisionResult, ExecutionResult};
 use crate::service::ServiceClient;
 use crate::storage::Storage;
+use corint_decision_model::ir::condition_map::{CONDITION_MAP, DECISION_CONDITION_MAP};
 use corint_decision_model::ir::{FeatureType, Instruction, Program};
 use corint_decision_model::Value;
 use std::collections::HashMap;
@@ -134,6 +136,7 @@ impl PipelineExecutor {
         self.metrics.counter("executions_total").inc();
 
         let mut ctx = ExecutionContext::with_result(context_input.clone(), existing_result)?;
+        let mut condition_observer = ConditionObserver::new(program, &mut ctx)?;
         let mut pc = 0; // Program Counter
 
         tracing::debug!("Program has {} instructions", program.instructions.len());
@@ -141,6 +144,9 @@ impl PipelineExecutor {
             tracing::trace!("  [{}]: {:?}", i, inst);
         }
         while pc < program.instructions.len() {
+            if let Some(observer) = &mut condition_observer {
+                observer.observe(pc, &ctx)?;
+            }
             let instruction = &program.instructions[pc];
             tracing::trace!("Executing pc={}: {:?}", pc, instruction);
 
@@ -699,16 +705,24 @@ impl PipelineExecutor {
             }
         }
 
+        if let Some(observer) = condition_observer {
+            observer.finish(program, &mut ctx)?;
+        }
+
         // Execute decision logic if present
         if let Some(ref decision_instructions) = program.decision_instructions {
             if self.ruleset_programs.is_some() {
                 // Core final decisions use the SAME VM instruction set after all
                 // selected calls complete, never the legacy reduced interpreter.
-                let decision = Program {
+                let mut decision = Program {
                     instructions: decision_instructions.clone(),
                     metadata: program.metadata.clone(),
                     decision_instructions: None,
                 };
+                decision.metadata.custom.remove(CONDITION_MAP);
+                if let Some(map) = decision.metadata.custom.remove(DECISION_CONDITION_MAP) {
+                    decision.metadata.custom.insert(CONDITION_MAP.into(), map);
+                }
                 return Box::pin(self.execute_with_result(&decision, context_input, ctx.result))
                     .await;
             }

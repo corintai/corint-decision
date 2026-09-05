@@ -1,0 +1,25 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Core condition observations v1 (core_conditions_v1)",
+  "type": "array",
+  "items": {
+    "type": "object", "additionalProperties": false,
+    "required": ["source", "resource_type", "resource_id", "invocation", "field_path", "node_path", "outcome"],
+    "properties": {
+      "source": {"type": "string"},
+      "resource_type": {"enum": ["registry", "rule", "ruleset", "pipeline"]},
+      "resource_id": {"type": "string", "minLength": 1},
+      "invocation": {"type": "integer", "minimum": 0},
+      "field_path": {"type": "string", "pattern": "^/"},
+      "node_path": {"type": "string", "pattern": "^(/children/[0-9]+)*$"},
+      "outcome": {
+        "oneOf": [
+          {"type": "object", "additionalProperties": false, "required": ["status", "result"],
+           "properties": {"status": {"const": "evaluated"}, "result": {"type": "boolean"}}},
+          {"type": "object", "additionalProperties": false, "required": ["status", "reason"],
+           "properties": {"status": {"const": "skipped"}, "reason": {"enum": ["short_circuit", "not_reached"]}}}
+        ]
+      }
+    }
+  }
+}

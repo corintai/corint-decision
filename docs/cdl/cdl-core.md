@@ -135,10 +135,11 @@ signal, raw score, triggered rules, actions and explanation. Its serialized sign
 retains the existing `{ "type": "decline" }` shape; this increment does not change
 the transport contract. Named result objects in context expose string signals.
 
-Current trace evidence covers executed/skipped steps, routes and rule invocations.
+Current trace evidence covers executed/skipped steps, routes and rule invocations,
+plus opt-in [boolean condition observations v1](condition-trace.md).
 Context keys `__executed_steps__`, `__ruleset_result__.<id>` and
 `__core_rule_executions__` support this first runner; they are **internal evidence**,
-not the final cross-product report or feedback schema. Full operand-level Trace,
+not the final cross-product report or feedback schema. Raw operand-level Trace,
 precise per-rule timings and deterministic audit serialization remain pending.
 Request IDs, durations and trace collection order are not part of semantic equality.
 
@@ -175,13 +176,30 @@ Full examples in this document are links to runnable fixtures, not manually
 copied YAML. Other existing reference pages retain their historical support labels;
 those labels are **not** certification against this new profile.
 
+<!-- cdl-example: payment_boundaries -->
+Supported complete example: `payment_boundaries` in the
+[manifest](../../tests/conformance/cdl_core/manifest.yaml) binds the complete
+Rule/Ruleset/Pipeline/Registry closure and boundary inputs/expected behavior.
+
+<!-- cdl-example: result_dependent_router -->
+Supported complete example: `result_dependent_router` in the
+[manifest](../../tests/conformance/cdl_core/manifest.yaml) adds a branch, local
+results and assertions that unselected calls do not execute.
+
+<!-- cdl-example: unknown_condition -->
+Negative example: `N01_unknown_condition` in the
+[manifest](../../tests/conformance/cdl_core/manifest.yaml) must fail validation with
+`E_UNKNOWN_FIELD`; it is not a supported policy. The [example registry](examples.json)
+binds these declarations to the conformance runner. Its managed pages prohibit
+inline YAML copies; historical docs and prompts remain outside this initial gate.
+
 The separate [import authoring profile](resolution.md) now resolves bounded local
 file imports (C08) into this profile's frozen closure. This execution profile and
 strict generator response contract still reject unresolved imports; no runtime
 filesystem access is enabled. Portable import provenance/locking remains pending.
 
 Still pending: optional or nested input types, complete
-C02 operand traces, full source spans, all legacy example/prompt mappings,
+C02 raw operand traces, full source spans, all legacy example/prompt mappings,
 live-provider/Work generator integration, production publication enforcement, complete cross-product
 Feature/Model/full PolicyPackage/report/feedback contracts, and W01–W10 product-level
 interoperability. The local validate/test/source-build workflow covers part of W01;

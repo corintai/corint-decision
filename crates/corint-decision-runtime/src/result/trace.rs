@@ -187,7 +187,12 @@ impl ConclusionTrace {
     }
 
     /// Create a matched conclusion trace with signal and total_score
-    pub fn matched_with_score(condition: String, signal: &str, reason: Option<&str>, total_score: i32) -> Self {
+    pub fn matched_with_score(
+        condition: String,
+        signal: &str,
+        reason: Option<&str>,
+        total_score: i32,
+    ) -> Self {
         Self {
             condition,
             matched: true,
@@ -405,9 +410,40 @@ impl PipelineTrace {
     }
 }
 
+/// Core boolean observation without raw field values or reconstructed evaluations.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CoreConditionTrace {
+    pub source: String,
+    pub resource_type: String,
+    pub resource_id: String,
+    /// VM invocation, not timestamp; distinguishes shared-rule calls.
+    pub invocation: u64,
+    pub field_path: String,
+    pub node_path: String,
+    pub outcome: CoreConditionOutcome,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "status", rename_all = "snake_case", deny_unknown_fields)]
+pub enum CoreConditionOutcome {
+    Evaluated { result: bool },
+    Skipped { reason: CoreSkipReason },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CoreSkipReason {
+    ShortCircuit,
+    NotReached,
+}
+
 /// Complete execution trace for a decision request
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ExecutionTrace {
+    /// Opt-in Core observation v1; absent on compatibility traces.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub core_conditions_v1: Option<Vec<CoreConditionTrace>>,
     /// Pipeline execution trace
     #[serde(skip_serializing_if = "Option::is_none")]
     pub pipeline: Option<PipelineTrace>,
@@ -429,6 +465,7 @@ impl ExecutionTrace {
     /// Create a new execution trace
     pub fn new() -> Self {
         Self {
+            core_conditions_v1: None,
             pipeline: None,
             total_time_ms: 0,
             rules_evaluated: 0,

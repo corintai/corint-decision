@@ -2,6 +2,7 @@
 //!
 //! Provides executors for running IR programs.
 
+mod condition_observer;
 mod operators;
 pub mod pipeline_executor;
 

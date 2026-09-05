@@ -33,4 +33,5 @@ clickhouse = ["corint-decision-runtime/clickhouse"]
 redis = ["corint-decision-runtime/redis"]
 
 [dev-dependencies]
+jsonschema = { version = "0.17", default-features = false }
 tokio = { version = "1.0", features = ["full", "test-util"] }

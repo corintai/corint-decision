@@ -22,3 +22,13 @@ serde_yaml = { workspace = true }
 jsonschema = { version = "0.17", default-features = false }
 tempfile = "3.8"
 sha2 = "0.10"
+reqwest = { version = "0.11", default-features = false, features = ["json"] }
+
+[features]
+# Explicit two-binary test target; run through tests/scripts/run_core_e2e_tests.sh.
+process-e2e = []
+
+[[test]]
+name = "core_process_e2e"
+path = "tests/core_process_e2e.rs"
+required-features = ["process-e2e"]

@@ -10,8 +10,10 @@ use crate::error::{EngineError, Result};
 use corint_decision_compiler::{Compiler, CompilerOptions as CompilerOpts};
 use corint_decision_dsl_parser::RegistryParser;
 use corint_decision_model::ast::{PipelineRegistry, Signal};
+use corint_decision_model::ir::condition_map::{CONDITION_TRACE, TRACE_ENABLED, TRACE_INVOCATION};
 use corint_decision_model::ir::Program;
 use corint_decision_model::Value;
+use corint_decision_runtime::result::CoreConditionTrace;
 use corint_decision_runtime::{
     ApiConfig, ConditionTrace, DecisionResult, ExecutionTrace, ExternalApiClient, MetricsCollector,
     PipelineExecutor, PipelineTrace, RuleTrace, RulesetTrace,
@@ -350,6 +352,11 @@ impl DecisionEngine {
 
         // Create initial execution result
         let mut execution_result = ExecutionResult::new();
+        if self.core_input_schema.is_some() && request.options.enable_trace {
+            execution_result
+                .variables
+                .insert(TRACE_ENABLED.into(), Value::Bool(true));
+        }
 
         let mut combined_result = DecisionResult {
             signal: None,
@@ -388,11 +395,18 @@ impl DecisionEngine {
 
                 // Evaluate when block against event data
                 let matches = if self.core_input_schema.is_some() {
-                    self.executor
-                        .execute(&self.core_registry_guards[idx], request.event_data.clone())
-                        .await?
-                        .score
-                        == 1
+                    let mut guard_state = ExecutionResult::new();
+                    guard_state.variables = execution_result.variables.clone();
+                    let guard = self
+                        .executor
+                        .execute_with_result(
+                            &self.core_registry_guards[idx],
+                            request.to_context_input(),
+                            guard_state,
+                        )
+                        .await?;
+                    execution_result.variables = guard.context;
+                    guard.score == 1
                 } else {
                     WhenEvaluator::evaluate_when_block(&entry.when, &request.event_data)
                 };
@@ -1185,6 +1199,7 @@ impl DecisionEngine {
             }
         }
 
+        let mut core_conditions = None;
         if self.core_input_schema.is_some() {
             if !pipeline_matched {
                 return Err(corint_decision_compiler::core::diagnostic(
@@ -1196,6 +1211,33 @@ impl DecisionEngine {
                 )
                 .into());
             }
+            if request.options.enable_trace {
+                let records = execution_result
+                    .variables
+                    .remove(CONDITION_TRACE)
+                    .unwrap_or(Value::Array(Vec::new()));
+                let Value::Array(records) = records else {
+                    return Err(EngineError::GenericError("Invalid Core trace array".into()));
+                };
+                let mut records: Vec<CoreConditionTrace> = records
+                    .iter()
+                    .map(|record| {
+                        let Value::String(json) = record else {
+                            return Err(EngineError::GenericError(
+                                "Invalid Core trace record".into(),
+                            ));
+                        };
+                        serde_json::from_str(json).map_err(|e| {
+                            EngineError::GenericError(format!("Invalid Core trace: {e}"))
+                        })
+                    })
+                    .collect::<Result<_>>()?;
+                // Invocation order and source-map preorder, not wall-clock ordering.
+                records.sort_by_key(|record| record.invocation);
+                core_conditions = Some(records);
+            }
+            execution_result.variables.remove(TRACE_ENABLED);
+            execution_result.variables.remove(TRACE_INVOCATION);
             combined_result.context = execution_result.variables.clone();
         }
         let processing_time_ms = start.elapsed().as_millis() as u64;
@@ -1454,11 +1496,11 @@ impl DecisionEngine {
                 pipeline_trace = pipeline_trace.add_ruleset(ruleset_trace);
             }
 
-            Some(
-                ExecutionTrace::new()
-                    .with_pipeline(pipeline_trace)
-                    .with_time(processing_time_ms),
-            )
+            let mut trace = ExecutionTrace::new()
+                .with_pipeline(pipeline_trace)
+                .with_time(processing_time_ms);
+            trace.core_conditions_v1 = core_conditions;
+            Some(trace)
         } else {
             None
         };

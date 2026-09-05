@@ -122,4 +122,8 @@ CORINT_CORE_CONFIG=/absolute/path/core-server.json ./target/debug/corint-decisio
 [Core HTTP 集成测试](../../crates/corint-decision-server/tests/core_activation.rs) 使用真实 Axum router、
 严格编译器和引擎，不访问业务数据、不启动外部监听。覆盖角色分离、请求字段拒绝、初始策略验收、
 批准绑定失效、错误行为拒绝、失败不切换、并发竞争及决策快照一致性。
-独立 CI Core job 已加入该测试；本地通过不等于部署端或完整 CI 已通过。
+另有 [Core 进程级 e2e](../../tests/CORE_E2E.md)：固定模型响应经真实生成器及 CLI
+构建、验证、导出，再启动真实 server 二进制，通过随机 loopback 端口验证鉴权、激活、
+决策与条件 Trace、更新失败保持旧状态，以及重启后重新加载初始策略。
+它使用临时目录和合成样例，不连接业务数据库或在线模型。
+独立 CI Core job 已配置这两类测试；本地通过不等于部署端或完整 CI 已通过。

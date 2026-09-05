@@ -1,0 +1,10 @@
+version: "0.1"
+rule:
+  id: large_amount
+  name: Large amount with observable short circuit
+  when:
+    all:
+      - event.amount > 1000
+      - not:
+          - event.amount < 0
+  score: 60

@@ -3,6 +3,7 @@
 //! The IR is a lower-level representation optimized for execution.
 //! It serves as the target of compilation from AST.
 
+pub mod condition_map;
 pub mod instruction;
 pub mod program;
 

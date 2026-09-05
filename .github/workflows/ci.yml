@@ -17,7 +17,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
-      - name: Run strict Core behavior and contract checks
+      - name: Run strict Core behavior, condition trace and example mapping checks
         run: cargo test -p corint-decision-engine --test cdl_core_conformance --locked
       - name: Run offline CLI validation, behavior, packages, import resolution and target contract checks
         run: cargo test -p corint-decision-cli --locked
@@ -29,6 +29,9 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
       - name: Run isolated Core server authorization and activation checks
         run: cargo test -p corint-decision-server --test core_activation --locked
+      - name: Run Core process e2e (fixed model, real CLI and loopback HTTP)
+        timeout-minutes: 15
+        run: bash tests/scripts/run_core_e2e_tests.sh
 
   test:
     name: Test
@@ -70,11 +73,17 @@ jobs:
       - name: Check code formatting
         run: cargo fmt -- --check
 
+      - name: Install Protocol Buffers compiler for server build
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
+
       - name: Run clippy
         run: cargo clippy --all-targets --all-features -- -D warnings
 
       - name: Run tests
-        run: cargo test --all-features --workspace
+        run: |
+          CORINT_E2E_SERVER=$(bash tests/scripts/run_core_e2e_tests.sh --build-only)
+          export CORINT_E2E_SERVER
+          cargo test --all-features --workspace --locked
 
       - name: Run doc tests
         run: cargo test --doc --all-features --workspace
@@ -146,8 +155,14 @@ jobs:
       - name: Install cargo-tarpaulin
         run: cargo install cargo-tarpaulin
 
+      - name: Install Protocol Buffers compiler for server build
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
+
       - name: Generate coverage
-        run: cargo tarpaulin --all-features --workspace --timeout 300 --out xml
+        run: |
+          CORINT_E2E_SERVER=$(bash tests/scripts/run_core_e2e_tests.sh --build-only)
+          export CORINT_E2E_SERVER
+          cargo tarpaulin --all-features --workspace --timeout 300 --out xml
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v4

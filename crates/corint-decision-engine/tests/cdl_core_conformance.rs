@@ -27,6 +27,8 @@ struct Case {
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Run {
+    #[serde(default)]
+    conditions: Vec<ExpectedCondition>,
     amount: f64,
     score: i32,
     signal: String,
@@ -35,6 +37,14 @@ struct Run {
     steps: Vec<String>,
     local_scores: HashMap<String, i32>,
     calls: Vec<String>,
+}
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ExpectedCondition {
+    source: String,
+    field_path: String,
+    node_path: String,
+    outcome: corint_decision_runtime::result::CoreConditionOutcome,
 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -156,6 +166,29 @@ async fn manifest_behavior_and_trace_parity() {
                 }
                 assert_eq!(response.trace.is_some(), trace);
                 if let Some(trace) = response.trace {
+                    let records = trace.core_conditions_v1.as_ref().unwrap();
+                    let trace_schema: Json = serde_json::from_str(include_str!(
+                        "../../../docs/cdl/schema/condition-trace.json"
+                    ))
+                    .unwrap();
+                    let validator = jsonschema::JSONSchema::compile(&trace_schema).unwrap();
+                    assert!(validator.is_valid(&serde_json::to_value(records).unwrap()));
+                    for expected in &run.conditions {
+                        let record = records
+                            .iter()
+                            .find(|r| {
+                                r.source == expected.source
+                                    && r.field_path == expected.field_path
+                                    && r.node_path == expected.node_path
+                            })
+                            .unwrap_or_else(|| {
+                                panic!(
+                                    "Missing condition {} {} {}",
+                                    expected.source, expected.field_path, expected.node_path
+                                )
+                            });
+                        assert_eq!(record.outcome, expected.outcome);
+                    }
                     let pipeline = trace.pipeline.unwrap();
                     for step in pipeline.steps {
                         assert_eq!(step.executed, run.steps.contains(&step.step_id));
@@ -285,6 +318,17 @@ async fn score_overflow_is_a_controlled_error() {
         d["rule"]["score"] = i32::MAX.into()
     });
     let engine = DecisionEngine::from_core(&docs, schema()).unwrap();
+    let plain_error = engine
+        .decide(request(1001.0))
+        .await
+        .unwrap_err()
+        .to_string();
+    let traced_error = engine
+        .decide(request(1001.0).with_trace())
+        .await
+        .unwrap_err()
+        .to_string();
+    assert_eq!(plain_error, traced_error);
     assert!(engine
         .decide(request(1001.0))
         .await
@@ -301,6 +345,36 @@ async fn score_overflow_is_a_controlled_error() {
         .unwrap_err()
         .to_string()
         .contains("i32 score overflow"));
+}
+
+#[tokio::test]
+async fn condition_trace_preserves_zero_score_rule_and_unselected_steps() {
+    let mut docs = sources(&manifest().cases[1].documents);
+    modify(&mut docs, "rule.yaml", |d| d["rule"]["score"] = 0.into());
+    // Source order changes pointer positions, not control flow or observation results.
+    modify(&mut docs, "router.yaml", |d| {
+        d["pipeline"]["steps"].as_array_mut().unwrap().reverse()
+    });
+    let engine = DecisionEngine::from_core(&docs, schema()).unwrap();
+    for amount in [1000.0, 1001.0] {
+        let plain = engine.decide(request(amount)).await.unwrap();
+        let traced = engine.decide(request(amount).with_trace()).await.unwrap();
+        assert_eq!(plain.result, traced.result);
+        assert_eq!(traced.result.score, 0);
+        assert_eq!(
+            traced
+                .result
+                .triggered_rules
+                .contains(&"large_amount".into()),
+            amount > 1000.0
+        );
+        let records = traced.trace.unwrap().core_conditions_v1.unwrap();
+        assert!(!records.iter().any(|r| r.resource_id == "branch_marker"));
+        assert!(records
+            .iter()
+            .any(|r| r.field_path == "/pipeline/steps/1/step/routes/0/when"
+                && r.node_path.is_empty()));
+    }
 }
 
 #[test]
@@ -367,26 +441,40 @@ async fn boolean_forms_share_short_circuit_execution() {
             .unwrap();
         // VM-level fault injection proves the RHS is not evaluated. Such a
         // malformed request is rejected by the public engine input gate (N09).
-        let result = PipelineExecutor::new()
-            .execute(
-                rule,
-                HashMap::from([
-                    ("amount".into(), Value::Number(1001.0)),
-                    (
-                        "flag".into(),
-                        Value::String("invalid boolean operand".into()),
-                    ),
-                ]),
-            )
-            .await;
-        if must_evaluate {
-            assert!(result.is_err(), "{condition}");
-        } else {
-            assert_eq!(
-                result.unwrap().score,
-                if matched { 60 } else { 0 },
-                "{condition}"
-            );
+        for enabled in [false, true] {
+            let mut state = corint_decision_runtime::result::ExecutionResult::new();
+            if enabled {
+                state.variables.insert(
+                    corint_decision_model::ir::condition_map::TRACE_ENABLED.into(),
+                    Value::Bool(true),
+                );
+            }
+            let result = PipelineExecutor::new_offline()
+                .execute_with_result(
+                    rule,
+                    corint_decision_runtime::ContextInput::new(HashMap::from([
+                        ("amount".into(), Value::Number(1001.0)),
+                        (
+                            "flag".into(),
+                            Value::String("invalid boolean operand".into()),
+                        ),
+                    ])),
+                    state,
+                )
+                .await;
+            if must_evaluate {
+                assert!(result.is_err(), "{condition}");
+            } else {
+                let result = result.unwrap();
+                assert_eq!(result.score, if matched { 60 } else { 0 }, "{condition}");
+                if enabled {
+                    let records =
+                        &result.context[corint_decision_model::ir::condition_map::CONDITION_TRACE];
+                    assert!(serde_json::to_string(records)
+                        .unwrap()
+                        .contains("short_circuit"));
+                }
+            }
         }
     }
 }
@@ -417,12 +505,122 @@ async fn boolean_conditions_work_across_public_scopes() {
     }
 }
 
+#[tokio::test]
+async fn condition_trace_covers_scopes_skips_and_shared_rule_invocations() {
+    use corint_decision_runtime::result::{CoreConditionOutcome as Outcome, CoreSkipReason};
+    let mut docs = sources(&manifest().cases[1].documents);
+    let condition = serde_json::json!({"any": ["true", "event.amount > 1000"]});
+    modify(&mut docs, "rule.yaml", |d| {
+        d["rule"]["when"] = condition.clone()
+    });
+    modify(&mut docs, "registry.yaml", |d| {
+        d["registry"][0]["when"] = "false".into();
+        d["registry"][1]["when"] = condition.clone();
+        let unused = d["registry"][1].clone();
+        d["registry"].as_array_mut().unwrap().push(unused);
+    });
+    modify(&mut docs, "ruleset.yaml", |d| {
+        d["ruleset"]["conclusion"][0]["when"] = "true || total_score > 0".into();
+    });
+    modify(&mut docs, "branch_ruleset.yaml", |d| {
+        d["ruleset"]["rules"] = serde_json::json!(["large_amount"])
+    });
+    modify(&mut docs, "router.yaml", |d| {
+        d["pipeline"]["steps"][1]["step"]["routes"][0]["when"] = condition.clone();
+        let unused = d["pipeline"]["steps"][1]["step"]["routes"][0].clone();
+        d["pipeline"]["steps"][1]["step"]["routes"]
+            .as_array_mut()
+            .unwrap()
+            .push(unused);
+        d["pipeline"]["decision"][0]["when"] = condition.clone();
+        let unused = d["pipeline"]["decision"][0].clone();
+        d["pipeline"]["decision"]
+            .as_array_mut()
+            .unwrap()
+            .insert(1, unused);
+    });
+    let engine = DecisionEngine::from_core(&docs, schema()).unwrap();
+    let plain = engine.decide(request(0.0)).await.unwrap();
+    let traced = engine.decide(request(0.0).with_trace()).await.unwrap();
+    assert_eq!(plain.result, traced.result);
+    assert!(plain.trace.is_none());
+    assert_eq!(traced.result.score, 120);
+    assert!(!traced
+        .result
+        .context
+        .keys()
+        .any(|k| k.starts_with("__core_trace") || k == "__core_condition_trace__"));
+    let records = traced.trace.unwrap().core_conditions_v1.unwrap();
+    for path in [
+        "/registry/1/when",
+        "/rule/when",
+        "/ruleset/conclusion/0/when",
+        "/pipeline/steps/1/step/routes/0/when",
+        "/pipeline/decision/0/when",
+    ] {
+        assert!(
+            records.iter().any(|r| r.field_path == path
+                && r.node_path.is_empty()
+                && r.outcome == Outcome::Evaluated { result: true }),
+            "root {path}"
+        );
+        assert!(
+            records.iter().any(|r| r.field_path == path
+                && r.outcome
+                    == Outcome::Skipped {
+                        reason: CoreSkipReason::ShortCircuit
+                    }),
+            "skip {path}"
+        );
+    }
+    for path in [
+        "/ruleset/conclusion/1/when",
+        "/pipeline/steps/1/step/routes/1/when",
+        "/pipeline/decision/1/when",
+    ] {
+        assert!(
+            records.iter().any(|r| r.field_path == path
+                && r.node_path.is_empty()
+                && r.outcome
+                    == Outcome::Skipped {
+                        reason: CoreSkipReason::NotReached
+                    }),
+            "unreached {path}"
+        );
+    }
+    assert!(records.iter().any(|r| r.field_path == "/registry/0/when"
+        && r.node_path.is_empty()
+        && r.outcome == Outcome::Evaluated { result: false }));
+    assert!(!records.iter().any(|r| r.field_path == "/registry/2/when"));
+    let calls: std::collections::BTreeSet<_> = records
+        .iter()
+        .filter(|r| r.resource_id == "large_amount")
+        .map(|r| r.invocation)
+        .collect();
+    assert_eq!(calls.len(), 2);
+    assert!(records
+        .iter()
+        .all(|r| docs.iter().any(|s| s.path == r.source)));
+    let again = engine.decide(request(0.0).with_trace()).await.unwrap();
+    assert_eq!(records, again.trace.unwrap().core_conditions_v1.unwrap());
+}
+
 #[test]
 fn capability_evidence_and_schema_are_in_sync() {
     let capabilities: Json =
         serde_json::from_str(include_str!("../../../docs/cdl/schema/capabilities.json")).unwrap();
     assert_eq!(capabilities["profile"], PROFILE);
     assert_eq!(capabilities["language_version"], "0.1");
+    assert_eq!(
+        capabilities["condition_trace"]["schema"],
+        "condition-trace.json"
+    );
+    assert_eq!(
+        capabilities["condition_trace"]["field"],
+        "trace.core_conditions_v1"
+    );
+    assert_eq!(capabilities["condition_trace"]["raw_operand_values"], false);
+    assert_eq!(capabilities["example_registry"], "../examples.json");
     let manifest = manifest();
     let test_source = include_str!("cdl_core_conformance.rs");
     let mut ids = std::collections::BTreeSet::new();
@@ -465,6 +663,171 @@ fn capability_evidence_and_schema_are_in_sync() {
     for case in &manifest.invalid {
         assert!(case_ids.insert(&case.id));
     }
+    for case in capabilities["condition_trace"]["cases"].as_array().unwrap() {
+        assert!(manifest
+            .cases
+            .iter()
+            .any(|c| c.id == case.as_str().unwrap()
+                && c.runs.iter().any(|r| !r.conditions.is_empty())));
+    }
+    for test in capabilities["condition_trace"]["tests"].as_array().unwrap() {
+        assert!(test_source.contains(&format!("fn {}(", test.as_str().unwrap())));
+    }
+}
+
+#[derive(Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ExampleRegistry {
+    version: u32,
+    profile: String,
+    language_version: String,
+    pages: Vec<String>,
+    examples: Vec<DocumentExample>,
+}
+#[derive(Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct DocumentExample {
+    id: String,
+    kind: String,
+    page: String,
+    fixture: String,
+    case_id: String,
+}
+
+fn check_example_mapping(
+    index: &ExampleRegistry,
+    pages: &HashMap<String, String>,
+) -> Result<(), String> {
+    use std::collections::BTreeSet;
+    if index.version != 1 || index.profile != PROFILE || index.language_version != "0.1" {
+        return Err("version/profile".into());
+    }
+    let registered: BTreeSet<_> = index.pages.iter().collect();
+    if registered.len() != index.pages.len() || registered.is_empty() {
+        return Err("duplicate/empty pages".into());
+    }
+    let mut markers = BTreeSet::new();
+    for page in &index.pages {
+        let text = pages.get(page).ok_or("missing page")?;
+        if text.contains("```yaml") || text.contains("```yml") {
+            return Err("inline YAML must use a fixture".into());
+        }
+        for line in text.lines().filter(|l| l.contains("cdl-example:")) {
+            let id = line
+                .strip_prefix("<!-- cdl-example: ")
+                .and_then(|l| l.strip_suffix(" -->"))
+                .ok_or("malformed marker")?;
+            if !markers.insert((page.clone(), id.to_owned())) {
+                return Err("duplicate marker".into());
+            }
+        }
+    }
+    let cases = manifest();
+    let mut ids = BTreeSet::new();
+    for example in &index.examples {
+        if !registered.contains(&example.page) || !ids.insert(&example.id) {
+            return Err("duplicate/unregistered example".into());
+        }
+        if !markers.remove(&(example.page.clone(), example.id.clone())) {
+            return Err("missing marker".into());
+        }
+        if example.fixture != "../../tests/conformance/cdl_core/manifest.yaml"
+            || !pages[&example.page].contains(&format!("]({})", example.fixture))
+        {
+            return Err("missing fixture link".into());
+        }
+        match example.kind.as_str() {
+            "supported_complete" => {
+                let case = cases
+                    .cases
+                    .iter()
+                    .find(|c| c.id == example.case_id)
+                    .ok_or("missing behavior case")?;
+                if case.runs.is_empty() || case.documents.is_empty() {
+                    return Err("incomplete example".into());
+                }
+                for file in &case.documents {
+                    if !root().join(file).is_file() {
+                        return Err("missing source".into());
+                    }
+                }
+            }
+            "negative" => {
+                let case = cases
+                    .invalid
+                    .iter()
+                    .find(|c| c.id == example.case_id)
+                    .ok_or("missing negative case")?;
+                if case.code.is_empty() || case.stage.is_empty() {
+                    return Err("missing expected error".into());
+                }
+            }
+            _ => return Err("unclassified example".into()),
+        }
+    }
+    if !markers.is_empty() {
+        return Err("unmapped marker".into());
+    }
+    Ok(())
+}
+
+#[test]
+fn documentation_examples_are_classified_and_bound_to_executed_fixtures() {
+    let index: ExampleRegistry =
+        serde_json::from_str(include_str!("../../../docs/cdl/examples.json")).unwrap();
+    let docs = root().join("../../../docs/cdl");
+    let pages: HashMap<_, _> = index
+        .pages
+        .iter()
+        .map(|p| (p.clone(), std::fs::read_to_string(docs.join(p)).unwrap()))
+        .collect();
+    check_example_mapping(&index, &pages).unwrap();
+    let mut invalid = index.clone();
+    invalid.examples[0].case_id = "unverified".into();
+    assert!(check_example_mapping(&invalid, &pages).is_err());
+    let mut invalid = pages.clone();
+    invalid
+        .get_mut("cdl-core.md")
+        .unwrap()
+        .push_str("\n<!-- cdl-example: unregistered -->\n");
+    assert!(check_example_mapping(&index, &invalid).is_err());
+    let mut invalid = pages.clone();
+    *invalid.get_mut("condition-trace.md").unwrap() = pages["condition-trace.md"].replace(
+        "../../tests/conformance/cdl_core/manifest.yaml",
+        "missing.yaml",
+    );
+    assert!(check_example_mapping(&index, &invalid).is_err());
+    let mut invalid = pages;
+    invalid
+        .get_mut("cdl-core.md")
+        .unwrap()
+        .push_str("\n```yaml\nrule: {}\n```\n");
+    assert!(check_example_mapping(&index, &invalid).is_err());
+}
+
+#[test]
+fn condition_trace_schema_distinguishes_skipped_from_false_and_is_additive() {
+    let schema: Json = serde_json::from_str(include_str!(
+        "../../../docs/cdl/schema/condition-trace.json"
+    ))
+    .unwrap();
+    let validator = jsonschema::JSONSchema::compile(&schema).unwrap();
+    let mut records = serde_json::json!([{"source":"rule.yaml","resource_type":"rule","resource_id":"r","invocation":0,
+        "field_path":"/rule/when","node_path":"","outcome":{"status":"evaluated","result":false}}]);
+    assert!(validator.is_valid(&records));
+    records[0]["outcome"] = serde_json::json!({"status":"skipped","reason":"short_circuit"});
+    assert!(validator.is_valid(&records));
+    records[0]["outcome"]["result"] = false.into();
+    assert!(!validator.is_valid(&records));
+    assert!(
+        serde_json::from_value::<Vec<corint_decision_runtime::result::CoreConditionTrace>>(records)
+            .is_err()
+    );
+    let old = corint_decision_runtime::ExecutionTrace::new();
+    let json = serde_json::to_value(old).unwrap();
+    assert!(json.get("core_conditions_v1").is_none());
+    let old: corint_decision_runtime::ExecutionTrace = serde_json::from_value(json).unwrap();
+    assert!(old.core_conditions_v1.is_none());
 }
 
 #[tokio::test]
