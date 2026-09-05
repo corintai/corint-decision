@@ -381,6 +381,6 @@ All datasources are now defined in `config/server.yaml` under the `datasource` s
 
 ## Resources
 
-- [DSL Documentation](../docs/dsl/) - Complete DSL specification
+- [CDL Documentation](../docs/cdl/) - Complete CDL specification
 - [Feature Engineering](../docs/FEATURE_ENGINEERING.md) - Feature definition guide
-- [Examples](../docs/dsl/examples/) - Tutorial and learning resources
+- [Examples](../docs/cdl/examples/) - Tutorial and learning resources

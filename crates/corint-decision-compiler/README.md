@@ -260,6 +260,6 @@ mod tests {
 
 ## Related Documentation
 
-- [Ruleset Inheritance](../../docs/dsl/ruleset.md#inheritance)
-- [Parameterized Rules](../../docs/dsl/rule.md#parameters)
-- [Import System](../../docs/dsl/import.md)
+- [Ruleset Inheritance](../../docs/cdl/ruleset.md#55-ruleset-inheritance-extends--implemented)
+- [Parameterized Rules](../../docs/cdl/rule.md)
+- [Import System](../../docs/cdl/import.md)

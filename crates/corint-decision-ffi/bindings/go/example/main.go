@@ -48,7 +48,7 @@ func main() {
 	}
 	defer engine.Close()
 
-	// Build request based on docs/API_REQUEST.md and docs/dsl/overall.md.
+	// Build request based on docs/API_REQUEST.md and docs/cdl/overall.md.
 	// The SDK expects event fields under event_data; user profile is nested under event_data.user.
 	request := &corint.DecisionRequest{
 		EventData: map[string]interface{}{

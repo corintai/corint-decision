@@ -27,7 +27,7 @@ This skill helps you create:
 **ALWAYS** start by reading the overall documentation to understand the framework:
 
 ```
-Read: docs/dsl/overall.md
+Read: docs/cdl/overall.md
 ```
 
 This gives you:
@@ -42,17 +42,17 @@ Based on what the user wants to create, read the corresponding detailed document
 
 | User Request | Documentation to Read |
 |--------------|----------------------|
-| Create a rule | `docs/dsl/rule.md` |
-| Create a ruleset | `docs/dsl/ruleset.md` |
-| Create a pipeline | `docs/dsl/pipeline.md` |
-| Define features | `docs/dsl/feature.md` |
-| Create lists | `docs/dsl/list.md` |
-| Define external API | `docs/dsl/api.md` |
-| Define internal service | `docs/dsl/service.md` |
-| Expression syntax | `docs/dsl/expression.md` |
-| Context/variables | `docs/dsl/context.md` |
-| Import system | `docs/dsl/import.md` |
-| Registry system | `docs/dsl/registry.md` |
+| Create a rule | `docs/cdl/rule.md` |
+| Create a ruleset | `docs/cdl/ruleset.md` |
+| Create a pipeline | `docs/cdl/pipeline.md` |
+| Define features | `docs/cdl/feature.md` |
+| Create lists | `docs/cdl/list.md` |
+| Define external API | `docs/cdl/api.md` |
+| Define internal service | `docs/cdl/service.md` |
+| Expression syntax | `docs/cdl/expression.md` |
+| Context/variables | `docs/cdl/context.md` |
+| Import system | `docs/cdl/import.md` |
+| Registry system | `docs/cdl/registry.md` |
 
 ### Step 3: Generate YAML
 
@@ -67,7 +67,7 @@ After understanding the documentation:
 
 Before saving, validate your generated YAML against the comprehensive reference:
 
-**Reference File**: [`docs/dsl/examples/pipeline_example.yml`](docs/dsl/examples/pipeline_example.yml)
+**Reference File**: [`docs/cdl/examples/pipeline_example.yml`](../../../docs/cdl/examples/pipeline_example.yml)
 
 This comprehensive example demonstrates core pipeline DSL concepts in a complete, production-ready pipeline:
 
@@ -140,28 +140,28 @@ repository/                                 # Default base directory
 
 ### Core DSL Components
 
-- **[overall.md](docs/dsl/overall.md)** ⭐ - Complete framework overview (READ THIS FIRST)
-- **[expression.md](docs/dsl/expression.md)** - Expression language and operators
-- **[rule.md](docs/dsl/rule.md)** - Rule specification and patterns
-- **[ruleset.md](docs/dsl/ruleset.md)** - Ruleset and decision logic
-- **[pipeline.md](docs/dsl/pipeline.md)** - Pipeline orchestration
+- **[overall.md](../../../docs/cdl/overall.md)** ⭐ - Complete framework overview (READ THIS FIRST)
+- **[expression.md](../../../docs/cdl/expression.md)** - Expression language and operators
+- **[rule.md](../../../docs/cdl/rule.md)** - Rule specification and patterns
+- **[ruleset.md](../../../docs/cdl/ruleset.md)** - Ruleset and decision logic
+- **[pipeline.md](../../../docs/cdl/pipeline.md)** - Pipeline orchestration
 
 ### Comprehensive Example
 
-- **[pipeline_example.yml](docs/dsl/examples/pipeline_example.yml)** ⭐⭐ - Complete pipeline reference example covering core pipeline DSL concepts (production-ready)
+- **[pipeline_example.yml](../../../docs/cdl/examples/pipeline_example.yml)** ⭐⭐ - Complete pipeline reference example covering core pipeline DSL concepts (production-ready)
 
 ### Advanced Features
 
-- **[feature.md](docs/dsl/feature.md)** ⭐ - Feature engineering and statistical analysis
-- **[list.md](docs/dsl/list.md)** ⭐ - Custom lists (blocklists/allowlists)
-- **[api.md](docs/dsl/api.md)** - External API definitions
-- **[service.md](docs/dsl/service.md)** - Internal service definitions
+- **[feature.md](../../../docs/cdl/feature.md)** ⭐ - Feature engineering and statistical analysis
+- **[list.md](../../../docs/cdl/list.md)** ⭐ - Custom lists (blocklists/allowlists)
+- **[api.md](../../../docs/cdl/api.md)** - External API definitions
+- **[service.md](../../../docs/cdl/service.md)** - Internal service definitions
 
 ### Supporting Documentation
 
-- **[import.md](docs/dsl/import.md)** - Import rules or rulesets
-- **[context.md](docs/dsl/context.md)** - Context and variable management
-- **[registry.md](docs/dsl/registry.md)** - Pipeline registry
+- **[import.md](../../../docs/cdl/import.md)** - Import rules or rulesets
+- **[context.md](../../../docs/cdl/context.md)** - Context and variable management
+- **[registry.md](../../../docs/cdl/registry.md)** - Pipeline registry
 
 ## Usage Instructions
 
@@ -184,7 +184,7 @@ When the user asks to generate a DSL file:
    - Validate structure
 
 4. **Validate Against Reference**
-   - Compare with `docs/dsl/examples/pipeline_example.yml`
+   - Compare with `docs/cdl/examples/pipeline_example.yml`
    - Check syntax, fields, naming conventions
    - Verify metadata completeness
 
@@ -202,15 +202,15 @@ When the user asks to generate a DSL file:
 User: "Create a rule to detect high-frequency login attempts"
 
 Assistant Actions:
-1. Read docs/dsl/overall.md (understand framework)
-2. Read docs/dsl/rule.md (understand rule syntax)
-3. Read docs/dsl/expression.md (understand conditions)
+1. Read docs/cdl/overall.md (understand framework)
+2. Read docs/cdl/rule.md (understand rule syntax)
+3. Read docs/cdl/expression.md (understand conditions)
 4. Generate rule YAML with:
    - ID: high_frequency_login
    - Conditions using features
    - Appropriate score
    - Complete metadata
-5. Validate against docs/dsl/examples/pipeline_example.yml
+5. Validate against docs/cdl/examples/pipeline_example.yml
    - Check syntax and structure
    - Verify metadata fields
 6. Ask user to confirm save location:
@@ -225,14 +225,14 @@ Assistant Actions:
 User: "Create a feature to count transactions in the last 24 hours"
 
 Assistant Actions:
-1. Read docs/dsl/overall.md (understand framework)
-2. Read docs/dsl/feature.md (understand feature types)
+1. Read docs/cdl/overall.md (understand framework)
+2. Read docs/cdl/feature.md (understand feature types)
 3. Generate feature YAML with:
    - Type: aggregation
    - Method: count
    - Window: 24h
    - Datasource configuration
-4. Validate against docs/dsl/examples/pipeline_example.yml
+4. Validate against docs/cdl/examples/pipeline_example.yml
    - Check YAML structure
    - Verify required fields
 5. Ask user to confirm save location:
@@ -247,15 +247,15 @@ Assistant Actions:
 User: "Create a pipeline that checks fraud rules then calls an external API"
 
 Assistant Actions:
-1. Read docs/dsl/overall.md (understand framework)
-2. Read docs/dsl/pipeline.md (understand pipeline syntax)
-3. Read docs/dsl/api.md (understand API step syntax)
+1. Read docs/cdl/overall.md (understand framework)
+2. Read docs/cdl/pipeline.md (understand pipeline syntax)
+3. Read docs/cdl/api.md (understand API step syntax)
 4. Generate pipeline YAML with:
    - Entry step
    - Ruleset step
    - API call step
    - Decision logic
-5. Validate against docs/dsl/examples/pipeline_example.yml
+5. Validate against docs/cdl/examples/pipeline_example.yml
    - Compare structure with comprehensive example
    - Verify all/any/not condition syntax
    - Check context variable usage

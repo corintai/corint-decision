@@ -5,7 +5,7 @@
 **High-performance, AI-augmented risk decision engine with unified DSL**
 
 [![License](https://img.shields.io/badge/license-Elastic-blue.svg)](LICENSE)
-[![Documentation](https://img.shields.io/badge/docs-latest-green.svg)](doc/dsl/)
+[![Documentation](https://img.shields.io/badge/docs-latest-green.svg)](docs/cdl/)
 
 *Part of the **CORINT – Cognitive Risk Intelligence Framework***
 
@@ -702,34 +702,34 @@ RUST_LOG=trace cargo run -p corint-decision-server     # Trace (all details)
 
 ## 📚 Documentation
 
-### DSL Documentation
+### CDL Documentation
 
-#### DSL Overview
-
-| Document | Description |
-|----------|-------------| 
-| [**overvall.md**](docs/dsl/overall.md) | overall document |
-
-#### DSL Core Concepts
+#### CDL Overview
 
 | Document | Description |
 |----------|-------------| 
-| [**expression.md**](docs/dsl/expression.md) | Expression language reference |
-| [**rule.md**](docs/dsl/rule.md) | Rule specification and patterns |
-| [**ruleset.md**](docs/dsl/ruleset.md) | Ruleset and decision logic |
-| [**pipeline.md**](docs/dsl/pipeline.md) | Pipeline orchestration |
-| [**registry.md**](docs/dsl/registry.md) | Pipeline Registry |
+| [**overall.md**](docs/cdl/overall.md) | overall document |
+
+#### CDL Core Concepts
+
+| Document | Description |
+|----------|-------------| 
+| [**expression.md**](docs/cdl/expression.md) | Expression language reference |
+| [**rule.md**](docs/cdl/rule.md) | Rule specification and patterns |
+| [**ruleset.md**](docs/cdl/ruleset.md) | Ruleset and decision logic |
+| [**pipeline.md**](docs/cdl/pipeline.md) | Pipeline orchestration |
+| [**registry.md**](docs/cdl/registry.md) | Pipeline Registry |
 
 #### Advanced Features
 
 | Document | Description |
 |----------|-------------|
-| [**import.md**](docs/dsl/import.md) | Import rules or rulesets |
-| [**context.md**](docs/dsl/context.md) | Context and variable management |
+| [**import.md**](docs/cdl/import.md) | Import rules or rulesets |
+| [**context.md**](docs/cdl/context.md) | Context and variable management |
 | [**feature.md**](docs/FEATURE_ENGINEERING.md) ⭐ | **Feature engineering and statistical analysis** |
-| [**list.md**](docs/dsl/list.md) ⭐ | **Custom lists (blocklists/allowlists)** | 
-| [**api.md**](docs/dsl/api.md) | External API defination|
-| [**service.md**](docs/dsl/service.md) | Internal services defination |
+| [**list.md**](docs/cdl/list.md) ⭐ | **Custom lists (blocklists/allowlists)** |
+| [**api.md**](docs/cdl/api.md) | External API defination|
+| [**service.md**](docs/cdl/service.md) | Internal services defination |
 
 ### Extensible
 

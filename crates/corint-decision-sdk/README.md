@@ -500,7 +500,7 @@ async fn test_with_metadata() {
 ## Related Documentation
 
 - [Getting Started Guide](../../README.md#quick-start)
-- [DSL Overview](../../docs/dsl/overall.md)
-- [Pipeline Registry](../../docs/dsl/overall.md#pipeline-registry)
-- [Feature Engineering](../../docs/dsl/feature.md)
+- [CDL Overview](../../docs/cdl/overall.md)
+- [Pipeline Registry](../../docs/cdl/registry.md)
+- [Feature Engineering](../../docs/cdl/feature.md)
 - [Example Applications](../../examples/README.md)

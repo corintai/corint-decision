@@ -1285,7 +1285,7 @@ test:
 ## Reference Documentation
 
 - **DSL Design**: `docs/DSL_DESIGN.md` - Three-layer decision model, design patterns, and best practices for rule authors
-- **DSL Syntax Reference**: `docs/dsl/` - Complete DSL specification (rule.md, ruleset.md, pipeline.md, expression.md, etc.)
+- **CDL Syntax Reference**: `docs/cdl/` - Complete CDL specification (rule.md, ruleset.md, pipeline.md, expression.md, etc.)
 - **SDK/Server Separation Plan**: `docs/SDK_SERVER_SEPARATION_PLAN.md` - Architecture refactoring and unified integration approach
 - **API Documentation**: `docs/api/`
 - **Examples**: `repository/pipelines/`, `examples/`

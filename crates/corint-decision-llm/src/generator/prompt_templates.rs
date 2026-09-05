@@ -1,7 +1,7 @@
 //! Prompt templates for code generation
 
-/// CORINT DSL overall specification (embedded at compile time)
-const CORINT_DSL_SPEC: &str = include_str!("../../../../docs/dsl/overall.md");
+/// Corint Definition Language (CDL) overall specification (embedded at compile time)
+const CORINT_CDL_SPEC: &str = include_str!("../../../../docs/cdl/overall.md");
 
 /// Prompt template for generating a CORINT Rule
 pub const RULE_GENERATION_PROMPT: &str = r#"You are a CORINT decision engine expert. Generate a YAML rule configuration based on the user's description.
@@ -105,7 +105,7 @@ Requirements:
 
 Generate the pipeline now:
 "#,
-        CORINT_DSL_SPEC, description
+        CORINT_CDL_SPEC, description
     )
 }
 

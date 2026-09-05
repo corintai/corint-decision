@@ -351,8 +351,8 @@ mod tests {
 
 ## Related Documentation
 
-- [Rule DSL](../../docs/dsl/rule.md)
-- [Ruleset DSL](../../docs/dsl/ruleset.md)
-- [Pipeline DSL](../../docs/dsl/pipeline.md)
-- [Expression Language](../../docs/dsl/expression.md)
-- [Registry Configuration](../../docs/dsl/pipeline.md#registry)
+- [Rule CDL](../../docs/cdl/rule.md)
+- [Ruleset CDL](../../docs/cdl/ruleset.md)
+- [Pipeline CDL](../../docs/cdl/pipeline.md)
+- [Expression Language](../../docs/cdl/expression.md)
+- [Registry Configuration](../../docs/cdl/registry.md)

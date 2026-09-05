@@ -1,10 +1,11 @@
 # Corint Definition Language (CDL) Architecture
 
 > **⚠️ Note:** This document describes the original design architecture. Some syntax examples use earlier terminology that has since evolved. For the latest DSL specifications, please refer to:
-> - `dsl/overall.md` - Complete CDL specification
-> - `dsl/pipeline.md` - Pipeline specification
-> - `dsl/ruleset.md` - Ruleset specification
+> - `cdl/overall.md` - Complete CDL specification
+> - `cdl/pipeline.md` - Pipeline specification
+> - `cdl/ruleset.md` - Ruleset specification
 > - `docs/ARCHITECTURE.md` - Current implementation architecture
+> - `docs/DSL_EVOLUTION_RECOMMENDATIONS.md` - Recommended target architecture and DSL evolution plan
 
 ## Three-Layer Decision Architecture
 
@@ -408,4 +409,3 @@ Corint Definition Language documentation is organized into five categories for c
 └─ 📝 Examples
    └─ examples/          Real-world pipeline examples and best practice patterns
 ```
-

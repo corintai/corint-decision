@@ -622,7 +622,7 @@ The server is ready for development and testing environments, and can be enhance
 
 - [Quick Start & Deployment Guide](QUICKSTART.md) - Step-by-step operations guide
 - [Development Guide](../../docs/DEV_GUIDE.md) - Complete development guide
-- [Rule Syntax](../../docs/dsl/rule.md) - Rule definition syntax
+- [Rule Syntax](../../docs/cdl/rule.md) - Rule definition syntax
 
 ## License
 
