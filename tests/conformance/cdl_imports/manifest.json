@@ -1,0 +1,10 @@
+{
+  "case_id": "C08",
+  "source_profile": "cdl-core-import-draft-1",
+  "input_schema": "input-schema.yaml",
+  "entries": ["registry.yaml"],
+  "sources": ["registry.yaml", "pipelines/payment.yaml", "rulesets/risk.yaml", "rules/amount.yaml"],
+  "expected_behavior": "../cdl_core/behavior.yaml",
+  "evidence": "../../../crates/corint-decision-cli/tests/resolve.rs",
+  "scope": "transitive_imports_and_shared_dependency_match_explicit_closure"
+}

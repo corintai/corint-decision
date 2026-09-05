@@ -7,6 +7,10 @@ license = "Elastic-2.0"
 [dependencies]
 # Core orchestration layer
 corint-decision-engine = { path = "../corint-decision-engine", features = ["sqlx", "clickhouse", "api"] }
+corint-decision-compiler = { path = "../corint-decision-compiler" }
+corint-decision-toolchain = { path = "../corint-decision-toolchain" }
+sha2 = "0.10"
+subtle = "2.6"
 
 # Async runtime
 tokio = { version = "1.35", features = ["full"] }

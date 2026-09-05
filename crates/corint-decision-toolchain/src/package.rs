@@ -146,7 +146,7 @@ fn canonical(value: &Value, output: &mut Vec<u8>) {
         other => serde_json::to_writer(output, other).expect("JSON primitive"),
     }
 }
-fn json_hash(domain: &str, value: Value) -> String {
+pub(crate) fn json_hash(domain: &str, value: Value) -> String {
     let mut bytes = b"corint-canonical-json-v1\0".to_vec();
     canonical(&json!({"domain":domain,"value":value}), &mut bytes);
     hash(&bytes)
@@ -216,6 +216,22 @@ pub fn prepare(
     input: &CoreSource,
     suite: &CoreSource,
 ) -> Result<(Option<Package>, behavior::TestResults), CoreError> {
+    let policy = make_policy(sources, input)?;
+    let schema = parse_core_input_schema(input)?;
+    prepare_policy(policy, schema, suite)
+}
+
+/// The same source identity used by package construction, without executing cases.
+pub fn policy_identity(sources: &[CoreSource], input: &CoreSource) -> Result<String, CoreError> {
+    Ok(make_policy(sources, input)?.sha256)
+}
+
+pub(crate) fn checker_identity() -> Result<(String, String), CoreError> {
+    let tool = tool()?;
+    Ok((tool.version, tool.executable_sha256))
+}
+
+fn make_policy(sources: &[CoreSource], input: &CoreSource) -> Result<Policy, CoreError> {
     if sources.len() > 10000 {
         return Err(failure(
             "<bundle>",
@@ -234,6 +250,14 @@ pub fn prepare(
         sources: canonical_sources(sources)?,
     };
     policy.sha256 = policy_hash(&policy);
+    Ok(policy)
+}
+
+fn prepare_policy(
+    policy: Policy,
+    schema: corint_decision_engine::Schema,
+    suite: &CoreSource,
+) -> Result<(Option<Package>, behavior::TestResults), CoreError> {
     let sources: Vec<_> = policy.sources.iter().map(Document::source).collect();
     let tool = tool()?;
     let tests = behavior::test(

@@ -52,6 +52,30 @@ These are adapter contracts, not certification of any live provider.
 
 ## Rust API
 
+Optional [public target contracts](../contracts/README.md) provide field meanings,
+units and declared deployment constraints without changing CDL syntax:
+
+```rust,ignore
+let contracts = corint_decision_toolchain::contracts::TargetContracts::load(
+    &business_context_source, &target_capabilities_source,
+)?;
+let result = generator.generate_for_target(
+    requirements, &input_schema, &acceptance_cases, &contracts,
+).await?;
+let revision = generator.revise_for_target(
+    change_request, &existing_sources, &input_schema, &acceptance_cases, &contracts,
+).await?;
+```
+
+These methods send both declarations to the selected provider, but never the
+acceptance cases. Input/context mismatch fails before a provider call; generated
+sources must pass shared target compatibility and independent behavior checks.
+`result.compatibility` binds the same policy identity as the resulting package.
+It reports declared compatibility only, not live availability, business semantics
+or authorization. A compatible candidate can still fail behavior tests and return
+no package. Existing `generate` / `revise` remain target-independent and return no
+compatibility report. Package v1 does not embed or authenticate this separate report.
+
 Enable `core-generation` on `corint-decision-llm`. The public types for input
 sources come from `corint-decision-compiler::core`; shared tests/packages live
 in the independent `corint-decision-toolchain` crate.

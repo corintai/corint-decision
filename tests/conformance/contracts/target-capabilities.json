@@ -1,0 +1,39 @@
+{
+  "kind": "corint-target-capabilities",
+  "contract_version": "1",
+  "id": "local-core-example",
+  "revision": "1",
+  "provenance": {
+    "producer": "operator-example",
+    "reference": "offline-declaration-not-attested"
+  },
+  "engine": {
+    "name": "corint-decision",
+    "version": "0.1.0",
+    "profile": "cdl-core-risk-draft-1",
+    "language_version": "0.1",
+    "capabilities": [
+      "rule.score",
+      "ruleset.local_score_and_first_match",
+      "pipeline.first_match_and_action_intents",
+      "pipeline.synchronous_ruleset_router",
+      "registry.first_match",
+      "expressions.pure_boolean",
+      "strict.version_shape_references",
+      "input.required_flat_scalars",
+      "score.checked_accumulation"
+    ]
+  },
+  "context": {
+    "id": "payment-context",
+    "revision": "1",
+    "sha256": "3f87d07b3dd76d625f12073d25c20b013409cf441741e64bee00d624ec2635bd"
+  },
+  "status": "ready",
+  "actions": [
+    "BLOCK",
+    "REVIEW"
+  ],
+  "max_sources": 100,
+  "resources": []
+}

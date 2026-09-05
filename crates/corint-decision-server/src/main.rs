@@ -4,6 +4,7 @@
 
 pub mod api;
 pub mod config;
+pub mod core;
 pub mod engine;
 pub mod error;
 
@@ -22,6 +23,19 @@ use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 async fn main() -> Result<()> {
     // Initialize tracing
     init_tracing()?;
+
+    // Explicit isolated mode: errors never fall back to compatibility loading.
+    // Do not load/log legacy datasource configuration or start a second gRPC engine.
+    if let Some(path) = std::env::var_os("CORINT_CORE_CONFIG") {
+        let (address, app) = core::load(std::path::Path::new(&path)).await?;
+        let listener = TcpListener::bind(address).await?;
+        info!(
+            "Experimental strict Core server listening on {}",
+            listener.local_addr()?
+        );
+        axum::serve(listener, app).await?;
+        return Ok(());
+    }
 
     // Load configuration
     let config = ServerConfig::load()?;
@@ -42,7 +56,10 @@ async fn main() -> Result<()> {
     info!("✓ HTTP Server listening on http://{}", http_addr);
     info!("  Health check: http://{}/health", http_addr);
     info!("  Decision API: http://{}/v1/decide", http_addr);
-    info!("  Reload repository: POST http://{}/v1/repo/reload", http_addr);
+    info!(
+        "  Reload repository: POST http://{}/v1/repo/reload",
+        http_addr
+    );
 
     // Start gRPC server if configured
     if let Some(grpc_port) = config.server.grpc_port {

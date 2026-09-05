@@ -1,0 +1,109 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Successful offline declared-target compatibility report v1 (not attestation)",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "report_version",
+    "scope",
+    "compatible",
+    "policy_sha256",
+    "context",
+    "target",
+    "checker_version",
+    "checker_sha256",
+    "binding_sha256",
+    "execution_checked",
+    "business_semantics_checked",
+    "live_target_verified",
+    "business_evaluation",
+    "publication_approval",
+    "authenticity"
+  ],
+  "properties": {
+    "report_version": {
+      "const": "1"
+    },
+    "scope": {
+      "const": "declared_target_compatibility"
+    },
+    "compatible": {
+      "const": true
+    },
+    "policy_sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "context": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "revision",
+        "sha256"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "revision": {
+          "type": "string"
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        }
+      }
+    },
+    "target": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "revision",
+        "sha256"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "revision": {
+          "type": "string"
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        }
+      }
+    },
+    "checker_version": {
+      "type": "string"
+    },
+    "checker_sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "binding_sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "execution_checked": {
+      "const": false
+    },
+    "business_semantics_checked": {
+      "const": false
+    },
+    "live_target_verified": {
+      "const": false
+    },
+    "business_evaluation": {
+      "const": "not_performed"
+    },
+    "publication_approval": {
+      "const": "not_granted"
+    },
+    "authenticity": {
+      "const": "unsigned"
+    }
+  }
+}

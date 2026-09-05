@@ -15,3 +15,6 @@ jsonschema = { version = "0.17", default-features = false }
 tokio = { version = "1.0", features = ["rt", "time", "macros"] }
 tempfile = "3.8"
 sha2 = "0.10"
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"

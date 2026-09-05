@@ -1,8 +1,8 @@
 name: CI
 
 on:
-  # push:
-  #  branches: [ main, develop ]
+  push:
+    branches: [ main ]
   pull_request:
     branches: [ main, develop ]
 
@@ -19,12 +19,16 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - name: Run strict Core behavior and contract checks
         run: cargo test -p corint-decision-engine --test cdl_core_conformance --locked
-      - name: Run offline CLI validation, behavior, package integrity and source exchange checks
+      - name: Run offline CLI validation, behavior, packages, import resolution and target contract checks
         run: cargo test -p corint-decision-cli --locked
       - name: Run shared toolchain checks
         run: cargo test -p corint-decision-toolchain --locked
       - name: Run strict generator contract checks with offline model responses
         run: cargo test -p corint-decision-llm --features core-generation --test core_generation --locked
+      - name: Install Protocol Buffers compiler for server build
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
+      - name: Run isolated Core server authorization and activation checks
+        run: cargo test -p corint-decision-server --test core_activation --locked
 
   test:
     name: Test

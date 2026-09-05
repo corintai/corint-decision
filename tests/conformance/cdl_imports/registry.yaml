@@ -1,0 +1,9 @@
+version: "0.1"
+import:
+  pipelines: [pipelines/payment.yaml]
+---
+registry:
+  - pipeline: payment
+    when: event.amount >= 0
+  - pipeline: payment
+    when: "true"

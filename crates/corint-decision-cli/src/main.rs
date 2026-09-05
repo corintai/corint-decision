@@ -1,5 +1,5 @@
 //! Thin, offline adapter over the shared Core compiler, never a second validator.
-use corint_decision_toolchain::{behavior, package, transfer};
+use corint_decision_toolchain::{behavior, contracts, package, resolve, transfer};
 
 use corint_decision_compiler::core::{
     compile_core, diagnostic, parse_core_input_schema, CoreError, CoreSource, PROFILE,
@@ -21,13 +21,15 @@ Usage:
   corint verify --package PATH --cases PATH [--format text|json]
   corint export --package PATH --output PATH [--format text|json]
   corint import --bundle PATH --cases PATH --output PATH [--format text|json]
+  corint check-target --input-schema PATH --context PATH --target PATH [--expected-binding SHA256] [--format text|json] FILE...
+  corint resolve --source-profile cdl-core-import-draft-1 --root DIR --input-schema LABEL --output PATH [--format text|json] ENTRY...
   corint --help
   corint --version
 
 Supply the complete resource closure, including exactly one Registry.
 PATH is the strict model Schema in YAML or JSON; FILEs are CDL YAML resources.
 Paths are relative to the current directory. Use -- before dash-prefixed FILEs.
-Only explicit local regular files are read. No imports, discovery, network access,
+Except resolve, only explicit local regular files are read. No imports, discovery, network access,
 business evaluation or publication is performed. Validate compiles only; test
 executes declared cases through the real engine, with trace off/on. Build writes
 a new source package after tests pass (never overwrites); verify checks bindings
@@ -36,6 +38,12 @@ Export writes an editable JSON source bundle without historical evidence; it
 checks content bindings and compilation only. Import retests that bundle with
 caller-owned cases and builds fresh evidence under this host. Neither command
 extracts embedded paths to disk, trusts old evidence or activates a policy.
+Check-target checks source compatibility with explicit context/target declarations.
+It does not execute cases, contact the target, authenticate declarations or approve
+publication. --expected-binding rejects a stale policy/contract/checker binding.
+Resolve is an opt-in authoring step: it reads root-relative imports on Unix,
+rejects symlinks and escapes, and writes a frozen v1 source bundle without tests.
+It does not enable imports in existing draft-1 validators, generators or servers.
 
 JSON reports go to stdout for success and failure; text is the default format.
 Exit codes: 0 = command passed, 1 = validation/test failure, 2 = usage or I/O error.
@@ -49,6 +57,13 @@ struct Options {
     verify: bool,
     export: bool,
     import: bool,
+    check_target: bool,
+    resolve: bool,
+    root: Option<PathBuf>,
+    source_profile: Option<String>,
+    context: Option<PathBuf>,
+    target: Option<PathBuf>,
+    expected_binding: Option<String>,
     output: Option<PathBuf>,
     package: Option<PathBuf>,
     bundle: Option<PathBuf>,
@@ -81,6 +96,10 @@ struct Report {
     package_file: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     bundle_file: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    compatibility: Option<contracts::CompatibilityReport>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    resolution: Option<resolve::ResolutionReceipt>,
 }
 
 fn render_behavior(report: &Report) -> String {
@@ -130,6 +149,8 @@ fn usage(message: impl Into<String>) -> CoreError {
 fn parse_args(args: &[OsString], options: &mut Options) -> Result<(), CoreError> {
     match args.first().and_then(|arg| arg.to_str()) {
         Some("validate") => (),
+        Some("resolve") => options.resolve = true,
+        Some("check-target") => options.check_target = true,
         Some("test") => options.test = true,
         Some("build") => {
             options.test = true;
@@ -146,7 +167,7 @@ fn parse_args(args: &[OsString], options: &mut Options) -> Result<(), CoreError>
         }
         _ => {
             return Err(usage(
-                "Expected validate, test, build, verify, export or import; use corint --help",
+                "Expected validate, test, build, verify, export, import, check-target or resolve; use corint --help",
             ))
         }
     };
@@ -179,12 +200,12 @@ fn parse_args(args: &[OsString], options: &mut Options) -> Result<(), CoreError>
             Some("--output" | "--package") => {
                 let output = arg == "--output";
                 if (output
-                    && (!(options.build || options.export || options.import)
+                    && (!(options.build || options.export || options.import || options.resolve)
                         || options.output.is_some()))
                     || (!output
                         && (!(options.verify || options.export) || options.package.is_some()))
                 {
-                    return Err(usage("--output is only for build/export/import; --package is only for verify/export; neither may repeat"));
+                    return Err(usage("--output is only for build/export/import/resolve; --package is only for verify/export; neither may repeat"));
                 }
                 let value = args.next().ok_or_else(|| usage("Option needs a path"))?;
                 if value.to_string_lossy().starts_with('-') {
@@ -194,6 +215,66 @@ fn parse_args(args: &[OsString], options: &mut Options) -> Result<(), CoreError>
                     options.output = Some(value.into());
                 } else {
                     options.package = Some(value.into());
+                }
+            }
+            Some("--context" | "--target" | "--expected-binding") => {
+                if !options.check_target {
+                    return Err(usage(
+                        "Context, target and expected binding are only accepted by check-target",
+                    ));
+                }
+                let value = args
+                    .next()
+                    .ok_or_else(|| usage("Option requires a value"))?;
+                if value.to_string_lossy().starts_with('-') {
+                    return Err(usage("Option requires a value; prefix dash paths with ./"));
+                }
+                match arg.to_str().expect("known option") {
+                    "--context" if options.context.is_none() => {
+                        options.context = Some(value.into())
+                    }
+                    "--target" if options.target.is_none() => options.target = Some(value.into()),
+                    "--expected-binding" if options.expected_binding.is_none() => {
+                        let hash = value
+                            .to_str()
+                            .ok_or_else(|| usage("Binding must be hexadecimal"))?;
+                        if hash.len() != 64
+                            || !hash
+                                .bytes()
+                                .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+                        {
+                            return Err(usage(
+                                "Binding must be 64 lowercase hexadecimal characters",
+                            ));
+                        }
+                        options.expected_binding = Some(hash.into());
+                    }
+                    _ => {
+                        return Err(usage(
+                            "Context, target and expected binding options may not repeat",
+                        ))
+                    }
+                }
+            }
+            Some("--root" | "--source-profile") => {
+                if !options.resolve {
+                    return Err(usage("--root and --source-profile are only for resolve"));
+                }
+                let value = args
+                    .next()
+                    .ok_or_else(|| usage("Option requires a value"))?;
+                if value.to_string_lossy().starts_with('-') {
+                    return Err(usage("Option requires a value"));
+                }
+                if arg == "--root" && options.root.is_none() {
+                    options.root = Some(value.into());
+                } else if arg == "--source-profile" && options.source_profile.is_none() {
+                    if value != resolve::SOURCE_PROFILE {
+                        return Err(usage("Unsupported source profile"));
+                    }
+                    options.source_profile = Some(resolve::SOURCE_PROFILE.into());
+                } else {
+                    return Err(usage("Resolver options may not repeat"));
                 }
             }
             Some("--bundle") => {
@@ -259,6 +340,16 @@ fn parse_args(args: &[OsString], options: &mut Options) -> Result<(), CoreError>
     }
     if options.build && options.output.is_none() {
         return Err(usage("build requires --output for a new package file"));
+    }
+    if options.resolve
+        && (options.root.is_none() || options.source_profile.is_none() || options.output.is_none())
+    {
+        return Err(usage(
+            "resolve requires --root, --source-profile and --output",
+        ));
+    }
+    if options.check_target && (options.context.is_none() || options.target.is_none()) {
+        return Err(usage("check-target requires --context and --target"));
     }
     if options.input_schema.is_none() {
         return Err(usage(
@@ -345,6 +436,13 @@ fn render(report: &Report, json: bool) -> String {
         return render_behavior(report);
     }
     if report.valid {
+        if let Some(resolution) = &report.resolution {
+            return format!("RESOLVED: {} files into frozen Core source bundle.\nResolution SHA-256: {}\nExecution not checked; no publication approval.\n", resolution.manifest.sources.len(), resolution.resolution_sha256);
+        }
+        if let Some(check) = &report.compatibility {
+            return format!("COMPATIBLE with declared target {}\nBinding SHA-256: {}\nExecution, business semantics, live target and authorization NOT verified; not a publication approval.\n",
+                check.target.id, check.binding_sha256);
+        }
         return format!(
             "VALID ({PROFILE}): {} source files compiled.\nExecution not checked; business effectiveness not evaluated; not a publication approval.\n",
             report.sources.len()
@@ -378,6 +476,8 @@ fn run(args: Vec<OsString>) -> (u8, String) {
         || args == [OsString::from("verify"), OsString::from("--help")]
         || args == [OsString::from("export"), OsString::from("--help")]
         || args == [OsString::from("import"), OsString::from("--help")]
+        || args == [OsString::from("check-target"), OsString::from("--help")]
+        || args == [OsString::from("resolve"), OsString::from("--help")]
     {
         return (0, HELP.into());
     }
@@ -397,7 +497,33 @@ fn run(args: Vec<OsString>) -> (u8, String) {
     let mut test_results = None;
     let mut artifact = None;
     let mut exported_bundle = None;
+    let mut compatibility = None;
+    let mut resolution = None;
     let result = parse_args(&args, &mut options).and_then(|()| {
+        if options.resolve {
+            let output = options.output.as_ref().expect("checked args");
+            package::check_output(output)?;
+            let resolved = resolve::resolve(
+                options.root.as_deref().expect("checked args"),
+                options
+                    .input_schema
+                    .as_ref()
+                    .and_then(|p| p.to_str())
+                    .ok_or_else(|| usage("Input label must be UTF-8"))?,
+                &options
+                    .sources
+                    .iter()
+                    .map(|p| {
+                        p.to_str()
+                            .map(str::to_owned)
+                            .ok_or_else(|| usage("Entry labels must be UTF-8"))
+                    })
+                    .collect::<Result<Vec<_>, _>>()?,
+            )?;
+            resolved.write(output)?;
+            resolution = Some(resolved.into_receipt());
+            return Ok(());
+        }
         if options.export {
             let (_, stored) = read_source(options.package.as_ref().expect("checked args"))?;
             exported_bundle = Some(transfer::export(
@@ -434,6 +560,16 @@ fn run(args: Vec<OsString>) -> (u8, String) {
             package::check_output(options.output.as_ref().expect("checked args"))?;
         }
         let (sources, input) = load_bundle(&options)?;
+        if options.check_target {
+            let (_, context) = read_source(options.context.as_ref().expect("checked args"))?;
+            let (_, target) = read_source(options.target.as_ref().expect("checked args"))?;
+            compatibility = Some(contracts::TargetContracts::load(&context, &target)?.check(
+                &sources,
+                &input,
+                options.expected_binding.as_deref(),
+            )?);
+            return Ok(());
+        }
         let schema = parse_core_input_schema(&input)?;
         if options.test {
             let (_, suite) = read_source(options.cases.as_ref().expect("checked args"))?;
@@ -458,7 +594,11 @@ fn run(args: Vec<OsString>) -> (u8, String) {
         report_version: "1",
         tool_version: env!("CARGO_PKG_VERSION"),
         profile: PROFILE,
-        scope: if options.export {
+        scope: if options.resolve {
+            "resolve"
+        } else if options.check_target {
+            "compatibility"
+        } else if options.export {
             "export"
         } else if options.import {
             "import"
@@ -483,6 +623,8 @@ fn run(args: Vec<OsString>) -> (u8, String) {
         exported_bundle,
         package_file: options.package.as_deref().map(label),
         bundle_file: options.bundle.as_deref().map(label),
+        compatibility,
+        resolution,
     };
     let exit = match result {
         Ok(()) => {

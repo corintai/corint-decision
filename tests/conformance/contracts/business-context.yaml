@@ -1,0 +1,27 @@
+kind: corint-business-context
+contract_version: "1"
+id: payment-context
+revision: "1"
+provenance:
+  producer: business-owner-example
+  reference: local-review-example
+input_schema:
+  name: payment-event-v1
+  fields:
+    amount:
+      name: amount
+      field_type: number
+      required: true
+entities:
+  transaction: Current payment transaction
+fields:
+  amount:
+    description: Amount of the current transaction
+    unit: CNY_yuan
+    entity: transaction
+    time_basis: Value supplied at the decision request time
+objectives:
+  - Review payment risk using the declared amount
+constraints:
+  - Independent boundary cases must pass
+actions: [BLOCK, REVIEW]

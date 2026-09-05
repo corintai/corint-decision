@@ -1,5 +1,10 @@
 # CORINT Decision Engine Server
 
+For an isolated, opt-in strict Core execution and operator-controlled activation
+mode, see [Core server contracts](../../../docs/contracts/core-server.md).
+It requires `CORINT_CORE_CONFIG`, separate credentials and loopback binding;
+the legacy API described below does not automatically inherit those gates.
+
 HTTP/REST API server for CORINT Decision Engine.
 
 ## Features

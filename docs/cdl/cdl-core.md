@@ -175,9 +175,14 @@ Full examples in this document are links to runnable fixtures, not manually
 copied YAML. Other existing reference pages retain their historical support labels;
 those labels are **not** certification against this new profile.
 
-Still pending: C08 file imports/locking, optional or nested input types, complete
+The separate [import authoring profile](resolution.md) now resolves bounded local
+file imports (C08) into this profile's frozen closure. This execution profile and
+strict generator response contract still reject unresolved imports; no runtime
+filesystem access is enabled. Portable import provenance/locking remains pending.
+
+Still pending: optional or nested input types, complete
 C02 operand traces, full source spans, all legacy example/prompt mappings,
-generator integration, production publication enforcement, BusinessContext/TargetCapabilities,
+live-provider/Work generator integration, production publication enforcement, complete cross-product
 Feature/Model/full PolicyPackage/report/feedback contracts, and W01–W10 product-level
 interoperability. The local validate/test/source-build workflow covers part of W01;
 it does not certify production package distribution or complete Work interoperability.

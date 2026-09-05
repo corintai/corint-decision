@@ -1,0 +1,34 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "TargetCapabilities v1 (declarations, not authorization)",
+  "type": "object", "additionalProperties": false,
+  "required": ["kind", "contract_version", "id", "revision", "provenance", "engine", "context", "status", "actions", "max_sources", "resources"],
+  "properties": {
+    "kind": {"const": "corint-target-capabilities"}, "contract_version": {"const": "1"},
+    "id": {"$ref": "#/definitions/text"}, "revision": {"$ref": "#/definitions/text"},
+    "provenance": {
+      "type": "object", "additionalProperties": false, "required": ["producer", "reference"],
+      "properties": {"producer": {"$ref": "#/definitions/text"}, "reference": {"$ref": "#/definitions/text"}}
+    },
+    "engine": {
+      "type": "object", "additionalProperties": false, "required": ["name", "version", "profile", "language_version", "capabilities"],
+      "properties": {
+        "name": {"const": "corint-decision"}, "version": {"$ref": "#/definitions/text"},
+        "profile": {"$ref": "#/definitions/text"}, "language_version": {"$ref": "#/definitions/text"},
+        "capabilities": {"type": "array", "uniqueItems": true, "items": {"$ref": "#/definitions/text"}}
+      }
+    },
+    "context": {
+      "type": "object", "additionalProperties": false, "required": ["id", "revision", "sha256"],
+      "properties": {
+        "id": {"$ref": "#/definitions/text"}, "revision": {"$ref": "#/definitions/text"},
+        "sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"}
+      }
+    },
+    "status": {"enum": ["ready", "unavailable"]},
+    "actions": {"type": "array", "uniqueItems": true, "items": {"$ref": "#/definitions/text"}},
+    "max_sources": {"type": "integer", "minimum": 1, "maximum": 10000},
+    "resources": {"type": "array", "maxItems": 0}
+  },
+  "definitions": {"text": {"type": "string", "minLength": 1, "pattern": "\\S"}}
+}

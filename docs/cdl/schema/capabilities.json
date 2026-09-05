@@ -10,6 +10,39 @@
   "generation_response_schema": "generation-response.json",
   "source_bundle_schema": "source-bundle.json",
   "tools": {
+    "resolve_cli": {
+      "status": "experimental",
+      "source_profile": "cdl-core-import-draft-1",
+      "output_profile": "cdl-core-risk-draft-1",
+      "command": "corint resolve --source-profile cdl-core-import-draft-1 --root DIR --input-schema LABEL --output PATH ENTRY...",
+      "entry_point": "corint-decision-toolchain::resolve",
+      "scope": "authoring_import_resolution",
+      "cases": ["C08"],
+      "execution_checked": false,
+      "runtime_filesystem_access": false,
+      "publication_approval": "not_granted",
+      "evidence": "../../../crates/corint-decision-cli/tests/resolve.rs"
+    },
+    "core_server": {
+      "status": "experimental",
+      "entry_point": "CORINT_CORE_CONFIG",
+      "scope": "local_operator_activation",
+      "loopback_only": true,
+      "durable_activation": false,
+      "business_evaluation": "not_performed",
+      "evidence": "../../../crates/corint-decision-server/tests/core_activation.rs"
+    },
+    "target_check": {
+      "status": "experimental",
+      "command": "corint check-target --input-schema PATH --context PATH --target PATH --format json FILE...",
+      "entry_point": "corint-decision-toolchain::contracts::TargetContracts",
+      "scope": "declared_target_compatibility",
+      "execution_checked": false,
+      "live_target_verified": false,
+      "business_semantics_checked": false,
+      "publication_approval": "not_granted",
+      "evidence": "../../../crates/corint-decision-cli/tests/contracts.rs"
+    },
     "source_exchange_cli": {
       "status": "experimental",
       "commands": ["corint export", "corint import"],
@@ -43,6 +76,7 @@
       "status": "experimental",
       "feature": "corint-decision-llm/core-generation",
       "entry_points": ["CoreGenerator::generate", "CoreGenerator::revise"],
+      "targeted_entry_points": ["CoreGenerator::generate_for_target", "CoreGenerator::revise_for_target"],
       "shared_toolchain": "corint-decision-toolchain",
       "scope": "complete_closure_and_caller_owned_examples",
       "acceptance_cases_sent_to_model": false,
@@ -75,5 +109,5 @@
     {"id": "score.checked_accumulation", "status": "supported", "cases": [], "tests": ["score_overflow_is_a_controlled_error"]}
   ],
   "not_enabled": ["import", "pipeline_guard", "step_guard", "single_rule_step", "subpipeline", "connector", "dynamic_feature", "list", "model", "rule_parameters", "ruleset_inheritance", "structured_action", "optional_or_nested_input"],
-  "pending": ["C08", "full_operand_trace", "production_package_distribution_and_activation", "live_provider_and_Work_generator_integration", "publication_gate", "cross_product_contracts", "full_W01_W10"]
+  "pending": ["import_dependency_version_ranges", "full_operand_trace", "production_package_distribution_and_activation", "live_provider_and_Work_generator_integration", "publication_gate", "complete_cross_product_contracts", "full_W01_W10"]
 }

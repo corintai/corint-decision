@@ -1,5 +1,9 @@
 # CDL Imports and Module System
 
+> This page describes the compatibility module system. The strict Core execution
+> profile still rejects unresolved imports. For the explicit, conformance-tested
+> authoring profile and frozen bundle workflow, see [Strict resolution](resolution.md).
+
 ## Overview
 
 CDL provides a module system for code reuse. The `import` mechanism allows importing rules and rulesets from library files.

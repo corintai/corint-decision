@@ -5,7 +5,7 @@ use corint_decision_llm::{
     CoreGeneration, CoreGenerationError, CoreGenerator, LLMClient, LLMError, LLMRequest,
     LLMResponse, RuleGeneratorConfig,
 };
-use corint_decision_toolchain::package;
+use corint_decision_toolchain::{contracts::TargetContracts, package};
 use serde_json::{json, Value};
 use std::sync::{Arc, Mutex};
 
@@ -22,6 +22,13 @@ fn generation_capability_contract_points_to_real_gate() {
     assert_eq!(tool["automatic_retries"], 0);
     assert_eq!(tool["business_evaluation"], "not_performed");
     assert_eq!(tool["publication_approval"], "not_granted");
+    assert_eq!(
+        tool["targeted_entry_points"],
+        json!([
+            "CoreGenerator::generate_for_target",
+            "CoreGenerator::revise_for_target"
+        ])
+    );
     assert_eq!(
         tool["evidence"],
         "../../../crates/corint-decision-llm/tests/core_generation.rs"
@@ -76,6 +83,125 @@ fn source(file: &str) -> CoreSource {
 }
 fn sources() -> Vec<CoreSource> {
     FILES.iter().map(|f| source(f)).collect()
+}
+
+fn contracts(allow_review: bool) -> TargetContracts {
+    let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../tests/conformance/contracts");
+    let context = CoreSource {
+        path: "business-context.yaml".into(),
+        yaml: std::fs::read_to_string(root.join("business-context.yaml")).unwrap(),
+    };
+    let mut target: Value = serde_json::from_str(
+        &std::fs::read_to_string(root.join("target-capabilities.json")).unwrap(),
+    )
+    .unwrap();
+    if !allow_review {
+        target["actions"] = json!(["BLOCK"]);
+    }
+    TargetContracts::load(
+        &context,
+        &CoreSource {
+            path: "target-capabilities.json".into(),
+            yaml: target.to_string(),
+        },
+    )
+    .unwrap()
+}
+
+#[tokio::test]
+async fn targeted_generation_binds_package_and_sends_context_but_not_acceptance_cases() {
+    let (generator, recorder) = generator(envelope(&sources()), "stop", false);
+    let mut cases = source("behavior.yaml");
+    cases.yaml.push_str("\n# private-target-test-5739\n");
+    let result = generator
+        .generate_for_target(
+            "Threshold 1000",
+            &source("input-schema.yaml"),
+            &cases,
+            &contracts(true),
+        )
+        .await
+        .unwrap();
+    assert!(result.accepted());
+    let report = result.compatibility.unwrap();
+    let package = serde_json::to_value(result.package.unwrap()).unwrap();
+    assert_eq!(report.policy_sha256, package["policy"]["sha256"]);
+    assert!(!report.execution_checked);
+    assert!(!report.live_target_verified);
+    assert!(!report.business_semantics_checked);
+    assert_eq!(report.publication_approval, "not_granted");
+    let requests = recorder.requests.lock().unwrap();
+    assert_eq!(requests.len(), 1);
+    assert!(requests[0].prompt.contains("CNY_yuan"));
+    assert!(requests[0].prompt.contains("target_capabilities"));
+    assert!(!requests[0].prompt.contains("private-target-test-5739"));
+    assert!(!requests[0].prompt.contains("above_threshold"));
+}
+
+#[tokio::test]
+async fn targeted_generation_rejects_input_before_provider_and_actions_after_provider() {
+    let (generator, recorder) = generator(envelope(&sources()), "stop", false);
+    let mut input = source("input-schema.yaml");
+    input.yaml = input.yaml.replace("number", "string");
+    error(
+        generator
+            .generate_for_target(
+                "Threshold 1000",
+                &input,
+                &source("behavior.yaml"),
+                &contracts(true),
+            )
+            .await,
+        "E_CONTEXT_INPUT",
+    );
+    assert!(recorder.requests.lock().unwrap().is_empty());
+    error(
+        generator
+            .generate_for_target(
+                "Threshold 1000",
+                &source("input-schema.yaml"),
+                &source("behavior.yaml"),
+                &contracts(false),
+            )
+            .await,
+        "E_ACTION_UNAVAILABLE",
+    );
+    assert_eq!(recorder.requests.lock().unwrap().len(), 1);
+}
+
+#[tokio::test]
+async fn targeted_revision_still_requires_independent_behavior_acceptance() {
+    let mut revised = sources();
+    revised[0].yaml = revised[0].yaml.replace("> 1000", ">= 1000");
+    let (generator, recorder) = generator(envelope(&revised), "stop", false);
+    let result = generator
+        .revise_for_target(
+            "Include boundary",
+            &sources(),
+            &source("input-schema.yaml"),
+            &source("behavior.yaml"),
+            &contracts(true),
+        )
+        .await
+        .unwrap();
+    assert!(result.compatibility.is_some());
+    assert!(!result.accepted());
+    assert!(result.package.is_none());
+    assert_eq!(result.tests.failed, 1);
+    error(
+        generator
+            .revise_for_target(
+                "Include boundary",
+                &[],
+                &source("input-schema.yaml"),
+                &source("behavior.yaml"),
+                &contracts(true),
+            )
+            .await,
+        "E_GENERATION_REQUEST",
+    );
+    assert_eq!(recorder.requests.lock().unwrap().len(), 1);
 }
 fn envelope(sources: &[CoreSource]) -> String {
     json!({"profile":PROFILE,"sources":sources}).to_string()

@@ -1,0 +1,24 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Import header for explicit cdl-core-import-draft-1 authoring",
+  "type": "object", "additionalProperties": false,
+  "required": ["version", "import"],
+  "properties": {
+    "version": {"const": "0.1"},
+    "import": {
+      "type": "object", "additionalProperties": false, "minProperties": 1,
+      "properties": {
+        "rules": {"$ref": "#/definitions/paths"},
+        "rulesets": {"$ref": "#/definitions/paths"},
+        "pipelines": {"$ref": "#/definitions/paths"}
+      }
+    }
+  },
+  "definitions": {
+    "paths": {
+      "type": "array", "minItems": 1, "maxItems": 256, "uniqueItems": true,
+      "items": {"type": "string", "minLength": 1, "maxLength": 256,
+        "pattern": "^[A-Za-z0-9_-]+(/[A-Za-z0-9_-]+)*\\.ya?ml$"}
+    }
+  }
+}

@@ -42,3 +42,5 @@ pub use corint_decision_runtime::{
     },
     DecisionResult, ExecutionTrace, MetricsCollector, RuntimeError,
 };
+/// Version of the local engine implementation, not a remote compatibility claim.
+pub const ENGINE_VERSION: &str = env!("CARGO_PKG_VERSION");

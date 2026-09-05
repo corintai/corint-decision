@@ -6,6 +6,14 @@ For real-engine example execution, see [`corint test`](testing.md); for source
 packages and evidence binding, see [`corint build` / `corint verify`](packages.md).
 These tools do not evaluate business effectiveness or authorize publication.
 
+For a repository using file `import:` declarations, first use the explicit
+[`corint resolve` authoring profile](resolution.md) to produce a frozen closure.
+This does not broaden the accepted syntax of `validate` or the execution profile.
+
+For opt-in declared-environment compatibility, see
+[`corint check-target`](../contracts/README.md). It reuses this input model and
+compiler; `validate` alone does not check a BusinessContext or target declaration.
+
 ## Build and run
 
 From the repository root, with a Rust toolchain and cached dependencies:
