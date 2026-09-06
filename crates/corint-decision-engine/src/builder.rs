@@ -2,7 +2,7 @@
 
 use crate::config::{EngineConfig, LLMConfig, ServiceConfig, StorageConfig};
 use crate::decision_engine::DecisionEngine;
-use crate::error::Result;
+use crate::error::{EngineError, Result};
 use corint_decision_repository::{RepositoryConfig, RepositoryContent, RepositoryLoader};
 use corint_decision_runtime::feature::FeatureExecutor;
 use std::path::PathBuf;
@@ -422,9 +422,10 @@ impl DecisionEngineBuilder {
             let feature_dir = std::path::Path::new(base_path).join("configs/features");
             if feature_dir.exists() {
                 let mut registry = FeatureRegistry::new();
-                if let Err(e) = registry.load_from_directory(&feature_dir) {
-                    tracing::warn!("Failed to load features from directory: {}", e);
-                } else {
+                registry
+                    .load_from_directory(&feature_dir)
+                    .map_err(|e| EngineError::Config(e.to_string()))?;
+                {
                     let mut executor = FeatureExecutor::new().with_stats();
 
                     let mut datasource_count = 0;
@@ -453,7 +454,9 @@ impl DecisionEngineBuilder {
 
                             match DataSourceClient::new(config.clone()).await {
                                 Ok(client) => {
-                                    executor.add_datasource(name, client);
+                                    executor
+                                        .add_datasource(name, client)
+                                        .map_err(|e| EngineError::Config(e.to_string()))?;
                                     tracing::info!(
                                         "  ✓ Loaded datasource from server.yaml: {}",
                                         name
@@ -477,7 +480,9 @@ impl DecisionEngineBuilder {
                                         if let Ok(client_clone) =
                                             DataSourceClient::new(default_config).await
                                         {
-                                            executor.add_datasource("default", client_clone);
+                                            executor
+                                                .add_datasource("default", client_clone)
+                                                .map_err(|e| EngineError::Config(e.to_string()))?;
                                             tracing::info!("  ✓ Registered as default datasource");
                                         }
                                     }
@@ -496,7 +501,9 @@ impl DecisionEngineBuilder {
                         if let Some(events_name) = events_datasource_name {
                             if let Some(config) = server_datasources.get(&events_name) {
                                 if let Ok(client) = DataSourceClient::new(config.clone()).await {
-                                    executor.add_datasource("events_datasource", client);
+                                    executor
+                                        .add_datasource("events_datasource", client)
+                                        .map_err(|e| EngineError::Config(e.to_string()))?;
                                     tracing::info!(
                                         "  ✓ Mapped events_datasource -> {}",
                                         events_name
@@ -508,7 +515,9 @@ impl DecisionEngineBuilder {
                         if let Some(lookup_name) = lookup_datasource_name {
                             if let Some(config) = server_datasources.get(&lookup_name) {
                                 if let Ok(client) = DataSourceClient::new(config.clone()).await {
-                                    executor.add_datasource("lookup_datasource", client);
+                                    executor
+                                        .add_datasource("lookup_datasource", client)
+                                        .map_err(|e| EngineError::Config(e.to_string()))?;
                                     tracing::info!(
                                         "  ✓ Mapped lookup_datasource -> {}",
                                         lookup_name
@@ -540,7 +549,10 @@ impl DecisionEngineBuilder {
                                                 match DataSourceClient::new(config.clone()).await {
                                                     Ok(client) => {
                                                         executor
-                                                            .add_datasource(&config.name, client);
+                                                            .add_datasource(&config.name, client)
+                                                            .map_err(|e| {
+                                                                EngineError::Config(e.to_string())
+                                                            })?;
                                                         tracing::info!("  ✓ Loaded datasource from repository: {}", config.name);
                                                         datasource_count += 1;
 
@@ -555,10 +567,16 @@ impl DecisionEngineBuilder {
                                                                 )
                                                                 .await
                                                             {
-                                                                executor.add_datasource(
-                                                                    "default",
-                                                                    client_clone,
-                                                                );
+                                                                executor
+                                                                    .add_datasource(
+                                                                        "default",
+                                                                        client_clone,
+                                                                    )
+                                                                    .map_err(|e| {
+                                                                        EngineError::Config(
+                                                                            e.to_string(),
+                                                                        )
+                                                                    })?;
                                                                 tracing::info!("  ✓ Registered as default datasource");
                                                             }
                                                         }
@@ -576,16 +594,11 @@ impl DecisionEngineBuilder {
                     }
 
                     if datasource_count > 0 {
-                        // Register features to executor
-                        for feature in registry.all_features() {
-                            if let Err(e) = executor.register_feature(feature.clone()) {
-                                tracing::warn!(
-                                    "  ✗ Failed to register feature {}: {}",
-                                    feature.name,
-                                    e
-                                );
-                            }
-                        }
+                        executor
+                            .register_features(
+                                registry.all_features().into_iter().cloned().collect(),
+                            )
+                            .map_err(|e| EngineError::Config(e.to_string()))?;
 
                         let feature_count = registry.count();
                         if feature_count > 0 {

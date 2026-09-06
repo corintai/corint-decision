@@ -8,6 +8,7 @@
 //! - Pipeline integration
 
 mod cache;
+mod dependency;
 mod expression;
 
 pub mod definition;

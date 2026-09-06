@@ -9,7 +9,7 @@ use crate::error::{Result, RuntimeError};
 use corint_decision_model::Value;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 /// Unified data source client
 pub struct DataSourceClient {
@@ -18,6 +18,7 @@ pub struct DataSourceClient {
 
     /// Feature cache
     cache: Arc<Mutex<FeatureCache>>,
+    query_cache: Mutex<HashMap<String, (Instant, QueryResult)>>,
 
     /// Underlying client implementation
     client: Box<dyn DataSourceImpl>,
@@ -41,51 +42,87 @@ impl DataSourceClient {
         Ok(Self {
             config,
             cache: Arc::new(Mutex::new(FeatureCache::new())),
+            query_cache: Mutex::new(HashMap::new()),
             client,
         })
     }
 
     /// Execute a query
     pub async fn query(&self, query: Query) -> Result<QueryResult> {
-        // Check cache first
+        let ttl = Duration::from_secs(self.config.query_cache_ttl_secs);
         let cache_key = self.generate_cache_key(&query);
-        if let Some(cached_value) = self.cache.lock().unwrap().get(&cache_key) {
-            tracing::debug!("Cache hit for key: {}", cache_key);
-            return Ok(QueryResult {
-                rows: vec![cached_value.clone()],
-                execution_time_ms: 0,
-                source: self.config.name.clone(),
-                from_cache: true,
-            });
-        }
-
-        // Execute query
-        let start = Instant::now();
-        let result = self.client.execute(query.clone()).await?;
-        let execution_time_ms = start.elapsed().as_millis() as u64;
-
-        // Cache result if applicable
-        if !result.rows.is_empty() {
-            if let Some(row) = result.rows.first() {
-                self.cache.lock().unwrap().set(
-                    cache_key,
-                    row.clone(),
-                    std::time::Duration::from_secs(300),
-                );
+        if !ttl.is_zero() {
+            if let Some((created, result)) = self.query_cache.lock().unwrap().get(&cache_key) {
+                if created.elapsed() < ttl {
+                    let mut result = result.clone();
+                    result.from_cache = true;
+                    result.execution_time_ms = 0;
+                    return Ok(result);
+                }
             }
         }
+        let start = Instant::now();
+        let mut result = self.client.execute(query).await?;
+        result.execution_time_ms = start.elapsed().as_millis() as u64;
+        result.source = self.config.name.clone();
+        result.from_cache = false;
+        if !ttl.is_zero() {
+            let mut cache = self.query_cache.lock().unwrap();
+            cache.retain(|_, (created, _)| created.elapsed() < ttl);
+            // Bound memory for high-cardinality entity keys.
+            if cache.len() >= 4096 {
+                cache.clear();
+            }
+            cache.insert(cache_key, (Instant::now(), result.clone()));
+        }
+        Ok(result)
+    }
 
-        Ok(QueryResult {
-            rows: result.rows,
-            execution_time_ms,
-            source: self.config.name.clone(),
-            from_cache: false,
-        })
+    /// Explicitly invalidate cached query results after operator-owned writes.
+    pub fn clear_query_cache(&self) {
+        self.query_cache.lock().unwrap().clear();
+    }
+
+    /// Admission check shared by feature registration and query construction.
+    pub fn validate_aggregation(&self, method: &str) -> Result<()> {
+        if !matches!(
+            method,
+            "count"
+                | "sum"
+                | "avg"
+                | "min"
+                | "max"
+                | "distinct"
+                | "median"
+                | "stddev"
+                | "percentile"
+        ) {
+            return Err(RuntimeError::InvalidOperation(format!(
+                "Unsupported aggregation method: {method}"
+            )));
+        }
+        if let DataSourceType::SQL(config) = &self.config.source_type {
+            use super::config::SQLProvider;
+            if matches!(config.provider, SQLProvider::MySQL)
+                || (matches!(config.provider, SQLProvider::SQLite)
+                    && matches!(method, "median" | "stddev" | "percentile"))
+            {
+                return Err(RuntimeError::InvalidOperation(format!(
+                    "Unsupported aggregation '{method}' for {:?}",
+                    config.provider
+                )));
+            }
+        }
+        Ok(())
     }
 
     /// Get a feature from feature store
     pub async fn get_feature(&self, feature_name: &str, entity_key: &str) -> Result<Option<Value>> {
         let cache_key = format!("feature:{}:{}", feature_name, entity_key);
+        let ttl = match &self.config.source_type {
+            DataSourceType::FeatureStore(config) => config.default_ttl,
+            _ => 0,
+        };
 
         // Check cache
         if let Some(cached) = self.cache.lock().unwrap().get(&cache_key) {
@@ -103,7 +140,7 @@ impl DataSourceClient {
                 self.cache
                     .lock()
                     .unwrap()
-                    .set(cache_key, row, std::time::Duration::from_secs(300));
+                    .set(cache_key, row, Duration::from_secs(ttl));
             }
 
             Ok(value)
@@ -116,41 +153,8 @@ impl DataSourceClient {
 
     /// Generate cache key for a query
     fn generate_cache_key(&self, query: &Query) -> String {
-        // Include all query parameters in cache key to avoid collisions
-        let mut key_parts = vec![
-            self.config.name.clone(),
-            query.entity.clone(),
-            serde_json::to_string(&query.filters).unwrap_or_default(),
-        ];
-
-        // Include time window in cache key
-        if let Some(ref time_window) = query.time_window {
-            key_parts.push(format!(
-                "window:{}:{}",
-                time_window.time_field,
-                serde_json::to_string(&time_window.window_type).unwrap_or_default()
-            ));
-        }
-
-        // Include aggregations in cache key (different aggregations should have different cache keys)
-        if !query.aggregations.is_empty() {
-            key_parts.push(format!(
-                "agg:{}",
-                serde_json::to_string(&query.aggregations).unwrap_or_default()
-            ));
-        }
-
-        // Include group_by in cache key
-        if !query.group_by.is_empty() {
-            key_parts.push(format!("group_by:{}", query.group_by.join(",")));
-        }
-
-        // Include limit in cache key
-        if let Some(limit) = query.limit {
-            key_parts.push(format!("limit:{}", limit));
-        }
-
-        format!("query:{}", key_parts.join(":"))
+        // Includes query_type, filters, windows, grouping, aliases and limits.
+        serde_json::to_string(query).expect("Query is serializable")
     }
 
     /// Get data source name

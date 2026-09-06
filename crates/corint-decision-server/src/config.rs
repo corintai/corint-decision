@@ -220,6 +220,12 @@ impl DatasourceConfig {
             pool_size,
             timeout_ms,
             pooling_enabled: true,
+            query_cache_ttl_secs: self
+                .options
+                .get("query_cache_ttl_secs")
+                .map(|ttl| ttl.parse::<u64>())
+                .transpose()?
+                .unwrap_or(0),
         })
     }
 }

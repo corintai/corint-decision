@@ -60,14 +60,7 @@ pub async fn init_engine(config: &ServerConfig) -> Result<corint_decision_engine
     // Convert server datasources to runtime datasource configs
     let mut server_datasources = std::collections::HashMap::new();
     for (name, ds_config) in &config.datasource {
-        match ds_config.to_runtime_config(name) {
-            Ok(runtime_config) => {
-                server_datasources.insert(name.clone(), runtime_config);
-            }
-            Err(e) => {
-                warn!("Failed to convert datasource '{}': {}", name, e);
-            }
-        }
+        server_datasources.insert(name.clone(), ds_config.to_runtime_config(name)?);
     }
 
     let mut builder = DecisionEngineBuilder::new()

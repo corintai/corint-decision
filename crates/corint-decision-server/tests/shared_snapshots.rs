@@ -662,3 +662,52 @@ pipeline:
         vec!["route", "chosen"]
     );
 }
+
+#[tokio::test]
+async fn documented_http_example_runs_and_reserved_fields_are_rejected() {
+    let documentation = include_str!("../../../docs/API_REQUEST.md");
+    let request_json = documentation
+        .split("<!-- executable-example: decide-request -->")
+        .nth(1)
+        .unwrap()
+        .split("```json\n")
+        .nth(1)
+        .unwrap()
+        .split("```")
+        .next()
+        .unwrap();
+    let example: Value = serde_json::from_str(request_json).unwrap();
+    let repo = repository();
+    let app = create_router(manager(repo.path()).await, access());
+    for (field, expected) in [
+        (None, StatusCode::OK),
+        (Some("user"), StatusCode::BAD_REQUEST),
+        (Some("async"), StatusCode::BAD_REQUEST),
+    ] {
+        let mut payload = example.clone();
+        match field {
+            Some("user") => payload["user"] = json!({"risk_level":"low"}),
+            Some("async") => payload["options"]["async"] = true.into(),
+            _ => {}
+        }
+        let response = app
+            .clone()
+            .oneshot(
+                Request::post("/v1/decide")
+                    .header("authorization", format!("Bearer {DECISION_TOKEN}"))
+                    .header("content-type", "application/json")
+                    .body(Body::from(serde_json::to_vec(&payload).unwrap()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), expected);
+        if expected == StatusCode::OK {
+            let body: Value =
+                serde_json::from_slice(&response.into_body().collect().await.unwrap().to_bytes())
+                    .unwrap();
+            assert_eq!(body["decision"]["result"], "approve");
+            assert!(body.get("features").is_none());
+        }
+    }
+}

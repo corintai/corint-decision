@@ -1,6 +1,6 @@
 //! When block and condition evaluation logic
 
-use corint_decision_model::ast::{Condition, ConditionGroup, Expression, Operator, WhenBlock};
+use corint_decision_model::ast::{Condition, ConditionGroup, Expression, Operator};
 use corint_decision_model::Value;
 use corint_decision_runtime::ConditionTrace;
 use std::collections::HashMap;
@@ -8,107 +8,6 @@ use std::collections::HashMap;
 pub(super) struct WhenEvaluator;
 
 impl WhenEvaluator {
-    pub(super) fn evaluate_when_block(
-        when: &WhenBlock,
-        event_data: &HashMap<String, Value>,
-    ) -> bool {
-        tracing::debug!(
-            "evaluate_when_block: when={:?}, event_data={:?}",
-            when,
-            event_data
-        );
-
-        // Check event_type if specified
-        // Note: event_type field in WhenBlock corresponds to event.type in YAML,
-        // which is stored as "type" key in event_data HashMap
-        if let Some(ref expected_type) = when.event_type {
-            if let Some(Value::String(actual)) = event_data.get("type") {
-                if actual != expected_type {
-                    tracing::debug!(
-                        "event_type mismatch: expected={}, actual={}",
-                        expected_type,
-                        actual
-                    );
-                    return false; // Event type mismatch
-                }
-            } else {
-                tracing::debug!("No type field in event data");
-                return false; // No type field in event data or type is not a string
-            }
-        }
-
-        // Evaluate condition_group (new format: all/any/not)
-        if let Some(ref condition_group) = when.condition_group {
-            let result = WhenEvaluator::evaluate_condition_group(condition_group, event_data);
-            tracing::debug!("condition_group evaluation result: {}", result);
-            return result;
-        }
-
-        // Evaluate all conditions (legacy format - AND logic)
-        if let Some(ref conditions) = when.conditions {
-            for condition in conditions {
-                if !WhenEvaluator::evaluate_expression(condition, event_data) {
-                    return false; // Condition failed
-                }
-            }
-        }
-
-        true // All checks passed
-    }
-
-    /// Evaluate a condition group (all/any/not)
-    pub(super) fn evaluate_condition_group(
-        group: &ConditionGroup,
-        event_data: &HashMap<String, Value>,
-    ) -> bool {
-        match group {
-            ConditionGroup::All(conditions) => {
-                // All conditions must be true (AND logic)
-                for condition in conditions {
-                    let result = WhenEvaluator::evaluate_condition(condition, event_data);
-                    tracing::debug!(
-                        "Evaluating condition in All group: {:?}, result={}",
-                        condition,
-                        result
-                    );
-                    if !result {
-                        return false;
-                    }
-                }
-                true
-            }
-            ConditionGroup::Any(conditions) => {
-                // At least one condition must be true (OR logic)
-                for condition in conditions {
-                    if WhenEvaluator::evaluate_condition(condition, event_data) {
-                        return true;
-                    }
-                }
-                false
-            }
-            ConditionGroup::Not(conditions) => {
-                // None of the conditions should be true (NOT logic)
-                for condition in conditions {
-                    if WhenEvaluator::evaluate_condition(condition, event_data) {
-                        return false;
-                    }
-                }
-                true
-            }
-        }
-    }
-
-    /// Evaluate a single condition (expression or nested group)
-    pub(super) fn evaluate_condition(
-        condition: &Condition,
-        event_data: &HashMap<String, Value>,
-    ) -> bool {
-        match condition {
-            Condition::Expression(expr) => WhenEvaluator::evaluate_expression(expr, event_data),
-            Condition::Group(group) => WhenEvaluator::evaluate_condition_group(group, event_data),
-        }
-    }
-
     /// Evaluate a condition group with tracing support
     pub(super) fn evaluate_condition_group_with_trace(
         group: &ConditionGroup,

@@ -79,131 +79,42 @@ impl RuleCompiler {
         Ok(Program::new(instructions, metadata))
     }
 
-    /// Compile legacy format conditions (implicit AND) using BinaryOp::And chaining
-    /// Produces a single boolean on the stack
+    /// Lower every boolean spelling through the shared short-circuit compiler.
     fn compile_legacy_conditions_chained(
         conditions: &[corint_decision_model::ast::Expression],
     ) -> Result<Vec<Instruction>> {
-        let mut instructions = Vec::new();
-
-        // Handle empty conditions: no conditions means always true
-        if conditions.is_empty() {
-            return Ok(instructions);
-        }
-
-        // Compile each condition and chain with AND
-        for (i, condition) in conditions.iter().enumerate() {
-            let cond_instructions = ExpressionCompiler::compile(condition)?;
-            instructions.extend(cond_instructions);
-
-            // After first condition, AND with previous result
-            if i > 0 {
-                instructions.push(Instruction::BinaryOp {
-                    op: corint_decision_model::ast::Operator::And,
-                });
-            }
-        }
-
-        Ok(instructions)
+        ExpressionCompiler::compile(&corint_decision_model::ast::Expression::LogicalGroup {
+            op: corint_decision_model::ast::LogicalGroupOp::All,
+            conditions: conditions.to_vec(),
+        })
     }
 
-    /// Compile a condition group (new format) - produces a single boolean on the stack
-    /// This version uses BinaryOp::And/Or chaining, which works correctly for nested groups
     fn compile_condition_group(group: &ConditionGroup) -> Result<Vec<Instruction>> {
-        match group {
-            ConditionGroup::All(conditions) => Self::compile_all_conditions_chained(conditions),
-            ConditionGroup::Any(conditions) => Self::compile_any_conditions_chained(conditions),
-            ConditionGroup::Not(conditions) => Self::compile_not_conditions_chained(conditions),
-        }
+        ExpressionCompiler::compile(&Self::group_expression(group))
     }
 
-    /// Compile "all" conditions using BinaryOp::And chaining
-    /// Produces a single boolean on the stack
-    fn compile_all_conditions_chained(conditions: &[Condition]) -> Result<Vec<Instruction>> {
-        let mut instructions = Vec::new();
-
-        // Handle empty conditions: ALL of nothing is true
-        if conditions.is_empty() {
-            instructions.push(Instruction::LoadConst {
-                value: corint_decision_model::Value::Bool(true),
-            });
-            return Ok(instructions);
-        }
-
-        // Compile each condition and chain with AND
-        for (i, condition) in conditions.iter().enumerate() {
-            let cond_instructions = Self::compile_condition(condition)?;
-            instructions.extend(cond_instructions);
-
-            // After first condition, AND with previous result
-            if i > 0 {
-                instructions.push(Instruction::BinaryOp {
-                    op: corint_decision_model::ast::Operator::And,
-                });
-            }
-        }
-
-        Ok(instructions)
-    }
-
-    /// Compile "any" conditions using BinaryOp::Or chaining
-    /// Produces a single boolean on the stack
-    fn compile_any_conditions_chained(conditions: &[Condition]) -> Result<Vec<Instruction>> {
-        let mut instructions = Vec::new();
-
-        // Handle empty conditions: ANY of nothing is false
-        if conditions.is_empty() {
-            instructions.push(Instruction::LoadConst {
-                value: corint_decision_model::Value::Bool(false),
-            });
-            return Ok(instructions);
-        }
-
-        // Compile each condition and chain with OR
-        for (i, condition) in conditions.iter().enumerate() {
-            let cond_instructions = Self::compile_condition(condition)?;
-            instructions.extend(cond_instructions);
-
-            // After first condition, OR with previous result
-            if i > 0 {
-                instructions.push(Instruction::BinaryOp {
-                    op: corint_decision_model::ast::Operator::Or,
-                });
-            }
-        }
-
-        Ok(instructions)
-    }
-
-    /// Compile "not" conditions (negation)
-    /// Produces a single boolean on the stack
-    fn compile_not_conditions_chained(conditions: &[Condition]) -> Result<Vec<Instruction>> {
-        let mut instructions = Vec::new();
-
-        if conditions.len() == 1 {
-            // Single condition: compile and negate
-            let cond_instructions = Self::compile_condition(&conditions[0])?;
-            instructions.extend(cond_instructions);
+    fn group_expression(group: &ConditionGroup) -> corint_decision_model::ast::Expression {
+        use corint_decision_model::ast::{Expression, LogicalGroupOp};
+        let (op, conditions, negate) = match group {
+            ConditionGroup::All(items) => (LogicalGroupOp::All, items, false),
+            ConditionGroup::Any(items) => (LogicalGroupOp::Any, items, false),
+            // not [a, b] means !a && !b, consistent with the parser and Core.
+            ConditionGroup::Not(items) => (LogicalGroupOp::Any, items, true),
+        };
+        let expression = Expression::LogicalGroup {
+            op,
+            conditions: conditions
+                .iter()
+                .map(|condition| match condition {
+                    Condition::Expression(expr) => expr.clone(),
+                    Condition::Group(group) => Self::group_expression(group),
+                })
+                .collect(),
+        };
+        if negate {
+            Expression::unary(UnaryOperator::Not, expression)
         } else {
-            // Multiple conditions: treat as implicit AND, then negate
-            let all_cond_instructions = Self::compile_all_conditions_chained(conditions)?;
-            instructions.extend(all_cond_instructions);
-        }
-
-        // Negate the result
-        instructions.push(Instruction::UnaryOp {
-            op: UnaryOperator::Not,
-        });
-
-        Ok(instructions)
-    }
-
-    /// Compile a single condition (expression or nested group)
-    /// Produces a single boolean on the stack
-    fn compile_condition(condition: &Condition) -> Result<Vec<Instruction>> {
-        match condition {
-            Condition::Expression(expr) => ExpressionCompiler::compile(expr),
-            Condition::Group(group) => Self::compile_condition_group(group),
+            expression
         }
     }
 

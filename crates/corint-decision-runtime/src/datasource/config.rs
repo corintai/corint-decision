@@ -23,6 +23,10 @@ pub struct DataSourceConfig {
     #[serde(default = "default_timeout")]
     pub timeout_ms: u64,
 
+    /// Query result cache TTL in seconds. Zero (default) always reads fresh data.
+    #[serde(default)]
+    pub query_cache_ttl_secs: u64,
+
     /// Enable connection pooling
     #[serde(default = "default_true")]
     pub pooling_enabled: bool,

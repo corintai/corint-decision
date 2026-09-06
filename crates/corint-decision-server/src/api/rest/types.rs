@@ -29,7 +29,7 @@ pub struct DecideRequestPayload {
     /// Event data (required)
     pub event: HashMap<String, serde_json::Value>,
 
-    /// User profile/context (optional)
+    /// Reserved namespace; non-null caller values are rejected.
     #[serde(default)]
     pub user: Option<HashMap<String, serde_json::Value>>,
 
@@ -71,7 +71,7 @@ pub struct RequestOptions {
     #[serde(default)]
     pub enable_trace: bool,
 
-    /// Whether to process asynchronously
+    /// Reserved compatibility option; true is rejected.
     #[serde(default, rename = "async")]
     pub async_mode: bool,
 }
@@ -106,7 +106,7 @@ pub struct DecideResponsePayload {
 /// Decision payload (nested in response)
 #[derive(Debug, Serialize)]
 pub struct DecisionPayload {
-    /// Decision result: "ALLOW", "DENY", "REVIEW", "HOLD", "PASS"
+    /// Decision result: "approve", "decline", "review", "hold", "pass"
     pub result: String,
 
     /// Actions to take

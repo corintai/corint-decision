@@ -15,8 +15,7 @@ use tempfile::TempDir;
 use tokio::fs;
 use tower::ServiceExt;
 
-// Import the types we need from the server module
-// Since corint-decision-server doesn't expose a lib, we'll create helper functions
+const DECISION_TOKEN: &str = "integration-decision-token-1234567890";
 
 /// Helper to create a test decision engine with a simple pipeline
 async fn create_test_engine() -> (TempDir, Arc<corint_decision_engine::DecisionEngine>) {
@@ -41,8 +40,8 @@ rule:
   id: test_rule
   name: Test Rule
   when:
-    conditions:
-      - "amount > 1000"
+    all:
+      - "event.amount > 1000"
   score: 100
 "#;
 
@@ -52,7 +51,9 @@ rule:
 
     // Create a test ruleset
     let ruleset_yaml = r#"version: "0.1"
-
+import:
+  rules: [library/rules/test_rule.yaml]
+---
 ruleset:
   id: test_ruleset
   name: Test Ruleset
@@ -76,7 +77,9 @@ ruleset:
 
     // Create a pipeline
     let pipeline_yaml = r#"version: "0.1"
-
+import:
+  rulesets: [library/rulesets/test_ruleset.yaml]
+---
 pipeline:
   id: test_pipeline
   name: Test Pipeline
@@ -91,6 +94,11 @@ pipeline:
         type: ruleset
         ruleset: test_ruleset
         next: end
+  decision:
+    - when: results.test_ruleset.score >= 100
+      result: decline
+    - default: true
+      result: approve
 "#;
 
     fs::write(
@@ -104,9 +112,8 @@ pipeline:
     let registry_yaml = r#"version: "0.1"
 
 registry:
-  pipelines:
-    - event_type: transaction
-      pipeline: test_pipeline
+  - when: event.type == "transaction"
+    pipeline: test_pipeline
 "#;
 
     fs::write(repo_path.join("registry.yaml"), registry_yaml)
@@ -114,11 +121,12 @@ registry:
         .unwrap();
 
     // Build decision engine
-    let pipeline_path = repo_path.join("pipelines/test_pipeline.yaml");
     let registry_path = repo_path.join("registry.yaml");
 
     let engine = DecisionEngineBuilder::new()
-        .add_rule_file(pipeline_path)
+        .with_repository(corint_decision_engine::RepositoryConfig::file_system(
+            repo_path.to_string_lossy(),
+        ))
         .with_registry_file(registry_path)
         .build()
         .await
@@ -127,195 +135,16 @@ registry:
     (temp_dir, Arc::new(engine))
 }
 
-/// Helper to create the app router (mimics the server's create_router function)
+/// Test the production router, including authorization and response conversion.
 fn create_test_router(engine: Arc<corint_decision_engine::DecisionEngine>) -> Router {
-    use axum::{
-        extract::State,
-        routing::{get, post},
-        Json, Router,
-    };
-    use corint_decision_engine::{DecisionRequest, Value};
-    use serde::{Deserialize, Serialize};
-    use std::collections::HashMap;
-
-    #[derive(Clone)]
-    struct AppState {
-        engine: Arc<corint_decision_engine::DecisionEngine>,
-    }
-
-    #[derive(Debug, Serialize)]
-    struct HealthResponse {
-        status: String,
-        version: String,
-    }
-
-    #[derive(Debug, Deserialize)]
-    struct DecideRequestPayload {
-        event: HashMap<String, serde_json::Value>,
-        #[serde(default, rename = "user")]
-        _user: Option<HashMap<String, serde_json::Value>>,
-        #[serde(default, rename = "options")]
-        _options: Option<RequestOptions>,
-    }
-
-    #[derive(Debug, Default, Deserialize)]
-    struct RequestOptions {
-        #[serde(default, rename = "return_features")]
-        _return_features: bool,
-        #[serde(default, rename = "enable_trace")]
-        _enable_trace: bool,
-    }
-
-    #[derive(Debug, Serialize)]
-    struct DecideResponsePayload {
-        request_id: String,
-        status: u16,
-        process_time_ms: u64,
-        pipeline_id: String,
-        decision: DecisionPayload,
-    }
-
-    #[derive(Debug, Serialize)]
-    struct DecisionPayload {
-        result: String,
-        actions: Vec<String>,
-        scores: ScoresPayload,
-        evidence: EvidencePayload,
-        cognition: CognitionPayload,
-    }
-
-    #[derive(Debug, Serialize)]
-    struct ScoresPayload {
-        canonical: i32,
-        raw: i32,
-    }
-
-    #[derive(Debug, Serialize)]
-    struct EvidencePayload {
-        triggered_rules: Vec<String>,
-    }
-
-    #[derive(Debug, Serialize)]
-    struct CognitionPayload {
-        summary: String,
-        reason_codes: Vec<String>,
-    }
-
-    async fn health() -> Json<HealthResponse> {
-        Json(HealthResponse {
-            status: "healthy".to_string(),
-            version: "0.1.0".to_string(),
-        })
-    }
-
-    fn json_to_value(v: serde_json::Value) -> Value {
-        match v {
-            serde_json::Value::Null => Value::Null,
-            serde_json::Value::Bool(b) => Value::Bool(b),
-            serde_json::Value::Number(n) => {
-                if let Some(i) = n.as_i64() {
-                    Value::Number(i as f64)
-                } else if let Some(f) = n.as_f64() {
-                    Value::Number(f)
-                } else {
-                    Value::Null
-                }
-            }
-            serde_json::Value::String(s) => Value::String(s),
-            serde_json::Value::Array(arr) => {
-                Value::Array(arr.into_iter().map(json_to_value).collect())
-            }
-            serde_json::Value::Object(obj) => {
-                let map = obj
-                    .into_iter()
-                    .map(|(k, v)| (k, json_to_value(v)))
-                    .collect();
-                Value::Object(map)
-            }
-        }
-    }
-
-    fn flatten_object(prefix: &str, value: &Value, result: &mut HashMap<String, Value>) {
-        match value {
-            Value::Object(map) => {
-                for (key, val) in map {
-                    let new_prefix = format!("{}.{}", prefix, key);
-                    result.insert(new_prefix.clone(), val.clone());
-                    if matches!(val, Value::Object(_)) {
-                        flatten_object(&new_prefix, val, result);
-                    }
-                }
-            }
-            _ => {
-                result.insert(prefix.to_string(), value.clone());
-            }
-        }
-    }
-
-    async fn decide(
-        State(state): State<AppState>,
-        Json(payload): Json<DecideRequestPayload>,
-    ) -> Result<Json<DecideResponsePayload>, StatusCode> {
-        let event_fields: HashMap<String, Value> = payload
-            .event
-            .into_iter()
-            .map(|(k, v)| (k, json_to_value(v)))
-            .collect();
-
-        let mut event_data = HashMap::new();
-        let event_object = Value::Object(event_fields.clone());
-        event_data.insert("event".to_string(), event_object.clone());
-
-        for (key, value) in &event_fields {
-            event_data.insert(key.clone(), value.clone());
-        }
-
-        flatten_object("event", &event_object, &mut event_data);
-
-        let request = DecisionRequest::new(event_data);
-        let response = state
-            .engine
-            .decide(request)
-            .await
-            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-
-        let result_str = response
-            .result
-            .signal
-            .map(|a| format!("{:?}", a).to_uppercase())
-            .unwrap_or_else(|| "PASS".to_string());
-
-        Ok(Json(DecideResponsePayload {
-            request_id: response.request_id,
-            status: 200,
-            process_time_ms: response.processing_time_ms,
-            pipeline_id: response
-                .pipeline_id
-                .unwrap_or_else(|| "default".to_string()),
-            decision: DecisionPayload {
-                result: result_str,
-                actions: Vec::new(),
-                scores: ScoresPayload {
-                    canonical: response.result.score.clamp(0, 1000),
-                    raw: response.result.score,
-                },
-                evidence: EvidencePayload {
-                    triggered_rules: response.result.triggered_rules,
-                },
-                cognition: CognitionPayload {
-                    summary: response.result.explanation,
-                    reason_codes: Vec::new(),
-                },
-            },
-        }))
-    }
-
-    let state = AppState { engine };
-
-    Router::new()
-        .route("/health", get(health))
-        .route("/v1/decide", post(decide))
-        .with_state(state)
+    let manager = Arc::new(corint_decision_server::snapshot::EngineManager::new(engine).unwrap());
+    let access = corint_decision_server::access::AccessPolicy::new(
+        DECISION_TOKEN,
+        "integration-publisher-token-1234567890",
+        "test",
+    )
+    .unwrap();
+    corint_decision_server::api::create_router(manager, access)
 }
 
 // Tests
@@ -328,6 +157,7 @@ async fn test_health_endpoint() {
     let response = app
         .oneshot(
             Request::builder()
+                .header("authorization", format!("Bearer {DECISION_TOKEN}"))
                 .uri("/health")
                 .body(Body::empty())
                 .unwrap(),
@@ -353,13 +183,14 @@ async fn test_decide_endpoint_high_amount() {
         "event": {
             "amount": 2000,
             "user_id": "user_123",
-            "event_type": "transaction"
+            "type": "transaction"
         }
     });
 
     let response = app
         .oneshot(
             Request::builder()
+                .header("authorization", format!("Bearer {DECISION_TOKEN}"))
                 .method("POST")
                 .uri("/v1/decide")
                 .header("content-type", "application/json")
@@ -374,7 +205,14 @@ async fn test_decide_endpoint_high_amount() {
     let body = response.into_body().collect().await.unwrap().to_bytes();
     let json: Value = serde_json::from_slice(&body).unwrap();
 
-    // Verify new response structure
+    assert_eq!(json["decision"]["result"], "decline");
+    assert_eq!(json["decision"]["scores"]["raw"], 100);
+    assert_eq!(
+        json["decision"]["evidence"]["triggered_rules"],
+        json!(["test_rule"])
+    );
+
+    // Verify response structure
     assert!(json["request_id"].is_string());
     assert!(json["status"].is_number());
     assert!(json["decision"]["result"].is_string());
@@ -392,13 +230,14 @@ async fn test_decide_endpoint_low_amount() {
         "event": {
             "amount": 500,
             "user_id": "user_456",
-            "event_type": "transaction"
+            "type": "transaction"
         }
     });
 
     let response = app
         .oneshot(
             Request::builder()
+                .header("authorization", format!("Bearer {DECISION_TOKEN}"))
                 .method("POST")
                 .uri("/v1/decide")
                 .header("content-type", "application/json")
@@ -413,7 +252,11 @@ async fn test_decide_endpoint_low_amount() {
     let body = response.into_body().collect().await.unwrap().to_bytes();
     let json: Value = serde_json::from_slice(&body).unwrap();
 
-    // Verify new response structure
+    assert_eq!(json["decision"]["result"], "approve");
+    assert_eq!(json["decision"]["scores"]["raw"], 0);
+    assert_eq!(json["decision"]["evidence"]["triggered_rules"], json!([]));
+
+    // Verify response structure
     assert!(json["request_id"].is_string());
     assert!(json["decision"]["scores"]["raw"].is_number());
     assert!(json["decision"]["result"].is_string());
@@ -434,6 +277,7 @@ async fn test_decide_endpoint_missing_fields() {
     let response = app
         .oneshot(
             Request::builder()
+                .header("authorization", format!("Bearer {DECISION_TOKEN}"))
                 .method("POST")
                 .uri("/v1/decide")
                 .header("content-type", "application/json")
@@ -443,14 +287,8 @@ async fn test_decide_endpoint_missing_fields() {
         .await
         .unwrap();
 
-    // Missing fields might cause an error or succeed with defaults
-    assert!(
-        response.status() == StatusCode::OK || response.status().is_server_error(),
-        "Expected OK or server error, got: {}",
-        response.status()
-    );
-
-    if response.status() == StatusCode::OK {
+    assert_eq!(response.status(), StatusCode::OK);
+    {
         let body = response.into_body().collect().await.unwrap().to_bytes();
         let json: Value = serde_json::from_slice(&body).unwrap();
         assert!(json["decision"]["scores"]["raw"].is_number());
@@ -469,6 +307,7 @@ async fn test_decide_endpoint_empty_event() {
     let response = app
         .oneshot(
             Request::builder()
+                .header("authorization", format!("Bearer {DECISION_TOKEN}"))
                 .method("POST")
                 .uri("/v1/decide")
                 .header("content-type", "application/json")
@@ -478,15 +317,8 @@ async fn test_decide_endpoint_empty_event() {
         .await
         .unwrap();
 
-    // Empty event data might cause an error or succeed with default values
-    // Either is acceptable behavior
-    assert!(
-        response.status() == StatusCode::OK || response.status().is_server_error(),
-        "Expected OK or server error, got: {}",
-        response.status()
-    );
-
-    if response.status() == StatusCode::OK {
+    assert_eq!(response.status(), StatusCode::OK);
+    {
         let body = response.into_body().collect().await.unwrap().to_bytes();
         let json: Value = serde_json::from_slice(&body).unwrap();
         assert!(json["decision"]["scores"]["raw"].is_number());
@@ -501,6 +333,7 @@ async fn test_decide_endpoint_complex_nested_data() {
     let request_body = json!({
         "event": {
             "amount": 1500,
+            "type": "transaction",
             "user": {
                 "id": "user_999",
                 "profile": {
@@ -518,6 +351,7 @@ async fn test_decide_endpoint_complex_nested_data() {
     let response = app
         .oneshot(
             Request::builder()
+                .header("authorization", format!("Bearer {DECISION_TOKEN}"))
                 .method("POST")
                 .uri("/v1/decide")
                 .header("content-type", "application/json")
@@ -527,14 +361,8 @@ async fn test_decide_endpoint_complex_nested_data() {
         .await
         .unwrap();
 
-    // Complex nested data might cause parsing issues or succeed
-    assert!(
-        response.status() == StatusCode::OK || response.status().is_server_error(),
-        "Expected OK or server error, got: {}",
-        response.status()
-    );
-
-    if response.status() == StatusCode::OK {
+    assert_eq!(response.status(), StatusCode::OK);
+    {
         let body = response.into_body().collect().await.unwrap().to_bytes();
         let json: Value = serde_json::from_slice(&body).unwrap();
 
@@ -552,6 +380,7 @@ async fn test_decide_endpoint_invalid_json() {
     let response = app
         .oneshot(
             Request::builder()
+                .header("authorization", format!("Bearer {DECISION_TOKEN}"))
                 .method("POST")
                 .uri("/v1/decide")
                 .header("content-type", "application/json")
@@ -573,13 +402,14 @@ async fn test_decide_endpoint_response_fields() {
     let request_body = json!({
         "event": {
             "amount": 1200,
-            "event_type": "transaction"
+            "type": "transaction"
         }
     });
 
     let response = app
         .oneshot(
             Request::builder()
+                .header("authorization", format!("Bearer {DECISION_TOKEN}"))
                 .method("POST")
                 .uri("/v1/decide")
                 .header("content-type", "application/json")
@@ -616,6 +446,7 @@ async fn test_not_found_endpoint() {
     let response = app
         .oneshot(
             Request::builder()
+                .header("authorization", format!("Bearer {DECISION_TOKEN}"))
                 .uri("/nonexistent")
                 .body(Body::empty())
                 .unwrap(),
@@ -634,6 +465,7 @@ async fn test_health_method_not_allowed() {
     let response = app
         .oneshot(
             Request::builder()
+                .header("authorization", format!("Bearer {DECISION_TOKEN}"))
                 .method("POST")
                 .uri("/health")
                 .body(Body::empty())
@@ -653,6 +485,7 @@ async fn test_decide_method_get_not_allowed() {
     let response = app
         .oneshot(
             Request::builder()
+                .header("authorization", format!("Bearer {DECISION_TOKEN}"))
                 .method("GET")
                 .uri("/v1/decide")
                 .body(Body::empty())

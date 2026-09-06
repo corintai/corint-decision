@@ -442,3 +442,23 @@ fn human_output_help_and_version_have_no_validation_claims() {
     let text = String::from_utf8(output.stdout).unwrap();
     assert!(text.contains("E_INVALID_STRUCTURE [parse] rule.yaml:"));
 }
+
+#[test]
+fn long_flat_conditions_return_diagnostics_instead_of_aborting() {
+    let dir = setup(FILES);
+    for condition in [
+        vec!["true"; 1024].join(" && "),
+        vec!["false"; 1024].join(" || "),
+        format!("{} > 0", vec!["1"; 1024].join(" + ")),
+    ] {
+        let mut rule: Value = serde_yaml::from_str(&fixture("rule.yaml")).unwrap();
+        rule["rule"]["when"] = condition.into();
+        std::fs::write(
+            dir.path().join("rule.yaml"),
+            serde_yaml::to_string(&rule).unwrap(),
+        )
+        .unwrap();
+        let report = validate(dir.path(), FILES, 1);
+        assert!(report["diagnostics"].to_string().contains("depth"));
+    }
+}

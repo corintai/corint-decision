@@ -21,7 +21,7 @@ CORINT expressions are used in:
 
 | Context | Evaluator | Supported Operations |
 |---------|-----------|---------------------|
-| **Compiled Rule/Pipeline conditions** | Shared ExpressionParser → ExpressionCompiler → VM | Checked arithmetic, comparisons, boolean short-circuiting; compatibility additionally parses membership/string operations |
+| **Compiled Rule/Pipeline/Registry conditions** | Shared ExpressionParser → ExpressionCompiler → VM | Checked arithmetic, comparisons, boolean short-circuiting; compatibility additionally parses membership/string operations |
 | **Feature Expressions** | ExpressionEvaluator | Basic arithmetic (+, -, *, /, parentheses) only |
 
 ---
@@ -412,3 +412,7 @@ event.type.                 # ❌ Cannot end with dot
 - [pipeline.md](pipeline.md) - Pipeline configuration
 - [feature.md](feature.md) - Feature engineering
 - [context.md](context.md) - Context and variable management
+
+## Resource limits
+
+The shared text parser accepts at most 4,096 tokens and an AST depth of 128, including flat binary chains. The VM validates jump targets and limits each program execution (including its decision block) to 1,000,000 instructions. Exceeding a limit returns an error.

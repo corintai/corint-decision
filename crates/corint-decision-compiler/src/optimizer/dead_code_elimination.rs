@@ -1,43 +1,21 @@
-//! Dead code elimination optimizer
-//!
-//! Removes unreachable code from IR programs.
-
+//! Control-flow preserving elimination of redundant IR instructions.
+use corint_decision_model::ir::condition_map::CONDITION_MAP;
 use corint_decision_model::ir::{Instruction, Program};
 
-/// Dead code eliminator
 pub struct DeadCodeEliminator;
-
 impl DeadCodeEliminator {
-    /// Create a new dead code eliminator
     pub fn new() -> Self {
         Self
     }
-
-    /// Optimize a program by removing dead code
     pub fn eliminate(&self, program: &Program) -> Program {
-        // IMPROVED: Use proper control flow analysis instead of naive linear scan
-        // Build a map of potentially reachable instructions
         let reachable = self.compute_reachable_instructions(program);
-
-        let mut optimized_instructions = Vec::new();
-        for (i, instruction) in program.instructions.iter().enumerate() {
-            if reachable.contains(&i) {
-                optimized_instructions.push(instruction.clone());
-            }
-        }
-
-        // Preserve decision_instructions when optimizing
-        if let Some(ref decision_instructions) = program.decision_instructions {
-            Program::new_with_decision(
-                optimized_instructions,
-                program.metadata.clone(),
-                decision_instructions.clone(),
-            )
-        } else {
-            Program::new(optimized_instructions, program.metadata.clone())
-        }
+        self.rewrite(
+            program,
+            &(0..program.instructions.len())
+                .map(|pc| reachable.contains(&pc))
+                .collect::<Vec<_>>(),
+        )
     }
-
     /// Compute which instructions are reachable via control flow analysis
     fn compute_reachable_instructions(
         &self,
@@ -69,8 +47,10 @@ impl DeadCodeEliminator {
                 }
                 Instruction::Jump { offset } => {
                     // Unconditional jump - only successor is jump target
-                    let target = (pc as isize + offset) as usize;
-                    if target < program.instructions.len() {
+                    if let Some(target) = pc
+                        .checked_add_signed(*offset)
+                        .filter(|target| *target < program.instructions.len())
+                    {
                         worklist.push_back(target);
                     }
                 }
@@ -79,8 +59,10 @@ impl DeadCodeEliminator {
                     // 1. Next instruction (fall-through)
                     // 2. Jump target
                     worklist.push_back(pc + 1);
-                    let target = (pc as isize + offset) as usize;
-                    if target < program.instructions.len() {
+                    if let Some(target) = pc
+                        .checked_add_signed(*offset)
+                        .filter(|target| *target < program.instructions.len())
+                    {
                         worklist.push_back(target);
                     }
                 }
@@ -94,91 +76,92 @@ impl DeadCodeEliminator {
         reachable
     }
 
-    /// Eliminate duplicate consecutive instructions
     pub fn eliminate_duplicates(&self, program: &Program) -> Program {
-        let mut optimized_instructions = Vec::new();
-        let mut last_instruction: Option<&Instruction> = None;
-
-        for instruction in &program.instructions {
-            // Skip if it's the same as the last instruction
-            // (only for certain instruction types that are safe to deduplicate)
-            let should_skip = match (last_instruction, instruction) {
-                // Don't duplicate SetScore with same value
-                (
-                    Some(Instruction::SetScore { value: v1 }),
-                    Instruction::SetScore { value: v2 },
-                ) if v1 == v2 => true,
-
-                // Don't duplicate SetSignal with same signal
-                (
-                    Some(Instruction::SetSignal { signal: s1 }),
-                    Instruction::SetSignal { signal: s2 },
-                ) if s1 == s2 => true,
-
-                _ => false,
-            };
-
-            if !should_skip {
-                optimized_instructions.push(instruction.clone());
-                last_instruction = Some(instruction);
-            }
-        }
-
-        // Preserve decision_instructions when optimizing
-        if let Some(ref decision_instructions) = program.decision_instructions {
-            Program::new_with_decision(
-                optimized_instructions,
-                program.metadata.clone(),
-                decision_instructions.clone(),
-            )
-        } else {
-            Program::new(optimized_instructions, program.metadata.clone())
-        }
-    }
-
-    /// Remove no-op instructions
-    pub fn eliminate_nops(&self, program: &Program) -> Program {
-        let optimized_instructions: Vec<Instruction> = program
+        let targets: std::collections::HashSet<usize> = program
             .instructions
             .iter()
-            .filter(|instr| !self.is_nop(instr))
-            .cloned()
+            .enumerate()
+            .filter_map(|(pc, instruction)| match instruction {
+                Instruction::Jump { offset }
+                | Instruction::JumpIfTrue { offset }
+                | Instruction::JumpIfFalse { offset } => pc.checked_add_signed(*offset),
+                _ => None,
+            })
             .collect();
-
-        // Preserve decision_instructions when optimizing
-        if let Some(ref decision_instructions) = program.decision_instructions {
-            Program::new_with_decision(
-                optimized_instructions,
-                program.metadata.clone(),
-                decision_instructions.clone(),
-            )
-        } else {
-            Program::new(optimized_instructions, program.metadata.clone())
+        let mut keep = vec![true; program.instructions.len()];
+        for (pc, retained) in keep.iter_mut().enumerate().skip(1) {
+            // A jump directly to the second write must still perform that write.
+            if !targets.contains(&pc)
+                && matches!(
+                    &program.instructions[pc],
+                    Instruction::SetScore { .. } | Instruction::SetSignal { .. }
+                )
+                && program.instructions[pc] == program.instructions[pc - 1]
+            {
+                *retained = false;
+            }
         }
+        self.rewrite(program, &keep)
     }
-
-    /// Check if an instruction is a no-op
+    pub fn eliminate_nops(&self, program: &Program) -> Program {
+        self.rewrite(
+            program,
+            &program
+                .instructions
+                .iter()
+                .map(|i| !self.is_nop(i))
+                .collect::<Vec<_>>(),
+        )
+    }
     fn is_nop(&self, instruction: &Instruction) -> bool {
-        match instruction {
-            // Adding 0 to score is a no-op
-            Instruction::AddScore { value } if *value == 0 => true,
-
-            // Jump with offset 1 is a no-op (jumps to next instruction)
-            Instruction::Jump { offset } if *offset == 1 => true,
-
-            _ => false,
-        }
+        matches!(
+            instruction,
+            Instruction::AddScore { value: 0 } | Instruction::Jump { offset: 1 }
+        )
     }
-
-    /// Run all optimizations
+    fn rewrite(&self, program: &Program, keep: &[bool]) -> Program {
+        // Observed programs retain their exact boundaries, including unreachable
+        // conditions. Eliminating those would change skipped-condition traces.
+        if program.metadata.custom.contains_key(CONDITION_MAP) {
+            return program.clone();
+        }
+        let mut positions = vec![0usize; keep.len() + 1];
+        for (pc, retained) in keep.iter().enumerate() {
+            positions[pc + 1] = positions[pc] + usize::from(*retained);
+        }
+        let mut instructions = Vec::new();
+        for (pc, instruction) in program.instructions.iter().enumerate() {
+            if !keep[pc] {
+                continue;
+            }
+            let mut instruction = instruction.clone();
+            match &mut instruction {
+                Instruction::Jump { offset }
+                | Instruction::JumpIfTrue { offset }
+                | Instruction::JumpIfFalse { offset } => {
+                    let Some(target) = pc
+                        .checked_add_signed(*offset)
+                        .filter(|target| *target <= keep.len())
+                    else {
+                        // Leave malformed IR intact for the VM's validation error.
+                        return program.clone();
+                    };
+                    *offset = positions[target] as isize - positions[pc] as isize;
+                }
+                _ => {}
+            }
+            instructions.push(instruction);
+        }
+        let mut result = program.clone();
+        result.instructions = instructions;
+        result
+    }
     pub fn optimize(&self, program: &Program) -> Program {
         let program = self.eliminate(program);
         let program = self.eliminate_duplicates(&program);
-
         self.eliminate_nops(&program)
     }
 }
-
 impl Default for DeadCodeEliminator {
     fn default() -> Self {
         Self::new()
@@ -464,5 +447,41 @@ mod tests {
             )),
             "Default signal (Approve) should not be eliminated"
         );
+    }
+}
+
+#[cfg(test)]
+mod control_flow_regressions {
+    use super::*;
+    use corint_decision_model::ir::ProgramMetadata;
+    #[test]
+    fn targeted_writes_and_observer_boundaries_are_preserved() {
+        let mut program = Program::new(
+            vec![
+                Instruction::Jump { offset: 2 },
+                Instruction::SetScore { value: 5 },
+                Instruction::SetScore { value: 5 },
+                Instruction::Return,
+            ],
+            ProgramMetadata::default(),
+        );
+        let optimizer = DeadCodeEliminator::new();
+        assert_eq!(optimizer.eliminate_duplicates(&program), program);
+        program
+            .metadata
+            .custom
+            .insert(CONDITION_MAP.into(), "[]".into());
+        assert_eq!(optimizer.optimize(&program), program);
+    }
+    #[test]
+    fn malformed_offsets_do_not_panic_in_optimizer() {
+        let program = Program::new(
+            vec![
+                Instruction::AddScore { value: 1 },
+                Instruction::Jump { offset: isize::MAX },
+            ],
+            ProgramMetadata::default(),
+        );
+        assert_eq!(DeadCodeEliminator::new().optimize(&program), program);
     }
 }

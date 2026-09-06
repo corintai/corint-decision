@@ -188,6 +188,9 @@ fn lex(input: &str) -> Result<Vec<Token>> {
                 )))
             }
         };
+        if tokens.len() >= 4096 {
+            return Err(invalid("Expression exceeds 4096 tokens"));
+        }
         tokens.push(token);
     }
     Ok(tokens)
@@ -271,6 +274,9 @@ impl Parser {
         }
         let result = self.expression_inner(minimum);
         self.depth -= 1;
+        if let Ok(expr) = &result {
+            check_ast_depth(expr)?;
+        }
         result
     }
 
@@ -297,6 +303,7 @@ impl Parser {
                 }
             }
             left = Expression::binary(left, op, right);
+            check_ast_depth(&left)?;
         }
         Ok(left)
     }
@@ -665,6 +672,52 @@ mod tests {
             );
         } else {
             panic!("Expected binary expression");
+        }
+    }
+}
+
+// Each child has already been bounded, so rejection never drops an unbounded tree.
+fn check_ast_depth(expression: &Expression) -> Result<()> {
+    let mut pending = vec![(expression, 1usize)];
+    while let Some((expr, depth)) = pending.pop() {
+        if depth > 128 {
+            return Err(invalid("Expression AST depth exceeds 128"));
+        }
+        match expr {
+            Expression::Binary { left, right, .. } => {
+                pending.extend([(left.as_ref(), depth + 1), (right.as_ref(), depth + 1)])
+            }
+            Expression::Unary { operand, .. } => pending.push((operand, depth + 1)),
+            Expression::FunctionCall { args, .. }
+            | Expression::LogicalGroup {
+                conditions: args, ..
+            } => pending.extend(args.iter().map(|arg| (arg, depth + 1))),
+            Expression::Ternary {
+                condition,
+                true_expr,
+                false_expr,
+            } => pending.extend([
+                (condition.as_ref(), depth + 1),
+                (true_expr.as_ref(), depth + 1),
+                (false_expr.as_ref(), depth + 1),
+            ]),
+            _ => {}
+        }
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod resource_limit_tests {
+    use super::*;
+    #[test]
+    fn flat_chains_are_bounded_before_recursive_consumers() {
+        for (operand, op) in [("true", " && "), ("false", " || "), ("1", " + ")] {
+            assert!(ExpressionParser::parse(&vec![operand; 128].join(op)).is_ok());
+            assert!(ExpressionParser::parse(&vec![operand; 1024].join(op))
+                .unwrap_err()
+                .to_string()
+                .contains("depth"));
         }
     }
 }

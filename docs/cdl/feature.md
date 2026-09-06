@@ -7,7 +7,7 @@
 > Described behavior may be incomplete in compatibility entry points; validate through the strict tools before delivery.
 
 
-Quick reference for writing feature definitions in CORINT. For detailed implementation details and use cases, see `FEATURE_ENGINEERING.md`.
+Quick reference for writing feature definitions in CORINT. For current backend support, filtering, dependencies and caching, see the [Feature runtime contract](../contracts/feature-runtime.md). Use [Feature Engineering](../FEATURE_ENGINEERING.md) for design examples.
 
 ---
 
@@ -16,7 +16,7 @@ Quick reference for writing feature definitions in CORINT. For detailed implemen
 | Feature Type | Status | Described Methods | Planned Methods |
 |--------------|--------|---------------------|-----------------|
 | **Aggregation** | **Unverified compatibility reference** | count, sum, avg, min, max, distinct, stddev, median, percentile | variance, mode, entropy |
-| **State** | 🔴 **Planned** | - | z_score, deviation_from_baseline, percentile_rank, is_outlier, timezone_consistency |
+| **State** | 🟡 **Partial compatibility implementation** | time_since | z_score, deviation_from_baseline, percentile_rank, is_outlier, timezone_consistency |
 | **Sequence** | 🔴 **Planned** | - | consecutive_count, sequence_match, percent_change, streak, pattern_frequency, trend, rate_of_change, anomaly_score, moving_average |
 | **Graph** | 🔴 **Planned** | - | graph_centrality, community_size, shared_entity_count, network_distance |
 | **Expression** | **Unverified compatibility reference** | expression | - |
@@ -27,7 +27,7 @@ Quick reference for writing feature definitions in CORINT. For detailed implemen
 - 🟡 **Partial**: Some methods implemented, others in development
 - 🔴 **Planned**: Documented but not yet available
 
-**Note:** SQL generation support exists for some advanced statistics (percentile, stddev, median), but full feature orchestration is still in development.
+**Note:** SQLite rejects percentile, stddev and median. PostgreSQL SQL generation exists but requires backend-specific acceptance; consult the runtime contract.
 
 ---
 
@@ -38,7 +38,7 @@ Quick reference for writing feature definitions in CORINT. For detailed implemen
 | Type | Status | Purpose |
 |------|--------|---------|
 | **Aggregation** | Unverified | Count and aggregate events/values (count, sum, avg, max, min, distinct) |
-| **State** | 🔴 | Statistical comparisons (z-score, deviation, percentile) |
+| **State** | Partial | time_since; statistical comparisons remain planned |
 | **Sequence** | 🔴 | Pattern and trend analysis (consecutive, streak, percent_change) |
 | **Graph** | 🔴 | Network and relationship analysis (centrality, community_size, shared_entity) |
 | **Expression** | Unverified | Compute from other features (rate, ratio, ML models) |
@@ -348,7 +348,9 @@ rule:
 
 ---
 
-## 3. State 🔴 Planned
+## 3. State: partial compatibility implementation
+
+`time_since` exists in the runtime. The statistical state definitions below are planned; refer to the [runtime boundary](../contracts/feature-runtime.md).
 
 **Implementation Status:** 🔴 Not yet implemented - all operators are in development roadmap
 

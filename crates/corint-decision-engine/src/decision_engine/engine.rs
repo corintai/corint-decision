@@ -2,7 +2,6 @@
 
 use super::compiler_helper::CompilerHelper;
 use super::trace_builder::TraceBuilder;
-use super::when_evaluator::WhenEvaluator;
 
 use super::types::{DecisionRequest, DecisionResponse};
 use crate::config::EngineConfig;
@@ -121,6 +120,25 @@ impl DecisionEngine {
         })
     }
 
+    fn compile_registry_guards(registry: Option<&PipelineRegistry>) -> Result<Vec<Program>> {
+        registry
+            .into_iter()
+            .flat_map(|r| r.registry.iter())
+            .enumerate()
+            .map(|(index, entry)| {
+                let rule = corint_decision_model::ast::Rule::new(
+                    format!("__registry_guard_{index}"),
+                    "Registry guard".into(),
+                    entry.when.clone(),
+                    1,
+                );
+                Ok(corint_decision_compiler::codegen::RuleCompiler::compile(
+                    &rule,
+                )?)
+            })
+            .collect()
+    }
+
     /// Generate a unique request ID
     /// Format: req_YYYYMMDDHHmmss_xxxxxx
     /// Example: req_20231209143052_a3f2e1
@@ -215,25 +233,12 @@ impl DecisionEngine {
             Some(RegistryParser::parse(registry_content)?)
         } else if let Some(registry_file) = &config.registry_file {
             // Fall back to loading from file
-            match CompilerHelper::load_registry(registry_file).await {
-                Ok(reg) => {
-                    tracing::info!(
-                        "✓ Loaded pipeline registry from file: {} entries",
-                        reg.registry.len()
-                    );
-                    Some(reg)
-                }
-                Err(e) => {
-                    tracing::warn!(
-                        "Failed to load registry file: {}. Continuing without registry.",
-                        e
-                    );
-                    None
-                }
-            }
+            Some(CompilerHelper::load_registry(registry_file).await?)
         } else {
             None
         };
+
+        let registry_guards = Self::compile_registry_guards(registry.as_ref())?;
 
         // Load external API configurations
         let mut api_client = ExternalApiClient::new();
@@ -303,7 +308,7 @@ impl DecisionEngine {
             metrics,
             config,
             core_input_schema: None,
-            core_registry_guards: Vec::new(),
+            core_registry_guards: registry_guards,
             result_writer: None,
             repository_config,
             feature_executor: feature_executor_clone,
@@ -396,22 +401,18 @@ impl DecisionEngine {
                 );
 
                 // Evaluate when block against event data
-                let matches = if self.core_input_schema.is_some() {
-                    let mut guard_state = ExecutionResult::new();
-                    guard_state.variables = execution_result.variables.clone();
-                    let guard = self
-                        .executor
-                        .execute_with_result(
-                            &self.core_registry_guards[idx],
-                            request.to_context_input(),
-                            guard_state,
-                        )
-                        .await?;
-                    execution_result.variables = guard.context;
-                    guard.score == 1
-                } else {
-                    WhenEvaluator::evaluate_when_block(&entry.when, &request.event_data)
-                };
+                let mut guard_state = ExecutionResult::new();
+                guard_state.variables = execution_result.variables.clone();
+                let guard = self
+                    .executor
+                    .execute_with_result(
+                        &self.core_registry_guards[idx],
+                        request.to_context_input(),
+                        guard_state,
+                    )
+                    .await?;
+                execution_result.variables = guard.context;
+                let matches = guard.score == 1;
                 if matches {
                     tracing::info!(
                         "✓ Registry matched entry {}: pipeline={}",
@@ -1647,6 +1648,7 @@ impl DecisionEngine {
             .as_deref()
             .map(RegistryParser::parse)
             .transpose()?;
+        let registry_guards = Self::compile_registry_guards(registry.as_ref())?;
 
         Ok(Self {
             programs,
@@ -1662,7 +1664,7 @@ impl DecisionEngine {
             feature_executor: self.feature_executor.clone(),
             list_service: self.list_service.clone(),
             core_input_schema: None,
-            core_registry_guards: Vec::new(),
+            core_registry_guards: registry_guards,
         })
     }
 

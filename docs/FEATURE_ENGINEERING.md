@@ -1,20 +1,22 @@
 # Feature Engineering for Risk Management
 
-This document outlines the feature types supported and planned for Corint's risk management platform.
+This is a compatibility design and use-case reference, including planned capabilities.
+The current admission rules, backend matrix, errors and cache semantics are defined in
+[Feature runtime contract](contracts/feature-runtime.md). Examples on this page are not production acceptance evidence.
 
 ## 🚦 Implementation Status Overview
 
-| Feature Category | Status | Production Ready | Planned |
+| Feature Category | Status | Implementation scope (backend-dependent) | Planned |
 |-----------------|--------|------------------|----------------|
-| **Aggregation** | 🟢 **Implemented** | count, sum, avg, min, max, distinct, stddev, median, percentile | variance, mode, entropy |
-| **State** | 🔴 **Planned** | - | All methods (z_score, outlier detection, etc.) |
+| **Aggregation** | 🟡 **Partial** | SQLite: count, sum, avg, min, max, distinct; PostgreSQL SQL generation also covers advanced statistics | variance, mode, entropy |
+| **State** | 🟡 **Partial** | time_since | Statistical state methods (z_score, outlier detection, etc.) |
 | **Sequence** | 🔴 **Planned** | - | All methods (pattern matching, trends, etc.) |
 | **Graph** | 🔴 **Planned** | - | All methods (network analysis, centrality, etc.) |
 | **Expression** | 🟢 **Implemented** | expression | ML model integration (planned) |
 | **Lookup** | 🟢 **Implemented** | lookup | - |
 
 **Legend:**
-- 🟢 **Implemented**: Ready for production use
+- 🟢 **Implemented**: Implementation exists; deployment requires backend-specific acceptance
 - 🟡 **Partial**: Some methods implemented
 - 🔴 **Planned**: Documented but not yet implemented
 
@@ -27,7 +29,7 @@ This document outlines the feature types supported and planned for Corint's risk
 Feature engineering in risk management follows a structured approach based on **what you want to measure**:
 
 1. **Aggregation (Counting/Aggregating)** 🟢 - Counting and aggregating events/values
-2. **State (Checking Current State)** 🔴 - Checking current state and statistical comparisons
+2. **State (Checking Current State)** 🟡 - time_since is implemented; statistical methods are planned
 3. **Sequence (Analyzing Process)** 🔴 - Analyzing patterns and trends over time
 4. **Graph (Analyzing Relationships)** 🔴 - Analyzing connections and networks between entities
 5. **Expression (Computing Scores)** 🟢 - Computing scores and evaluations
@@ -44,9 +46,9 @@ Feature engineering in risk management follows a structured approach based on **
 >
 > **Design Pattern:** Unified executor with method-based dispatch
 >
-> **Status:** ✅ Core methods production-ready | 📋 Advanced statistics in development
+> **Status:** Basic methods have implementation support | 📋 Advanced statistics in development
 
-**✅ Implemented (Production-Ready):**
+**Implemented methods (subject to the backend matrix):**
 - `count` - Count events matching conditions within time window
   - *Example: User's past24hours logged in5times*
   - **Real-world Use Cases**:
@@ -169,7 +171,7 @@ Feature engineering in risk management follows a structured approach based on **
       window: 24h
     ```
 
-- `stddev` - Standard deviation (✅ Implemented)
+- `stddev` - Standard deviation (PostgreSQL SQL generation; rejected on SQLite)
   - *Example: User transaction amount standard deviation ¥350, high volatility*
   - **Real-world Use Cases**:
     - Behavior stability analysis: Transaction amount standard deviation too large, unstable behavior, may be account theft
@@ -189,7 +191,7 @@ Feature engineering in risk management follows a structured approach based on **
       when: type == "transaction"         # Database field (no prefix)
     ```
 
-- `percentile` - Nth percentile value (✅ Implemented)
+- `percentile` - Nth percentile value (PostgreSQL SQL generation; rejected on SQLite)
   - *Example: User transaction amount P95 is ¥1,800*
   - **Real-world Use Cases**:
     - Abnormal threshold setting: Transactions exceeding P95 require additional verification
@@ -211,11 +213,11 @@ Feature engineering in risk management follows a structured approach based on **
     ```
   - **Note:** SQL generation varies by database provider:
     - PostgreSQL: `PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY field)`
-    - MySQL: Uses approximation with window functions
-    - SQLite: Uses custom percentile function
-    - ClickHouse: `quantile(0.95)(field)`
+    - MySQL: SQL execution is not implemented
+    - SQLite: Rejected as an unsupported aggregation
+    - ClickHouse: Connector-specific SQL generation; requires separate integration acceptance
 
-- `median` - Median value (✅ Implemented, same as 50th percentile)
+- `median` - Median value (PostgreSQL SQL generation; rejected on SQLite)
   - *Example: User transaction amount median ¥450*
   - **Real-world Use Cases**:
     - Outlier-resistant statistics: Median is not affected by extreme values, more accurately reflects user typical behavior
@@ -571,7 +573,9 @@ impl LookupExecutor {
 
 ---
 
-### 2. State Operators 🔴 Planned
+### 2. State Operators 🟡 Partial
+
+`time_since` has a runtime implementation. The statistical operators below remain planned.
 > **Rust Implementation:** `StateExecutor::execute(op: StateQueryType, config: StateConfig)`
 >
 > **Status:** 🔴 Not yet implemented - all operators are in development roadmap
@@ -2747,7 +2751,7 @@ When adding new operators:
 
 ## References
 
-- [Operator Implementation](crates/corint-decision-runtime/src/feature/operator.rs)
-- [Feature Definitions](repository/configs/features/)
-- [Data Source Integration](crates/corint-decision-runtime/src/datasource/)
-- [Risk Rule Examples](repository/library/rules/)
+- [Operator Implementation](../crates/corint-decision-runtime/src/feature/operator.rs)
+- [Feature Definitions](../repository/configs/features/)
+- [Data Source Integration](../crates/corint-decision-runtime/src/datasource/)
+- [Risk Rule Examples](../repository/library/rules/)

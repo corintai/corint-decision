@@ -70,6 +70,9 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-cargo-build-
 
+      - name: Check all document scopes, local links and executable example bindings
+        run: python3 tests/scripts/check_docs.py
+
       - name: Check code formatting
         run: cargo fmt --all -- --check
 

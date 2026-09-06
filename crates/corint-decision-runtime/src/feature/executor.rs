@@ -15,7 +15,6 @@ use crate::feature::operator::{CacheBackend, Operator};
 use anyhow::{Context as AnyhowContext, Result};
 use corint_decision_model::condition::ConditionParser;
 use corint_decision_model::Value;
-use futures::future;
 use std::collections::HashMap;
 use std::future::Future;
 use std::pin::Pin;
@@ -54,25 +53,58 @@ impl FeatureExecutor {
     }
 
     /// Add a data source client
-    pub fn add_datasource(&mut self, name: impl Into<String>, client: DataSourceClient) {
-        self.datasources.insert(name.into(), Arc::new(client));
-    }
-
-    /// Register a feature definition
-    pub fn register_feature(&mut self, feature: FeatureDefinition) -> Result<()> {
-        feature
-            .validate()
-            .map_err(|e| anyhow::anyhow!("Failed to validate feature '{}': {}", feature.name, e))?;
-
-        self.features.insert(feature.name.clone(), feature);
+    pub fn add_datasource(
+        &mut self,
+        name: impl Into<String>,
+        client: DataSourceClient,
+    ) -> Result<()> {
+        let name = name.into();
+        for feature in self.features.values() {
+            if feature
+                .aggregation
+                .as_ref()
+                .is_some_and(|config| config.datasource == name)
+            {
+                client.validate_aggregation(feature.method.as_deref().unwrap_or_default())?;
+            }
+        }
+        self.datasources.insert(name, Arc::new(client));
         Ok(())
     }
 
-    /// Register multiple features
+    /// Register one definition, allowing forward references but never a cycle.
+    pub fn register_feature(&mut self, feature: FeatureDefinition) -> Result<()> {
+        self.register_staged(vec![feature], true)
+    }
+
+    /// Register a complete batch atomically, validating references and capabilities.
     pub fn register_features(&mut self, features: Vec<FeatureDefinition>) -> Result<()> {
-        for feature in features {
-            self.register_feature(feature)?;
+        self.register_staged(features, false)
+    }
+
+    fn register_staged(
+        &mut self,
+        features: Vec<FeatureDefinition>,
+        allow_missing: bool,
+    ) -> Result<()> {
+        let mut staged = self.features.clone();
+        for mut feature in features {
+            super::dependency::infer_dependencies(&mut feature);
+            feature.validate().map_err(anyhow::Error::msg)?;
+            if let Some(config) = &feature.aggregation {
+                if let Some(datasource) = self.datasources.get(&config.datasource) {
+                    datasource
+                        .validate_aggregation(feature.method.as_deref().unwrap_or_default())?;
+                }
+            }
+            staged.insert(feature.name.clone(), feature);
         }
+        super::dependency::order(
+            &staged,
+            &staged.keys().cloned().collect::<Vec<_>>(),
+            allow_missing,
+        )?;
+        self.features = staged;
         Ok(())
     }
 
@@ -87,7 +119,14 @@ impl FeatureExecutor {
         feature_name: &'a str,
         context: &'a ExecutionContext,
     ) -> Pin<Box<dyn Future<Output = Result<Value>> + Send + 'a>> {
-        Box::pin(async move { self.execute_feature_impl(feature_name, context).await })
+        Box::pin(async move {
+            let mut values = self
+                .execute_features(&[feature_name.to_owned()], context)
+                .await?;
+            values
+                .remove(feature_name)
+                .with_context(|| format!("Feature '{feature_name}' not found"))
+        })
     }
 
     /// Implementation of execute_feature (internal)
@@ -95,6 +134,7 @@ impl FeatureExecutor {
         &self,
         feature_name: &str,
         context: &ExecutionContext,
+        computed: &HashMap<String, Value>,
     ) -> Result<Value> {
         use std::time::Instant;
         let start_time = Instant::now();
@@ -111,42 +151,18 @@ impl FeatureExecutor {
         // Build context map from ExecutionContext (use event namespace)
         let context_map = context.event.clone();
 
-        // Check dependencies first - compute them in parallel
-        let dep_start = Instant::now();
-        let dep_values = if !feature.dependencies.is_empty() {
-            debug!(
-                "Computing {} dependencies in parallel for feature '{}': {:?}",
-                feature.dependencies.len(),
-                feature_name,
-                feature.dependencies
-            );
-
-            // Create futures for all dependencies
-            let dep_futures: Vec<_> = feature
-                .dependencies
-                .iter()
-                .map(|dep_name| {
-                    let dep_name_clone = dep_name.clone();
-                    async move {
-                        let value = self.execute_feature_impl(&dep_name_clone, context).await?;
-                        Ok::<(String, Value), anyhow::Error>((dep_name_clone, value))
-                    }
-                })
-                .collect();
-
-            // Execute all dependency computations in parallel
-            let results = future::try_join_all(dep_futures).await?;
-            let dep_elapsed = dep_start.elapsed();
-            debug!(
-                "Feature '{}' dependencies computed in {:?}",
-                feature_name, dep_elapsed
-            );
-
-            // Convert results to HashMap
-            results.into_iter().collect::<HashMap<String, Value>>()
-        } else {
-            HashMap::new()
-        };
+        // Dependencies were computed once in topological order for this request.
+        let dep_values = feature
+            .dependencies
+            .iter()
+            .map(|name| {
+                computed
+                    .get(name)
+                    .cloned()
+                    .map(|value| (name.clone(), value))
+                    .with_context(|| format!("Feature dependency '{name}' was not computed"))
+            })
+            .collect::<Result<HashMap<_, _>>>()?;
 
         // Try to get from cache
         if let Some(cache_config) = self.cache_manager.get_cache_config(feature) {
@@ -268,7 +284,9 @@ impl FeatureExecutor {
 
         for (idx, feature_name) in sorted_features.iter().enumerate() {
             let feature_start = Instant::now();
-            let value = self.execute_feature_impl(feature_name, context).await?;
+            let value = self
+                .execute_feature_impl(feature_name, context, &results)
+                .await?;
             let feature_elapsed = feature_start.elapsed();
 
             debug!(
@@ -406,6 +424,8 @@ impl FeatureExecutor {
         let method = feature.method.as_ref().ok_or_else(|| {
             anyhow::anyhow!("Missing method for aggregation feature '{}'", feature.name)
         })?;
+
+        datasource.validate_aggregation(method)?;
 
         // Build filters from when conditions
         let filters = self.build_filters(&config.when, context)?;
@@ -626,26 +646,12 @@ impl FeatureExecutor {
         context: &HashMap<String, Value>,
     ) -> Result<Vec<crate::datasource::query::Filter>> {
         use crate::datasource::query::Filter;
-        use crate::feature::definition::WhenCondition;
 
         let Some(when) = when else {
             return Ok(vec![]);
         };
 
-        // Collect all condition strings
-        let conditions: Vec<&str> = match when {
-            WhenCondition::Simple(expr) => vec![expr.as_str()],
-            WhenCondition::Complex { all, any } => {
-                // For now, we only support 'all' conditions (AND logic)
-                // 'any' conditions (OR logic) would require more complex SQL generation
-                if any.is_some() {
-                    warn!("'any' conditions in 'when' clause are not yet supported for database filters, ignoring");
-                }
-                all.as_ref()
-                    .map(|v| v.iter().map(|s| s.as_str()).collect())
-                    .unwrap_or_default()
-            }
-        };
+        let conditions = when.conditions().map_err(anyhow::Error::msg)?;
 
         // Use shared ConditionParser
         let parser = ConditionParser::with_context(context.clone());
@@ -655,17 +661,15 @@ impl FeatureExecutor {
             match parser.parse_condition(condition_str) {
                 Ok(parsed) => {
                     // Convert core operator to filter operator
-                    let filter_op = Self::convert_operator(&parsed.operator);
+                    let filter_op = Self::convert_operator(&parsed.operator)?;
 
                     // Get the resolved value
                     let value = match parsed.value.try_to_value() {
                         Some(v) => v,
                         None => {
-                            warn!(
-                                "Template variable in condition '{}' was not resolved, skipping",
-                                condition_str
+                            anyhow::bail!(
+                                "Unresolved template variable in condition '{condition_str}'"
                             );
-                            continue;
                         }
                     };
 
@@ -676,7 +680,7 @@ impl FeatureExecutor {
                     });
                 }
                 Err(e) => {
-                    warn!("Failed to parse condition '{}': {}", condition_str, e);
+                    anyhow::bail!("Invalid feature condition '{condition_str}': {e}");
                 }
             }
         }
@@ -687,11 +691,11 @@ impl FeatureExecutor {
     /// Convert corint_decision_model::ast::operator::Operator to FilterOperator
     fn convert_operator(
         op: &corint_decision_model::ast::operator::Operator,
-    ) -> crate::datasource::query::FilterOperator {
+    ) -> Result<crate::datasource::query::FilterOperator> {
         use crate::datasource::query::FilterOperator;
         use corint_decision_model::ast::operator::Operator as CoreOp;
 
-        match op {
+        Ok(match op {
             CoreOp::Eq => FilterOperator::Eq,
             CoreOp::Ne => FilterOperator::Ne,
             CoreOp::Gt => FilterOperator::Gt,
@@ -701,16 +705,11 @@ impl FeatureExecutor {
             CoreOp::In => FilterOperator::In,
             CoreOp::NotIn => FilterOperator::NotIn,
             CoreOp::Regex => FilterOperator::Regex,
-            CoreOp::Contains | CoreOp::StartsWith | CoreOp::EndsWith => FilterOperator::Like,
-            // For operators that don't have a direct SQL equivalent, default to Eq
-            _ => {
-                warn!(
-                    "Operator {:?} not directly supported in SQL filters, defaulting to Eq",
-                    op
-                );
-                FilterOperator::Eq
-            }
-        }
+            CoreOp::Contains => FilterOperator::Contains,
+            CoreOp::StartsWith => FilterOperator::StartsWith,
+            CoreOp::EndsWith => FilterOperator::EndsWith,
+            _ => anyhow::bail!("Unsupported feature filter operator: {op:?}"),
+        })
     }
 
     /// Execute state feature
@@ -1024,48 +1023,8 @@ impl FeatureExecutor {
         }
     }
 
-    /// Sort features by dependency order (topological sort)
     fn sort_by_dependencies(&self, feature_names: &[String]) -> Result<Vec<String>> {
-        let mut sorted = Vec::new();
-        let mut visited = std::collections::HashSet::new();
-        let mut visiting = std::collections::HashSet::new();
-
-        for name in feature_names {
-            self.visit_feature(name, &mut sorted, &mut visited, &mut visiting)?;
-        }
-
-        Ok(sorted)
-    }
-
-    /// Visit a feature in dependency graph (for topological sort)
-    fn visit_feature(
-        &self,
-        name: &str,
-        sorted: &mut Vec<String>,
-        visited: &mut std::collections::HashSet<String>,
-        visiting: &mut std::collections::HashSet<String>,
-    ) -> Result<()> {
-        if visited.contains(name) {
-            return Ok(());
-        }
-
-        if visiting.contains(name) {
-            return Err(anyhow::anyhow!("Circular dependency detected: {}", name));
-        }
-
-        visiting.insert(name.to_string());
-
-        if let Some(feature) = self.features.get(name) {
-            for dep in &feature.dependencies {
-                self.visit_feature(dep, sorted, visited, visiting)?;
-            }
-        }
-
-        visiting.remove(name);
-        visited.insert(name.to_string());
-        sorted.push(name.to_string());
-
-        Ok(())
+        super::dependency::execution_order(&self.features, feature_names)
     }
 
     /// Clear L1 cache

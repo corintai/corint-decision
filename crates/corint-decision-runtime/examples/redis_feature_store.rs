@@ -39,6 +39,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         pool_size: 10,
         timeout_ms: 5000,
         pooling_enabled: true,
+        query_cache_ttl_secs: 0,
     };
 
     println!("Connecting to Redis at redis://127.0.0.1:6379");

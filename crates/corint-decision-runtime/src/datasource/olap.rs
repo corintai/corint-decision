@@ -249,6 +249,11 @@ impl OLAPClient {
                     ));
                 }
             }
+            FilterOperator::Contains | FilterOperator::StartsWith | FilterOperator::EndsWith => {
+                return Err(RuntimeError::InvalidOperation(
+                    "Literal string filters are not implemented for this OLAP connector".into(),
+                ));
+            }
             FilterOperator::Like => {
                 format!("{} LIKE {}", filter.field, value_str)
             }

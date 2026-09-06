@@ -220,7 +220,13 @@ impl PipelineExecutor {
         for (i, inst) in program.instructions.iter().enumerate() {
             tracing::trace!("  [{}]: {:?}", i, inst);
         }
+        Self::validate_jumps(&program.instructions)?;
+        if let Some(instructions) = &program.decision_instructions {
+            Self::validate_jumps(instructions)?;
+        }
+        let mut remaining_instructions = 1_000_000usize;
         while pc < program.instructions.len() {
+            Self::consume_instruction(&mut remaining_instructions)?;
             if let Some(observer) = &mut condition_observer {
                 observer.observe(pc, &ctx)?;
             }
@@ -793,6 +799,7 @@ impl PipelineExecutor {
 
             let mut decision_pc = 0;
             while decision_pc < decision_instructions.len() {
+                Self::consume_instruction(&mut remaining_instructions)?;
                 let instruction = &decision_instructions[decision_pc];
                 tracing::trace!("Decision pc={}: {:?}", decision_pc, instruction);
 
@@ -951,6 +958,32 @@ impl PipelineExecutor {
         ctx.store_in_namespace(namespace, remaining, value);
     }
 
+    fn consume_instruction(remaining: &mut usize) -> Result<()> {
+        *remaining = remaining.checked_sub(1).ok_or_else(|| {
+            RuntimeError::InvalidOperation("E_RESOURCE_LIMIT: instruction budget exhausted".into())
+        })?;
+        Ok(())
+    }
+
+    fn validate_jumps(instructions: &[Instruction]) -> Result<()> {
+        for (pc, instruction) in instructions.iter().enumerate() {
+            if let Instruction::Jump { offset }
+            | Instruction::JumpIfTrue { offset }
+            | Instruction::JumpIfFalse { offset } = instruction
+            {
+                if pc
+                    .checked_add_signed(*offset)
+                    .is_none_or(|target| target > instructions.len())
+                {
+                    return Err(RuntimeError::InvalidOperation(format!(
+                        "Invalid jump target at instruction {pc}"
+                    )));
+                }
+            }
+        }
+        Ok(())
+    }
+
     /// Handle LoadField instruction with feature resolution
     async fn handle_load_field(
         &self,
@@ -990,10 +1023,9 @@ impl PipelineExecutor {
                             );
                             Ok(feature_value)
                         }
-                        Err(e) => {
-                            tracing::warn!("Failed to calculate feature '{}': {}", feature_name, e);
-                            Ok(Value::Null)
-                        }
+                        Err(e) => Err(RuntimeError::RuntimeError(format!(
+                            "Feature '{feature_name}' calculation failed: {e:#}"
+                        ))),
                     }
                 } else {
                     Err(RuntimeError::FieldNotFound(format!(

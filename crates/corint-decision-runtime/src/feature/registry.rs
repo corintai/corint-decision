@@ -4,13 +4,13 @@
 //! from YAML configuration files.
 
 use crate::feature::definition::{FeatureCollection, FeatureDefinition, FeatureType};
-use crate::feature::expression::ExpressionEvaluator;
 use anyhow::{Context, Result};
 use std::collections::HashMap;
 use std::path::Path;
 use tracing::{debug, info, warn};
 
 /// Feature registry that manages feature definitions
+#[derive(Clone)]
 pub struct FeatureRegistry {
     /// All registered features indexed by name
     features: HashMap<String, FeatureDefinition>,
@@ -38,7 +38,18 @@ impl FeatureRegistry {
 
     /// Load features from a single YAML file
     pub fn load_from_file(&mut self, path: impl AsRef<Path>) -> Result<()> {
-        let path = path.as_ref();
+        let mut staged = self.clone();
+        staged.load_file(path.as_ref())?;
+        super::dependency::order(
+            &staged.features,
+            &staged.features.keys().cloned().collect::<Vec<_>>(),
+            true,
+        )?;
+        *self = staged;
+        Ok(())
+    }
+
+    fn load_file(&mut self, path: &Path) -> Result<()> {
         debug!("Loading features from: {}", path.display());
 
         let content = std::fs::read_to_string(path)
@@ -85,23 +96,8 @@ impl FeatureRegistry {
             let name = feature.name.clone();
             feature_names.push(name.clone());
 
-            // Auto-populate dependencies for expression features
-            if feature.feature_type == FeatureType::Expression {
-                if let Some(ref expr_config) = feature.expression {
-                    if let Some(ref expr_str) = expr_config.expression {
-                        // Extract dependencies from expression string
-                        let extracted_deps = ExpressionEvaluator::extract_dependencies(expr_str);
-
-                        // Populate dependencies field with extracted feature names
-                        feature.dependencies = extracted_deps;
-
-                        debug!(
-                            "Auto-populated dependencies for expression feature '{}': {:?}",
-                            name, feature.dependencies
-                        );
-                    }
-                }
-            }
+            super::dependency::infer_dependencies(&mut feature);
+            feature.validate().map_err(anyhow::Error::msg)?;
 
             // Index by type
             let feature_type = feature.feature_type.clone();
@@ -137,82 +133,36 @@ impl FeatureRegistry {
         Ok(())
     }
 
-    /// Load features from a directory (all .yaml and .yml files)
+    /// Load a complete directory atomically; no partial-success activation.
     pub fn load_from_directory(&mut self, dir: impl AsRef<Path>) -> Result<()> {
-        let dir = dir.as_ref();
-        info!("Loading features from directory: {}", dir.display());
-
-        if !dir.is_dir() {
-            return Err(anyhow::anyhow!("Not a directory: {}", dir.display()));
-        }
-
-        let mut loaded_count = 0;
-        let mut error_count = 0;
-
-        // Read all .yaml and .yml files
-        for entry in std::fs::read_dir(dir)
-            .with_context(|| format!("Failed to read directory: {}", dir.display()))?
-        {
-            let entry = entry?;
-            let path = entry.path();
-
-            if path.is_file() {
-                if let Some(ext) = path.extension() {
-                    if ext == "yaml" || ext == "yml" {
-                        match self.load_from_file(&path) {
-                            Ok(_) => loaded_count += 1,
-                            Err(e) => {
-                                warn!("Failed to load {}: {}", path.display(), e);
-                                error_count += 1;
-                            }
-                        }
-                    }
+        self.load_directory(dir.as_ref(), false)
+    }
+    pub fn load_from_directory_recursive(&mut self, dir: impl AsRef<Path>) -> Result<()> {
+        self.load_directory(dir.as_ref(), true)
+    }
+    fn load_directory(&mut self, dir: &Path, recursive: bool) -> Result<()> {
+        let mut staged = self.clone();
+        let mut pending = vec![dir.to_path_buf()];
+        while let Some(dir) = pending.pop() {
+            let mut entries = std::fs::read_dir(&dir)?
+                .map(|entry| entry.map(|e| e.path()))
+                .collect::<std::io::Result<Vec<_>>>()?;
+            entries.sort();
+            for path in entries {
+                if path.is_dir() && recursive {
+                    pending.push(path);
+                } else if path.is_file()
+                    && matches!(
+                        path.extension().and_then(|ext| ext.to_str()),
+                        Some("yaml" | "yml")
+                    )
+                {
+                    staged.load_file(&path)?;
                 }
             }
         }
-
-        if error_count > 0 {
-            warn!(
-                "Loaded {} feature files with {} errors from: {}",
-                loaded_count,
-                error_count,
-                dir.display()
-            );
-        } else {
-            info!(
-                "Successfully loaded {} feature files from: {}",
-                loaded_count,
-                dir.display()
-            );
-        }
-
-        Ok(())
-    }
-
-    /// Load features recursively from a directory
-    pub fn load_from_directory_recursive(&mut self, dir: impl AsRef<Path>) -> Result<()> {
-        let dir = dir.as_ref();
-        self.load_from_directory_recursive_impl(dir)
-    }
-
-    fn load_from_directory_recursive_impl(&mut self, dir: &Path) -> Result<()> {
-        if !dir.is_dir() {
-            return Ok(());
-        }
-
-        // Load features from current directory
-        let _ = self.load_from_directory(dir);
-
-        // Recursively load from subdirectories
-        for entry in std::fs::read_dir(dir)? {
-            let entry = entry?;
-            let path = entry.path();
-
-            if path.is_dir() {
-                self.load_from_directory_recursive_impl(&path)?;
-            }
-        }
-
+        staged.validate()?;
+        *self = staged;
         Ok(())
     }
 
@@ -280,68 +230,16 @@ impl FeatureRegistry {
             .collect()
     }
 
-    /// Get dependency graph for a feature (recursive)
     pub fn dependency_tree(&self, feature_name: &str) -> Result<Vec<String>> {
-        let mut tree = Vec::new();
-        let mut visited = std::collections::HashSet::new();
-        self.build_dependency_tree(feature_name, &mut tree, &mut visited)?;
-        Ok(tree)
+        super::dependency::order(&self.features, &[feature_name.to_owned()], false)
     }
 
-    fn build_dependency_tree(
-        &self,
-        feature_name: &str,
-        tree: &mut Vec<String>,
-        visited: &mut std::collections::HashSet<String>,
-    ) -> Result<()> {
-        if visited.contains(feature_name) {
-            return Ok(());
-        }
-
-        visited.insert(feature_name.to_string());
-
-        let feature = self
-            .features
-            .get(feature_name)
-            .with_context(|| format!("Feature '{}' not found", feature_name))?;
-
-        // Add dependencies first
-        for dep in &feature.dependencies {
-            self.build_dependency_tree(dep, tree, visited)?;
-        }
-
-        // Then add this feature
-        tree.push(feature_name.to_string());
-
-        Ok(())
-    }
-
-    /// Validate all registered features and their dependencies
     pub fn validate(&self) -> Result<()> {
-        // Check all dependencies exist
-        for (name, feature) in &self.features {
-            for dep in &feature.dependencies {
-                if !self.features.contains_key(dep) {
-                    return Err(anyhow::anyhow!(
-                        "Feature '{}' depends on non-existent feature '{}'",
-                        name,
-                        dep
-                    ));
-                }
-            }
-        }
-
-        // Check for circular dependencies
-        for name in self.features.keys() {
-            if let Err(e) = self.dependency_tree(name) {
-                return Err(anyhow::anyhow!(
-                    "Circular dependency detected for feature '{}': {}",
-                    name,
-                    e
-                ));
-            }
-        }
-
+        super::dependency::order(
+            &self.features,
+            &self.features.keys().cloned().collect::<Vec<_>>(),
+            false,
+        )?;
         Ok(())
     }
 

@@ -165,7 +165,7 @@ impl SQLClient {
                 .aggregations
                 .iter()
                 .map(|agg| self.build_aggregation(agg))
-                .collect();
+                .collect::<Result<Vec<_>>>()?;
             sql.push_str(&agg_clauses.join(", "));
         }
 
@@ -246,7 +246,20 @@ impl SQLClient {
     }
 
     /// Build aggregation clause
-    fn build_aggregation(&self, agg: &Aggregation) -> String {
+    fn build_aggregation(&self, agg: &Aggregation) -> Result<String> {
+        if matches!(self.config.provider, SQLProvider::SQLite)
+            && matches!(
+                agg.agg_type,
+                AggregationType::Median
+                    | AggregationType::Stddev
+                    | AggregationType::Percentile { .. }
+            )
+        {
+            return Err(RuntimeError::InvalidOperation(format!(
+                "Unsupported aggregation {:?} for SQLite",
+                agg.agg_type
+            )));
+        }
         let field = agg.field.as_deref().unwrap_or("*");
 
         // For PostgreSQL/SQLite, if field contains JSON access, wrap it with type cast for numeric aggregations
@@ -425,49 +438,19 @@ impl SQLClient {
             AggregationType::Avg => format!("AVG({})", field_expr),
             AggregationType::Min => format!("MIN({})", field_expr),
             AggregationType::Max => format!("MAX({})", field_expr),
-            AggregationType::Median => {
-                match self.config.provider {
-                    SQLProvider::SQLite => {
-                        // SQLite doesn't have PERCENTILE_CONT, use a workaround
-                        format!(
-                            "(SELECT {} FROM (SELECT {} FROM (SELECT {} ORDER BY {}) LIMIT 1 OFFSET (SELECT COUNT(*) / 2 FROM (SELECT {})))",
-                            field_expr, field_expr, field_expr, field_expr, field_expr
-                        )
-                    }
-                    _ => {
-                        format!(
-                            "PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY {})",
-                            field_expr
-                        )
-                    }
-                }
-            }
-            AggregationType::Stddev => match self.config.provider {
-                SQLProvider::SQLite => format!("STDEV({})", field_expr),
-                _ => format!("STDDEV_POP({})", field_expr),
-            },
-            AggregationType::Percentile { p } => {
-                match self.config.provider {
-                    SQLProvider::SQLite => {
-                        // SQLite doesn't have PERCENTILE_CONT, use a workaround
-                        let percentile = p as f64 / 100.0;
-                        format!(
-                            "(SELECT {} FROM (SELECT {} FROM (SELECT {} ORDER BY {}) LIMIT 1 OFFSET (SELECT CAST(COUNT(*) * {} AS INTEGER) FROM (SELECT {})))",
-                            field_expr, field_expr, field_expr, field_expr, percentile, field_expr
-                        )
-                    }
-                    _ => {
-                        format!(
-                            "PERCENTILE_CONT({}) WITHIN GROUP (ORDER BY {})",
-                            p as f64 / 100.0,
-                            field_expr
-                        )
-                    }
-                }
-            }
+            AggregationType::Median => format!(
+                "PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY {})",
+                field_expr
+            ),
+            AggregationType::Stddev => format!("STDDEV_POP({})", field_expr),
+            AggregationType::Percentile { p } => format!(
+                "PERCENTILE_CONT({}) WITHIN GROUP (ORDER BY {})",
+                p as f64 / 100.0,
+                field_expr
+            ),
         };
 
-        format!("{} AS {}", expr, agg.output_name)
+        Ok(format!("{} AS {}", expr, agg.output_name))
     }
 
     /// Build filter clause
@@ -506,6 +489,27 @@ impl SQLClient {
                         "NOT IN operator requires array value".to_string(),
                     ));
                 }
+            }
+            FilterOperator::Contains | FilterOperator::StartsWith | FilterOperator::EndsWith => {
+                let Value::String(text) = &filter.value else {
+                    return Err(RuntimeError::InvalidOperation(
+                        "String filter requires a string value".into(),
+                    ));
+                };
+                let escaped = text
+                    .replace('!', "!!")
+                    .replace('%', "!%")
+                    .replace('_', "!_");
+                let pattern = match filter.operator {
+                    FilterOperator::Contains => format!("%{escaped}%"),
+                    FilterOperator::StartsWith => format!("{escaped}%"),
+                    _ => format!("%{escaped}"),
+                };
+                format!(
+                    "{} LIKE {} ESCAPE '!'",
+                    filter.field,
+                    self.format_value(&Value::String(pattern))?
+                )
             }
             FilterOperator::Like => {
                 format!("{} LIKE {}", filter.field, value_str)

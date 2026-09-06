@@ -180,7 +180,7 @@ pub struct WindowConfig {
 
 /// Filter condition - supports both simple string and complex all/any format
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(untagged)]
+#[serde(untagged, deny_unknown_fields)]
 pub enum WhenCondition {
     /// Simple single condition as a string expression
     Simple(String),
@@ -195,6 +195,32 @@ pub enum WhenCondition {
         #[serde(skip_serializing_if = "Option::is_none")]
         any: Option<Vec<String>>,
     },
+}
+
+impl WhenCondition {
+    pub(crate) fn conditions(&self) -> Result<Vec<&str>, String> {
+        match self {
+            Self::Simple(condition) => Ok(vec![condition.as_str()]),
+            Self::Complex { any: Some(_), .. } => Err(
+                "Feature query filters do not support 'any'; use 'all' or a single predicate"
+                    .into(),
+            ),
+            Self::Complex {
+                all: Some(conditions),
+                any: None,
+            } => Ok(conditions.iter().map(String::as_str).collect()),
+            _ => Err("Feature query condition must contain 'all'".into()),
+        }
+    }
+    fn validate(&self) -> Result<(), String> {
+        let parser = corint_decision_model::condition::ConditionParser::new();
+        for condition in self.conditions()? {
+            parser
+                .parse_condition(condition)
+                .map_err(|error| format!("Invalid feature condition '{condition}': {error}"))?;
+        }
+        Ok(())
+    }
 }
 
 /// Aggregation feature configuration
@@ -909,6 +935,16 @@ impl FeatureDefinition {
             }
         }
 
+        for condition in self
+            .aggregation
+            .as_ref()
+            .and_then(|c| c.when.as_ref())
+            .into_iter()
+            .chain(self.state.as_ref().and_then(|c| c.when.as_ref()))
+        {
+            condition.validate()?;
+        }
+
         // Check for circular dependencies
         if self.dependencies.contains(&self.name) {
             return Err(format!(
@@ -1019,17 +1055,21 @@ impl FeatureCollection {
             feature.validate()?;
         }
 
-        // Validate dependencies exist
-        for feature in &self.features {
-            for dep in &feature.dependencies {
-                if !names.contains(dep) {
-                    return Err(format!(
-                        "Feature '{}' depends on non-existent feature '{}'",
-                        feature.name, dep
-                    ));
-                }
-            }
-        }
+        let features = self
+            .features
+            .iter()
+            .cloned()
+            .map(|mut feature| {
+                super::dependency::infer_dependencies(&mut feature);
+                (feature.name.clone(), feature)
+            })
+            .collect::<HashMap<_, _>>();
+        super::dependency::order(
+            &features,
+            &features.keys().cloned().collect::<Vec<_>>(),
+            true,
+        )
+        .map_err(|error| error.to_string())?;
 
         Ok(())
     }

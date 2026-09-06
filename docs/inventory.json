@@ -1,0 +1,194 @@
+{
+  "version": 1,
+  "note": "Scope is a reading boundary, not production acceptance. CDL runnable examples remain governed by docs/cdl/examples.json and conformance tests.",
+  "pages": [
+    {
+      "path": "API_REQUEST.md",
+      "scope": "contract"
+    },
+    {
+      "path": "ARCHITECTURE.md",
+      "scope": "design"
+    },
+    {
+      "path": "CONTEXT_GUIDE.md",
+      "scope": "compatibility-reference"
+    },
+    {
+      "path": "CUSTOMLIST.md",
+      "scope": "compatibility-reference"
+    },
+    {
+      "path": "DEV_GUIDE_WASM.md",
+      "scope": "design"
+    },
+    {
+      "path": "DSL_DESIGN.md",
+      "scope": "design"
+    },
+    {
+      "path": "DSL_EVOLUTION_RECOMMENDATIONS.md",
+      "scope": "design"
+    },
+    {
+      "path": "EXTERNAL_API_GUIDE.md",
+      "scope": "compatibility-reference"
+    },
+    {
+      "path": "FEATURE_ENGINEERING.md",
+      "scope": "compatibility-reference"
+    },
+    {
+      "path": "LLM_GUIDE.md",
+      "scope": "compatibility-reference"
+    },
+    {
+      "path": "LOGGING.md",
+      "scope": "compatibility-reference"
+    },
+    {
+      "path": "README.md",
+      "scope": "navigation"
+    },
+    {
+      "path": "TEMPLATE_SYNTAX.md",
+      "scope": "compatibility-reference"
+    },
+    {
+      "path": "TODO_LIST.md",
+      "scope": "design"
+    },
+    {
+      "path": "cdl/agent-workflow.md",
+      "scope": "compatibility-reference"
+    },
+    {
+      "path": "cdl/api.md",
+      "scope": "compatibility-reference"
+    },
+    {
+      "path": "cdl/cdl-core.md",
+      "scope": "contract"
+    },
+    {
+      "path": "cdl/cli.md",
+      "scope": "contract"
+    },
+    {
+      "path": "cdl/condition-trace.md",
+      "scope": "contract"
+    },
+    {
+      "path": "cdl/context.md",
+      "scope": "compatibility-reference"
+    },
+    {
+      "path": "cdl/exchange.md",
+      "scope": "contract"
+    },
+    {
+      "path": "cdl/expression.md",
+      "scope": "compatibility-reference"
+    },
+    {
+      "path": "cdl/feature.md",
+      "scope": "compatibility-reference"
+    },
+    {
+      "path": "cdl/generation.md",
+      "scope": "contract"
+    },
+    {
+      "path": "cdl/import.md",
+      "scope": "compatibility-reference"
+    },
+    {
+      "path": "cdl/list.md",
+      "scope": "compatibility-reference"
+    },
+    {
+      "path": "cdl/metadata.md",
+      "scope": "compatibility-reference"
+    },
+    {
+      "path": "cdl/overall.md",
+      "scope": "compatibility-reference"
+    },
+    {
+      "path": "cdl/packages.md",
+      "scope": "contract"
+    },
+    {
+      "path": "cdl/pipeline-compatibility.md",
+      "scope": "compatibility-reference"
+    },
+    {
+      "path": "cdl/pipeline.md",
+      "scope": "contract"
+    },
+    {
+      "path": "cdl/registry.md",
+      "scope": "compatibility-reference"
+    },
+    {
+      "path": "cdl/resolution.md",
+      "scope": "contract"
+    },
+    {
+      "path": "cdl/rule.md",
+      "scope": "compatibility-reference"
+    },
+    {
+      "path": "cdl/ruleset.md",
+      "scope": "compatibility-reference"
+    },
+    {
+      "path": "cdl/runtime-extensions.md",
+      "scope": "compatibility-reference"
+    },
+    {
+      "path": "cdl/service.md",
+      "scope": "compatibility-reference"
+    },
+    {
+      "path": "cdl/testing.md",
+      "scope": "contract"
+    },
+    {
+      "path": "contracts/README.md",
+      "scope": "navigation"
+    },
+    {
+      "path": "contracts/compatibility-server-snapshots.md",
+      "scope": "contract"
+    },
+    {
+      "path": "contracts/core-operations.md",
+      "scope": "contract"
+    },
+    {
+      "path": "contracts/core-server.md",
+      "scope": "contract"
+    },
+    {
+      "path": "contracts/feature-runtime.md",
+      "scope": "contract"
+    },
+    {
+      "path": "contracts/phase0.md",
+      "scope": "contract"
+    },
+    {
+      "path": "schema/README.md",
+      "scope": "navigation"
+    }
+  ],
+  "executable_examples": [
+    {
+      "page": "API_REQUEST.md",
+      "id": "decide-request",
+      "test_file": "crates/corint-decision-server/tests/shared_snapshots.rs",
+      "test_name": "documented_http_example_runs_and_reserved_fields_are_rejected"
+    }
+  ]
+}
