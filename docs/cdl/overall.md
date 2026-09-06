@@ -265,13 +265,14 @@ registry:
         - event.type == "payment"
 
   - pipeline: default_pipeline
+    when: "true"
 ```
 
 **Key Features:**
 - **Top-to-bottom matching** - Evaluates entries in order
 - **First match wins** - Only the first matching pipeline executes
 - **Priority-based routing** - More specific conditions should be placed first
-- **Default fallback** - Last entry without `when` condition catches all unmatched events
+- **Default fallback** - An explicit final `when: "true"` catches unmatched events; omitting `when` is invalid
 
 **Matching Behavior:**
 

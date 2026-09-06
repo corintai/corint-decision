@@ -114,5 +114,13 @@
     "metadata.md",
     "import.md",
     "pipeline-compatibility.md"
+  ],
+  "source_examples": [
+    {
+      "path": "examples/pipeline_example.yml",
+      "kind": "compatibility-unverified",
+      "core_rejection_stage": "parse",
+      "core_rejection_code": "E_INVALID_STRUCTURE"
+    }
   ]
 }

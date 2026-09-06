@@ -9,7 +9,7 @@ cross-product DecisionRecord contract.
 ## Observation contract
 
 Records cover Registry guards actually invoked, Rule conditions, Ruleset
-conclusions, Router routes and Pipeline decision conditions. Each boolean tree
+conclusions, Pipeline/step guards, Router routes and Pipeline decision conditions. Each boolean tree
 contains comparison/boolean leaves, `all`/`any` groups and `not` nodes. Comparisons
 are atomic: nested scalar operands and their raw values are not exposed.
 
@@ -73,7 +73,7 @@ unexecuted with Trace on; public requests still fail the input gate before execu
 Tests also cover all supported condition scopes, later first-match skips, repeated
 rule invocations, schema validity and repeated-request determinism.
 
-The [example registry](examples.json) currently governs this page and
-[CDL Core](cdl-core.md). CI rejects missing/duplicate markers, invalid case IDs,
+The [example registry](examples.json) governs this page,
+[CDL Core](cdl-core.md) and [Pipeline](pipeline.md). CI rejects missing/duplicate markers, invalid case IDs,
 missing fixture links and copied inline YAML on those pages. This bounded check
 does not certify historical examples or LLM prompts elsewhere in `docs/cdl/`.

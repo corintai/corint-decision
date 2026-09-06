@@ -466,6 +466,27 @@ impl PipelineParser {
             }
 
             "api" => {
+                // Preserve the compiler's unsupported-option gate: malformed
+                // present values must not be decoded as an absent option.
+                for (field, valid) in [
+                    ("params", step_obj.get("params").map(YamlValue::is_mapping)),
+                    (
+                        "on_error",
+                        step_obj.get("on_error").map(YamlValue::is_string),
+                    ),
+                    (
+                        "min_success",
+                        step_obj.get("min_success").map(|v| v.as_u64().is_some()),
+                    ),
+                ] {
+                    if valid == Some(false) {
+                        return Err(ParseError::InvalidValue {
+                            field: format!("api.{field}"),
+                            message: "Invalid option type; a present option cannot be ignored"
+                                .into(),
+                        });
+                    }
+                }
                 // Parse API target (single, any, all)
                 let api_target = Self::parse_api_target(step_obj)?;
                 let endpoint = YamlParser::get_optional_string(step_obj, "endpoint");

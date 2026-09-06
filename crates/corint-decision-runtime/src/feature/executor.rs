@@ -410,16 +410,26 @@ impl FeatureExecutor {
         // Build filters from when conditions
         let filters = self.build_filters(&config.when, context)?;
 
-        // Build time window if specified
-        let time_window = config.window.as_ref().and_then(|w| {
-            RelativeWindow::from_string(w).map(|relative| TimeWindow {
-                window_type: TimeWindowType::Relative(relative),
-                time_field: config
-                    .timestamp_field
-                    .clone()
-                    .unwrap_or_else(|| "event_timestamp".to_string()),
+        // Absence permits an unbounded query; an invalid declared window does not.
+        let time_window = config
+            .window
+            .as_ref()
+            .map(|w| {
+                let relative = RelativeWindow::from_string(w).ok_or_else(|| {
+                    anyhow::anyhow!(
+                        "Invalid aggregation window '{w}' for feature '{}'",
+                        feature.name
+                    )
+                })?;
+                Ok::<_, anyhow::Error>(TimeWindow {
+                    window_type: TimeWindowType::Relative(relative),
+                    time_field: config
+                        .timestamp_field
+                        .clone()
+                        .unwrap_or_else(|| "event_timestamp".to_string()),
+                })
             })
-        });
+            .transpose()?;
 
         // Substitute dimension_value template with context values
         let dimension_value =
@@ -1101,41 +1111,73 @@ impl Default for FeatureExecutor {
     }
 }
 
-/// Parse window string (e.g., "24h", "7d", "30d") to WindowConfig
-#[allow(dead_code)]
-fn parse_window(window_str: &str) -> Option<crate::feature::operator::WindowConfig> {
-    use crate::feature::operator::{WindowConfig, WindowUnit};
-
-    if window_str.is_empty() {
-        return None;
-    }
-
-    // Parse patterns like "24h", "7d", "30d", "1h"
-    let len = window_str.len();
-    if len < 2 {
-        return None;
-    }
-
-    let unit_char = window_str.chars().last()?;
-    let value_str = &window_str[..len - 1];
-    let value = value_str.parse::<u64>().ok()?;
-
-    let unit = match unit_char {
-        'h' => WindowUnit::Hours,
-        'd' => WindowUnit::Days,
-        'm' => WindowUnit::Minutes,
-        _ => return None,
-    };
-
-    Some(WindowConfig { value, unit })
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::feature::operator::Operator;
     use std::time::Duration;
     use tokio::time::sleep;
+
+    #[cfg(feature = "sqlx")]
+    #[tokio::test]
+    async fn aggregation_windows_filter_sql_rows_and_invalid_windows_fail() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("events.sqlite");
+        let pool = sqlx::SqlitePool::connect_with(
+            sqlx::sqlite::SqliteConnectOptions::new()
+                .filename(&path)
+                .create_if_missing(true),
+        )
+        .await
+        .unwrap();
+        sqlx::query("CREATE TABLE events (user_id TEXT, observed_at TEXT)")
+            .execute(&pool)
+            .await
+            .unwrap();
+        sqlx::query("INSERT INTO events VALUES ('user-1', datetime('now')), ('user-1', datetime('now', '-2 minutes')), ('other', datetime('now'))")
+            .execute(&pool).await.unwrap();
+        let config = serde_json::from_value(serde_json::json!({
+            "name": "events", "type": "sql", "provider": "sqlite",
+            "connection_string": path.to_str().unwrap(), "database": "events"
+        }))
+        .unwrap();
+        let datasource = DataSourceClient::new(config).await.unwrap();
+        let mut feature: FeatureDefinition = serde_yaml::from_str(
+            "name: window_test\ntype: aggregation\nmethod: count\ndatasource: events\nentity: events\ndimension: user_id\ndimension_value: user-1\ntimestamp_field: observed_at\nwindow: 30s\n"
+        ).unwrap();
+        let executor = FeatureExecutor::new();
+        let context = HashMap::new();
+        assert_eq!(
+            executor
+                .execute_aggregation(&feature, &datasource, &context)
+                .await
+                .unwrap(),
+            Value::Number(1.0)
+        );
+        feature.aggregation.as_mut().unwrap().window = None;
+        assert_eq!(
+            executor
+                .execute_aggregation(&feature, &datasource, &context)
+                .await
+                .unwrap(),
+            Value::Number(2.0)
+        );
+        // Bypass registration deliberately: the query path itself must reject
+        // invalid windows, even with a cached all-history result available.
+        for window in ["1q", "1y", "1秒", "0s", "18446744073709551615d"] {
+            feature.aggregation.as_mut().unwrap().window = Some(window.into());
+            let error = executor
+                .execute_aggregation(&feature, &datasource, &context)
+                .await
+                .unwrap_err()
+                .to_string();
+            assert!(
+                error.contains("Invalid aggregation window"),
+                "{window}: {error}"
+            );
+        }
+        pool.close().await;
+    }
 
     #[test]
     fn test_cache_key_building() {

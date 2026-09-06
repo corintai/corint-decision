@@ -596,13 +596,14 @@ impl PipelineExecutor {
                     // Pop the value to check from the stack
                     let value = ctx.pop()?;
 
-                    // Use configured list service if available, otherwise fall back to empty in-memory
-                    let contains = if let Some(ref list_service) = self.list_service {
-                        list_service.contains(list_id, &value).await?
-                    } else {
-                        tracing::warn!("List service not configured, treating all lists as empty");
-                        false
-                    };
+                    // Missing configuration must fail before applying negation:
+                    // neither `in` nor `not in` can infer membership from an outage.
+                    let list_service = self.list_service.as_ref().ok_or_else(|| {
+                        RuntimeError::InvalidOperation(format!(
+                            "E_LIST_UNAVAILABLE: No list service configured for '{list_id}'"
+                        ))
+                    })?;
+                    let contains = list_service.contains(list_id, &value).await?;
 
                     // Apply negation if needed
                     let result = if *negate { !contains } else { contains };

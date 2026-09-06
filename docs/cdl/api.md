@@ -9,7 +9,7 @@
 
 ## Overview
 
-This page preserves the intended external API configuration and Pipeline syntax. Strict Core rejects API steps. The compatibility Pipeline compiler currently drops step `params` and `on_error`, supplies no step fallback, and selects only the first API in `any` / `all`. Runtime helper support does not establish end-to-end Pipeline support.
+This page preserves the intended external API configuration and Pipeline syntax. Strict Core rejects API steps. The compatibility Pipeline compiler rejects step `params`, `on_error`, `min_success` and `any` / `all` combinations with `UnsupportedFeature`; malformed option types fail parsing, and step-level fallback is not accepted; it does not discard these fields or choose one target. Only the simple single-API call shape can reach compilation. The richer examples below describe intended syntax, not accepted Pipeline capabilities. Runtime helper support does not establish end-to-end Pipeline support.
 
 ---
 

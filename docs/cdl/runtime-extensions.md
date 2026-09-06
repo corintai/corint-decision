@@ -34,7 +34,7 @@ Pipeline 与 step 的 `when` 使用同一条件编译器和短路执行器。
 
 可选不等于 nullable：显式 null、错误类型、未声明字段和非有限数字均返回 `E_INPUT_SCHEMA`。不注入默认值，不将缺失转成 0/false；数组、开放 object、Any 类型仍未启用。schema 最多嵌套 16 层、1024 个字段。
 
-算术支持数值 `+ - * / %`、一元负号、比较和布尔短路。无类型隐式转换；对象不可整体比较。数值沿用 binary64，除零和取模零返回 `E_DIVISION_BY_ZERO`，非有限算术结果返回 `E_NUMBER_OVERFLOW`，整数分数累加溢出返回 `E_SCORE_OVERFLOW`。
+算术支持数值 `+ - * / %`、一元负号、科学计数法、比较和布尔短路。优先级、结合性、Unicode 字符串及转义规则见 [Core 表达式契约](cdl-core.md#3-expressions-types-and-dataflow)。无类型隐式转换；对象不可整体比较。数值沿用 binary64，除零和取模零返回 `E_DIVISION_BY_ZERO`，非有限算术结果返回 `E_NUMBER_OVERFLOW`，整数分数累加溢出返回 `E_SCORE_OVERFLOW`。
 
 ## Trace 与错误
 

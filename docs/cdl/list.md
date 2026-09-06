@@ -483,33 +483,13 @@ repository/configs/lists/
 
 ### 7.1 Missing List Reference
 
-If a rule references a non-existent list, compilation will fail:
+Compatibility compilation emits the List reference without contacting a catalog or backend. A missing List ID therefore fails at lookup time with `E_LIST_UNAVAILABLE`, not at compilation. Strict Core rejects List capability before execution.
 
-```yaml
-rule:
-  when:
-    all:
-      - event.user.email in list.nonexistent_list  # Error: Unknown list
-```
-
-**Compiler Error**:
-```
-Error: Unknown list 'nonexistent_list'
-Referenced in: rule 'email_check' at line 5
-Available lists: email_blocklist, ip_blocklist, vip_users
-```
+Both `in list.<id>` and `not in list.<id>` propagate a missing-service or missing-backend error. A configured empty list is valid: membership is false and negated membership is true. An absent or failed-to-load configuration is not an empty list.
 
 ### 7.2 Runtime Errors
 
-If a list backend is unavailable:
-
-```yaml
-# Configure fallback behavior in list definition
-id: external_sanctions
-backend: api
-url: "https://api.sanctions.io/check"
-fallback: allow  # Options: allow, deny, error
-```
+Backend lookup failures propagate as execution errors; the result is never automatically converted to allow/deny. The historical `fallback: allow` / `deny` API-list proposal is not an implemented configuration contract. Register and initialize the intended backend before executing a compatibility policy. Use `PipelineExecutor::with_list_service` when invoking the VM directly; the minimal `Executor` has no List service injection and rejects List lookup.
 
 ---
 

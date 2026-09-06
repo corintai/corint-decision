@@ -58,8 +58,8 @@ a PolicyPackage or a signed evaluation report.
 | `actions` | Exact ordered action-intent strings; none are executed. |
 | `triggered_rules` | Exact ordered rule IDs, including repeated invocations if any. |
 | `steps` | Exact ordered executed step IDs; skipped steps must not appear. |
-| `calls` | Exact ordered `{ruleset_id, rule_id, triggered, score}` rule-invocation records; `score` is that invocation's contribution, including zero for a miss. |
-| `local_results` | Exact map of executed ruleset IDs to `{score, signal}`; missing/extra entries fail. |
+| `calls` | Exact ordered `{ruleset_id, rule_id, triggered, score}` rule-invocation records; `ruleset_id` is null for a direct Rule call. `score` is that invocation's contribution, including zero for a miss. |
+| `local_results` | Exact map of direct call resource IDs: completed Rulesets/sub-Pipelines use `{score, signal}`, completed Rules use `{score, matched}`, and guarded skipped calls use `{status: "skipped"}`. Parent results exclude child-internal calls; missing/extra entries fail. |
 | `explanation` | If supplied, exact final explanation string. |
 
 Array order and object key sets matter; no subset matching for arrays or maps.
@@ -72,13 +72,20 @@ assertion projection, not a change to the engine's existing transport signal obj
 - `input / E_INPUT_SCHEMA`
 - `execute / E_NO_PIPELINE_MATCH`
 - `execute / E_SCORE_OVERFLOW`
+- `execute / E_MISSING_INPUT`
+- `execute / E_RESULT_UNAVAILABLE`
+- `execute / E_DIVISION_BY_ZERO`
+- `execute / E_NUMBER_OVERFLOW`
+- `execute / E_PIPELINE_SKIPPED`
 
 The error must actually occur. Success where an error is expected fails, as does
 an unexpected error or a different error code/stage. Compile/load errors abort the
 suite; they cannot be swallowed by a case's runtime-error expectation. Existing
-Core diagnostics are preserved. The CLI maps the existing typed runtime
-`InvalidOperation` score-overflow marker to `execute / E_SCORE_OVERFLOW`; other
-engine failures become `E_ENGINE` and cannot be configured as a passing expectation.
+Core diagnostics, including structured execution errors, are preserved with their
+stage/code/source/field_path. The adapter also recognizes the legacy typed
+score-overflow marker. Unclassified engine failures become `E_ENGINE` and cannot
+be configured as a passing expectation. The [runtime extension suite](../../tests/conformance/core_extensions/behavior.yaml)
+exercises direct and nested calls, optional inputs and guards through this format.
 
 ## Execution and report semantics
 

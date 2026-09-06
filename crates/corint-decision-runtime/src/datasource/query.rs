@@ -123,6 +123,7 @@ pub struct RelativeWindow {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum TimeUnit {
+    Seconds,
     Minutes,
     Hours,
     Days,
@@ -134,6 +135,7 @@ impl RelativeWindow {
     /// Convert to seconds
     pub fn to_seconds(&self) -> u64 {
         match self.unit {
+            TimeUnit::Seconds => self.value,
             TimeUnit::Minutes => self.value * 60,
             TimeUnit::Hours => self.value * 3600,
             TimeUnit::Days => self.value * 86400,
@@ -164,9 +166,13 @@ impl RelativeWindow {
             (value, TimeUnit::Months)
         } else {
             // Single character units
-            let (value_str, unit_str) = s.split_at(len - 1);
+            // The suffix must be ASCII; malformed Unicode is an invalid window,
+            // never an unchecked UTF-8 byte slice.
+            let suffix = s.chars().last()?;
+            let (value_str, unit_str) = s.split_at(len - suffix.len_utf8());
             let value = value_str.parse::<u64>().ok()?;
             let unit = match unit_str {
+                "s" => TimeUnit::Seconds,
                 "m" => TimeUnit::Minutes,
                 "h" => TimeUnit::Hours,
                 "d" => TimeUnit::Days,
@@ -176,6 +182,17 @@ impl RelativeWindow {
             (value, unit)
         };
 
+        let seconds_per_unit = match unit {
+            TimeUnit::Seconds => 1,
+            TimeUnit::Minutes => 60,
+            TimeUnit::Hours => 3600,
+            TimeUnit::Days => 86400,
+            TimeUnit::Weeks => 604800,
+            TimeUnit::Months => 2592000,
+        };
+        if value == 0 || value.checked_mul(seconds_per_unit)? > i64::MAX as u64 {
+            return None;
+        }
         Some(RelativeWindow { value, unit })
     }
 }
@@ -231,6 +248,38 @@ fn default_timestamp_field() -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn duration_units_are_bounded_and_fixed_length() {
+        for (text, seconds) in [
+            ("30s", 30),
+            ("last_5m", 300),
+            ("2h", 7200),
+            ("7d", 604800),
+            ("1w", 604800),
+            ("1mo", 2592000),
+        ] {
+            assert_eq!(
+                RelativeWindow::from_string(text).unwrap().to_seconds(),
+                seconds
+            );
+        }
+        for text in [
+            "",
+            "1q",
+            "1y",
+            "0s",
+            "-1h",
+            "1.5h",
+            "1秒",
+            "中",
+            "1h extra",
+            "18446744073709551615mo",
+            "9223372036854775808s",
+        ] {
+            assert!(RelativeWindow::from_string(text).is_none(), "{text}");
+        }
+    }
 
     #[test]
     fn test_parse_relative_window() {

@@ -60,8 +60,13 @@ JSON Schema and not a new BusinessContext definition. See the runnable
 [input-schema fixture](../../tests/conformance/cdl_core/input-schema.yaml) and its
 [file-format JSON Schema](schema/input.json). Field map keys use `amount`, not
 `event.amount`; expressions still use `event.amount`. Every field must specify its
-matching `name`, a `field_type` of `number`, `string` or `boolean`, and `required: true`.
-Defaults other than null are not enabled. Descriptions are optional and have no
+matching `name`, a `field_type`, and an explicit boolean `required`. Scalar types are
+`number`, `string` and `boolean`; closed objects use
+`{"object":{"schema":{"name":"payment","fields":{...}}}}`. `required: false` permits
+omission, including omission of an entire nested object; a present object must
+satisfy its own child schema. Optional fields are not nullable. Arrays, open objects
+and non-null defaults are not enabled. See the [nested input fixture](../../tests/conformance/core_extensions/input-schema.yaml)
+and [runtime extensions](runtime-extensions.md). Descriptions are optional and have no
 execution semantics. Duplicate keys, multiple YAML documents, unknown fields and
 unsupported types are rejected rather than silently ignored.
 

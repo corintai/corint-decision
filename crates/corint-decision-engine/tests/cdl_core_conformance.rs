@@ -480,6 +480,120 @@ async fn boolean_forms_share_short_circuit_execution() {
 }
 
 #[tokio::test]
+async fn expression_precedence_strings_and_negation_preserve_decisions_and_trace() {
+    let cases = [
+        ("true || false && false", true, ""),
+        ("true || false && (1 / 0 > 0)", true, ""),
+        ("false && (1 / 0 > 0) || true", true, ""),
+        ("(true || false) && false", false, ""),
+        ("10 - 3 - 2 == 5 && 2 + 3 * 4 == 14", true, ""),
+        (
+            "-event.amount < 0 && event.amount > -1 && 1e-3 < 0.01",
+            true,
+            "",
+        ),
+        (r#"event.label == "中国""#, true, "中国"),
+        (r#"event.label == "high-risk""#, true, "high-risk"),
+        (r#"event.label == 'a/b'"#, true, "a/b"),
+        (r#"event.label == "a\n\"b\\c""#, true, "a\n\"b\\c"),
+        (
+            r#"event.label == "\u4e2d\u56fd\uD83D\uDE00""#,
+            true,
+            "中国😀",
+        ),
+        (r#"event.label == "中国""#, false, "other"),
+    ];
+    for (condition, matched, label) in cases {
+        let mut docs = sources(&manifest().cases[0].documents);
+        modify(&mut docs, "rule.yaml", |d| {
+            d["rule"]["when"] = condition.into()
+        });
+        let input =
+            schema().add_field(SchemaField::new("label".into(), FieldType::String).required());
+        let engine =
+            DecisionEngine::from_core(&docs, input).unwrap_or_else(|e| panic!("{condition}: {e}"));
+        let request = || {
+            DecisionRequest::new(HashMap::from([
+                ("amount".into(), Value::Number(1001.0)),
+                ("label".into(), Value::String(label.into())),
+            ]))
+        };
+        let plain = engine
+            .decide(request())
+            .await
+            .unwrap_or_else(|e| panic!("{condition}: {e}"));
+        let traced = engine.decide(request().with_trace()).await.unwrap();
+        assert_eq!(plain.result, traced.result, "{condition}");
+        assert_eq!(
+            plain.result.score,
+            if matched { 60 } else { 0 },
+            "{condition}"
+        );
+        assert_eq!(
+            plain
+                .result
+                .triggered_rules
+                .contains(&"large_amount".into()),
+            matched,
+            "{condition}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn compatibility_string_conditions_short_circuit_and_lists_fail_closed() {
+    use corint_decision_compiler::Compiler;
+    use corint_decision_dsl_parser::{RuleParser, RulesetParser};
+    use corint_decision_model::ast::Signal;
+    use corint_decision_runtime::PipelineExecutor;
+    let executor = PipelineExecutor::new_offline();
+    for (condition, score) in [
+        ("true || false && (1 / 0 > 0)", 60),
+        ("false && (1 / 0 > 0)", 0),
+        (r#""中国/high-risk" == '中国/high-risk'"#, 60),
+    ] {
+        let yaml = serde_yaml::to_string(&serde_json::json!({"rule": {
+            "id": "test", "name": "Test", "when": condition, "score": 60
+        }}))
+        .unwrap();
+        let rule = RuleParser::parse(&yaml).unwrap();
+        let program = Compiler::new().compile_rule(&rule).unwrap();
+        assert_eq!(
+            executor
+                .execute(&program, HashMap::new())
+                .await
+                .unwrap()
+                .score,
+            score,
+            "{condition}"
+        );
+    }
+    let ruleset = RulesetParser::parse("ruleset:\n  id: risk\n  rules: []\n  conclusion:\n    - when: 'true || false && (1 / 0 > 0)'\n      signal: decline\n    - default: true\n      signal: approve\n").unwrap();
+    let program = Compiler::new().compile_ruleset(&ruleset).unwrap();
+    assert_eq!(
+        executor
+            .execute(&program, HashMap::new())
+            .await
+            .unwrap()
+            .signal,
+        Some(Signal::Decline)
+    );
+    for operator in ["in", "not in"] {
+        let yaml = serde_yaml::to_string(&serde_json::json!({"rule": {
+            "id": "list_check", "name": "List check", "when": format!("'user-1' {operator} list.missing"), "score": 60
+        }})).unwrap();
+        let rule = RuleParser::parse(&yaml).unwrap();
+        let program = Compiler::new().compile_rule(&rule).unwrap();
+        let error = executor
+            .execute(&program, HashMap::new())
+            .await
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("E_LIST_UNAVAILABLE"), "{operator}: {error}");
+    }
+}
+
+#[tokio::test]
 async fn boolean_conditions_work_across_public_scopes() {
     for condition in [
         serde_json::json!("event.amount > 1000 && !(event.amount < 0)"),
@@ -683,7 +797,108 @@ struct ExampleRegistry {
     language_version: String,
     pages: Vec<String>,
     compatibility_pages: Vec<String>,
+    source_examples: Vec<SourceExample>,
     examples: Vec<DocumentExample>,
+}
+#[derive(Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct SourceExample {
+    path: String,
+    kind: String,
+    core_rejection_stage: String,
+    core_rejection_code: String,
+}
+
+fn check_source_examples(
+    index: &ExampleRegistry,
+    files: &HashMap<String, String>,
+) -> Result<(), String> {
+    let mut remaining = files.clone();
+    for example in &index.source_examples {
+        let text = remaining
+            .remove(&example.path)
+            .ok_or("missing/duplicate source example")?;
+        if example.kind != "compatibility-unverified"
+            || !text.contains("# cdl-scope: compatibility-unverified")
+            || ["production_ready", "production-ready", "supported_complete"]
+                .iter()
+                .any(|claim| text.to_lowercase().contains(claim))
+        {
+            return Err(format!("unverified source scope/claim: {}", example.path));
+        }
+        // Parse every YAML document, even when strict Core would reject the
+        // import header before reaching the rest of this historical example.
+        for document in serde_yaml::Deserializer::from_str(&text) {
+            serde_yaml::Value::deserialize(document)
+                .map_err(|e| format!("{}: {e}", example.path))?;
+        }
+        let source = CoreSource {
+            path: example.path.clone(),
+            yaml: text,
+        };
+        let error = validate_core_document(&source)
+            .err()
+            .ok_or("historical source unexpectedly accepted")?;
+        if error.diagnostic.stage.as_deref() != Some(&example.core_rejection_stage)
+            || error.diagnostic.code != example.core_rejection_code
+        {
+            return Err(format!(
+                "unexpected Core rejection for {}: {error}",
+                example.path
+            ));
+        }
+    }
+    if !remaining.is_empty() {
+        return Err("unregistered source examples".into());
+    }
+    Ok(())
+}
+
+#[test]
+fn standalone_source_examples_have_valid_yaml_and_explicit_scope() {
+    let index: ExampleRegistry =
+        serde_json::from_str(include_str!("../../../docs/cdl/examples.json")).unwrap();
+    let docs = root().join("../../../docs/cdl");
+    let mut directories = vec![docs.join("examples")];
+    let mut files = HashMap::new();
+    while let Some(directory) = directories.pop() {
+        for entry in std::fs::read_dir(directory).unwrap() {
+            let path = entry.unwrap().path();
+            if path.is_dir() {
+                directories.push(path);
+            } else if matches!(
+                path.extension().and_then(|e| e.to_str()),
+                Some("yaml" | "yml")
+            ) {
+                files.insert(
+                    path.strip_prefix(&docs)
+                        .unwrap()
+                        .to_str()
+                        .unwrap()
+                        .to_owned(),
+                    std::fs::read_to_string(path).unwrap(),
+                );
+            }
+        }
+    }
+    assert!(!files.is_empty());
+    check_source_examples(&index, &files).unwrap();
+    let mut invalid = index.clone();
+    invalid.source_examples.clear();
+    assert!(check_source_examples(&invalid, &files).is_err());
+    let path = &index.source_examples[0].path;
+    for mutation in [
+        files[path].replace("# cdl-scope: compatibility-unverified", ""),
+        format!("{}\n# production_ready\n", files[path]),
+        format!("{}\n---\nbroken: [\n", files[path]),
+    ] {
+        let mut invalid = files.clone();
+        invalid.insert(path.clone(), mutation);
+        assert!(check_source_examples(&index, &invalid).is_err());
+    }
+    let mut invalid = files.clone();
+    invalid.insert("examples/unregistered.yml".into(), files[path].clone());
+    assert!(check_source_examples(&index, &invalid).is_err());
 }
 #[derive(Clone, Deserialize)]
 #[serde(deny_unknown_fields)]

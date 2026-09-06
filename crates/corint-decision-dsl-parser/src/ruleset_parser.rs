@@ -108,10 +108,18 @@ impl RulesetParser {
 
     /// Parse a decision rule (public for template parser use)
     pub fn parse_decision_rule(yaml: &YamlValue) -> Result<DecisionRule> {
-        // Parse when condition (optional)
-        let condition = YamlParser::get_optional_string(yaml, "when")
-            .map(|s| ExpressionParser::parse(&s))
-            .transpose()?;
+        // A present but malformed condition must never disappear and fall
+        // through to approval. Conclusions deliberately use string expressions.
+        let condition = match yaml.get("when") {
+            None => None,
+            Some(YamlValue::String(text)) => Some(ExpressionParser::parse(text)?),
+            Some(_) => {
+                return Err(ParseError::InvalidValue {
+                    field: "conclusion.when".into(),
+                    message: "Expected a string expression; use &&, || and ! for groups".into(),
+                })
+            }
+        };
 
         // Parse default flag
         let default = YamlParser::get_optional_bool(yaml, "default").unwrap_or(false);
@@ -322,5 +330,23 @@ ruleset:
 
         let result = RulesetParser::parse(yaml);
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn conclusion_conditions_cannot_be_silently_discarded() {
+        for condition in [
+            "{all: ['total_score > 0']}",
+            "['total_score > 0']",
+            "null",
+            "true",
+            "42",
+        ] {
+            let yaml = format!("ruleset:\n  id: risk\n  rules: []\n  conclusion:\n    - when: {condition}\n      signal: decline\n    - default: true\n      signal: approve\n");
+            let error = RulesetParser::parse(&yaml).unwrap_err().to_string();
+            assert!(error.contains("conclusion.when"), "{condition}: {error}");
+        }
+        let ruleset = RulesetParser::parse("ruleset:\n  id: risk\n  rules: []\n  conclusion:\n    - when: 'total_score > 0 && triggered_count > 0'\n      signal: decline\n    - default: true\n      signal: approve\n").unwrap();
+        assert!(ruleset.conclusion[0].condition.is_some());
+        assert!(ruleset.conclusion[1].condition.is_none());
     }
 }

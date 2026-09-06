@@ -65,7 +65,7 @@ description: Detect risky login behavior using rules and LLM reasoning.
 
 The core of the rule. Describes conditions that must be satisfied for the rule to trigger.
 
-The `when` clause supports boolean expressions, logical operators (`all`/`any`/`not`), and arbitrary nesting for complex condition evaluation.
+The `when` clause supports boolean expressions, logical operators (`all`/`any`/`not`), and nested groups for complex condition evaluation. Expression parser recursion is bounded; see the [Core expression contract](cdl-core.md#3-expressions-types-and-dataflow).
 
 ### 5.1 Basic Syntax (Unverified compatibility behavior)
 
@@ -171,7 +171,7 @@ event.user.tags contains "vip"        # String/array contains
 features.risk_tags contains "proxy"   # Array contains
 ```
 
-> **Note:** `exists` and `missing` operators are NOT currently implemented. Check for null/non-null values instead: `event.field == null` or `event.field != null`
+> **Presence checks:** strict Core supports the function `exists(event.declared_path)` and its negation `!exists(...)`. Infix `exists` / `missing` operators are not supported. Optional fields may be absent, but explicit null is invalid; null comparisons are not a replacement for presence checks. See [runtime extensions](runtime-extensions.md).
 
 ### 5.4 Context Variables (Unverified compatibility behavior)
 

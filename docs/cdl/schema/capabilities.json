@@ -228,7 +228,8 @@
       "cases": [],
       "tests": [
         "boolean_forms_share_short_circuit_execution",
-        "boolean_conditions_work_across_public_scopes"
+        "boolean_conditions_work_across_public_scopes",
+        "expression_precedence_strings_and_negation_preserve_decisions_and_trace"
       ]
     },
     {
@@ -286,7 +287,8 @@
       "status": "supported",
       "cases": [],
       "tests": [
-        "core_extension_errors_are_structured_and_trace_invariant"
+        "core_extension_errors_are_structured_and_trace_invariant",
+        "expression_precedence_strings_and_negation_preserve_decisions_and_trace"
       ]
     },
     {

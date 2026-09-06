@@ -21,12 +21,14 @@ CORINT expressions are used in:
 
 | Context | Evaluator | Supported Operations |
 |---------|-----------|---------------------|
-| **Rules/Pipelines** | WhenEvaluator | Comparison, logical, membership, string operations |
+| **Compiled Rule/Pipeline conditions** | Shared ExpressionParser → ExpressionCompiler → VM | Checked arithmetic, comparisons, boolean short-circuiting; compatibility additionally parses membership/string operations |
 | **Feature Expressions** | ExpressionEvaluator | Basic arithmetic (+, -, *, /, parentheses) only |
 
 ---
 
 ## Field Access
+
+Field names may start with `_`; in strict Core they must also be declared in the input schema.
 
 ### Namespace Access Pattern
 
@@ -208,18 +210,24 @@ features:
 
 ## Operator Precedence
 
-**Rule/Pipeline Conditions:**
-1. Field access, literals
-2. Comparison operators (`==`, `!=`, `<`, `>`, `<=`, `>=`)
-3. `in`, `contains`, `regex`, etc.
-4. Logical `all` (AND)
-5. Logical `any` (OR)
-6. Logical `not`
+For compiled conditions, highest to lowest: parentheses; unary `!` / `-`;
+`* / %`; `+ -`; relational and compatibility membership/string operators;
+`== !=`; `&&`; `||`. Equal-precedence binary operators associate left-to-right.
+`&&` and `||` short-circuit, including when combined with YAML boolean groups.
+For example, `true || false && false` is true. `conclusion.when` accepts only
+string expressions; use these operators instead of YAML group objects there.
 
-**Feature Expressions:**
-1. Parentheses `( )`
-2. Multiplication `*`, Division `/`
-3. Addition `+`, Subtraction `-`
+Strings are consumed as one token: Unicode and operator characters inside quotes
+remain literal content. Both quote styles accept `\\`, `\"`, `\'`, `\/`, `\n`,
+`\r`, `\t`, `\b`, `\f`, and `\uXXXX` (including surrogate pairs). Unknown escapes,
+unterminated strings, malformed tokens and more than 128 recursive parser levels
+fail explicitly. Decimal/scientific numbers and unary negation are supported,
+including `1e-3`, `event.amount > -1` and `-event.amount`.
+
+The [Core expression contract](cdl-core.md#3-expressions-types-and-dataflow)
+defines the accepted types and namespaces for strict entry points. Recognizing
+compatibility syntax does not enable it in Core. Feature `ExpressionEvaluator`
+is a separate evaluator and does not inherit this compiled-condition contract.
 
 ---
 
@@ -275,7 +283,7 @@ rule:
 
 ### Missing Fields
 
-Missing fields evaluate to `null`:
+At permissive compatibility field-loading entry points, missing fields can evaluate to `null`. Strict Core rejects missing required inputs and reports `E_MISSING_INPUT` when a missing optional field is read; use `exists(event.path)` before reading it:
 
 ```yaml
 # If event.verified doesn't exist, returns false
@@ -284,7 +292,7 @@ Missing fields evaluate to `null`:
 
 ### Type Mismatches
 
-Type mismatches result in `false`:
+Compatibility comparisons can return `false` for mismatched types. Strict Core rejects type mismatches during compilation or input validation:
 
 ```yaml
 # If event.amount is a string, returns false
@@ -293,10 +301,10 @@ Type mismatches result in `false`:
 
 ### Division by Zero
 
-In feature expressions, division by zero returns `null`:
+The compatibility Feature expression evaluator can return `null` for division by zero. Compiled Core arithmetic instead returns `E_DIVISION_BY_ZERO`:
 
 ```yaml
-# Recommended workaround
+# Historical approximation; changes the calculation and is not Core error handling
 expression: "numerator / (denominator + 0.0001)"
 ```
 
@@ -304,101 +312,32 @@ expression: "numerator / (denominator + 0.0001)"
 
 ## BNF Grammar
 
-### Expression Grammar
+### Compiled Condition Grammar
 
-```bnf
-<expression> ::= <comparison>
-               | <logical-group>
-               | <membership>
-               | <string-operation>
+The precedence table above is normative for the shared lexer/parser. The outline
+below is EBNF; semantic validation further limits types and references in Core.
+YAML `all` / `any` / `not` groups wrap expressions and are not string tokens.
 
-<comparison> ::= <operand> <comparison-op> <operand>
-
-<comparison-op> ::= "=="
-                  | "!="
-                  | "<"
-                  | ">"
-                  | "<="
-                  | ">="
-
-<operand> ::= <field-access>
-            | <literal>
-
-<field-access> ::= <namespace> "." <field-path>
-
-<namespace> ::= "event"
-              | "features"
-              | "results"
-              | "api"
-              | "service"
-              | "vars"
-              | "sys"
-
-<field-path> ::= <identifier>
-               | <identifier> "." <field-path>
-
-<identifier> ::= <letter> <identifier-rest>*
-
-<identifier-rest> ::= <letter>
-                    | <digit>
-                    | "_"
-
-<letter> ::= "a".."z" | "A".."Z"
-
-<digit> ::= "0".."9"
-
-<logical-group> ::= "all:" <condition-list>
-                  | "any:" <condition-list>
-                  | "not:" <condition-list>
-
-<condition-list> ::= "-" <expression>
-                   | "-" <expression> <condition-list>
-
-<membership> ::= <operand> "in" <array>
-               | <operand> "not" "in" <array>
-               | <operand> "in" "list." <identifier>
-               | <operand> "not" "in" "list." <identifier>
-
-<array> ::= "[" <array-elements> "]"
-          | "[" "]"
-
-<array-elements> ::= <literal>
-                   | <literal> "," <array-elements>
-
-<string-operation> ::= <operand> <string-op> <string-literal>
-
-<string-op> ::= "contains"
-              | "starts_with"
-              | "ends_with"
-              | "regex"
-
-<string-literal> ::= <quoted-string>
-
-<quoted-string> ::= '"' <string-chars> '"'
-                  | "'" <string-chars> "'"
-
-<string-chars> ::= <char>*
-                 | <escaped-char> <string-chars>
-
-<escaped-char> ::= "\\" <char>
-
-<literal> ::= <number>
-            | <string-literal>
-            | <boolean>
-            | "null"
-
-<number> ::= <integer>
-           | <float>
-
-<integer> ::= <digit>+
-            | "-" <digit>+
-
-<float> ::= <digit>+ "." <digit>+
-         | "-" <digit>+ "." <digit>+
-
-<boolean> ::= "true"
-            | "false"
+```text
+expression = or
+or         = and { "||" and }
+and        = equality { "&&" equality }
+equality   = relation { ("==" | "!=") relation }
+relation   = sum { ("<" | "<=" | ">" | ">=" | compatibility-op) sum }
+sum        = product { ("+" | "-") product }
+product    = unary { ("*" | "/" | "%") unary }
+unary      = ("!" | "-") unary | primary
+primary    = literal | field | "(" expression ")" | function-call
+number     = digits ["." [digits]] [("e" | "E") ["+" | "-"] digits]
+compatibility-op = "in" | "not in" | "not_in" | "contains"
+                 | "starts_with" | "ends_with" | "regex"
 ```
+
+String literals follow the escaping rules above. Core admits scalar literals
+and declared fields, and only the function `exists(event.declared_path)`.
+Compatibility parsing additionally recognizes null, literal arrays and function
+calls; their recognition alone does not imply compiler/runtime support. Resource
+IDs and input schema field names remain subject to their respective schema rules.
 
 ### Feature Expression Grammar
 
@@ -442,7 +381,6 @@ numerator / (denominator + 0.0001)
 **Invalid patterns:**
 ```yaml
 Event.type                   # ❌ Namespace must be lowercase
-event._private              # ❌ Field cannot start with _
 event.user..id              # ❌ Double dots not allowed
 .event.type                 # ❌ Cannot start with dot
 event.type.                 # ❌ Cannot end with dot

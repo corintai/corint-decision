@@ -3,9 +3,11 @@
 use super::backend::ListBackend;
 use super::*;
 use crate::executor::Executor;
+use crate::PipelineExecutor;
 use corint_decision_model::ir::{Instruction, Program, ProgramMetadata};
 use corint_decision_model::Value;
 use std::collections::HashMap;
+use std::sync::Arc;
 
 #[tokio::test]
 async fn test_memory_backend_basic() {
@@ -126,10 +128,12 @@ async fn test_list_lookup_instruction_positive() {
         ProgramMetadata::default(),
     );
 
-    // For Phase 1 MVP, the ListService is created with empty memory
-    // In a real system, we would pre-populate it with configuration
+    // Explicitly configured empty lists remain valid membership sources.
     let event_data = HashMap::new();
-    let result = Executor::execute(&program, event_data).await.unwrap();
+    let result = empty_lists_executor()
+        .execute(&program, event_data)
+        .await
+        .unwrap();
 
     // Since the list is empty, it won't trigger
     assert_eq!(result.triggered_rules.len(), 0);
@@ -160,7 +164,10 @@ async fn test_list_lookup_instruction_negative() {
     );
 
     let event_data = HashMap::new();
-    let result = Executor::execute(&program, event_data).await.unwrap();
+    let result = empty_lists_executor()
+        .execute(&program, event_data)
+        .await
+        .unwrap();
 
     // Since the list is empty, "not in list" should return true
     assert_eq!(result.triggered_rules.len(), 1);
@@ -195,7 +202,10 @@ async fn test_list_lookup_with_field_access() {
         Value::String("test@example.com".to_string()),
     );
 
-    let result = Executor::execute(&program, event_data).await.unwrap();
+    let result = empty_lists_executor()
+        .execute(&program, event_data)
+        .await
+        .unwrap();
 
     // List is empty, so no score added
     assert_eq!(result.score, 0);
@@ -232,7 +242,10 @@ async fn test_multiple_list_checks() {
     );
 
     let event_data = HashMap::new();
-    let result = Executor::execute(&program, event_data).await.unwrap();
+    let result = empty_lists_executor()
+        .execute(&program, event_data)
+        .await
+        .unwrap();
 
     // Both lists are empty, so no score added
     assert_eq!(result.score, 0);
@@ -240,3 +253,54 @@ async fn test_multiple_list_checks() {
 
 // NOTE: Integration tests that require compiler and parser are in the SDK crate
 // These tests verify parsing and compilation of list syntax end-to-end
+
+fn empty_lists_executor() -> PipelineExecutor {
+    let backends: HashMap<String, Box<dyn ListBackend>> = ["email_blocklist", "ip_blocklist"]
+        .into_iter()
+        .map(|id| {
+            (
+                id.into(),
+                Box::new(MemoryBackend::new()) as Box<dyn ListBackend>,
+            )
+        })
+        .collect();
+    PipelineExecutor::new_offline()
+        .with_list_service(Arc::new(ListService::new_with_backends(backends)))
+}
+
+#[tokio::test]
+async fn missing_lists_never_become_membership_results() {
+    for negate in [false, true] {
+        let program = Program::new(
+            vec![
+                Instruction::LoadConst {
+                    value: Value::String("person@example.com".into()),
+                },
+                Instruction::ListLookup {
+                    list_id: "missing_blocklist".into(),
+                    negate,
+                },
+                Instruction::Return,
+            ],
+            ProgramMetadata::default(),
+        );
+        // Both public VM entry points must fail, including absent service and
+        // an existing service that has no backend for this particular ID.
+        for executor in [PipelineExecutor::new_offline(), empty_lists_executor()] {
+            let error = executor
+                .execute(&program, HashMap::new())
+                .await
+                .unwrap_err()
+                .to_string();
+            assert!(
+                error.contains("E_LIST_UNAVAILABLE") && error.contains("missing_blocklist"),
+                "{error}"
+            );
+        }
+        let error = Executor::execute(&program, HashMap::new())
+            .await
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("E_LIST_UNAVAILABLE"), "{error}");
+    }
+}

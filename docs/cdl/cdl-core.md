@@ -63,12 +63,14 @@ unknown versions, null required values and wrong types fail; there is no permiss
 Resource IDs are globally unique ASCII identifiers; step IDs are unique within a
 Pipeline. `end` is reserved as the terminal target. Whitespace-only names are invalid.
 
-| Resource | Increment 1 contract | Evidence |
+| Resource | Current draft-1 contract | Evidence |
 |---|---|---|
 | Rule | Required `id`, `name`, `when`, `score`; optional description. Score is an i32 integer. Add it once iff the rule matches. | C01, N01, N03, N09 |
 | Ruleset | Required `id`, nonempty unique ordered `rules`, `conclusion`; optional name/description. Only `when` or `default`, and `signal`, are accepted in a conclusion row. | C03, N04, N05 |
 | Pipeline | Required `id`, `name`, `entry`, nonempty `steps`, `decision`; optional description and `when`. Keep existing `- step: {id, name, type, ...}` wrappers. | C04, C06, C07, N03, N05 |
 | Ruleset step | Required `ruleset`, explicit `next` including `next: end`. At most one call site per ruleset per Pipeline in this increment. | C06, C07, N05 |
+| Rule / Pipeline step | Required `rule` / `pipeline` target and explicit `next`; synchronous local result. One call site per resource per Pipeline. | Runtime extension tests |
+| Pipeline / step guard | Optional `when`; false skips execution. Skipped call steps follow `next`, skipped routers follow `default`. A skipped entry Pipeline returns `E_PIPELINE_SKIPPED`. | Runtime extension tests |
 | Router step | Nonempty ordered `routes` of `{when, next}` and explicit `default` target; no simultaneous `next`. First matching route wins. | C06, C07 |
 | Registry | Ordered `{pipeline, when}` entries. First match wins. Explicit `when: "true"` can provide a fallback. No match returns `E_NO_PIPELINE_MATCH`, not approval. | C05 |
 
@@ -97,7 +99,18 @@ there. Group objects are accepted in the other condition positions defined by th
 
 Boolean spellings normalize to the existing short-circuit expression AST,
 including Registry, Rule, Router, Ruleset conclusion and Pipeline decision.
-Evaluation is left-to-right. Trace does not evaluate otherwise skipped operands.
+Operands evaluate left-to-right within the parsed tree; `&&` / `||` short-circuit.
+Precedence, highest first: parentheses; unary `!` / `-`; `* / %`; `+ -`;
+`< <= > >=`; `== !=`; `&&`; `||`. Binary operators of equal precedence associate
+left-to-right. Thus `true || false && false` is true. Negative literals,
+`-event.amount`, and scientific notation such as `1e-3` are accepted.
+Strings accept single or double quotes, Unicode text, and escapes `\\`, `\"`,
+`\'`, `\/`, `\n`, `\r`, `\t`, `\b`, `\f`, `\uXXXX` (including surrogate pairs).
+Quote the entire expression at the YAML level when its syntax requires it; YAML
+escaping and expression escaping are separate layers. Operators inside strings are
+literal text. Malformed quotes, escapes or tokens return `E_INVALID_EXPRESSION`.
+Expression parsing is bounded to 128 recursive levels, counting grouping, unary
+operators and precedence descent. Trace does not evaluate skipped operands.
 The VM fault-injection test for short-circuiting intentionally bypasses input
 validation; this does not make malformed inputs valid at the public engine entry.
 
@@ -111,8 +124,11 @@ Allowed references:
 
 - `event.<declared_path>` and `exists(event.<declared_path>)` in all condition scopes;
 - `total_score` in Ruleset conclusion, step guard, Router and Pipeline decision, referring to the current resource's accumulated local score;
-- `results.<ruleset_id>.score / total_score / signal` in Router and Pipeline
-  decision only, and only after that result is available on **every incoming path**.
+- `results.<resource_id>.score / total_score / signal` in step guards, Router routes
+  and Pipeline decisions, only for direct calls reached on **every incoming path**.
+  Rules expose `matched` instead of `signal`; all reached calls expose `status`.
+  Pipeline entry guards, Registry guards and Rule/Ruleset conditions cannot read
+  caller results. Parent and child Pipeline result scopes are isolated.
   The existing parser also recognizes the singular `result.<ruleset_id>` alias;
   new examples use `results`. Implicit last-result references are rejected.
 
@@ -157,16 +173,21 @@ Stages: `parse`, `validate`, `resolve`, `type`, `input`, `execute`, `compile`.
 Codes include `E_INVALID_STRUCTURE`, `E_UNKNOWN_FIELD`, `E_MISSING_FIELD`,
 `E_INVALID_VERSION`, `E_UNSUPPORTED_VERSION`, `E_UNSUPPORTED_CAPABILITY`,
 `E_DUPLICATE_ID`, `E_UNRESOLVED_REF`, `E_INVALID_GRAPH`, `E_INVALID_REF`,
-`E_INVALID_EXPRESSION`, `E_TYPE`, `E_INPUT_SCHEMA`, `E_NO_PIPELINE_MATCH`, `E_COMPILE`.
-Overflow currently uses `EngineError::RuntimeError` with the stable
-`E_SCORE_OVERFLOW` marker; unified structured execution diagnostics are pending.
+`E_INVALID_EXPRESSION`, `E_TYPE`, `E_INPUT_SCHEMA`, `E_NO_PIPELINE_MATCH`, `E_COMPILE`,
+`E_CALL_CYCLE` and `E_CALL_LIMIT`. Core execution errors are structured
+`EngineError::Core` diagnostics with stage `execute`: `E_MISSING_INPUT`,
+`E_RESULT_UNAVAILABLE`, `E_DIVISION_BY_ZERO`, `E_NUMBER_OVERFLOW`,
+`E_SCORE_OVERFLOW` and `E_PIPELINE_SKIPPED`. No execution failure becomes approval.
 
 Existing compatibility entry points do not become strict automatically. No legacy
 strategy is silently migrated. Runtime score overflow is now a controlled error
 for both entry families. Registry nested condition parsing now reuses Rule's
-existing group parser; previously valid conditions retain their meaning. All
-other new Core behavior is explicitly opt-in. The strict Core executor does not
-initialize connector clients; compatibility constructors retain their behavior.
+existing group parser. Both entry families share corrected expression precedence,
+Unicode-safe string parsing and unary negation. Compatibility Ruleset conclusions
+reject non-string `when` rather than dropping conditions; missing List backends and
+invalid aggregation windows now fail explicitly. Other Core capabilities remain
+opt-in. The strict Core executor does not initialize connector clients; compatibility
+constructors continue to initialize their configured clients.
 
 ## 6. Evidence and remaining phase 0 work
 
@@ -198,6 +219,9 @@ Negative example: `N01_unknown_condition` in the
 binds these declarations to the conformance runner. Its three strict pages prohibit
 inline YAML copies. Thirteen compatibility pages have a separate scope/claim gate;
 their individual snippets and compatibility prompts still await executable mappings.
+Standalone YAML under `examples/` is also inventoried: historical source examples
+must parse as YAML, carry an unverified scope marker and fail strict Core validation
+with the registered diagnostic. This syntax/rejection gate is not execution evidence.
 
 The separate [import authoring profile](resolution.md) now resolves bounded local
 file imports (C08) into this profile's frozen closure. This execution profile and

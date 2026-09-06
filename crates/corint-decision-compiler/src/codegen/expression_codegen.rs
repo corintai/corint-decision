@@ -28,6 +28,14 @@ impl ExpressionCompiler {
             }
 
             Expression::Binary { left, op, right } => {
+                if matches!(op, Operator::And | Operator::Or) {
+                    let conditions = [left.as_ref().clone(), right.as_ref().clone()];
+                    return if *op == Operator::And {
+                        Self::compile_all_conditions(&conditions)
+                    } else {
+                        Self::compile_any_conditions(&conditions)
+                    };
+                }
                 let mut instructions = Vec::new();
 
                 // Special handling for list membership operators
@@ -638,8 +646,9 @@ mod tests {
 
         let instructions = ExpressionCompiler::compile(&expr).unwrap();
 
-        assert_eq!(instructions.len(), 3);
-        assert!(matches!(instructions[2], Instruction::BinaryOp { .. }));
+        assert!(instructions
+            .iter()
+            .any(|i| matches!(i, Instruction::JumpIfFalse { .. })));
     }
 
     #[test]

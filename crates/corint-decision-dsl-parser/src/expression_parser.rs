@@ -1,490 +1,392 @@
-//! Expression parser
-//!
-//! Parses string expressions into Expression AST nodes.
-//!
-//! Supported syntax:
-//! - Field access: `user.age`, `event.device.id`
-//! - Literals: `42`, `3.14`, `"string"`, `true`, `false`, `null`
-//! - Binary operators: `>`, `<`, `>=`, `<=`, `==`, `!=`, `+`, `-`, `*`, `/`, `&&`, `||`
-//! - Unary operators: `!`, `-`
-//! - Function calls: `count(user.logins)`, `sum(amounts, last_7d)`
-//! - Parentheses for grouping: `(a + b) * c`
-
+//! Shared expression lexer and precedence parser. Core applies its own capability
+//! and type checks to the resulting AST; compatibility entry points use the same syntax.
 use crate::error::{ParseError, Result};
 use corint_decision_model::ast::{Expression, Operator, UnaryOperator};
 use corint_decision_model::Value;
 
-/// Expression parser
 pub struct ExpressionParser;
 
 impl ExpressionParser {
-    /// Parse an expression from a string
     pub fn parse(input: &str) -> Result<Expression> {
-        let input = input.trim();
-
-        if input.is_empty() {
-            return Err(ParseError::InvalidExpression(
-                "Empty expression".to_string(),
-            ));
-        }
-
-        Self::parse_expression(input)
-    }
-
-    /// Parse a complete expression (handles binary operators with precedence)
-    fn parse_expression(input: &str) -> Result<Expression> {
-        // Try to parse as binary expression with logical operators (lowest precedence)
-        if let Some((left, op, right)) = Self::split_by_operator(input, &["||", "&&"]) {
-            let op = Self::parse_operator(op)?;
-            return Ok(Expression::binary(
-                Self::parse_expression(left)?,
-                op,
-                Self::parse_expression(right)?,
-            ));
-        }
-
-        // Try to parse as binary expression with keyword operators (contains, in, not in, etc.)
-        // Note: "not in" must come before "in" to match correctly
-        if let Some((left, op, right)) = Self::split_by_keyword_operator(
-            input,
-            &[
-                "not in", // Must be before "in"
-                "contains",
-                "in",
-                "starts_with",
-                "ends_with",
-                "regex",
-            ],
-        ) {
-            // Special handling for "in list.xxx" and "not in list.xxx"
-            if (op == "in" || op == "not in") && right.trim().starts_with("list.") {
-                let list_id = right.trim().strip_prefix("list.").unwrap().to_string();
-                let operator = if op == "in" {
-                    Operator::InList
-                } else {
-                    Operator::NotInList
-                };
-                return Ok(Expression::binary(
-                    Self::parse_expression(left)?,
-                    operator,
-                    Expression::ListReference { list_id },
-                ));
-            }
-
-            let op = Self::parse_operator(op)?;
-            return Ok(Expression::binary(
-                Self::parse_expression(left)?,
-                op,
-                Self::parse_expression(right)?,
-            ));
-        }
-
-        // Try to parse as binary expression with comparison operators
-        if let Some((left, op, right)) =
-            Self::split_by_operator(input, &["==", "!=", "<=", ">=", "<", ">"])
-        {
-            let op = Self::parse_operator(op)?;
-            return Ok(Expression::binary(
-                Self::parse_expression(left)?,
-                op,
-                Self::parse_expression(right)?,
-            ));
-        }
-
-        // Try to parse as binary expression with additive operators
-        if let Some((left, op, right)) = Self::split_by_operator(input, &["+", "-"]) {
-            let op = Self::parse_operator(op)?;
-            return Ok(Expression::binary(
-                Self::parse_expression(left)?,
-                op,
-                Self::parse_expression(right)?,
-            ));
-        }
-
-        // Try to parse as binary expression with multiplicative operators
-        if let Some((left, op, right)) = Self::split_by_operator(input, &["*", "/", "%"]) {
-            let op = Self::parse_operator(op)?;
-            return Ok(Expression::binary(
-                Self::parse_expression(left)?,
-                op,
-                Self::parse_expression(right)?,
-            ));
-        }
-
-        // Parse primary expression (literals, field access, function calls, parentheses)
-        Self::parse_primary(input)
-    }
-
-    /// Parse a primary expression
-    fn parse_primary(input: &str) -> Result<Expression> {
-        let input = input.trim();
-
-        // Check for unary operators
-        if let Some(stripped) = input.strip_prefix('!') {
-            return Ok(Expression::Unary {
-                op: UnaryOperator::Not,
-                operand: Box::new(Self::parse_primary(stripped.trim())?),
-            });
-        }
-
-        if input.starts_with('-') && !input[1..].trim().starts_with(|c: char| c.is_ascii_digit()) {
-            return Ok(Expression::Unary {
-                op: UnaryOperator::Negate,
-                operand: Box::new(Self::parse_primary(input[1..].trim())?),
-            });
-        }
-
-        // Check for parentheses
-        if input.starts_with('(') && input.ends_with(')') {
-            return Self::parse_expression(&input[1..input.len() - 1]);
-        }
-
-        // Check for string literals
-        if input.starts_with('"') && input.ends_with('"') {
-            let s = &input[1..input.len() - 1];
-            return Ok(Expression::literal(Value::String(s.to_string())));
-        }
-
-        // Check for boolean literals
-        if input == "true" {
-            return Ok(Expression::literal(Value::Bool(true)));
-        }
-        if input == "false" {
-            return Ok(Expression::literal(Value::Bool(false)));
-        }
-        if input == "null" {
-            return Ok(Expression::literal(Value::Null));
-        }
-
-        // Check for number literals
-        if let Ok(num) = input.parse::<f64>() {
-            return Ok(Expression::literal(Value::Number(num)));
-        }
-
-        // Check for array literals like ["a", "b", "c"]
-        if input.starts_with('[') && input.ends_with(']') {
-            let inner = &input[1..input.len() - 1].trim();
-            if inner.is_empty() {
-                return Ok(Expression::literal(Value::Array(Vec::new())));
-            }
-            let elements = Self::parse_array_elements(inner)?;
-            return Ok(Expression::literal(Value::Array(elements)));
-        }
-
-        // Check for function calls
-        if let Some(paren_pos) = input.find('(') {
-            if input.ends_with(')') {
-                let func_name = input[..paren_pos].trim();
-                let args_str = &input[paren_pos + 1..input.len() - 1];
-
-                let args = if args_str.trim().is_empty() {
-                    Vec::new()
-                } else {
-                    Self::parse_function_args(args_str)?
-                };
-
-                return Ok(Expression::function_call(func_name.to_string(), args));
-            }
-        }
-
-        // Check for result access: result.field or result.ruleset_id.field
-        // Support both "result." and "results." forms
-        let (is_result_access, rest_str) = if let Some(rest) = input.strip_prefix("results.") {
-            (true, rest) // Skip "results."
-        } else if let Some(rest) = input.strip_prefix("result.") {
-            (true, rest) // Skip "result."
-        } else {
-            (false, "")
+        let mut parser = Parser {
+            tokens: lex(input)?,
+            position: 0,
+            depth: 0,
         };
-
-        if is_result_access {
-            let parts: Vec<&str> = rest_str.split('.').collect();
-
-            if parts.is_empty() {
-                return Err(ParseError::InvalidExpression(
-                    "result/results requires a field name".to_string(),
-                ));
-            }
-
-            if parts.len() == 1 {
-                // result.field - access last ruleset's result
-                return Ok(Expression::ResultAccess {
-                    ruleset_id: None,
-                    field: parts[0].trim().to_string(),
-                });
-            } else {
-                // result.ruleset_id.field - access specific ruleset's result
-                let ruleset_id = parts[0].trim().to_string();
-                let field = parts[1..].join(".");
-                return Ok(Expression::ResultAccess {
-                    ruleset_id: Some(ruleset_id),
-                    field: field.trim().to_string(),
-                });
-            }
+        let expression = parser.expression(1)?;
+        if parser.peek().is_some() {
+            return Err(invalid("Unexpected trailing token"));
         }
-
-        // Must be field access
-        if input.contains('.') {
-            let parts: Vec<String> = input.split('.').map(|s| s.trim().to_string()).collect();
-            return Ok(Expression::field_access(parts));
-        }
-
-        // Single identifier is also field access
-        if input.chars().all(|c| c.is_alphanumeric() || c == '_') {
-            return Ok(Expression::field_access(vec![input.to_string()]));
-        }
-
-        Err(ParseError::InvalidExpression(format!(
-            "Cannot parse: {}",
-            input
-        )))
+        Ok(expression)
     }
+}
 
-    /// Split input by binary operator (respecting parentheses and brackets)
-    fn split_by_operator<'a>(
-        input: &'a str,
-        operators: &[&str],
-    ) -> Option<(&'a str, &'a str, &'a str)> {
-        let mut paren_depth = 0;
-        let mut bracket_depth = 0;
-        let bytes = input.as_bytes();
+fn invalid(message: impl Into<String>) -> ParseError {
+    ParseError::InvalidExpression(message.into())
+}
 
-        // Scan from right to left to handle left-to-right associativity
-        for i in (0..input.len()).rev() {
-            let c = bytes[i] as char;
+#[derive(Debug, Clone, PartialEq)]
+enum Token {
+    Word(String),
+    Number(String),
+    String(String),
+    Op(Operator),
+    Not,
+    Dot,
+    Comma,
+    Open,
+    Close,
+    ArrayOpen,
+    ArrayClose,
+}
 
-            if c == ')' {
-                paren_depth += 1;
-            } else if c == '(' {
-                paren_depth -= 1;
-            } else if c == ']' {
-                bracket_depth += 1;
-            } else if c == '[' {
-                bracket_depth -= 1;
-            }
-
-            if paren_depth == 0 && bracket_depth == 0 {
-                for &op in operators {
-                    if i + op.len() <= input.len() && &input[i..i + op.len()] == op {
-                        // Make sure it's not part of another operator
-                        let is_valid = (i == 0 || !Self::is_operator_char(bytes[i - 1] as char))
-                            && (i + op.len() >= input.len()
-                                || !Self::is_operator_char(bytes[i + op.len()] as char));
-
-                        if is_valid {
-                            return Some((
-                                input[..i].trim(),
-                                &input[i..i + op.len()],
-                                input[i + op.len()..].trim(),
-                            ));
-                        }
+// All slicing uses character boundaries. Quoted content is consumed as a single
+// token before recognizing punctuation, keywords or operators.
+fn lex(input: &str) -> Result<Vec<Token>> {
+    let mut chars = input.char_indices().peekable();
+    let mut tokens = Vec::new();
+    while let Some((start, c)) = chars.next() {
+        let token = match c {
+            c if c.is_whitespace() => continue,
+            '\'' | '"' => {
+                let quote = c;
+                let mut value = String::new();
+                let mut closed = false;
+                while let Some((_, c)) = chars.next() {
+                    if c == quote {
+                        closed = true;
+                        break;
                     }
-                }
-            }
-        }
-
-        None
-    }
-
-    /// Split input by keyword operator (respecting parentheses, brackets, and word boundaries)
-    fn split_by_keyword_operator<'a>(
-        input: &'a str,
-        operators: &[&str],
-    ) -> Option<(&'a str, &'a str, &'a str)> {
-        let mut paren_depth = 0;
-        let mut bracket_depth = 0;
-        let bytes = input.as_bytes();
-
-        // Scan from right to left to handle left-to-right associativity
-        for i in (0..input.len()).rev() {
-            let c = bytes[i] as char;
-
-            if c == ')' {
-                paren_depth += 1;
-            } else if c == '(' {
-                paren_depth -= 1;
-            } else if c == ']' {
-                bracket_depth += 1;
-            } else if c == '[' {
-                bracket_depth -= 1;
-            }
-
-            if paren_depth == 0 && bracket_depth == 0 {
-                for &op in operators {
-                    if i + op.len() <= input.len() && &input[i..i + op.len()] == op {
-                        // For keyword operators, check word boundaries
-                        let has_space_before = i == 0 || bytes[i - 1].is_ascii_whitespace();
-                        let has_space_after = i + op.len() >= input.len()
-                            || bytes[i + op.len()].is_ascii_whitespace()
-                            || bytes[i + op.len()] == b'['; // Allow array literal after "in"
-
-                        if has_space_before && has_space_after {
-                            // Special check: if we matched "in", make sure it's not part of "not in"
-                            // "not in" is 6 chars, so check if position i-4 starts with "not "
-                            if op == "in" && i >= 4 {
-                                let potential_not_in_start = i - 4;
-                                if &input[potential_not_in_start..i] == "not " {
-                                    // This "in" is part of "not in", skip it
-                                    continue;
+                    if c != '\\' {
+                        if c.is_control() {
+                            return Err(invalid("Control characters in strings must be escaped"));
+                        }
+                        value.push(c);
+                        continue;
+                    }
+                    let (_, escaped) = chars
+                        .next()
+                        .ok_or_else(|| invalid("Incomplete string escape"))?;
+                    value.push(match escaped {
+                        '\\' => '\\',
+                        '"' => '"',
+                        '\'' => '\'',
+                        '/' => '/',
+                        'n' => '\n',
+                        'r' => '\r',
+                        't' => '\t',
+                        'b' => '\u{0008}',
+                        'f' => '\u{000c}',
+                        'u' => {
+                            let first = hex_quad(&mut chars)?;
+                            let scalar = if (0xd800..=0xdbff).contains(&first) {
+                                if chars.next().map(|(_, c)| c) != Some('\\')
+                                    || chars.next().map(|(_, c)| c) != Some('u')
+                                {
+                                    return Err(invalid("Missing low Unicode surrogate"));
                                 }
-                            }
-
-                            return Some((
-                                input[..i].trim(),
-                                &input[i..i + op.len()],
-                                input[i + op.len()..].trim(),
-                            ));
+                                let second = hex_quad(&mut chars)?;
+                                if !(0xdc00..=0xdfff).contains(&second) {
+                                    return Err(invalid("Invalid low Unicode surrogate"));
+                                }
+                                0x10000 + ((first - 0xd800) << 10) + second - 0xdc00
+                            } else {
+                                first
+                            };
+                            char::from_u32(scalar)
+                                .ok_or_else(|| invalid("Invalid Unicode escape"))?
                         }
+                        _ => return Err(invalid(format!("Unknown string escape: \\{escaped}"))),
+                    });
+                }
+                if !closed {
+                    return Err(invalid("Unterminated string"));
+                }
+                Token::String(value)
+            }
+            c if c.is_ascii_digit() && tokens.last() == Some(&Token::Dot) => {
+                while chars
+                    .peek()
+                    .is_some_and(|(_, c)| c.is_alphanumeric() || *c == '_')
+                {
+                    chars.next();
+                }
+                let end = chars.peek().map(|(i, _)| *i).unwrap_or(input.len());
+                Token::Word(input[start..end].into())
+            }
+            c if c.is_ascii_digit() => {
+                while chars.peek().is_some_and(|(_, c)| c.is_ascii_digit()) {
+                    chars.next();
+                }
+                if chars.peek().is_some_and(|(_, c)| *c == '.') {
+                    chars.next();
+                    while chars.peek().is_some_and(|(_, c)| c.is_ascii_digit()) {
+                        chars.next();
+                    }
+                }
+                if chars.peek().is_some_and(|(_, c)| matches!(c, 'e' | 'E')) {
+                    chars.next();
+                    if chars.peek().is_some_and(|(_, c)| matches!(c, '+' | '-')) {
+                        chars.next();
+                    }
+                    let mut digits = 0;
+                    while chars.peek().is_some_and(|(_, c)| c.is_ascii_digit()) {
+                        chars.next();
+                        digits += 1;
+                    }
+                    if digits == 0 {
+                        return Err(invalid("Missing exponent digits"));
+                    }
+                }
+                let end = chars.peek().map(|(i, _)| *i).unwrap_or(input.len());
+                Token::Number(input[start..end].into())
+            }
+            c if c.is_alphabetic() || c == '_' => {
+                while chars
+                    .peek()
+                    .is_some_and(|(_, c)| c.is_alphanumeric() || *c == '_')
+                {
+                    chars.next();
+                }
+                let end = chars.peek().map(|(i, _)| *i).unwrap_or(input.len());
+                Token::Word(input[start..end].into())
+            }
+            '.' => Token::Dot,
+            ',' => Token::Comma,
+            '(' => Token::Open,
+            ')' => Token::Close,
+            '[' => Token::ArrayOpen,
+            ']' => Token::ArrayClose,
+            '+' => Token::Op(Operator::Add),
+            '-' => Token::Op(Operator::Sub),
+            '*' => Token::Op(Operator::Mul),
+            '/' => Token::Op(Operator::Div),
+            '%' => Token::Op(Operator::Mod),
+            '=' | '!' | '<' | '>' | '&' | '|' => {
+                let paired = chars
+                    .peek()
+                    .is_some_and(|(_, next)| *next == if c == '&' || c == '|' { c } else { '=' });
+                if paired {
+                    chars.next();
+                }
+                match (c, paired) {
+                    ('=', true) => Token::Op(Operator::Eq),
+                    ('!', true) => Token::Op(Operator::Ne),
+                    ('<', true) => Token::Op(Operator::Le),
+                    ('>', true) => Token::Op(Operator::Ge),
+                    ('&', true) => Token::Op(Operator::And),
+                    ('|', true) => Token::Op(Operator::Or),
+                    ('<', false) => Token::Op(Operator::Lt),
+                    ('>', false) => Token::Op(Operator::Gt),
+                    ('!', false) => Token::Not,
+                    _ => return Err(invalid(format!("Invalid operator at byte {start}"))),
+                }
+            }
+            _ => {
+                return Err(invalid(format!(
+                    "Unexpected character at byte {start}: {c}"
+                )))
+            }
+        };
+        tokens.push(token);
+    }
+    Ok(tokens)
+}
+
+fn hex_quad(chars: &mut impl Iterator<Item = (usize, char)>) -> Result<u32> {
+    let mut value = 0;
+    for _ in 0..4 {
+        let digit = chars
+            .next()
+            .and_then(|(_, c)| c.to_digit(16))
+            .ok_or_else(|| invalid("Unicode escapes require four hexadecimal digits"))?;
+        value = value * 16 + digit;
+    }
+    Ok(value)
+}
+
+struct Parser {
+    tokens: Vec<Token>,
+    position: usize,
+    depth: usize,
+}
+
+impl Parser {
+    fn peek(&self) -> Option<&Token> {
+        self.tokens.get(self.position)
+    }
+    fn take(&mut self) -> Result<Token> {
+        let token = self
+            .peek()
+            .cloned()
+            .ok_or_else(|| invalid("Expected an expression"))?;
+        self.position += 1;
+        Ok(token)
+    }
+    fn expect(&mut self, expected: Token) -> Result<()> {
+        if self.take()? != expected {
+            return Err(invalid(format!("Expected {expected:?}")));
+        }
+        Ok(())
+    }
+
+    fn binary(&self) -> Option<(Operator, u8, usize)> {
+        let (op, width) = match self.peek()? {
+            Token::Op(op) => (*op, 1),
+            Token::Word(word) => (
+                match word.as_str() {
+                    "in" => Operator::In,
+                    "not_in" => Operator::NotIn,
+                    "not"
+                        if self.tokens.get(self.position + 1)
+                            == Some(&Token::Word("in".into())) =>
+                    {
+                        return Some((Operator::NotIn, 4, 2))
+                    }
+                    "contains" => Operator::Contains,
+                    "starts_with" => Operator::StartsWith,
+                    "ends_with" => Operator::EndsWith,
+                    "regex" => Operator::Regex,
+                    _ => return None,
+                },
+                1,
+            ),
+            _ => return None,
+        };
+        let precedence = match op {
+            Operator::Or => 1,
+            Operator::And => 2,
+            Operator::Eq | Operator::Ne => 3,
+            Operator::Add | Operator::Sub => 5,
+            Operator::Mul | Operator::Div | Operator::Mod => 6,
+            _ => 4,
+        };
+        Some((op, precedence, width))
+    }
+
+    fn expression(&mut self, minimum: u8) -> Result<Expression> {
+        self.depth += 1;
+        if self.depth > 128 {
+            return Err(invalid("Expression nesting exceeds 128"));
+        }
+        let result = self.expression_inner(minimum);
+        self.depth -= 1;
+        result
+    }
+
+    fn expression_inner(&mut self, minimum: u8) -> Result<Expression> {
+        let mut left = self.primary()?;
+        while let Some((mut op, precedence, width)) = self.binary() {
+            if precedence < minimum {
+                break;
+            }
+            self.position += width;
+            let mut right = self.expression(precedence + 1)?;
+            if matches!(op, Operator::In | Operator::NotIn) {
+                if let Expression::FieldAccess(fields) = &right {
+                    if fields.len() >= 2 && fields[0] == "list" {
+                        right = Expression::ListReference {
+                            list_id: fields[1..].join("."),
+                        };
+                        op = if op == Operator::In {
+                            Operator::InList
+                        } else {
+                            Operator::NotInList
+                        };
                     }
                 }
             }
+            left = Expression::binary(left, op, right);
         }
-
-        None
+        Ok(left)
     }
 
-    /// Check if a character is part of an operator
-    fn is_operator_char(c: char) -> bool {
-        matches!(
-            c,
-            '=' | '!' | '<' | '>' | '&' | '|' | '+' | '-' | '*' | '/' | '%'
-        )
-    }
-
-    /// Parse function arguments
-    fn parse_function_args(args_str: &str) -> Result<Vec<Expression>> {
-        if args_str.trim().is_empty() {
-            return Ok(Vec::new());
-        }
-
-        let mut args = Vec::new();
-        let mut current_arg = String::new();
-        let mut paren_depth = 0;
-        let mut in_string = false;
-
-        for c in args_str.chars() {
-            match c {
-                '"' => in_string = !in_string,
-                '(' if !in_string => paren_depth += 1,
-                ')' if !in_string => paren_depth -= 1,
-                ',' if !in_string && paren_depth == 0 => {
-                    args.push(Self::parse_expression(current_arg.trim())?);
-                    current_arg.clear();
-                    continue;
-                }
-                _ => {}
+    fn primary(&mut self) -> Result<Expression> {
+        match self.take()? {
+            Token::Not => Ok(Expression::unary(UnaryOperator::Not, self.expression(7)?)),
+            Token::Op(Operator::Sub) => {
+                let operand = self.expression(7)?;
+                Ok(match operand {
+                    Expression::Literal(Value::Number(n)) => Expression::literal(Value::Number(-n)),
+                    other => Expression::unary(UnaryOperator::Negate, other),
+                })
             }
-            current_arg.push(c);
-        }
-
-        if !current_arg.trim().is_empty() {
-            args.push(Self::parse_expression(current_arg.trim())?);
-        }
-
-        Ok(args)
-    }
-
-    /// Parse array elements (e.g., "a", "b", "c" or 1, 2, 3)
-    fn parse_array_elements(elements_str: &str) -> Result<Vec<Value>> {
-        if elements_str.trim().is_empty() {
-            return Ok(Vec::new());
-        }
-
-        let mut elements = Vec::new();
-        let mut current = String::new();
-        let mut in_string = false;
-        let mut bracket_depth = 0;
-
-        for c in elements_str.chars() {
-            match c {
-                '"' => {
-                    in_string = !in_string;
-                    current.push(c);
-                }
-                '[' if !in_string => {
-                    bracket_depth += 1;
-                    current.push(c);
-                }
-                ']' if !in_string => {
-                    bracket_depth -= 1;
-                    current.push(c);
-                }
-                ',' if !in_string && bracket_depth == 0 => {
-                    let value = Self::parse_value_literal(current.trim())?;
-                    elements.push(value);
-                    current.clear();
-                }
-                _ => {
-                    current.push(c);
-                }
+            Token::Number(text) => Ok(Expression::literal(Value::Number(
+                text.parse().map_err(|_| invalid("Invalid number"))?,
+            ))),
+            Token::String(value) => Ok(Expression::literal(Value::String(value))),
+            Token::Open => {
+                let value = self.expression(1)?;
+                self.expect(Token::Close)?;
+                Ok(value)
             }
-        }
-
-        if !current.trim().is_empty() {
-            let value = Self::parse_value_literal(current.trim())?;
-            elements.push(value);
-        }
-
-        Ok(elements)
-    }
-
-    /// Parse a value literal (string, number, boolean, null)
-    fn parse_value_literal(input: &str) -> Result<Value> {
-        let input = input.trim();
-
-        // String literal
-        if input.starts_with('"') && input.ends_with('"') && input.len() >= 2 {
-            return Ok(Value::String(input[1..input.len() - 1].to_string()));
-        }
-
-        // Boolean literals
-        if input == "true" {
-            return Ok(Value::Bool(true));
-        }
-        if input == "false" {
-            return Ok(Value::Bool(false));
-        }
-
-        // Null literal
-        if input == "null" {
-            return Ok(Value::Null);
-        }
-
-        // Number literal
-        if let Ok(num) = input.parse::<f64>() {
-            return Ok(Value::Number(num));
-        }
-
-        Err(ParseError::InvalidExpression(format!(
-            "Invalid array element: {}",
-            input
-        )))
-    }
-
-    /// Parse an operator string
-    fn parse_operator(op: &str) -> Result<Operator> {
-        match op {
-            "==" => Ok(Operator::Eq),
-            "!=" => Ok(Operator::Ne),
-            "<" => Ok(Operator::Lt),
-            ">" => Ok(Operator::Gt),
-            "<=" => Ok(Operator::Le),
-            ">=" => Ok(Operator::Ge),
-            "+" => Ok(Operator::Add),
-            "-" => Ok(Operator::Sub),
-            "*" => Ok(Operator::Mul),
-            "/" => Ok(Operator::Div),
-            "%" => Ok(Operator::Mod),
-            "&&" => Ok(Operator::And),
-            "||" => Ok(Operator::Or),
-            "contains" => Ok(Operator::Contains),
-            "starts_with" => Ok(Operator::StartsWith),
-            "ends_with" => Ok(Operator::EndsWith),
-            "regex" => Ok(Operator::Regex),
-            "in" => Ok(Operator::In),
-            "not in" => Ok(Operator::NotIn),
-            "not_in" => Ok(Operator::NotIn), // Keep underscore version for compatibility
-            _ => Err(ParseError::InvalidOperator(op.to_string())),
+            Token::ArrayOpen => {
+                let mut values = Vec::new();
+                if self.peek() != Some(&Token::ArrayClose) {
+                    loop {
+                        let Expression::Literal(value) = self.expression(1)? else {
+                            return Err(invalid("Array elements must be literals"));
+                        };
+                        values.push(value);
+                        if self.peek() != Some(&Token::Comma) {
+                            break;
+                        }
+                        self.position += 1;
+                    }
+                }
+                self.expect(Token::ArrayClose)?;
+                Ok(Expression::literal(Value::Array(values)))
+            }
+            Token::Word(name) => {
+                if self.peek() == Some(&Token::Open) {
+                    self.position += 1;
+                    let mut args = Vec::new();
+                    if self.peek() != Some(&Token::Close) {
+                        loop {
+                            args.push(self.expression(1)?);
+                            if self.peek() != Some(&Token::Comma) {
+                                break;
+                            }
+                            self.position += 1;
+                        }
+                    }
+                    self.expect(Token::Close)?;
+                    return Ok(Expression::function_call(name, args));
+                }
+                let mut fields = vec![name];
+                while self.peek() == Some(&Token::Dot) {
+                    self.position += 1;
+                    fields.push(match self.take()? {
+                        Token::Word(word) => word,
+                        Token::Number(number) if number.chars().all(|c| c.is_ascii_digit()) => {
+                            number
+                        }
+                        _ => return Err(invalid("Expected field name after '.'")),
+                    });
+                }
+                if fields.len() == 1 {
+                    match fields[0].as_str() {
+                        "true" => return Ok(Expression::literal(Value::Bool(true))),
+                        "false" => return Ok(Expression::literal(Value::Bool(false))),
+                        "null" => return Ok(Expression::literal(Value::Null)),
+                        _ => (),
+                    }
+                }
+                if fields.len() >= 2 && matches!(fields[0].as_str(), "result" | "results") {
+                    return Ok(Expression::ResultAccess {
+                        ruleset_id: if fields.len() > 2 {
+                            Some(fields[1].clone())
+                        } else {
+                            None
+                        },
+                        field: fields[if fields.len() > 2 { 2 } else { 1 }..].join("."),
+                    });
+                }
+                Ok(Expression::field_access(fields))
+            }
+            _ => Err(invalid(
+                "Expected a literal, field, function or parenthesized expression",
+            )),
         }
     }
 }
@@ -492,6 +394,98 @@ impl ExpressionParser {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn precedence_and_associativity_are_explicit() {
+        let atom = |s: &str| Expression::field_access(vec![s.into()]);
+        assert_eq!(
+            ExpressionParser::parse("a || b && c").unwrap(),
+            Expression::binary(
+                atom("a"),
+                Operator::Or,
+                Expression::binary(atom("b"), Operator::And, atom("c"))
+            )
+        );
+        assert_eq!(
+            ExpressionParser::parse("a - b - c * d").unwrap(),
+            Expression::binary(
+                Expression::binary(atom("a"), Operator::Sub, atom("b")),
+                Operator::Sub,
+                Expression::binary(atom("c"), Operator::Mul, atom("d"))
+            )
+        );
+        assert_eq!(
+            ExpressionParser::parse("-event.amount").unwrap(),
+            Expression::unary(
+                UnaryOperator::Negate,
+                Expression::field_access(vec!["event".into(), "amount".into()])
+            )
+        );
+        for (text, number) in [("-1", -1.0), ("1e-3", 0.001), ("-1.5E+2", -150.0)] {
+            assert_eq!(
+                ExpressionParser::parse(text).unwrap(),
+                Expression::literal(Value::Number(number))
+            );
+        }
+        assert_eq!(
+            ExpressionParser::parse("event.1a.2.value").unwrap(),
+            Expression::field_access(vec![
+                "event".into(),
+                "1a".into(),
+                "2".into(),
+                "value".into()
+            ])
+        );
+    }
+
+    #[test]
+    fn quoted_strings_are_atomic_and_unicode_safe() {
+        for (text, value) in [
+            (r#""中国""#, "中国"),
+            (
+                r#"'high-risk/a+b (x) && y, in [z]'"#,
+                "high-risk/a+b (x) && y, in [z]",
+            ),
+            (r#""a\n\t\"b\\c""#, "a\n\t\"b\\c"),
+            (r#""\u4e2d\u56fd\uD83D\uDE00""#, "中国😀"),
+            (r#"'it\'s'"#, "it's"),
+        ] {
+            assert_eq!(
+                ExpressionParser::parse(text).unwrap(),
+                Expression::literal(Value::String(value.into())),
+                "{text}"
+            );
+        }
+    }
+
+    #[test]
+    fn malformed_expressions_return_errors_without_panicking() {
+        for text in [
+            "",
+            "中文 @",
+            "\"中国",
+            "'abc",
+            r#""\uD800""#,
+            r#""\uDC00""#,
+            r#""\q""#,
+            "1e-",
+            "a = b",
+            "a & b",
+            "a ||",
+            "(a",
+            "a)",
+            "a b",
+            "[1,]",
+            "f(1,)",
+            "event..a",
+        ] {
+            assert!(ExpressionParser::parse(text).is_err(), "{text}");
+        }
+        assert!(
+            ExpressionParser::parse(&format!("{}true{}", "(".repeat(129), ")".repeat(129)))
+                .is_err()
+        );
+    }
 
     #[test]
     fn test_parse_number_literal() {

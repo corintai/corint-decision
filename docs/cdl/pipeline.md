@@ -20,11 +20,12 @@ signals. Only the selected Pipeline decision emits the final result and action i
 |---|---|
 | `id`, `name` | Required, nonempty; ID is globally unique |
 | `description` | Optional descriptive text |
+| `when` | Optional Pipeline guard, evaluated before steps; false skips this invocation |
 | `entry` | Required ID of the first step |
 | `steps` | Required nonempty array of `step` objects with unique IDs |
 | `decision` | Required ordered array; exactly one default, at the end |
 
-Every step requires `id`, `name` and `type`. Core accepts `ruleset`, `router`, `rule` and `pipeline` types. Unknown fields, unsupported capabilities, missing references,
+Every step requires `id`, `name` and `type`; optional `when` guards its execution. Core accepts `ruleset`, `router`, `rule` and `pipeline` types. Unknown fields, unsupported capabilities, missing references,
 unreachable steps and cycles fail before execution. `end` is reserved.
 
 ## 2. Supported steps and executable examples
@@ -66,10 +67,14 @@ Single Rule calls, sub-Pipeline calls, Pipeline/step guards and their executable
 
 ## 3. Results, decisions and actions
 
-Conditions may read declared `event` fields. Router and decision conditions may
-also read `results.<ruleset_id>.score`, `.total_score` and `.signal`, but only when
-that Ruleset has completed on every incoming path. `status` distinguishes completed and guarded calls; Rule results use `matched` instead of signal. Implicit last-result references
-and reads from unexecuted branches are rejected.
+Conditions may read declared `event` fields. Step guards, Router routes and
+decision conditions may also read `total_score` and direct-call
+`results.<resource_id>.score`, `.total_score` and `.signal`, only after the call
+has been reached on every incoming path. Rule results use `matched` instead of
+`signal`. Reached calls expose `status`; guarded skipped calls have no score,
+signal or matched value, so check status before a short-circuited value read.
+Pipeline entry guards cannot read call results. Child-internal results, implicit
+last-result references and reads from unexecuted branches are rejected.
 
 Decision rows use `when` or `default: true`, with required `result` and optional
 `actions` (string array) and `reason`. Allowed results are

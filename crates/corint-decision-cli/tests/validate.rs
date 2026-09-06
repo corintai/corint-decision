@@ -135,6 +135,28 @@ fn source(dir: &Path, name: &str) -> CoreSource {
 }
 
 #[test]
+fn unicode_and_malformed_expressions_always_return_json_diagnostics() {
+    let dir = setup(FILES);
+    for (condition, code) in [
+        (r#""中国" == "中国""#, 0),
+        (r#"'high-risk/a+b' == 'high-risk/a+b'"#, 0),
+        ("event.amount > -1 && 1e-3 < 1", 0),
+        ("\"中国", 1),
+        (r#""\uD800" == "x""#, 1),
+        ("event.amount >", 1),
+    ] {
+        let mut rule: Value = serde_yaml::from_str(&fixture("rule.yaml")).unwrap();
+        rule["rule"]["when"] = condition.into();
+        std::fs::write(
+            dir.path().join("rule.yaml"),
+            serde_yaml::to_string(&rule).unwrap(),
+        )
+        .unwrap();
+        validate(dir.path(), FILES, code);
+    }
+}
+
+#[test]
 fn complete_bundles_compile_without_work_and_do_not_modify_sources() {
     for case in manifest().cases {
         let files: Vec<_> = case.documents.iter().map(String::as_str).collect();

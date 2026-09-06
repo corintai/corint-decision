@@ -146,23 +146,12 @@ impl Executor {
                     pc += 1;
                 }
 
-                Instruction::ListLookup { list_id, negate } => {
-                    // Pop the value to check from the stack
-                    let value = ctx.pop()?;
-
-                    // For Phase 1 MVP, use a simple in-memory list service
-                    // TODO: In Phase 2/3, integrate ListService into ExecutionContext
-                    let list_service = crate::lists::ListService::new_with_memory();
-
-                    // Check if value exists in the list
-                    let contains = list_service.contains(list_id, &value).await?;
-
-                    // Apply negation if needed
-                    let result = if *negate { !contains } else { contains };
-
-                    // Push the boolean result onto the stack
-                    ctx.push(Value::Bool(result));
-                    pc += 1;
+                Instruction::ListLookup { list_id, .. } => {
+                    // This minimal executor has no service injection. Callers
+                    // requiring lists must configure a PipelineExecutor.
+                    return Err(RuntimeError::InvalidOperation(format!(
+                        "E_LIST_UNAVAILABLE: No list service configured for '{list_id}'"
+                    )));
                 }
 
                 Instruction::Return => {

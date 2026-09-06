@@ -14,7 +14,7 @@ pub struct ListService {
 }
 
 impl ListService {
-    /// Create a new list service with memory backend
+    /// Create an empty registry. List IDs must be explicitly registered before lookup.
     pub fn new_with_memory() -> Self {
         Self {
             backends: Arc::new(RwLock::new(HashMap::new())),
@@ -33,16 +33,12 @@ impl ListService {
         let backends = self.backends.read().await;
 
         let backend = backends.get(list_id).ok_or_else(|| {
-            // If list not configured, return false (list is empty)
-            // This allows rules to work even if list configuration is missing
-            tracing::warn!("List '{}' not configured, treating as empty", list_id);
-            RuntimeError::InvalidOperation(format!("List '{}' not found", list_id))
-        });
-
-        match backend {
-            Ok(backend) => backend.contains(list_id, value).await,
-            Err(_) => Ok(false), // Treat missing list as empty
-        }
+            RuntimeError::InvalidOperation(format!(
+                "E_LIST_UNAVAILABLE: List '{}' not configured",
+                list_id
+            ))
+        })?;
+        backend.contains(list_id, value).await
     }
 
     /// Add a value to a list
@@ -146,11 +142,11 @@ mod tests {
             .await
             .unwrap());
 
-        // Check missing list (should return false)
-        assert!(!service
+        // Missing configuration is distinct from an explicitly empty backend.
+        assert!(service
             .contains("list3", &Value::String("any".to_string()))
             .await
-            .unwrap());
+            .is_err());
     }
 
     #[tokio::test]

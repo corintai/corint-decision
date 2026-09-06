@@ -729,9 +729,17 @@ device_reputation_score            # Pre-computed
 | `m` | minute | `login_count_5m` |
 | `h` | hour | `login_count_1h`, `transaction_sum_24h` |
 | `d` | day (24h) | `unique_devices_7d`, `transaction_sum_30d` |
-| `mo` | month (calendar) | `avg_txn_3mo` |
-| `q` | quarter (calendar) | `revenue_sum_1q` |
-| `y` | year (calendar) | `annual_txn_1y` |
+| `w` | fixed week (7 days) | `login_count_1w` |
+| `mo` | fixed 30 days, not a calendar month | `avg_txn_3mo` |
+
+Aggregation `window` accepts a positive integer followed by one of these units;
+`last_` is an optional prefix (e.g. `last_24h`). Durations use elapsed seconds,
+not calendar boundaries. `q` and `y` are unsupported and rejected. Zero, malformed
+values and durations exceeding signed 64-bit seconds are also rejected during
+feature validation/registration, and the executor checks again before querying.
+Only an omitted `window` permits an unbounded query; an invalid window never
+silently removes the time filter. This is a compatibility Feature contract;
+strict Core still rejects dynamic Feature access.
 
 ---
 

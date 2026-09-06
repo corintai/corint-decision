@@ -25,7 +25,7 @@ Pipelines orchestrate how events move through rule execution, external service i
 
 The field descriptions below preserve historical syntax. The compatibility parser
 can accept a missing `decision`; strict Core requires it and a unique final default.
-Pipeline-level `when` and metadata are also outside strict Core. Use the current
+Strict Core supports Pipeline/step `when`; metadata remains outside Core. The compatibility compiler rejects step-level guards. Its Pipeline-level guard skips the main steps but does not provide Core skipped-call/error semantics. Use the current
 [Pipeline contract](pipeline.md) when writing a policy for the strict entry point.
 
 ### 1.1 Legacy fields (unverified)
@@ -116,12 +116,12 @@ A **step** is the smallest processing unit in a pipeline. All steps are wrapped 
 |------|-------------|--------|
 | `router` | Pure routing step with conditional routes | Unverified compatibility behavior |
 | `ruleset` | Execute a ruleset (rulesets can contain one or more rules) | Unverified compatibility behavior |
-| `pipeline` | Intended sub-pipeline call | Planned: currently only marks the step and jumps |
-| `service` | Intended internal service call | Experimental: endpoint syntax below is not accepted by the current field validator |
-| `api` | Intended external API lookup | Experimental: params/error policy are discarded; any/all select only the first target |
+| `pipeline` | Intended sub-pipeline call | Rejected by the compatibility compiler; strict Core supports synchronous calls |
+| `service` | Intended internal service call | Rejected by the compatibility compiler; endpoint syntax below also fails the field validator |
+| `api` | Intended external API lookup | Only simple single calls; params/error policy and any/all are rejected |
 
 
-### 2.2 Step Conditions (planned; compatibility compiler is a no-op)
+### 2.2 Step Conditions (rejected by compatibility; supported by Core)
 
 Every step may include a conditional execution block:
 
@@ -136,7 +136,7 @@ Every step may include a conditional execution block:
         - event.amount > 1000
 ```
 
-**Known gap:** the compatibility compiler currently ignores `step.when`; this example does not provide a working guard. Strict Core rejects it with `E_UNSUPPORTED_CAPABILITY`. Use an explicit Core router for conditional routing.
+**Entry-point boundary:** the compatibility compiler rejects `step.when` with `UnsupportedFeature`. Strict Core supports valid guards with an explicit successor; a skipped call follows `next`, and a skipped router follows `default`. The fragment above omits `next` and is not a complete Core step. See the [Core Pipeline contract](pipeline.md).
 
 ---
 
@@ -839,9 +839,9 @@ This historical syntax describes the following fields; use [the Core Pipeline re
 **Step Types:**
 - `router` - Conditional routing with routes
 - `ruleset` - Ruleset execution (produces signals, can contain one or more rules)
-- Planned `pipeline` - Sub-pipeline calls are currently a no-op
-- Experimental `service` - Field/parser/runtime integration requires separate acceptance
-- Experimental `api` - Params/error policy are discarded; any/all currently select only the first target
+- `pipeline` - Compatibility compilation rejects it; strict Core supports synchronous calls
+- `service` - Compatibility compilation rejects it; field/parser/runtime integration requires separate acceptance
+- `api` - Simple single calls only; params/error policy and any/all are rejected
 
 **Features:**
 - Import system for modular composition

@@ -285,6 +285,11 @@ pipeline:
 
 ---
 
+`conclusion.when` must be a string expression at both strict and compatibility entry points.
+Use `&&`, `||`, `!` and parentheses for combinations; YAML group objects, arrays,
+booleans and null are rejected rather than treated as a missing condition.
+This restriction is specific to conclusions; Rule `when` can use group objects.
+
 ## 6. `conclusion` (Direct Definition)
 
 Conclusion logic evaluates the combined results of all rules and produces a decision signal.
@@ -424,10 +429,7 @@ conclusion:
     reason: "User is blocked"
 
   # Specific rule combination - high risk pattern
-  - when:
-      all:
-        - triggered_rules contains "new_device"
-        - triggered_rules contains "unusual_location"
+  - when: '(triggered_rules contains "new_device") && (triggered_rules contains "unusual_location")'
     signal: review
     reason: "Device and location anomaly"
 
@@ -444,18 +446,12 @@ conclusion:
 ```yaml
 conclusion:
   # Consider user tier
-  - when:
-      all:
-        - total_score >= 60
-        - event.user.tier == "basic"
+  - when: '(total_score >= 60) && (event.user.tier == "basic")'
     signal: decline
     reason: "Medium risk for basic user"
 
   # Consider transaction amount
-  - when:
-      all:
-        - total_score >= 50
-        - event.transaction.amount > 10000
+  - when: '(total_score >= 50) && (event.transaction.amount > 10000)'
     signal: review
     reason: "Medium risk + high value"
 
@@ -486,11 +482,7 @@ ruleset:
 
   conclusion:
     # Critical combination pattern
-    - when:
-        all:
-          - triggered_rules contains "password_change_attempt"
-          - triggered_rules contains "new_device_login"
-          - triggered_rules contains "unusual_location"
+    - when: '(triggered_rules contains "password_change_attempt") && (triggered_rules contains "new_device_login") && (triggered_rules contains "unusual_location")'
       signal: decline
       reason: "Critical takeover indicators"
 
@@ -550,16 +542,10 @@ Adapt signals based on business context (see section 7.4 for examples):
 ```yaml
 conclusion:
   # Different thresholds for different user tiers
-  - when:
-      all:
-        - event.user.tier == "premium"
-        - total_score < 80
+  - when: '(event.user.tier == "premium") && (total_score < 80)'
     signal: approve
 
-  - when:
-      all:
-        - event.user.tier == "basic"
-        - total_score < 50
+  - when: '(event.user.tier == "basic") && (total_score < 50)'
     signal: approve
 ```
 

@@ -331,13 +331,23 @@ fn test_complex_routing_logic() {
     let program = result.unwrap();
     let instructions = &program.instructions;
 
-    // Verify we have BinaryOp instruction for AND
-    let has_and = instructions
+    // A false amount comparison must jump past the verified-field read.
+    let rhs = instructions
         .iter()
-        .any(|inst| matches!(inst, Instruction::BinaryOp { op } if op == &Operator::And));
+        .position(|inst| {
+            matches!(inst,
+                Instruction::LoadField { path } if path.last().is_some_and(|p| p == "verified")
+            )
+        })
+        .unwrap();
     assert!(
-        has_and,
-        "Expected BinaryOp And instruction for complex condition"
+        instructions[..rhs]
+            .iter()
+            .enumerate()
+            .any(|(pc, inst)| matches!(inst,
+                Instruction::JumpIfFalse { offset } if pc as isize + offset > rhs as isize
+            )),
+        "False left operand must short-circuit the right operand"
     );
 }
 

@@ -896,6 +896,19 @@ impl FeatureDefinition {
             return Err("Feature name cannot be empty".to_string());
         }
 
+        if let Some(window) = self
+            .aggregation
+            .as_ref()
+            .and_then(|config| config.window.as_ref())
+        {
+            if crate::datasource::RelativeWindow::from_string(window).is_none() {
+                return Err(format!(
+                    "Feature '{}': invalid aggregation window '{window}'",
+                    self.name
+                ));
+            }
+        }
+
         // Check for circular dependencies
         if self.dependencies.contains(&self.name) {
             return Err(format!(
@@ -1049,6 +1062,37 @@ impl Default for FeatureCollection {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn invalid_windows_are_rejected_before_feature_registration() {
+        let yaml = "name: window_test\ntype: aggregation\nmethod: count\ndatasource: events\nentity: events\ndimension: user_id\ndimension_value: user-1\n";
+        for window in [
+            "30s",
+            "1mo",
+            "1q",
+            "1y",
+            "1秒",
+            "0h",
+            "18446744073709551615d",
+        ] {
+            let feature: FeatureDefinition =
+                serde_yaml::from_str(&format!("{yaml}window: {window}\n")).unwrap();
+            let valid = matches!(window, "30s" | "1mo");
+            assert_eq!(feature.validate().is_ok(), valid, "{window}");
+            let mut executor = crate::feature::executor::FeatureExecutor::new();
+            assert_eq!(
+                executor.register_feature(feature).is_ok(),
+                valid,
+                "{window}"
+            );
+            assert_eq!(executor.has_feature("window_test"), valid);
+        }
+        let feature: FeatureDefinition = serde_yaml::from_str(yaml).unwrap();
+        assert!(
+            feature.validate().is_ok(),
+            "An omitted window explicitly permits all history"
+        );
+    }
 
     #[test]
     fn test_aggregation_feature_definition() {

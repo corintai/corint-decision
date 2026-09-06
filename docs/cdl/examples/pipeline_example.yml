@@ -1,8 +1,12 @@
+# cdl-scope: compatibility-unverified
+# Historical design illustration; not an executable Core or compatibility policy.
+# CI checks YAML syntax and expected Core rejection only; it does not certify execution.
+# Runnable policies: tests/conformance/cdl_core and tests/conformance/core_extensions.
 # =============================================================================
-# CORINT Decision Engine - Complete DSL Example
+# CORINT Decision Engine - Historical DSL Design Illustration
 # =============================================================================
 #
-# This comprehensive example demonstrates core pipeline DSL concepts in one file:
+# This comprehensive example illustrates proposed compatibility pipeline concepts in one file:
 #   - Pipeline structure and orchestration
 #   - API integration (GET, POST, PUT, PATCH)
 #   - Condition syntax (all/any/not with arbitrary nesting)
@@ -138,7 +142,7 @@ pipeline:
   id: comprehensive_fraud_pipeline
   name: Comprehensive Fraud Detection Pipeline
   description: |
-    Complete pipeline example demonstrating core DSL features:
+    Historical pipeline illustration of proposed compatibility features:
     - API integration (GET, POST, PUT, PATCH)
     - Complex conditional routing with nested all/any/not
     - Multiple step types (router, api, service, ruleset, pipeline)
@@ -253,8 +257,8 @@ pipeline:
                 - event.amount > 10000
                 - event.user.vip_status == true
                 - not:
-                    - "fraud" in event.user.tags
-                    - "suspicious" in event.user.tags
+                    - '"fraud" in event.user.tags'
+                    - '"suspicious" in event.user.tags'
 
           # ----------------------------------------------------------------
           # Route 2: High Value with Enhanced Verification
@@ -690,7 +694,7 @@ pipeline:
       - comprehensive
       - api_integration
       - multi_step
-      - production_ready
+      - historical_unverified
     description: |
       Comprehensive fraud detection pipeline demonstrating:
       - API methods (GET, POST, PUT, PATCH)
@@ -886,7 +890,7 @@ pipeline:
 #
 # 5. Conditions:
 #    - Use all/any/not for complex logic
-#    - Nest arbitrarily deep
+#    - Keep nesting bounded; see the strict Core expression contract
 #    - Keep expressions readable
 #
 # 6. Best Practices:
