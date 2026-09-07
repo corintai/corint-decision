@@ -159,7 +159,7 @@ impl ServiceClient for MockMqClient {
 
         Ok(ServiceResponse {
             data: Value::Object(HashMap::new()),
-            status: "published".to_string(),
+            status: "success".to_string(),
             metadata,
         })
     }

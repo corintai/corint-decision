@@ -270,7 +270,7 @@ mod snapshot_tests {
     use tempfile::TempDir;
     const PIPELINE: &str = r#"version: "0.1"
 import:
-  rulesets: [library/rulesets/risk.yaml]
+  rulesets: [rulesets/risk.yaml]
 ---
 pipeline:
   id: payment
@@ -294,7 +294,7 @@ pipeline:
 "#;
     const RULESET: &str = r#"version: "0.1"
 import:
-  rules: [library/rules/amount.yaml]
+  rules: [rules/amount.yaml]
 ---
 ruleset:
   id: risk
@@ -307,7 +307,7 @@ ruleset:
 "#;
     fn write_rule(root: &Path, score: i32) {
         std::fs::write(
-            root.join("library/rules/amount.yaml"),
+            root.join("rules/amount.yaml"),
             format!(
                 r#"version: "0.1"
 rule:
@@ -322,11 +322,11 @@ rule:
     }
     fn repository() -> TempDir {
         let dir = TempDir::new().unwrap();
-        for path in ["pipelines", "library/rules", "library/rulesets"] {
+        for path in ["pipelines", "rules", "rulesets"] {
             std::fs::create_dir_all(dir.path().join(path)).unwrap();
         }
         std::fs::write(dir.path().join("pipelines/payment.yaml"), PIPELINE).unwrap();
-        std::fs::write(dir.path().join("library/rulesets/risk.yaml"), RULESET).unwrap();
+        std::fs::write(dir.path().join("rulesets/risk.yaml"), RULESET).unwrap();
         write_rule(dir.path(), 10);
         dir
     }

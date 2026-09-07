@@ -279,7 +279,7 @@ backend: postgresql
 id: high_risk_countries
 description: "High risk countries"
 backend: file
-path: "repository/configs/lists/data/countries.txt"
+path: "repository/lists/data/countries.txt"
 reload_interval: 3600
 "#;
 
@@ -288,7 +288,7 @@ reload_interval: 3600
         assert_eq!(config.backend, Some(ListBackendType::File));
         assert_eq!(
             config.file_path(),
-            Some("repository/configs/lists/data/countries.txt".to_string())
+            Some("repository/lists/data/countries.txt".to_string())
         );
         assert_eq!(config.file_reload_interval(), Some(3600));
     }

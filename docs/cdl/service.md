@@ -1,594 +1,177 @@
-# Corint Definition Language (CDL)
+# Service
 
-<!-- cdl-scope: compatibility-unverified -->
-> This page is an unverified compatibility reference. Its snippets are not Core support evidence.
-> For the executable contract and supported examples, use [CDL Core](cdl-core.md),
-> [Pipeline](pipeline.md) and the [capability inventory](schema/capabilities.json).
-> Described behavior may be incomplete in compatibility entry points; validate through the strict tools before delivery.
+A Service is a reusable named capability with one or more operations. Its concrete
+definition lives in `services/<name>.yaml` under the repository root.
+A Pipeline invokes an operation by referencing the service name; it does not
+contain the service definition. Internal services and third-party APIs use the
+same Service concept. Deployment location does not determine the resource type.
 
-## Internal Service Integration Specification (v0.1)
+| Location | Responsibility |
+| --- | --- |
+| `services/<name>.yaml` | Define the service name, connection settings, operations, and request/response mappings. |
+| Pipeline `type: service` step | Reference a service operation, supply invocation parameters, choose an output path, and control execution order. |
+| Runtime adapter | Execute the invocation using the configured protocol. |
 
-This document preserves intended internal service and message-queue syntax. Strict Core rejects Service steps. The compatibility step field validator does not accept the `endpoint` spelling used below, so these examples are not executable support evidence.
+The configuration's `name` is the reference key; the filename is an organizational
+convention. The current file-based implementation supports HTTP services. Other
+protocols require an SDK adapter; there is no generic declarative connector schema
+yet. A separate service-contract file or binding file is not required.
 
-**Note:** For database and cache access, use **Datasources** (defined in `config/server.yaml`). For third-party HTTP APIs, use **External APIs** (see `api.md`).
+This contract covers service configuration and invocation in the online runtime.
+The strict [Core profile](cdl-core.md) remains closed to I/O and rejects service
+invocation steps. Feature and List remain separate semantic resources; a transport
+does not determine whether a resource is a Service, Feature or List.
 
-Internal services enable integration with:
-- **HTTP microservices** (`ms_http`) - RESTful internal services
-- **gRPC microservices** (`ms_grpc`) - gRPC internal services
-- **Message queues** (`mq`) - Event streaming and async notifications
+## Service definition
 
----
+Each YAML file defines one concrete service. For example,
+`services/customer_risk.yaml` defines the `customer_risk` service and its
+`assess` operation:
 
-## 1. Service Type Overview
-
-### 1.1 Service Types
-
-| Type | Purpose | Protocol | Authentication |
-|------|---------|----------|----------------|
-| `ms_http` | Internal HTTP/REST microservices | HTTP/HTTPS | Deployment-specific; must be authorized |
-| `ms_grpc` | Internal gRPC microservices | gRPC | Deployment-specific; must be authorized |
-| `mq` | Message queue event streaming | Kafka, RabbitMQ | Deployment-specific; must be authorized |
-
-### 1.2 Comparison with External Systems
-
-| Aspect | Internal Service | External API | Datasource |
-|--------|-----------------|--------------|------------|
-| **Use Case** | Internal microservices, MQ | Third-party APIs | Database, Cache, Feature Store |
-| **Network** | Internal network | Public internet | Internal (DB/Cache) |
-| **Authentication** | Deployment-specific authorization | Required (API keys, tokens) | Connection strings |
-| **Configuration** | service.yaml | configs/apis/ | config/server.yaml (datasource section) |
-| **Retry Strategy** | Conservative (1-2) | Aggressive (3+) | Built-in |
-
-### 1.3 When to Use What
-
-- **Datasource** → Database queries, Redis cache, Feature engineering
-- **External API** → Third-party HTTP APIs (IPInfo, fraud detection services)
-- **Internal Service (ms_http)** → Internal HTTP microservices (KYC, scoring)
-- **Internal Service (ms_grpc)** → Internal gRPC services (ML models, real-time scoring)
-- **Internal Service (mq)** → Async event publishing (Kafka, RabbitMQ)
-
----
-
-## 2. HTTP Microservice (`ms_http`)
-
-### 2.1 Basic Structure
-
-**Note**: `ms_http` follows the same structure as External API (see `api.md`) but with authentication and authorization supplied by the deployment; an internal network does not grant trust.
-
+<!-- executable-example: service-http -->
 ```yaml
-services:
-  - id: <string>                # Required: Unique service identifier
-    type: ms_http               # Required: HTTP microservice type
-    name: <string>              # Required: Human-readable name
-    description: <string>       # Optional: Service description
-    base_url: <string>          # Required: Base URL (e.g., http://service.internal:8080)
-    timeout_ms: <integer>       # Optional: Default timeout in milliseconds (default: 5000)
-
-    endpoints:                  # Required: Endpoint definitions
-      <endpoint_name>:          # Endpoint identifier (key, not list item)
-        method: <http_method>   # Required: GET | POST | PUT | PATCH | DELETE
-        path: <string>          # Required: URL path, can include {placeholders}
-        timeout_ms: <integer>   # Optional: Override default timeout for this endpoint
-        params:                 # Optional: Parameter mapping from context
-          <param_name>: <context_path>  # e.g., user_id: event.user.id
-          <param_name>: <literal>       # e.g., api_version: "v1", limit: 100, enabled: true
-        query_params:           # Optional: Query parameter names
-          - <param_name>
-        request_body: <string>  # Optional: JSON template for POST/PUT/PATCH
-                                # Use ${param_name} to reference params keys
-        response:               # Optional: Response handling
-          mapping:              # Optional: Field mapping/renaming
-            <output_field>: <response_field>
-          fallback:             # Optional: Default value on error
-            <field>: <value>
+name: customer_risk
+base_url: https://risk.example.com
+timeout_ms: 3000
+operations:
+  assess:
+    method: GET
+    path: /customers/{customer_id}
+    response:
+      mapping:
+        score: risk_score
 ```
 
-### 2.2 Complete Example
+This file contains both the logical operation names and their concrete HTTP
+implementation settings. In runtime terminology it also supplies the HTTP
+binding; that is a role of this definition, not another required configuration
+file. See the repository's [IPInfo definition](../../repository/services/ipinfo.yaml)
+for another example.
 
-```yaml
-services:
-  - id: kyc_service
-    type: ms_http
-    name: KYC Verification Service
-    description: Internal KYC identity verification service
-    base_url: http://kyc-service.internal:8080
-    timeout_ms: 5000
+### Service fields (current HTTP configuration)
 
-    endpoints:
-      # POST endpoint with request body
-      verify_identity:
-        method: POST
-        path: /api/v1/verify/identity
-        timeout_ms: 10000
-        params:
-          user_id: event.user.id
-          document_type: event.kyc.document_type
-          document_number: event.kyc.document_number
-        request_body: |
-          {
-            "user_id": "${user_id}",
-            "document_type": "${document_type}",
-            "document_number": "${document_number}"
-          }
-        response:
-          mapping:
-            is_verified: verified
-            confidence_score: confidence
-            level: verification_level
-          fallback:
-            is_verified: false
-            confidence_score: 0.0
-            level: "unverified"
+| Field | Contract |
+| --- | --- |
+| `name` | Required non-empty logical service name, referenced by Pipeline steps. |
+| `base_url` | Required HTTP or HTTPS base URL with a host. |
+| `auth` | Optional authentication; currently supports `type: header` with explicit `name` and `value`. |
+| `timeout_ms` | Positive default timeout in milliseconds; defaults to 10000. |
+| `operations` | Required non-empty map of named operations. |
 
-      # GET endpoint with path placeholder
-      get_status:
-        method: GET
-        path: /api/v1/status/{user_id}
-        params:
-          user_id: event.user.id
-        response:
-          fallback:
-            status: "unknown"
-            verified: false
+### Operation fields
 
-      # GET endpoint with query parameters
-      search_users:
-        method: GET
-        path: /api/v1/users/search
-        params:
-          email: event.user.email
-          phone: event.user.phone
-          limit: 10
-        query_params:
-          - email
-          - phone
-          - limit
-```
+| Field | Contract |
+| --- | --- |
+| `method` | Required HTTP method: GET, POST, PUT, PATCH or DELETE. |
+| `path` | Required request path; `{name}` placeholders use resolved parameters. |
+| `timeout_ms` | Optional positive timeout overriding the service default. |
+| `params` | Optional parameter defaults from context paths or literals. Invocation parameters override these defaults. |
+| `query_params` | Optional list of parameter names to include in the query string. |
+| `request_body` | Optional JSON request template using `${name}` parameter placeholders. |
+| `response` | Optional `mapping` of output fields to JSON response fields and an explicit `fallback` value. |
 
-### 2.3 Usage in Pipeline
+For reusable definitions, supply event-specific values in the Pipeline step and
+use their parameter names in the service's request mapping. The example above
+expects the caller to supply `customer_id`. Context-dependent defaults in an
+operation's `params` are supported, but couple that definition to a particular
+context shape. No input/output type schema is enforced by these mappings.
 
+## Service invocation in a Pipeline
+
+The following Pipeline references the separately defined `customer_risk.assess`
+operation. Its `params` describe this invocation, not the service implementation.
+
+<!-- executable-example: service-parameters -->
 ```yaml
 pipeline:
-  id: kyc_verification_flow
-  name: KYC Verification Flow
-  entry: verify_kyc
-
+  id: checkout
+  name: Checkout
+  entry: lookup
   steps:
-    # Call KYC verification
     - step:
-        id: verify_kyc
+        id: lookup
+        name: Assess customer
         type: service
-        service: kyc_service
-        endpoint: verify_identity
-        # Parameters automatically read from context based on endpoint config
-        # Result stored in: service.kyc_service.verify_identity
-        next: check_status
-
-    # Call with parameter override
-    - step:
-        id: check_status
-        type: service
-        service: kyc_service
-        endpoint: get_status
+        service: customer_risk
+        operation: assess
         params:
-          user_id: event.related_user_id  # Override default mapping
-        output: service.kyc_status  # Custom output location
-        next: kyc_check
-
-    # Use results in rules
-    - step:
-        id: kyc_check
-        type: ruleset
-        ruleset: kyc_verification_rules
+          customer_id: event.customer_id
+          amount: '${event.amount + 1}'
+          channel: web
+        timeout_ms: 1000
+        next: end
 ```
 
-### 2.4 Accessing Results
-
-```yaml
-rule:
-  id: kyc_verified_check
-  when:
-    all:
-      - service.kyc_service.verify_identity.is_verified == true
-      - service.kyc_service.verify_identity.confidence_score > 0.8
-  score: -20  # Reduce risk score if verified
-```
-
----
-
-## 3. gRPC Microservice (`ms_grpc`)
-
-### 3.1 Basic Structure
-
-```yaml
-services:
-  - id: <string>              # Required: Unique service identifier
-    type: ms_grpc             # Required: gRPC microservice type
-    name: <string>            # Required: Human-readable name
-    description: <string>     # Optional: Service description
-
-    connection:
-      host: <string>          # Required: Service host
-      port: <integer>         # Required: Service port
-      discovery:              # Optional: Service discovery
-        type: <discovery_type>  # consul | kubernetes | static
-        service_name: <string>  # Service name in registry
-
-    timeout_ms: <integer>     # Optional: Default timeout (default: 5000)
-
-    methods:                  # Required: gRPC method definitions
-      <method_name>:          # Method identifier (key, not list item)
-        service: <string>     # Required: gRPC service name
-        method: <string>      # Required: gRPC method name
-        params:               # Optional: Parameter mapping
-          <param_name>: <context_path>  # e.g., user_id: event.user.id
-          <param_name>: <literal>       # e.g., api_version: "v1", limit: 100
-        response:             # Optional: Response handling
-          mapping:
-            <output_field>: <response_field>
-          fallback:
-            <field>: <value>
-```
-
-### 3.2 Complete Example
-
-```yaml
-services:
-  - id: risk_scoring_service
-    type: ms_grpc
-    name: Risk Scoring Service
-    description: Internal ML-based risk scoring service
-
-    connection:
-      host: risk-scoring.internal
-      port: 9090
-      discovery:
-        type: consul
-        service_name: risk-scoring
-
-    timeout_ms: 5000
-
-    methods:
-      calculate_score:
-        service: RiskScoringService
-        method: CalculateScore
-        params:
-          user_id: event.user.id
-          transaction_amount: event.transaction.amount
-          velocity_score: features.velocity_score
-          transaction_count: features.user_transaction_count_7d
-        response:
-          mapping:
-            score: risk_score
-            factors: risk_factors
-            version: model_version
-          fallback:
-            score: 0.0
-            factors: []
-            version: "unknown"
-
-      get_model_info:
-        service: RiskScoringService
-        method: GetModelInfo
-        params:
-          model_id: "default"
-```
-
-### 3.3 Usage in Pipeline
-
-```yaml
-pipeline:
-  id: risk_scoring_flow
-  name: Risk Scoring Flow
-  entry: calculate_risk
-
-  steps:
-    # Call gRPC service
-    - step:
-        id: calculate_risk
-        type: service
-        service: risk_scoring_service
-        method: calculate_score
-        # Result stored in: service.risk_scoring_service.calculate_score
-        next: risk_evaluation
-
-    # Use results
-    - step:
-        id: risk_evaluation
-        type: ruleset
-        ruleset: risk_assessment_rules
-```
-
----
-
-## 4. Message Queue (`mq`)
-
-### 4.1 Basic Structure
-
-```yaml
-services:
-  - id: <string>              # Required: Unique service identifier
-    type: mq                  # Required: Message queue type
-    name: <string>            # Required: Human-readable name
-    description: <string>     # Optional: Service description
-
-    connection:
-      driver: <driver_type>   # Required: kafka | rabbitmq
-      brokers:                # Required: Broker list
-        - <broker_url>
-
-    timeout_ms: <integer>     # Optional: Send timeout (default: 5000)
-
-    topics:                   # Required: Topic definitions (topics must already exist)
-      <topic_name>:           # Topic identifier (key, not list item)
-        params:               # Optional: Parameter mapping from context
-          <param_name>: <context_path>  # e.g., user_id: event.user.id
-          <param_name>: <literal>       # e.g., version: "v1"
-        message:              # Required: Message template
-          key: <string>       # Optional: Message key (supports ${} placeholders)
-          value: <string>     # Required: JSON template for message payload
-                              # Use ${param_name} to reference params keys
-                              # String values: "${param_name}" (with quotes)
-                              # Number/boolean values: ${param_name} (without quotes)
-```
-
-### 4.2 Complete Example (Kafka)
-
-```yaml
-services:
-  - id: event_bus
-    type: mq
-    name: Event Bus
-    description: Kafka event streaming for risk decisions
-
-    connection:
-      driver: kafka
-      brokers:
-        - kafka-1.internal:9092
-        - kafka-2.internal:9092
-        - kafka-3.internal:9092
-
-    timeout_ms: 5000
-
-    topics:
-      risk_decisions:
-        params:
-          user_id: event.user.id
-          event_type: event.type
-          risk_score: vars.final_risk_score
-          decision: vars.decision
-          timestamp: sys.timestamp
-          request_id: sys.request_id
-        message:
-          key: ${user_id}
-          value: |
-            {
-              "user_id": "${user_id}",
-              "event_type": "${event_type}",
-              "risk_score": ${risk_score},
-              "decision": "${decision}",
-              "timestamp": "${timestamp}",
-              "metadata": {
-                "request_id": "${request_id}",
-                "pipeline_version": "v1.0"
-              }
-            }
-
-      fraud_alerts:
-        params:
-          user_id: event.user.id
-          risk_score: vars.risk_score
-          triggered_rules: vars.triggered_rules
-          timestamp: sys.timestamp
-          event_type: event.type
-          amount: event.transaction.amount
-        message:
-          key: ${user_id}
-          value: |
-            {
-              "alert_type": "high_risk",
-              "user_id": "${user_id}",
-              "risk_score": ${risk_score},
-              "triggered_rules": ${triggered_rules},
-              "timestamp": "${timestamp}",
-              "context": {
-                "event_type": "${event_type}",
-                "amount": ${amount}
-              }
-            }
-```
-
-### 4.3 Usage in Pipeline
-
-```yaml
-pipeline:
-  id: fraud_detection_flow
-  name: Fraud Detection Flow
-  entry: risk_evaluation
-
-  steps:
-    # Execute risk evaluation
-    - step:
-        id: risk_evaluation
-        type: ruleset
-        ruleset: fraud_detection
-        next: publish_decision
-
-    # Publish decision to event bus (non-blocking by default)
-    - step:
-        id: publish_decision
-        type: service
-        service: event_bus
-        topic: risk_decisions
-```
-
----
-
-## 5. Service Usage Patterns
-
-### 5.1 Sequential Service Calls
-
-```yaml
-pipeline:
-  id: sequential_service_example
-  name: Sequential Service Calls Example
-  entry: verify_kyc
-
-  steps:
-    # Step 1: Call KYC service
-    - step:
-        id: verify_kyc
-        name: Verify KYC
-        type: service
-        service: kyc_service
-        endpoint: verify_identity
-        next: calculate_risk
-
-    # Step 2: Call risk scoring service
-    - step:
-        id: calculate_risk
-        name: Calculate Risk Score
-        type: service
-        service: risk_scoring_service
-        method: calculate_score
-        next: combined_check
-
-    # Step 3: Use both results
-    - step:
-        id: combined_check
-        name: Combined Verification
-        type: ruleset
-        ruleset: combined_verification_rules
-```
-
-### 5.2 Conditional Service Calls
-
-```yaml
-pipeline:
-  id: conditional_service_example
-  name: Conditional Service Calls Example
-  entry: ml_risk_scoring
-
-  steps:
-    # Only call expensive service if needed
-    - step:
-        id: ml_risk_scoring
-        name: ML Risk Scoring
-        type: service
-        service: risk_scoring_service
-        method: calculate_score
-        when:
-          any:
-            - event.transaction.amount > 10000
-            - vars.basic_risk_score > 70
-        next: final_decision
-
-    - step:
-        id: final_decision
-        name: Final Decision
-        type: ruleset
-        ruleset: decision_rules
-```
-
-### 5.3 Event Publishing
-
-```yaml
-pipeline:
-  id: event_publishing_example
-  name: Event Publishing Example
-  entry: risk_check
-
-  steps:
-    # Step 1: Evaluate risk
-    - step:
-        id: risk_check
-        name: Risk Check
-        type: ruleset
-        ruleset: fraud_detection
-        next: publish_event
-
-    # Step 2: Publish to message queue (non-blocking by default)
-    - step:
-        id: publish_event
-        name: Publish Event
-        type: service
-        service: event_bus
-        topic: risk_decisions
-        next: final_decision
-
-    # Step 3: Continue execution immediately
-    - step:
-        id: final_decision
-        name: Final Decision
-        type: ruleset
-        ruleset: decision_logic
-```
-
----
-
-## 6. Best Practices
-
-### 6.1 Service Design
-
-**Good**:
-```yaml
-services:
-  - id: kyc_verification_service
-    type: ms_http
-    name: KYC Verification Service
-    description: Internal identity verification service for user onboarding
-    base_url: "@{kyc_service.base_url}"  # Use config reference
-
-    endpoints:
-      verify_identity:
-        method: POST
-        path: /api/v1/verify/identity
-        timeout_ms: 10000  # Longer timeout for complex verification
-        response:
-          fallback:
-            verified: false
-            confidence: 0.0
-```
-
-**Avoid**:
-```yaml
-services:
-  - id: svc1                    # ❌ Unclear name
-    type: ms_http
-    # ❌ No description
-    base_url: http://localhost  # ❌ Hardcoded URL
-
-    endpoints:
-      endpoint1:                # ❌ Vague name
-        method: POST
-        path: /verify
-        # ❌ No fallback handling
-```
-
-### 6.2 Reliability
-
-- **Timeouts**: Set appropriate timeouts for each endpoint
-- **Fallbacks**: Provide sensible fallback values for non-critical services
-- **Message queues**: MQ publishing is non-blocking by default
-
-### 6.3 Performance
-
-- **Conditional calls**: Use `when` to avoid unnecessary service calls
-- **Caching**: Cache frequently accessed data in Datasources
-- **Connection pooling**: Configure appropriate connection pools (handled by runtime)
-
-### 6.4 Maintainability
-
-- **Descriptive names**: Use clear service and endpoint names
-- **Documentation**: Add descriptions for all services and endpoints
-- **Configuration**: Use `@{config.path}` for environment-specific configs
-- **Version control**: Track service configuration changes
-- **Monitoring**: Add logging and monitoring for all service calls
-
----
-
-## 7. Related Documentation
-
-- `api.md` - External third-party API integration (same HTTP format as `ms_http` + auth)
-- `context.md` - Context and variable management
-- `pipeline.md` - Service integration in pipelines
+| Field | Contract |
+| --- | --- |
+| `id`, `name`, `type` | Required common step fields; `type` is `service`. |
+| `service` | Required non-empty logical service name, resolved through a runtime binding. |
+| `operation` | Required non-empty capability name within the service. |
+| `params` | Optional map of named values/expressions, evaluated before invocation. |
+| `timeout_ms` | Optional positive integer, in milliseconds. |
+| `output` | Optional result path in `service` or `vars`; default `service.<step_id>`. |
+| `next` | Next step ID or `end`; omission ends this execution path. |
+
+Parameters accept JSON-compatible literals, including arrays, objects and null.
+A complete `${expression}` string evaluates an expression. Bare paths beginning
+with `event.`, `service.`, `vars.`, `features.`, `sys.` or `env.` also evaluate as
+expressions. Other strings are literal, including URLs and dotted business values.
+Expressions inside literal arrays/objects are not recursively interpolated.
+Parameter names must be non-empty strings. Evaluation order is lexical by name.
+
+A successful invocation stores its returned value at `service.<step_id>` unless
+`output` is specified. Two steps invoking the same service have separate defaults;
+explicitly choosing the same output path overwrites its previous value. Subsequent
+steps and conditions can read `service.lookup.<field>`.
+
+The node does not accept `api`, `endpoint`, `method`, `topic`, `query`, `timeout`,
+`any`, `all`, `min_success` or `on_error`. Transport details belong in the service
+definition or its SDK adapter.
+Step-level `when` is currently rejected by the online compiler; use a router for
+conditional invocation. This limitation is separate from Core guard support.
+
+## Execution semantics
+
+The runtime resolves one logical name to either a registered HTTP binding or a
+custom `ServiceClient`. Duplicate or ambiguous bindings are errors. No automatic
+internal/external classification, fallback to a different provider, retry, cache
+or discovery is implied.
+
+The adapter receives the service name, operation name and evaluated parameters.
+Its successful response data becomes the step result. Missing bindings, connector
+errors, non-success adapter statuses and timeouts fail execution, subject to the
+explicit HTTP fallback described below. Errors are not converted into a normal
+string or implicit null.
+
+Timeout precedence is step, operation, service default. Custom adapters use the
+step deadline or 10000 ms. Timeout stops awaiting the operation; it cannot undo
+side effects already performed remotely. The engine does not retry automatically.
+
+Step parameters override HTTP operation parameter defaults before unused defaults are resolved.
+Missing declared context paths fail; they are not sent as literal path strings. `{name}` in paths,
+named query parameters and `${name}` in request bodies use the resolved values.
+Response mapping selects fields from JSON. An explicitly configured HTTP
+`response.fallback` applies to unsuccessful HTTP status or invalid JSON; transport
+failures and timeouts remain errors. No fallback exists unless configured.
+
+Internal/external ownership, credentials, network access and any future trust-domain
+metadata are deployment concerns. Changing a provider or protocol while preserving
+the service contract should not require changing the policy node.
+
+## Loading and extension boundaries
+
+The filesystem engine loads service definitions from `services/*.yaml`
+and `*.yml` under the repository root using the current HTTP configuration schema.
+Malformed files, unknown fields and duplicate names fail engine initialization.
+Policy reload retains startup service bindings; rebuild the engine to change them.
+Authentication values do not undergo implicit environment-variable substitution;
+resolve secrets in deployment configuration before registering the service.
+
+SDK adapters can implement other protocols while retaining the same Pipeline
+reference shape. gRPC, MQ and MCP declarative configurations and a built-in MCP
+client are not implemented. Existing test clients are not production adapters.
+Registration APIs and the adapter interface are documented in the
+[Service integration guide](../SERVICE_GUIDE.md).
+
+The former `api` node, `api` results namespace, `configs/apis` directory and
+`endpoints` configuration field are not supported aliases.

@@ -312,7 +312,7 @@ pub struct EngineConfig {
     pub llm: Option<LLMConfig>,
 
     /// Service configuration
-    pub service: Option<ServiceConfig>,
+    pub http_services: Vec<HttpServiceConfig>,
 
     /// Enable metrics collection
     pub enable_metrics: bool,
@@ -504,3 +504,7 @@ async fn test_with_metadata() {
 - [Pipeline Registry](../../docs/cdl/registry.md)
 - [Feature Engineering](../../docs/cdl/feature.md)
 - [Example Applications](../../examples/README.md)
+
+Services are bound with `DecisionEngineBuilder::with_service(name, adapter)` or
+`with_http_service(binding)`. Policies use `type: service`, `service` and
+`operation`; results default to `service.<step_id>`.

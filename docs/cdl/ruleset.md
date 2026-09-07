@@ -107,7 +107,7 @@ version: "0.1"
 
 import:
   rulesets:
-    - library/rulesets/payment_base.yaml  # Import parent ruleset
+    - rulesets/payment_base.yaml  # Import parent ruleset
 
 ---
 
@@ -184,9 +184,9 @@ version: "0.1"
 # First document: Import
 import:
   rules:
-    - library/rules/fraud/fraud_farm.yaml
-    - library/rules/fraud/account_takeover.yaml
-    - library/rules/geography/suspicious_ip.yaml
+    - rules/fraud/fraud_farm.yaml
+    - rules/fraud/account_takeover.yaml
+    - rules/geography/suspicious_ip.yaml
 
 ---
 
@@ -222,19 +222,18 @@ Import paths are resolved relative to the repository root:
 
 ```
 repository/
-├── library/
-│   ├── rules/
-│   │   └── fraud/
-│   │       └── fraud_farm.yaml
-│   └── rulesets/
-│       └── fraud_detection_core.yaml  ← You are here
+├── rules/
+│   └── fraud/
+│       └── fraud_farm.yaml
+└── rulesets/
+    └── fraud_detection_core.yaml  ← You are here
 ```
 
 From `fraud_detection_core.yaml`:
 ```yaml
 import:
   rules:
-    - library/rules/fraud/fraud_farm.yaml  # Correct
+    - rules/fraud/fraud_farm.yaml  # Correct
 ```
 
 **ID Naming Conventions:**
@@ -269,7 +268,7 @@ When a pipeline imports a ruleset, it automatically gets all the ruleset's rule 
 ```yaml
 import:
   rulesets:
-    - library/rulesets/fraud_detection_core.yaml  # Automatically includes all rules
+    - rulesets/fraud_detection_core.yaml  # Automatically includes all rules
 
 ---
 

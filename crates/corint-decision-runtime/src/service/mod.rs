@@ -1,11 +1,8 @@
 //! Service integration module
 //!
-//! Provides async interfaces for calling internal services:
-//! - HTTP microservices (ms_http)
-//! - gRPC microservices (ms_grpc)
-//! - Message queues (mq)
-//! - Databases (legacy support)
-//! - Redis (legacy support)
+//! Transport-independent service adapter interface and concrete HTTP bindings.
+//! Internal/external deployment does not define separate types. Other modules
+//! provide protocol interfaces and mocks; applications supply production adapters.
 
 pub mod client;
 pub mod database;
@@ -20,3 +17,9 @@ pub use grpc::{GrpcClient, MockGrpcClient};
 pub use http::{HttpClient, HttpMethod, MockHttpClient};
 pub use mq::{MockMqClient, MqClient, MqDriver, MqMessage, PublishedMessage};
 pub use redis::{MockRedisClient, RedisClient, RedisCommand};
+
+/// Configurable HTTP connector shared by internal and external services.
+pub mod http_service;
+pub use http_service::{
+    HttpServiceClient, HttpServiceConfig, ServiceAuth, ServiceOperation, ServiceResponseMapping,
+};

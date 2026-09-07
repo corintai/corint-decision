@@ -5,13 +5,13 @@ version: "0.1"
 
 import:
   rules:
-    - library/rules/fraud/fraud_farm.yaml
-    - library/rules/fraud/account_takeover.yaml
-    - library/rules/fraud/velocity_abuse.yaml
-    - library/rules/fraud/amount_outlier.yaml
-    - library/rules/geography/suspicious_geography.yaml
-    - library/rules/fraud/new_user_fraud.yaml
-    - library/rules/fraud/login_velocity.yaml
+    - rules/fraud/fraud_farm.yaml
+    - rules/fraud/account_takeover.yaml
+    - rules/fraud/velocity_abuse.yaml
+    - rules/fraud/amount_outlier.yaml
+    - rules/geography/suspicious_geography.yaml
+    - rules/fraud/new_user_fraud.yaml
+    - rules/fraud/login_velocity.yaml
 
 ---
 

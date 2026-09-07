@@ -5,7 +5,6 @@
 use crate::ast::{Expression, Operator, Signal};
 use crate::Value;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 
 /// A single IR instruction
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -106,29 +105,13 @@ pub enum Instruction {
         time_window: TimeWindow,
     },
 
-    // ===== External Calls =====
-    /// Call external service (internal)
-    CallService {
-        /// Service name
+    // ===== Service Invocations =====
+    /// Unified service invocation. Parameter values are pushed in parameter_names order.
+    InvokeService {
         service: String,
-        /// Operation to perform
         operation: String,
-        /// Parameters for the call
-        params: HashMap<String, Value>,
-    },
-
-    /// Call external API (third-party)
-    CallExternal {
-        /// API identifier (e.g., "ipinfo")
-        api: String,
-        /// Endpoint name
-        endpoint: String,
-        /// Parameters for the call
-        params: HashMap<String, Value>,
-        /// Timeout in milliseconds
-        timeout: Option<u64>,
-        /// Fallback value on error
-        fallback: Option<Value>,
+        parameter_names: Vec<String>,
+        timeout_ms: Option<u64>,
     },
 
     // ===== Decision Making =====

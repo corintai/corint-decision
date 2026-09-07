@@ -6,14 +6,14 @@ version: "0.1"
 import:
   rules:
     # Disabled: requires unimplemented features (geo_distance_from_last_login, hours_since_last_login)
-    # - library/rules/account/impossible_travel.yaml
-    - library/rules/account/off_hours_activity.yaml
-    - library/rules/account/password_change_risk.yaml
-    - library/rules/device/device_emulator.yaml
+    # - rules/account/impossible_travel.yaml
+    - rules/account/off_hours_activity.yaml
+    - rules/account/password_change_risk.yaml
+    - rules/device/device_emulator.yaml
     # Disabled: requires unimplemented features (device_fingerprint_changed_24h)
-    # - library/rules/device/device_spoofing.yaml
-    - library/rules/fraud/account_takeover.yaml
-    - library/rules/fraud/login_velocity.yaml 
+    # - rules/device/device_spoofing.yaml
+    - rules/fraud/account_takeover.yaml
+    - rules/fraud/login_velocity.yaml
 
 ---
 

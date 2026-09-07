@@ -1,6 +1,6 @@
-//! External API client configuration and execution
+//! HTTP connector for unified service invocations
 //!
-//! Provides a generic, configurable system for calling external APIs.
+//! Deployment location does not affect the service contract.
 
 use crate::context::ExecutionContext;
 use crate::error::{Result, RuntimeError};
@@ -10,88 +10,9 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::time::Duration;
 
-/// External API configuration
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ApiConfig {
-    /// API name/identifier
-    pub name: String,
-
-    /// Base URL
-    pub base_url: String,
-
-    /// Optional authentication configuration
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub auth: Option<ApiAuth>,
-
-    /// Timeout in milliseconds (default: 10000)
-    #[serde(default = "default_api_timeout")]
-    pub timeout_ms: u64,
-
-    /// Endpoint definitions (as a map: endpoint_name -> endpoint_config)
-    #[serde(default)]
-    pub endpoints: HashMap<String, ApiEndpoint>,
-}
-
-fn default_api_timeout() -> u64 {
-    10000
-}
-
-/// Authentication configuration for API
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ApiAuth {
-    /// Authentication type (currently only "header" is supported)
-    #[serde(rename = "type")]
-    pub auth_type: String,
-
-    /// Header name (e.g., "Authorization", "X-API-Key")
-    pub name: String,
-
-    /// Header value (can use ${env.x.y.z} for environment variables)
-    pub value: String,
-}
-
-/// API endpoint definition
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ApiEndpoint {
-    /// HTTP method (GET, POST, PUT, DELETE, PATCH)
-    pub method: String,
-
-    /// Path (can include path parameters like {id})
-    pub path: String,
-
-    /// Optional timeout for this endpoint (overrides API default)
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub timeout_ms: Option<u64>,
-
-    /// Parameter mapping from context or literals
-    /// Key: param name, Value: context path (e.g., "event.user.id") or literal value
-    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
-    pub params: HashMap<String, serde_json::Value>,
-
-    /// Query parameter names (array of param names to include in query string)
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub query_params: Vec<String>,
-
-    /// Request body template for POST/PUT/PATCH (with ${param_name} placeholders)
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub request_body: Option<String>,
-
-    /// Response handling configuration
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub response: Option<ApiResponse>,
-}
-
-/// Response handling configuration
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ApiResponse {
-    /// Field mapping: output_field -> response_field
-    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
-    pub mapping: HashMap<String, String>,
-
-    /// Fallback value on error (4xx, 5xx, timeout)
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub fallback: Option<serde_json::Value>,
-}
+pub use corint_decision_model::service::{
+    HttpServiceConfig, ServiceAuth, ServiceOperation, ServiceResponseMapping,
+};
 
 /// HTTP method
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -121,10 +42,10 @@ impl HttpMethod {
     }
 }
 
-/// Generic external API client
-pub struct ExternalApiClient {
-    /// API configurations by name
-    configs: HashMap<String, ApiConfig>,
+/// Generic HTTP service client
+pub struct HttpServiceClient {
+    /// HTTP service configurations by name
+    configs: HashMap<String, HttpServiceConfig>,
     /// Retain the constructor-time client validation; calls build per-endpoint clients.
     _client: reqwest::Client,
 }
@@ -152,7 +73,7 @@ fn build_http_client(
                 err
             );
             build(true).map_err(|fallback_err| {
-                RuntimeError::ExternalCallFailed(format!(
+                RuntimeError::ServiceCallFailed(format!(
                     "Failed to create HTTP client: {}",
                     fallback_err
                 ))
@@ -163,7 +84,7 @@ fn build_http_client(
                 "HTTP client build panicked when using system proxy. Retrying without system proxy."
             );
             build(true).map_err(|fallback_err| {
-                RuntimeError::ExternalCallFailed(format!(
+                RuntimeError::ServiceCallFailed(format!(
                     "Failed to create HTTP client: {}",
                     fallback_err
                 ))
@@ -172,8 +93,8 @@ fn build_http_client(
     }
 }
 
-impl ExternalApiClient {
-    /// Create a new external API client with default timeout
+impl HttpServiceClient {
+    /// Create a new HTTP service client with default timeout
     pub fn new() -> Self {
         Self {
             configs: HashMap::new(),
@@ -183,58 +104,109 @@ impl ExternalApiClient {
         }
     }
 
-    /// Register an API configuration
-    pub fn register_api(&mut self, config: ApiConfig) {
+    /// Register an HTTP service configuration
+    /// Register a named HTTP service. Reject ambiguous bindings.
+    pub fn register_service(&mut self, config: HttpServiceConfig) -> Result<()> {
+        if config.name.trim().is_empty() || config.operations.is_empty() || config.timeout_ms == 0 {
+            return Err(RuntimeError::InvalidOperation(
+                "Service name, operations and positive timeout are required".into(),
+            ));
+        }
+        let url = reqwest::Url::parse(&config.base_url).map_err(|_| {
+            RuntimeError::InvalidOperation(format!(
+                "Invalid HTTP base_url for service {}",
+                config.name
+            ))
+        })?;
+        if !["http", "https"].contains(&url.scheme()) || url.host_str().is_none() {
+            return Err(RuntimeError::InvalidOperation(
+                "Service base_url requires HTTP or HTTPS and a host".into(),
+            ));
+        }
+        if self.configs.contains_key(&config.name) {
+            return Err(RuntimeError::InvalidOperation(format!(
+                "Duplicate service binding: {}",
+                config.name
+            )));
+        }
+        for (name, operation) in &config.operations {
+            if name.trim().is_empty()
+                || operation.timeout_ms == Some(0)
+                || HttpMethod::from_str(&operation.method).is_none()
+            {
+                return Err(RuntimeError::InvalidOperation(format!(
+                    "Invalid service operation: {}::{name}",
+                    config.name
+                )));
+            }
+        }
+        if config
+            .auth
+            .as_ref()
+            .is_some_and(|auth| auth.auth_type != "header")
+        {
+            return Err(RuntimeError::InvalidOperation(
+                "Only header service authentication is supported".into(),
+            ));
+        }
         self.configs.insert(config.name.clone(), config);
+        Ok(())
     }
 
-    /// Call an external API endpoint
+    pub fn contains_service(&self, name: &str) -> bool {
+        self.configs.contains_key(name)
+    }
+
+    /// Call an HTTP service endpoint
     pub async fn call(
         &self,
-        api_name: &str,
+        service_name: &str,
         endpoint_name: &str,
         params: &HashMap<String, Value>,
         timeout: Option<u64>,
         ctx: &ExecutionContext,
     ) -> Result<Value> {
-        // Get API configuration
-        let api_config = self.configs.get(api_name).ok_or_else(|| {
-            RuntimeError::ExternalCallFailed(format!("Unknown API: {}", api_name))
+        // Get HTTP service configuration
+        let service_config = self.configs.get(service_name).ok_or_else(|| {
+            RuntimeError::ServiceCallFailed(format!("Unknown service: {}", service_name))
         })?;
 
         // Get endpoint configuration
-        let endpoint = api_config.endpoints.get(endpoint_name).ok_or_else(|| {
-            RuntimeError::ExternalCallFailed(format!(
-                "Unknown endpoint: {}::{}",
-                api_name, endpoint_name
-            ))
-        })?;
+        let endpoint = service_config
+            .operations
+            .get(endpoint_name)
+            .ok_or_else(|| {
+                RuntimeError::ServiceCallFailed(format!(
+                    "Unknown endpoint: {}::{}",
+                    service_name, endpoint_name
+                ))
+            })?;
 
         // Determine effective timeout (priority: param > endpoint > API > default)
         let effective_timeout = timeout
             .or(endpoint.timeout_ms)
-            .unwrap_or(api_config.timeout_ms);
+            .unwrap_or(service_config.timeout_ms);
 
         // Build the complete URL
-        let url = self.build_url(api_config, endpoint, params, ctx)?;
+        let url = self.build_url(service_config, endpoint, params, ctx)?;
 
         tracing::debug!(
-            "Calling external API: {} (timeout: {}ms)",
+            "Calling HTTP service: {} (timeout: {}ms)",
             url,
             effective_timeout
         );
 
         // Add authentication headers if configured
         let mut headers = reqwest::header::HeaderMap::new();
-        if let Some(auth) = &api_config.auth {
+        if let Some(auth) = &service_config.auth {
             if auth.auth_type == "header" {
                 let header_name = reqwest::header::HeaderName::from_bytes(auth.name.as_bytes())
                     .map_err(|e| {
-                        RuntimeError::ExternalCallFailed(format!("Invalid header name: {}", e))
+                        RuntimeError::ServiceCallFailed(format!("Invalid header name: {}", e))
                     })?;
                 let header_value =
                     reqwest::header::HeaderValue::from_str(&auth.value).map_err(|e| {
-                        RuntimeError::ExternalCallFailed(format!("Invalid header value: {}", e))
+                        RuntimeError::ServiceCallFailed(format!("Invalid header value: {}", e))
                     })?;
                 headers.insert(header_name, header_value);
             }
@@ -244,13 +216,13 @@ impl ExternalApiClient {
 
         // Parse HTTP method
         let method = HttpMethod::from_str(&endpoint.method).ok_or_else(|| {
-            RuntimeError::ExternalCallFailed(format!("Invalid HTTP method: {}", endpoint.method))
+            RuntimeError::ServiceCallFailed(format!("Invalid HTTP method: {}", endpoint.method))
         })?;
 
         // Make HTTP request based on method
         let response = match method {
             HttpMethod::GET => client.get(&url).send().await.map_err(|e| {
-                RuntimeError::ExternalCallFailed(format!("HTTP request failed: {}", e))
+                RuntimeError::ServiceCallFailed(format!("HTTP request failed: {}", e))
             })?,
             HttpMethod::POST | HttpMethod::PUT | HttpMethod::PATCH => {
                 let mut request = match method {
@@ -274,11 +246,11 @@ impl ExternalApiClient {
                 }
 
                 request.send().await.map_err(|e| {
-                    RuntimeError::ExternalCallFailed(format!("HTTP request failed: {}", e))
+                    RuntimeError::ServiceCallFailed(format!("HTTP request failed: {}", e))
                 })?
             }
             HttpMethod::DELETE => client.delete(&url).send().await.map_err(|e| {
-                RuntimeError::ExternalCallFailed(format!("HTTP request failed: {}", e))
+                RuntimeError::ServiceCallFailed(format!("HTTP request failed: {}", e))
             })?,
         };
 
@@ -288,8 +260,8 @@ impl ExternalApiClient {
             if let Some(response_config) = &endpoint.response {
                 if let Some(fallback) = &response_config.fallback {
                     tracing::warn!(
-                        "External API {}::{} failed with status {}, using endpoint fallback",
-                        api_name,
+                        "HTTP service {}::{} failed with status {}, using endpoint fallback",
+                        service_name,
                         endpoint_name,
                         response.status()
                     );
@@ -297,7 +269,7 @@ impl ExternalApiClient {
                 }
             }
 
-            return Err(RuntimeError::ExternalCallFailed(format!(
+            return Err(RuntimeError::ServiceCallFailed(format!(
                 "HTTP request failed with status: {}",
                 response.status()
             )));
@@ -307,28 +279,27 @@ impl ExternalApiClient {
         let json: serde_json::Value = match response.json().await {
             Ok(j) => j,
             Err(e) => {
-                // If JSON parsing fails and there's a fallback, use it
+                if e.is_timeout() || e.is_connect() {
+                    return Err(RuntimeError::ServiceCallFailed(format!(
+                        "Service response transport failed: {e}"
+                    )));
+                }
+                // Explicit fallback covers invalid JSON, not transport failure.
                 if let Some(response_config) = &endpoint.response {
                     if let Some(fallback) = &response_config.fallback {
                         tracing::warn!(
-                            "External API {}::{} response parsing failed: {}, using endpoint fallback",
-                            api_name, endpoint_name, e
+                            "HTTP service {}::{} response parsing failed: {}, using endpoint fallback",
+                            service_name, endpoint_name, e
                         );
                         return Self::json_to_value(fallback.clone());
                     }
                 }
-                return Err(RuntimeError::ExternalCallFailed(format!(
+                return Err(RuntimeError::ServiceCallFailed(format!(
                     "Failed to parse JSON: {}",
                     e
                 )));
             }
         };
-
-        // Print the raw API response
-        tracing::info!(
-            "External API raw response: {}",
-            serde_json::to_string_pretty(&json).unwrap_or_else(|_| format!("{:?}", json))
-        );
 
         // Apply response mapping if configured
         let mut value = Self::json_to_value(json)?;
@@ -352,8 +323,8 @@ impl ExternalApiClient {
     /// Build the complete URL for an API call
     fn build_url(
         &self,
-        api_config: &ApiConfig,
-        endpoint: &ApiEndpoint,
+        service_config: &HttpServiceConfig,
+        endpoint: &ServiceOperation,
         params: &HashMap<String, Value>,
         ctx: &ExecutionContext,
     ) -> Result<String> {
@@ -386,7 +357,7 @@ impl ExternalApiClient {
         }
 
         // Combine base URL, path, and query string
-        let mut url = format!("{}{}", api_config.base_url, path);
+        let mut url = format!("{}{}", service_config.base_url, path);
         if !query_parts.is_empty() {
             url.push('?');
             url.push_str(&query_parts.join("&"));
@@ -407,6 +378,9 @@ impl ExternalApiClient {
 
         // First, resolve endpoint default params
         for (key, value) in endpoint_params {
+            if pipeline_params.contains_key(key) {
+                continue;
+            }
             let resolved_value = self.resolve_param_value(value, ctx)?;
             resolved.insert(key.clone(), resolved_value);
         }
@@ -429,17 +403,14 @@ impl ExternalApiClient {
     ) -> Result<Value> {
         match value {
             serde_json::Value::String(s) => {
-                // If it contains '.', it's likely a context path (e.g., "event.user.id")
-                if s.contains('.') {
-                    let path: Vec<String> = s.split('.').map(|s| s.to_string()).collect();
-                    ctx.load_field(&path).or_else(|_| {
-                        // If context load fails, return as literal string
-                        Ok(Value::String(s.clone()))
-                    })
+                if ["event.", "service.", "vars.", "features.", "sys.", "env."]
+                    .iter()
+                    .any(|prefix| s.starts_with(prefix))
+                {
+                    let path: Vec<_> = s.split('.').map(str::to_owned).collect();
+                    ctx.load_field(&path)
                 } else {
-                    // Single token could be a context field or literal
-                    ctx.load_field(std::slice::from_ref(s))
-                        .or_else(|_| Ok(Value::String(s.clone())))
+                    Ok(Value::String(s.clone()))
                 }
             }
             serde_json::Value::Number(n) => {
@@ -477,13 +448,11 @@ impl ExternalApiClient {
             let placeholder = format!("${{{}}}", key);
             if body.contains(&placeholder) {
                 // For JSON, we need to preserve type information
-                let replacement = match value {
-                    Value::String(s) => format!("\"{}\"", s.replace('"', "\\\"")),
-                    Value::Number(n) => n.to_string(),
-                    Value::Bool(b) => b.to_string(),
-                    Value::Null => "null".to_string(),
-                    _ => serde_json::to_string(&value).unwrap_or_else(|_| "null".to_string()),
-                };
+                let replacement = serde_json::to_string(value).map_err(|error| {
+                    RuntimeError::ServiceCallFailed(format!(
+                        "Cannot encode service parameter: {error}"
+                    ))
+                })?;
 
                 // If placeholder is already quoted (e.g., "${param}"), replace including quotes
                 let quoted_placeholder = format!("\"{}\"", placeholder);
@@ -495,6 +464,9 @@ impl ExternalApiClient {
             }
         }
 
+        serde_json::from_str::<serde_json::Value>(&body).map_err(|error| {
+            RuntimeError::ServiceCallFailed(format!("Invalid service request body: {error}"))
+        })?;
         Ok(body)
     }
 
@@ -587,14 +559,14 @@ impl ExternalApiClient {
     }
 }
 
-impl Default for ExternalApiClient {
+impl Default for HttpServiceClient {
     fn default() -> Self {
         Self::new()
     }
 }
 
-/// Load API configurations from YAML content
-pub fn load_api_config(yaml_content: &str) -> Result<ApiConfig> {
+/// Load HTTP service configurations from YAML content
+pub fn load_service_config(yaml_content: &str) -> Result<HttpServiceConfig> {
     serde_yaml::from_str(yaml_content)
         .map_err(|e| RuntimeError::RuntimeError(format!("Failed to parse API config: {}", e)))
 }
@@ -605,16 +577,16 @@ mod tests {
 
     #[test]
     fn test_build_url_with_path_params() {
-        let mut endpoints = HashMap::new();
+        let mut operations = HashMap::new();
         let mut endpoint_params = HashMap::new();
         endpoint_params.insert(
             "id".to_string(),
             serde_json::Value::String("user_id".to_string()),
         );
 
-        endpoints.insert(
+        operations.insert(
             "get_user".to_string(),
-            ApiEndpoint {
+            ServiceOperation {
                 method: "GET".to_string(),
                 path: "/users/{id}".to_string(),
                 timeout_ms: None,
@@ -625,32 +597,32 @@ mod tests {
             },
         );
 
-        let api_config = ApiConfig {
+        let service_config = HttpServiceConfig {
             name: "test_api".to_string(),
             base_url: "https://api.example.com".to_string(),
             auth: None,
             timeout_ms: 10000,
-            endpoints,
+            operations,
         };
 
-        let endpoint = api_config.endpoints.get("get_user").unwrap();
+        let endpoint = service_config.operations.get("get_user").unwrap();
 
         // Pipeline params override endpoint params using the same key names
         let mut params = HashMap::new();
         params.insert("id".to_string(), Value::String("123".to_string()));
 
-        let client = ExternalApiClient::new();
+        let client = HttpServiceClient::new();
         let ctx = ExecutionContext::from_event(HashMap::new()).unwrap();
 
         let url = client
-            .build_url(&api_config, endpoint, &params, &ctx)
+            .build_url(&service_config, endpoint, &params, &ctx)
             .unwrap();
         assert_eq!(url, "https://api.example.com/users/123");
     }
 
     #[test]
     fn test_build_url_with_query_params() {
-        let mut endpoints = HashMap::new();
+        let mut operations = HashMap::new();
         let mut endpoint_params = HashMap::new();
         endpoint_params.insert(
             "token".to_string(),
@@ -661,9 +633,9 @@ mod tests {
             serde_json::Value::String("response_format".to_string()),
         );
 
-        endpoints.insert(
+        operations.insert(
             "get_data".to_string(),
-            ApiEndpoint {
+            ServiceOperation {
                 method: "GET".to_string(),
                 path: "/data".to_string(),
                 timeout_ms: None,
@@ -674,26 +646,26 @@ mod tests {
             },
         );
 
-        let api_config = ApiConfig {
+        let service_config = HttpServiceConfig {
             name: "test_api".to_string(),
             base_url: "https://api.example.com".to_string(),
             auth: None,
             timeout_ms: 10000,
-            endpoints,
+            operations,
         };
 
-        let endpoint = api_config.endpoints.get("get_data").unwrap();
+        let endpoint = service_config.operations.get("get_data").unwrap();
 
         // Pipeline params override endpoint params using the same key names
         let mut params = HashMap::new();
         params.insert("token".to_string(), Value::String("abc123".to_string()));
         params.insert("format".to_string(), Value::String("json".to_string()));
 
-        let client = ExternalApiClient::new();
+        let client = HttpServiceClient::new();
         let ctx = ExecutionContext::from_event(HashMap::new()).unwrap();
 
         let url = client
-            .build_url(&api_config, endpoint, &params, &ctx)
+            .build_url(&service_config, endpoint, &params, &ctx)
             .unwrap();
         // Query params may be in any order
         assert!(url.starts_with("https://api.example.com/data?"));

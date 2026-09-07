@@ -27,6 +27,11 @@ pub use corint_decision_engine::{
     DecisionEngine, DecisionEngineBuilder, DecisionOptions, DecisionRequest, DecisionResponse,
     DecisionResult, Diagnostic, DiagnosticSeverity, DocumentMetadata, DslType, DslValidator,
     EngineConfig, EngineError, ExecutionTrace, LLMConfig, LLMProvider, MetricsCollector,
-    RepositoryConfig, Result, ScoreNormalizer, ServiceConfig, ServiceType, Signal, StorageConfig,
-    StorageType, ValidationResult, Value,
+    RepositoryConfig, Result, ScoreNormalizer, Signal, StorageConfig, StorageType,
+    ValidationResult, Value,
+};
+
+pub use corint_decision_engine::{
+    HttpServiceConfig, ServiceAuth, ServiceClient, ServiceOperation, ServiceRequest,
+    ServiceResponse, ServiceResponseMapping,
 };

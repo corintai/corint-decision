@@ -153,9 +153,7 @@ async fn test_cached_artifact_expiration() {
     let repo_path = temp_dir.path();
 
     // Create directory and test file
-    fs::create_dir_all(repo_path.join("library/rules"))
-        .await
-        .unwrap();
+    fs::create_dir_all(repo_path.join("rules")).await.unwrap();
 
     let rule_content = r#"version: "0.1"
 
@@ -167,12 +165,9 @@ rule:
       - amount > 100
   score: 10
 "#;
-    fs::write(
-        repo_path.join("library/rules/ttl_test_rule.yaml"),
-        rule_content,
-    )
-    .await
-    .unwrap();
+    fs::write(repo_path.join("rules/ttl_test_rule.yaml"), rule_content)
+        .await
+        .unwrap();
 
     // Create repo with 1-second TTL
     let config = CacheConfig::new().with_ttl(Duration::from_millis(100));
@@ -215,9 +210,7 @@ async fn test_cache_disabled() {
     let repo_path = temp_dir.path();
 
     // Create directory and test file
-    fs::create_dir_all(repo_path.join("library/rules"))
-        .await
-        .unwrap();
+    fs::create_dir_all(repo_path.join("rules")).await.unwrap();
 
     let rule_content = r#"version: "0.1"
 
@@ -229,12 +222,9 @@ rule:
       - amount > 100
   score: 10
 "#;
-    fs::write(
-        repo_path.join("library/rules/no_cache_rule.yaml"),
-        rule_content,
-    )
-    .await
-    .unwrap();
+    fs::write(repo_path.join("rules/no_cache_rule.yaml"), rule_content)
+        .await
+        .unwrap();
 
     // Create repo with caching disabled
     let config = CacheConfig::disabled();

@@ -15,7 +15,7 @@ base_url: "https://ipinfo.io"
 # Optional: Default timeout for all endpoints
 timeout_ms: 3000
 
-endpoints:
+operations:
   # IP Lookup endpoint
   # Returns geolocation and metadata for an IP address
   ip_lookup:

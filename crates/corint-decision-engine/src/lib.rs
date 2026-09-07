@@ -15,9 +15,7 @@ pub mod snapshot;
 pub mod validator;
 
 pub use builder::DecisionEngineBuilder;
-pub use config::{
-    EngineConfig, LLMConfig, LLMProvider, ServiceConfig, ServiceType, StorageConfig, StorageType,
-};
+pub use config::{EngineConfig, LLMConfig, LLMProvider, StorageConfig, StorageType};
 pub use corint_decision_compiler::core::{CoreError, CoreSource};
 pub use corint_decision_model::types::{FieldType, Schema, SchemaField};
 pub use decision_engine::{DecisionEngine, DecisionOptions, DecisionRequest, DecisionResponse};
@@ -30,7 +28,7 @@ pub use validator::{
 
 // Repository configuration is part of the engine's public construction API.
 pub use corint_decision_repository::{
-    ApiConfig, DataSourceConfig, FeatureDefinition, ListConfig, RepositoryConfig,
+    DataSourceConfig, FeatureDefinition, HttpServiceConfig, ListConfig, RepositoryConfig,
     RepositoryContent, RepositoryLoader, RepositorySource,
 };
 
@@ -46,3 +44,8 @@ pub use corint_decision_runtime::{
 };
 /// Version of the local engine implementation, not a remote compatibility claim.
 pub const ENGINE_VERSION: &str = env!("CARGO_PKG_VERSION");
+
+pub use corint_decision_runtime::{
+    ServiceAuth, ServiceClient, ServiceOperation, ServiceRequest, ServiceResponse,
+    ServiceResponseMapping,
+};

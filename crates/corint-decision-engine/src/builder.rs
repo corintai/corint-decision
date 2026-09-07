@@ -1,6 +1,6 @@
 //! Builder pattern for DecisionEngine
 
-use crate::config::{EngineConfig, LLMConfig, ServiceConfig, StorageConfig};
+use crate::config::{EngineConfig, LLMConfig, StorageConfig};
 use crate::decision_engine::DecisionEngine;
 use crate::error::{EngineError, Result};
 use corint_decision_repository::{RepositoryConfig, RepositoryContent, RepositoryLoader};
@@ -36,6 +36,7 @@ use std::sync::Arc;
 /// ```
 pub struct DecisionEngineBuilder {
     config: EngineConfig,
+    services: std::collections::HashMap<String, Arc<dyn corint_decision_runtime::ServiceClient>>,
     repository_config: Option<RepositoryConfig>,
     feature_executor: Option<Arc<FeatureExecutor>>,
     list_service: Option<Arc<corint_decision_runtime::lists::ListService>>,
@@ -59,6 +60,7 @@ impl DecisionEngineBuilder {
     pub fn new() -> Self {
         Self {
             config: EngineConfig::new(),
+            services: std::collections::HashMap::new(),
             repository_config: None,
             feature_executor: None,
             list_service: None,
@@ -69,6 +71,22 @@ impl DecisionEngineBuilder {
             repository_content: None,
             server_datasources: None,
         }
+    }
+
+    /// Bind a service name to a custom connector adapter.
+    pub fn with_service(
+        mut self,
+        name: impl Into<String>,
+        client: Arc<dyn corint_decision_runtime::ServiceClient>,
+    ) -> Result<Self> {
+        let name = name.into();
+        if name.trim().is_empty() || self.services.contains_key(&name) {
+            return Err(EngineError::Config(format!(
+                "Invalid or duplicate service binding: {name}"
+            )));
+        }
+        self.services.insert(name, client);
+        Ok(self)
     }
 
     /// Set server datasources from server.yaml configuration
@@ -172,8 +190,11 @@ impl DecisionEngineBuilder {
     }
 
     /// Set service configuration
-    pub fn with_service(mut self, service: ServiceConfig) -> Self {
-        self.config.service = Some(service);
+    pub fn with_http_service(
+        mut self,
+        service: corint_decision_model::service::HttpServiceConfig,
+    ) -> Self {
+        self.config.http_services.push(service);
         self
     }
 
@@ -335,6 +356,7 @@ impl DecisionEngineBuilder {
             self.feature_executor,
             self.list_service,
             repository_config.clone(),
+            self.services,
         )
         .await?;
 
@@ -419,7 +441,7 @@ impl DecisionEngineBuilder {
 
         // If we have a filesystem repository, load features from files (more reliable than converting)
         if let Some(base_path) = base_path {
-            let feature_dir = std::path::Path::new(base_path).join("configs/features");
+            let feature_dir = std::path::Path::new(base_path).join("features");
             if feature_dir.exists() {
                 let mut registry = FeatureRegistry::new();
                 registry
@@ -643,7 +665,7 @@ impl DecisionEngineBuilder {
         };
 
         if let Some(base_path) = base_path {
-            let lists_dir = std::path::Path::new(base_path).join("configs/lists");
+            let lists_dir = std::path::Path::new(base_path).join("lists");
             if !lists_dir.exists() {
                 return Ok(None);
             }

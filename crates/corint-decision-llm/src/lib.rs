@@ -20,9 +20,9 @@ pub use provider::{
 
 // Re-export generators
 pub use generator::{
-    APIConfigGenerator, APIConfigGeneratorConfig, DecisionFlow, DecisionFlowGenerator,
-    DecisionFlowGeneratorConfig, PipelineGenerator, PipelineGeneratorConfig, RuleGenerator,
-    RuleGeneratorConfig, RulesetGenerator, RulesetGeneratorConfig,
+    DecisionFlow, DecisionFlowGenerator, DecisionFlowGeneratorConfig, PipelineGenerator,
+    PipelineGeneratorConfig, RuleGenerator, RuleGeneratorConfig, RulesetGenerator,
+    RulesetGeneratorConfig, ServiceConfigGenerator, ServiceConfigGeneratorConfig,
 };
 
 pub mod cache;

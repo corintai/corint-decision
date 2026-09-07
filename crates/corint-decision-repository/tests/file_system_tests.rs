@@ -9,10 +9,10 @@ async fn create_test_repo() -> (TempDir, FileSystemRepository) {
     let repo_path = temp_dir.path();
 
     // Create directory structure
-    fs::create_dir_all(repo_path.join("library/rules/fraud"))
+    fs::create_dir_all(repo_path.join("rules/fraud"))
         .await
         .unwrap();
-    fs::create_dir_all(repo_path.join("library/rulesets"))
+    fs::create_dir_all(repo_path.join("rulesets"))
         .await
         .unwrap();
     fs::create_dir_all(repo_path.join("pipelines"))
@@ -34,7 +34,7 @@ rule:
   score: 50
 "#;
     fs::write(
-        repo_path.join("library/rules/fraud/test_fraud_rule.yaml"),
+        repo_path.join("rules/fraud/test_fraud_rule.yaml"),
         rule_content,
     )
     .await
@@ -57,7 +57,7 @@ ruleset:
       action: approve
 "#;
     fs::write(
-        repo_path.join("library/rulesets/test_ruleset.yaml"),
+        repo_path.join("rulesets/test_ruleset.yaml"),
         ruleset_content,
     )
     .await
@@ -72,7 +72,7 @@ async fn test_load_rule_by_path() {
     let (_temp, repo) = create_test_repo().await;
 
     let (rule, content) = repo
-        .load_rule("library/rules/fraud/test_fraud_rule.yaml")
+        .load_rule("rules/fraud/test_fraud_rule.yaml")
         .await
         .expect("Failed to load rule");
 
@@ -99,7 +99,7 @@ async fn test_load_ruleset_by_path() {
     let (_temp, repo) = create_test_repo().await;
 
     let (ruleset, content) = repo
-        .load_ruleset("library/rulesets/test_ruleset.yaml")
+        .load_ruleset("rulesets/test_ruleset.yaml")
         .await
         .expect("Failed to load ruleset");
 
@@ -116,7 +116,7 @@ async fn test_cache_behavior() {
     // First load - cache miss
     let start1 = std::time::Instant::now();
     let (rule1, _) = repo
-        .load_rule("library/rules/fraud/test_fraud_rule.yaml")
+        .load_rule("rules/fraud/test_fraud_rule.yaml")
         .await
         .expect("Failed to load rule");
     let duration1 = start1.elapsed();
@@ -124,7 +124,7 @@ async fn test_cache_behavior() {
     // Second load - should be from cache
     let start2 = std::time::Instant::now();
     let (rule2, _) = repo
-        .load_rule("library/rules/fraud/test_fraud_rule.yaml")
+        .load_rule("rules/fraud/test_fraud_rule.yaml")
         .await
         .expect("Failed to load rule");
     let duration2 = start2.elapsed();
@@ -163,14 +163,14 @@ async fn test_exists() {
     let (_temp, repo) = create_test_repo().await;
 
     let exists = repo
-        .exists("library/rules/fraud/test_fraud_rule.yaml")
+        .exists("rules/fraud/test_fraud_rule.yaml")
         .await
         .expect("Failed to check existence");
 
     assert!(exists);
 
     let not_exists = repo
-        .exists("library/rules/fraud/nonexistent.yaml")
+        .exists("rules/fraud/nonexistent.yaml")
         .await
         .expect("Failed to check existence");
 

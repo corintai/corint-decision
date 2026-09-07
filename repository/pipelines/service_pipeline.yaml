@@ -1,29 +1,29 @@
 pipeline:
-  id: api_pipeline
-  name: API Pipeline
-  description: API Pipeline
+  id: service_pipeline
+  name: Service Pipeline
+  description: Service Pipeline
   version: "1.0.0"
 
-  entry: api_step
+  entry: ip_lookup
 
   steps:
     - step:
-        id: api_step
-        name: API Step
-        type: api
-        api: ipinfo
-        endpoint: ip_lookup
+        id: ip_lookup
+        name: IP Lookup
+        type: service
+        service: ipinfo
+        operation: ip_lookup
      
   decision:
     - when:
         all:
-          - api.ipinfo.ip_lookup.country_code == "US"
+          - service.ip_lookup.country_code == "US"
       result: approve
       reason: "US"
    
     - when:
         all:
-          - api.ipinfo.ip_lookup.country_code == "CN"
+          - service.ip_lookup.country_code == "CN"
       result: decline
       reason: "Non-US"
 

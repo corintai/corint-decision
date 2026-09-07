@@ -32,7 +32,6 @@ pub(super) async fn decide(
 ) -> Result<(HeaderMap, Json<DecideResponsePayload>), ServerError> {
     if payload.user.is_some()
         || payload.features.is_some()
-        || payload.api.is_some()
         || payload.service.is_some()
         || payload.llm.is_some()
         || payload.vars.is_some()
@@ -78,9 +77,6 @@ pub(super) async fn decide(
     // Add optional namespaces if provided (legacy/internal)
     if let Some(features) = payload.features {
         request = request.with_features(convert_namespace(features));
-    }
-    if let Some(api) = payload.api {
-        request = request.with_api(convert_namespace(api));
     }
     if let Some(service) = payload.service {
         request = request.with_service(convert_namespace(service));

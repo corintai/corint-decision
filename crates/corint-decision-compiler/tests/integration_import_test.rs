@@ -10,27 +10,12 @@ use std::path::PathBuf;
 
 #[test]
 fn test_import_resolver_load_rule() {
-    let mut resolver = ImportResolver::new("repository");
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../repository");
+    let mut resolver = ImportResolver::new(root);
+    let resolved = resolver.resolve_imports(&create_test_document()).unwrap();
 
-    // This test assumes the repository directory structure exists
-    // If running in CI, you may need to create test fixtures
-    let result = resolver.resolve_imports(&create_test_document());
-
-    // The test should succeed if the repository exists and has the expected structure
-    match result {
-        Ok(resolved) => {
-            println!("✓ Successfully resolved imports");
-            println!("  Rules loaded: {}", resolved.rules.len());
-            println!("  Rulesets loaded: {}", resolved.rulesets.len());
-        }
-        Err(e) => {
-            // This is expected if repository files don't exist yet
-            println!(
-                "⚠ Import resolution failed (expected if repository not set up): {}",
-                e
-            );
-        }
-    }
+    assert_eq!(resolved.rules.len(), 1);
+    assert_eq!(resolved.rules[0].id, "fraud_farm_pattern");
 }
 
 #[test]
@@ -72,7 +57,7 @@ fn create_test_document() -> CdlDocument<()> {
     let mut imports = Imports::default();
     imports
         .rules
-        .push("library/rules/fraud/fraud_farm.yaml".to_string());
+        .push("rules/fraud/fraud_farm.yaml".to_string());
 
     CdlDocument::with_imports("0.1".to_string(), imports, ())
 }

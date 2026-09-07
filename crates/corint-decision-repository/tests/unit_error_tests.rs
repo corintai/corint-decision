@@ -141,10 +141,8 @@ async fn test_file_system_repo_id_not_found() {
     let temp_dir = TempDir::new().unwrap();
     let repo_path = temp_dir.path();
 
-    // Create library/rules directory but no file
-    fs::create_dir_all(repo_path.join("library/rules"))
-        .await
-        .unwrap();
+    // Create rules directory but no file
+    fs::create_dir_all(repo_path.join("rules")).await.unwrap();
 
     let repo = FileSystemRepository::new(repo_path).unwrap();
 
@@ -169,18 +167,16 @@ async fn test_file_system_repo_parse_error() {
     let repo_path = temp_dir.path();
 
     // Create directory and invalid YAML file
-    fs::create_dir_all(repo_path.join("library/rules"))
-        .await
-        .unwrap();
+    fs::create_dir_all(repo_path.join("rules")).await.unwrap();
 
     let invalid_yaml = "invalid: yaml: syntax: :::";
-    fs::write(repo_path.join("library/rules/invalid.yaml"), invalid_yaml)
+    fs::write(repo_path.join("rules/invalid.yaml"), invalid_yaml)
         .await
         .unwrap();
 
     let repo = FileSystemRepository::new(repo_path).unwrap();
 
-    let result = repo.load_rule("library/rules/invalid.yaml").await;
+    let result = repo.load_rule("rules/invalid.yaml").await;
 
     assert!(result.is_err());
     // Should get a Parser or YamlParse error

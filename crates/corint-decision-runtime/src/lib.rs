@@ -8,7 +8,6 @@ pub mod datasource;
 pub mod engine;
 pub mod error;
 pub mod executor;
-pub mod external_api;
 pub mod feature;
 pub mod lists;
 pub mod observability;
@@ -27,9 +26,6 @@ pub use datasource::{
 pub use engine::PipelineExecutor;
 pub use error::{Result, RuntimeError};
 pub use executor::Executor;
-pub use external_api::{
-    ApiAuth, ApiConfig, ApiEndpoint, ApiResponse, ExternalApiClient, HttpMethod,
-};
 pub use feature::FeatureExtractor;
 pub use lists::{ListBackend, ListService, MemoryBackend};
 pub use observability::{Metrics, MetricsCollector};
@@ -38,5 +34,8 @@ pub use result::{
     ExecutionResult, ExecutionTrace, PipelineTrace, RuleExecutionRecord, RuleTrace, RulesetTrace,
     StepTrace,
 };
-pub use service::{ServiceClient, ServiceRequest, ServiceResponse};
+pub use service::{
+    HttpServiceClient, HttpServiceConfig, ServiceAuth, ServiceClient, ServiceOperation,
+    ServiceRequest, ServiceResponse, ServiceResponseMapping,
+};
 pub use storage::{Event, EventFilter, InMemoryStorage, Storage, TimeRange};

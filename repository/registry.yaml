@@ -46,7 +46,7 @@ registry:
     when: event.type == "no_sep_demo"
     description: Demo pipeline without --- separators
 
-  - pipeline: api_pipeline
+  - pipeline: service_pipeline
     when: event.type == "api"
     description: API Pipeline
 

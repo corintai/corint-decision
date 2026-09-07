@@ -1,5 +1,9 @@
 # CORINT Decision Engine
 
+Service invocations use a unified `service + operation` node. See the
+[CDL Service contract](docs/cdl/service.md) for HTTP bindings and custom adapters.
+
+
 <div align="center">
 
 **High-performance, AI-augmented risk decision engine with unified DSL**
@@ -288,7 +292,7 @@ Reusable rule definitions with inheritance and import system:
 
 ```yaml
 # Define reusable rules in separate files
-# File: repository/library/rules/velocity_check.yaml
+# File: repository/rules/velocity_check.yaml
 rule:
   id: velocity_check
   name: High Velocity Detection
@@ -299,7 +303,7 @@ rule:
 
 ---
 
-# File: repository/library/rules/geo_mismatch.yaml
+# File: repository/rules/geo_mismatch.yaml
 rule:
   id: geo_mismatch
   name: Geographic Mismatch
@@ -311,7 +315,7 @@ rule:
 ---
 
 # Base ruleset with core fraud checks
-# File: repository/library/rulesets/fraud_detection_base.yaml
+# File: repository/rulesets/fraud_detection_base.yaml
 ruleset:
   id: fraud_detection_base
   name: Base Fraud Detection
@@ -326,7 +330,7 @@ ruleset:
 ---
 
 # Specialized ruleset extending base
-# File: repository/library/rulesets/payment_fraud.yaml
+# File: repository/rulesets/payment_fraud.yaml
 ruleset:
   id: payment_fraud_detection
   extends: fraud_detection_base    # Inherits all rules and conclusion logic
@@ -696,7 +700,7 @@ RUST_LOG=trace cargo run -p corint-decision-server     # Trace (all details)
 **Feature calculation fails:**
 - Verify the database connection
 - Check data source configuration in `config/server.yaml` (datasource section)
-- Check features configuration (`repository/configs/features/*.yaml`)
+- Check features configuration (`repository/features/*.yaml`)
 - Verify test data exists in database
 - Ensure logical datasource names (`events_datasource`, `lookup_datasource`) are properly mapped
 
@@ -735,7 +739,7 @@ RUST_LOG=trace cargo run -p corint-decision-server     # Trace (all details)
 | [**context.md**](docs/cdl/context.md) | Context and variable management |
 | [**feature.md**](docs/FEATURE_ENGINEERING.md) ⭐ | **Feature engineering and statistical analysis** |
 | [**list.md**](docs/cdl/list.md) ⭐ | **Custom lists (blocklists/allowlists)** |
-| [**api.md**](docs/cdl/api.md) | External API defination|
+| [**service.md**](docs/cdl/service.md) | External API defination|
 | [**service.md**](docs/cdl/service.md) | Internal services defination |
 
 ### Extensible

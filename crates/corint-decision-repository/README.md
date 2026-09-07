@@ -39,7 +39,7 @@ async fn main() -> anyhow::Result<()> {
 
     // Load a rule by path
     let (rule, content) = repo
-        .load_rule("library/rules/fraud/fraud_farm.yaml")
+        .load_rule("rules/fraud/fraud_farm.yaml")
         .await?;
     println!("Loaded rule: {} (score: {})", rule.id, rule.score);
 
@@ -49,7 +49,7 @@ async fn main() -> anyhow::Result<()> {
 
     // Load a ruleset
     let (ruleset, _) = repo
-        .load_ruleset("library/rulesets/fraud_detection_core.yaml")
+        .load_ruleset("rulesets/fraud_detection_core.yaml")
         .await?;
     println!("Loaded ruleset: {} with {} rules",
         ruleset.id, ruleset.rules.len());
@@ -146,7 +146,7 @@ println!("Cache size: {} entries", stats.size);
 repo.clear_cache();
 
 // Clear specific entry
-repo.clear_cache_entry("library/rules/fraud/fraud_farm.yaml");
+repo.clear_cache_entry("rules/fraud/fraud_farm.yaml");
 
 // Enable/disable caching at runtime
 repo.set_cache_enabled(false);
@@ -172,7 +172,7 @@ for ruleset_path in rulesets {
 ### Check If Artifact Exists
 
 ```rust
-if repo.exists("library/rules/fraud/fraud_farm.yaml").await? {
+if repo.exists("rules/fraud/fraud_farm.yaml").await? {
     println!("Rule exists!");
 }
 ```
@@ -183,13 +183,14 @@ The file system repository expects the following structure:
 
 ```
 repository/
-├── library/
-│   ├── rules/          # Individual rule definitions
-│   │   ├── fraud/
-│   │   ├── payment/
-│   │   └── geography/
-│   └── rulesets/       # Reusable ruleset definitions
-└── pipelines/          # Business scenario orchestration
+├── registry.yaml           # Event-to-pipeline routing
+├── rules/                  # Reusable rules, grouped by domain
+├── rulesets/               # Reusable rule combinations
+├── pipelines/              # Business orchestration
+├── services/               # Concrete service definitions
+├── features/               # Feature definitions
+└── lists/                  # List definitions
+    └── data/               # Static list data
 ```
 
 ## Architecture
@@ -376,12 +377,12 @@ Stores artifacts in PostgreSQL database with advanced features.
 
 The repository supports loading artifacts by either:
 
-1. **Relative path**: `library/rules/fraud/fraud_farm.yaml`
+1. **Relative path**: `rules/fraud/fraud_farm.yaml`
 2. **Artifact ID**: `fraud_farm_pattern`
 
 When loading by ID, the repository automatically searches in standard locations:
-- Rules: `library/rules/**/*.yaml`
-- Rulesets: `library/rulesets/**/*.yaml`
+- Rules: `rules/**/*.yaml`
+- Rulesets: `rulesets/**/*.yaml`
 - Pipelines: `pipelines/**/*.yaml`
 
 ### Caching Strategy
@@ -795,14 +796,14 @@ cargo bench --package corint-decision-repository --features postgres -- postgres
 
 **Problem 1: Rule Not Found**
 ```
-Error: RepositoryError::NotFound("library/rules/fraud/velocity_check.yaml")
+Error: RepositoryError::NotFound("rules/fraud/velocity_check.yaml")
 ```
 
 **Solutions:**
-1. Check file exists: `ls repository/library/rules/**/*.yaml | grep velocity`
+1. Check file exists: `ls repository/rules/**/*.yaml | grep velocity`
 2. Verify ID in YAML matches: `grep "id: velocity_check" file.yaml`
 3. Check file path is relative to repository root
-4. Check file permissions: `ls -la repository/library/rules/`
+4. Check file permissions: `ls -la repository/rules/`
 
 **Problem 2: Slow Initial Loads**
 

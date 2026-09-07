@@ -5,8 +5,8 @@ version: "0.1"
 
 import:
   rulesets:
-    - library/rulesets/payment_high_value.yaml
-    - library/rulesets/payment_standard.yaml
+    - rulesets/payment_high_value.yaml
+    - rulesets/payment_standard.yaml
 
 ---
 
@@ -28,12 +28,11 @@ pipeline:
     - step:
         id: ip_reputation_check
         name: IP Reputation Check
-        type: api
-        api: ipinfo
-        endpoint: ip_lookup
+        type: service
+        service: ipinfo
+        operation: ip_lookup
         params:
-          ip: ${event.ip_address}      # Expression: read from event data
-          token: "a63066c9a63590"       # Literal: API token
+          ip: event.ip_address      # Expression: read from event data
         next: amount_router
 
     # Step 2: Router based on payment amount

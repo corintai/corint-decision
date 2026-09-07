@@ -25,7 +25,7 @@ auth:
   type: header
   name: Authorization
   value: "{{env.IPINFO_TOKEN}}"
-endpoints:
+operations:
   ip_lookup:
     method: GET
     path: /{ip}
@@ -81,9 +81,9 @@ pipeline:
   entry: ip_check
   steps:
     - id: ip_check
-      type: api
-      api: ipinfo
-      endpoint: ip_lookup
+      type: service
+      service: ipinfo
+      operation: ip_lookup
       output: ip_info
       next: fraud_rules
     - id: fraud_rules
@@ -120,7 +120,7 @@ pipeline:
         Ok(flow) => {
             println!("✓ Successfully generated decision flow!\n");
             println!("Summary:");
-            println!("  - {} API configurations", flow.api_config_count);
+            println!("  - {} API configurations", flow.service_config_count);
             println!("  - {} rules", flow.rule_count);
             println!("  - {} rulesets", flow.ruleset_count);
             println!("  - {} pipelines", flow.pipeline_count);
@@ -131,9 +131,9 @@ pipeline:
 
             println!("\n=== Component Breakdown ===\n");
 
-            if !flow.api_configs().is_empty() {
-                println!("API Configurations ({}):", flow.api_configs().len());
-                for (i, config) in flow.api_configs().iter().enumerate() {
+            if !flow.service_configs().is_empty() {
+                println!("API Configurations ({}):", flow.service_configs().len());
+                for (i, config) in flow.service_configs().iter().enumerate() {
                     let first_line = config.lines().next().unwrap_or("");
                     println!("  {}. {}", i + 1, first_line);
                 }
@@ -182,9 +182,9 @@ pipeline:
 
     println!("=== Example Complete ===\n");
     println!("You can save these generated files to your repository:");
-    println!("  - API configs → repository/configs/apis/");
-    println!("  - Rules → repository/library/rules/fraud/");
-    println!("  - Rulesets → repository/library/rulesets/");
+    println!("  - Services → repository/services/");
+    println!("  - Rules → repository/rules/fraud/");
+    println!("  - Rulesets → repository/rulesets/");
     println!("  - Pipelines → repository/pipelines/");
 
     Ok(())

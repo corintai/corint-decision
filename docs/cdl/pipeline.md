@@ -105,7 +105,7 @@ mutation of the complete Core fixture and must fail at `validate` with the code 
 
 <!-- cdl-example: api_params_rejected -->
 `N08_api_params`: API steps, including `params`, `on_error` and fallback, are outside
-Core. The compatibility compiler also rejects unsupported parameters and error policies.
+Core. The online runtime uses the unified service node and supports evaluated params.
 
 <!-- cdl-example: api_any_rejected -->
 `N08_api_any`: API `any` is outside Core. The compatibility compiler also rejects this combination.
@@ -115,7 +115,7 @@ Core. The compatibility compiler also rejects unsupported parameters and error p
 
 <!-- cdl-example: service_endpoint_rejected -->
 `N08_service_endpoint`: Service steps are outside Core. The historical `endpoint`
-spelling is also absent from the compatibility step field whitelist.
+spelling is rejected; the online service node requires operation.
 
 Metadata, rule parameters, inheritance, dynamic Feature/List
 access and structured actions remain outside this Core profile. Their presence in

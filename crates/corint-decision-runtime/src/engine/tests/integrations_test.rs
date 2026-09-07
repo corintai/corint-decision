@@ -1,42 +1,26 @@
-//! Integration tests for Service clients in pipeline executor
-
+//! Offline execution must not admit unbound service invocations.
 use crate::engine::PipelineExecutor;
-use crate::service::http::MockHttpClient;
-use std::sync::Arc;
+use corint_decision_model::ir::{Instruction, Program, ProgramMetadata};
+use std::collections::HashMap;
 
 #[tokio::test]
-async fn test_service_integration() {
-    let service_client = Arc::new(MockHttpClient::new());
-    let executor = PipelineExecutor::new().with_service_client(service_client);
-
-    assert!(executor.service_client.is_some());
-}
-
-#[tokio::test]
-async fn offline_executor_does_not_create_connectors_or_use_api_fallback() {
-    use corint_decision_model::ir::{Instruction, Program, ProgramMetadata};
-    use corint_decision_model::Value;
-    use std::collections::HashMap;
+async fn offline_executor_rejects_service_invocations() {
     let executor = PipelineExecutor::new_offline();
-    assert!(executor.external_api_client.is_none());
-    assert!(executor.service_client.is_none());
-    assert!(executor.feature_executor.is_none());
-    assert!(executor.list_service.is_none());
+    assert!(executor.http_service_client.is_none());
+    assert!(executor.services.is_empty());
     let program = Program::new(
-        vec![Instruction::CallExternal {
-            api: "must_not_run".into(),
-            endpoint: "test".into(),
-            params: HashMap::new(),
-            timeout: None,
-            fallback: Some(Value::Number(0.0)),
+        vec![Instruction::InvokeService {
+            service: "missing".into(),
+            operation: "lookup".into(),
+            parameter_names: vec![],
+            timeout_ms: None,
         }],
         ProgramMetadata::for_rule("offline_test".into()),
     );
-    let error = executor
+    assert!(executor
         .execute(&program, HashMap::new())
         .await
-        .unwrap_err();
-    assert!(
-        matches!(error, crate::RuntimeError::InvalidOperation(message) if message == "External APIs are disabled in the offline executor")
-    );
+        .unwrap_err()
+        .to_string()
+        .contains("No service binding"));
 }

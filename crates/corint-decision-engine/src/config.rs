@@ -5,6 +5,7 @@ use std::path::PathBuf;
 
 /// Main engine configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct EngineConfig {
     /// Rule file path(s)
     pub rule_files: Vec<PathBuf>,
@@ -27,7 +28,8 @@ pub struct EngineConfig {
     pub llm: Option<LLMConfig>,
 
     /// Service configuration
-    pub service: Option<ServiceConfig>,
+    #[serde(default)]
+    pub http_services: Vec<corint_decision_model::service::HttpServiceConfig>,
 
     /// Enable metrics collection
     pub enable_metrics: bool,
@@ -49,7 +51,7 @@ impl EngineConfig {
             registry_content: None,
             storage: None,
             llm: None,
-            service: None,
+            http_services: Vec::new(),
             enable_metrics: true,
             enable_tracing: false,
             compiler_options: CompilerOptions::default(),
@@ -81,8 +83,11 @@ impl EngineConfig {
     }
 
     /// Set service configuration
-    pub fn with_service(mut self, service: ServiceConfig) -> Self {
-        self.service = Some(service);
+    pub fn with_http_service(
+        mut self,
+        service: corint_decision_model::service::HttpServiceConfig,
+    ) -> Self {
+        self.http_services.push(service);
         self
     }
 
@@ -147,30 +152,6 @@ pub struct LLMConfig {
 pub enum LLMProvider {
     OpenAI,
     Anthropic,
-    Mock,
-}
-
-/// Service configuration
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ServiceConfig {
-    /// Service type (http, database, redis, etc.)
-    pub service_type: ServiceType,
-
-    /// Service endpoint or connection
-    pub endpoint: String,
-}
-
-/// Service type
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum ServiceType {
-    /// Internal HTTP microservice
-    MsHttp,
-    /// Internal gRPC microservice
-    MsGrpc,
-    /// Message queue (Kafka, RabbitMQ)
-    Mq,
-    /// Mock service for testing
     Mock,
 }
 
@@ -246,7 +227,7 @@ mod tests {
         assert!(config.registry_content.is_none());
         assert!(config.storage.is_none());
         assert!(config.llm.is_none());
-        assert!(config.service.is_none());
+        assert!(config.http_services.is_empty());
         assert!(config.enable_metrics); // Default is true
         assert!(!config.enable_tracing); // Default is false
     }
@@ -296,21 +277,6 @@ mod tests {
     }
 
     #[test]
-    fn test_engine_config_with_service() {
-        let service = ServiceConfig {
-            service_type: ServiceType::MsHttp,
-            endpoint: "http://kyc-service.internal:8080".to_string(),
-        };
-
-        let config = EngineConfig::new().with_service(service.clone());
-
-        assert!(config.service.is_some());
-        let config_service = config.service.unwrap();
-        assert!(matches!(config_service.service_type, ServiceType::MsHttp));
-        assert_eq!(config_service.endpoint, "http://kyc-service.internal:8080");
-    }
-
-    #[test]
     fn test_storage_type_variants() {
         let memory = StorageType::Memory;
         let redis = StorageType::Redis;
@@ -332,19 +298,6 @@ mod tests {
         assert!(matches!(openai, LLMProvider::OpenAI));
         assert!(matches!(anthropic, LLMProvider::Anthropic));
         assert!(matches!(mock, LLMProvider::Mock));
-    }
-
-    #[test]
-    fn test_service_type_variants() {
-        let ms_http = ServiceType::MsHttp;
-        let ms_grpc = ServiceType::MsGrpc;
-        let mq = ServiceType::Mq;
-        let mock = ServiceType::Mock;
-
-        assert!(matches!(ms_http, ServiceType::MsHttp));
-        assert!(matches!(ms_grpc, ServiceType::MsGrpc));
-        assert!(matches!(mq, ServiceType::Mq));
-        assert!(matches!(mock, ServiceType::Mock));
     }
 
     #[test]
@@ -436,27 +389,5 @@ mod tests {
 
         assert!(matches!(storage.storage_type, StorageType::Postgres));
         assert!(storage.connection.starts_with("postgresql://"));
-    }
-
-    #[test]
-    fn test_service_config_grpc() {
-        let service = ServiceConfig {
-            service_type: ServiceType::MsGrpc,
-            endpoint: "risk-scoring.internal:9090".to_string(),
-        };
-
-        assert!(matches!(service.service_type, ServiceType::MsGrpc));
-        assert!(service.endpoint.contains("9090"));
-    }
-
-    #[test]
-    fn test_service_config_mq() {
-        let service = ServiceConfig {
-            service_type: ServiceType::Mq,
-            endpoint: "kafka-1.internal:9092".to_string(),
-        };
-
-        assert!(matches!(service.service_type, ServiceType::Mq));
-        assert!(service.endpoint.contains("kafka"));
     }
 }

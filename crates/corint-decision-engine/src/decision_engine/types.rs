@@ -25,10 +25,6 @@ pub struct DecisionRequest {
     #[serde(default)]
     pub features: Option<HashMap<String, Value>>,
 
-    /// External API results (optional)
-    #[serde(default)]
-    pub api: Option<HashMap<String, Value>>,
-
     /// Service call results (optional)
     #[serde(default)]
     pub service: Option<HashMap<String, Value>>,
@@ -56,7 +52,6 @@ impl DecisionRequest {
         Self {
             event_data,
             features: None,
-            api: None,
             service: None,
             llm: None,
             vars: None,
@@ -80,12 +75,6 @@ impl DecisionRequest {
     /// Add features
     pub fn with_features(mut self, features: HashMap<String, Value>) -> Self {
         self.features = Some(features);
-        self
-    }
-
-    /// Add API results
-    pub fn with_api(mut self, api: HashMap<String, Value>) -> Self {
-        self.api = Some(api);
         self
     }
 
@@ -113,9 +102,6 @@ impl DecisionRequest {
 
         if let Some(features) = &self.features {
             input = input.with_features(features.clone());
-        }
-        if let Some(api) = &self.api {
-            input = input.with_api(api.clone());
         }
         if let Some(service) = &self.service {
             input = input.with_service(service.clone());

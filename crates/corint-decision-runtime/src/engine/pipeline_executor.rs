@@ -12,10 +12,10 @@ use super::condition_observer::ConditionObserver;
 use super::operators;
 use crate::context::ExecutionContext;
 use crate::error::{Result, RuntimeError};
-use crate::external_api::ExternalApiClient;
 use crate::feature::{FeatureExecutor, FeatureExtractor};
 use crate::observability::{Metrics, MetricsCollector};
 use crate::result::{DecisionResult, ExecutionResult};
+use crate::service::HttpServiceClient;
 use crate::service::ServiceClient;
 use crate::storage::Storage;
 use corint_decision_model::ir::condition_map::{CONDITION_MAP, DECISION_CONDITION_MAP};
@@ -32,8 +32,8 @@ pub type RulesetPrograms = HashMap<String, (Vec<Program>, Program)>;
 pub struct PipelineExecutor {
     feature_extractor: Option<Arc<FeatureExtractor>>,
     feature_executor: Option<Arc<FeatureExecutor>>,
-    service_client: Option<Arc<dyn ServiceClient>>,
-    external_api_client: Option<Arc<ExternalApiClient>>,
+    services: HashMap<String, Arc<dyn ServiceClient>>,
+    http_service_client: Option<Arc<HttpServiceClient>>,
     list_service: Option<Arc<crate::lists::ListService>>,
     metrics: Arc<MetricsCollector>,
     /// Opt-in synchronous calls: rule programs followed by the conclusion program.
@@ -47,8 +47,8 @@ impl PipelineExecutor {
         Self {
             feature_extractor: None,
             feature_executor: None,
-            service_client: None,
-            external_api_client: Some(Arc::new(ExternalApiClient::new())),
+            services: HashMap::new(),
+            http_service_client: Some(Arc::new(HttpServiceClient::new())),
             list_service: None,
             metrics: Arc::new(MetricsCollector::new()),
             ruleset_programs: None,
@@ -57,13 +57,13 @@ impl PipelineExecutor {
     }
 
     /// Construct the strict Core executor without initializing HTTP clients or
-    /// any other connector. API instructions fail closed if supplied directly.
+    /// any other connector. Service instructions fail closed if supplied directly.
     pub fn new_offline() -> Self {
         Self {
             feature_extractor: None,
             feature_executor: None,
-            service_client: None,
-            external_api_client: None,
+            services: HashMap::new(),
+            http_service_client: None,
             list_service: None,
             metrics: Arc::new(MetricsCollector::new()),
             ruleset_programs: None,
@@ -76,8 +76,8 @@ impl PipelineExecutor {
         Self {
             feature_extractor: Some(Arc::new(FeatureExtractor::new(storage))),
             feature_executor: None,
-            service_client: None,
-            external_api_client: Some(Arc::new(ExternalApiClient::new())),
+            services: HashMap::new(),
+            http_service_client: Some(Arc::new(HttpServiceClient::new())),
             list_service: None,
             metrics: Arc::new(MetricsCollector::new()),
             ruleset_programs: None,
@@ -91,16 +91,96 @@ impl PipelineExecutor {
         self
     }
 
-    /// Set service client
-    pub fn with_service_client(mut self, client: Arc<dyn ServiceClient>) -> Self {
-        self.service_client = Some(client);
+    /// Bind a logical service to a connector adapter, regardless of deployment location.
+    pub fn with_service(
+        mut self,
+        name: impl Into<String>,
+        client: Arc<dyn ServiceClient>,
+    ) -> Result<Self> {
+        let name = name.into();
+        if name.trim().is_empty()
+            || self.services.contains_key(&name)
+            || self
+                .http_service_client
+                .as_ref()
+                .is_some_and(|http| http.contains_service(&name))
+        {
+            return Err(RuntimeError::InvalidOperation(format!(
+                "Invalid or duplicate service binding: {name}"
+            )));
+        }
+        self.services.insert(name, client);
+        Ok(self)
+    }
+
+    pub fn with_http_service_client(mut self, client: Arc<HttpServiceClient>) -> Self {
+        self.http_service_client = Some(client);
         self
     }
 
-    /// Set external API client
-    pub fn with_external_api_client(mut self, client: Arc<ExternalApiClient>) -> Self {
-        self.external_api_client = Some(client);
-        self
+    async fn invoke_service(
+        &self,
+        service: &str,
+        operation: &str,
+        params: &HashMap<String, Value>,
+        timeout_ms: Option<u64>,
+        ctx: &ExecutionContext,
+    ) -> Result<Value> {
+        if timeout_ms == Some(0) {
+            return Err(RuntimeError::InvalidOperation(
+                "Service timeout_ms must be positive".into(),
+            ));
+        }
+        let start = Instant::now();
+        let result = async {
+            let http = self
+                .http_service_client
+                .as_ref()
+                .filter(|client| client.contains_service(service));
+            let adapter = self.services.get(service);
+            if http.is_some() && adapter.is_some() {
+                return Err(RuntimeError::InvalidOperation(format!(
+                    "Ambiguous service binding: {service}"
+                )));
+            }
+            if let Some(http) = http {
+                return http.call(service, operation, params, timeout_ms, ctx).await;
+            }
+            let client = adapter.ok_or_else(|| {
+                RuntimeError::ServiceCallFailed(format!("No service binding: {service}"))
+            })?;
+            let request =
+                crate::service::ServiceRequest::new(service.to_owned(), operation.to_owned())
+                    .with_params(params.clone());
+            let response = tokio::time::timeout(
+                std::time::Duration::from_millis(timeout_ms.unwrap_or(10_000)),
+                client.call(request),
+            )
+            .await
+            .map_err(|_| {
+                RuntimeError::ServiceCallFailed(format!(
+                    "Service timed out: {service}::{operation}"
+                ))
+            })??;
+            if response.status != "success" {
+                return Err(RuntimeError::ServiceCallFailed(format!(
+                    "Service {service}::{operation} returned status {}",
+                    response.status
+                )));
+            }
+            Ok(response.data)
+        }
+        .await;
+        self.metrics
+            .counter(if result.is_ok() {
+                "service_calls_success"
+            } else {
+                "service_calls_error"
+            })
+            .inc();
+        self.metrics
+            .record_execution_time("service_call", start.elapsed());
+        result
     }
 
     /// Set list service for list lookup operations
@@ -652,7 +732,7 @@ impl PipelineExecutor {
                     let value = ctx.pop()?;
                     tracing::trace!("Storing value at '{}': {:?}", name, value);
 
-                    // Handle nested paths like "api.ipinfo.ip_lookup"
+                    // Handle nested paths like "service.ip_lookup"
                     if name.contains('.') {
                         let parts: Vec<&str> = name.split('.').collect();
                         Self::store_nested_value(&mut ctx, &parts, value);
@@ -690,82 +770,19 @@ impl PipelineExecutor {
                     pc += 1;
                 }
 
-                // Service calls (internal)
-                Instruction::CallService {
+                Instruction::InvokeService {
                     service,
                     operation,
-                    params,
+                    parameter_names,
+                    timeout_ms,
                 } => {
-                    let service_start = Instant::now();
-                    let value = if let Some(ref client) = self.service_client {
-                        use crate::service::ServiceRequest;
-                        let mut request = ServiceRequest::new(service.clone(), operation.clone());
-                        // Convert params to HashMap<String, Value>
-                        for (k, v) in params {
-                            request = request.with_param(k.clone(), v.clone());
-                        }
-                        match client.call(request).await {
-                            Ok(response) => {
-                                self.metrics.counter("service_calls_success").inc();
-                                response.data
-                            }
-                            Err(e) => {
-                                self.metrics.counter("service_calls_error").inc();
-                                Value::String(format!("Service Error: {}", e))
-                            }
-                        }
-                    } else {
-                        Value::Null
-                    };
-                    self.metrics
-                        .record_execution_time("service_call", service_start.elapsed());
-                    ctx.push(value);
-                    pc += 1;
-                }
-
-                // External API calls
-                Instruction::CallExternal {
-                    api,
-                    endpoint,
-                    params,
-                    timeout,
-                    fallback,
-                } => {
-                    let api_start = Instant::now();
-
-                    // Call external API using the generic client
-                    let value = match self
-                        .external_api_client
-                        .as_ref()
-                        .ok_or_else(|| {
-                            RuntimeError::InvalidOperation(
-                                "External APIs are disabled in the offline executor".into(),
-                            )
-                        })?
-                        .call(api, endpoint, params, *timeout, &ctx)
-                        .await
-                    {
-                        Ok(result) => {
-                            tracing::debug!("External API {}::{} succeeded", api, endpoint);
-                            result
-                        }
-                        Err(e) => {
-                            tracing::warn!(
-                                "External API {}::{} failed: {}, using fallback",
-                                api,
-                                endpoint,
-                                e
-                            );
-                            if let Some(fallback_val) = fallback {
-                                fallback_val.clone()
-                            } else {
-                                Value::Null
-                            }
-                        }
-                    };
-
-                    self.metrics
-                        .record_execution_time("external_api_call", api_start.elapsed());
+                    let mut params = HashMap::new();
+                    for name in parameter_names.iter().rev() {
+                        params.insert(name.clone(), ctx.pop()?);
+                    }
+                    let value = self
+                        .invoke_service(service, operation, &params, *timeout_ms, &ctx)
+                        .await?;
                     ctx.push(value);
                     pc += 1;
                 }
@@ -947,7 +964,7 @@ impl PipelineExecutor {
         }
     }
 
-    /// Store a value at a nested path like ["api", "ipinfo", "ip_lookup"]
+    /// Store a value at a nested path like ["service", "ip_lookup"]
     fn store_nested_value(ctx: &mut ExecutionContext, parts: &[&str], value: Value) {
         if parts.is_empty() {
             return;

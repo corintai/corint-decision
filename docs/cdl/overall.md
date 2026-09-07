@@ -1,6 +1,10 @@
 # Corint Definition Language (CDL)
 
 <!-- cdl-scope: compatibility-unverified -->
+
+The authoritative online integration contract is [Service](service.md). Internal/external
+location does not define separate node kinds. Historical integration sketches below
+do not override that contract; `api` is removed and operation fields use `operation`.
 > This page is an unverified compatibility reference. Its snippets are not Core support evidence.
 > For the executable contract and supported examples, use [CDL Core](cdl-core.md),
 > [Pipeline](pipeline.md) and the [capability inventory](schema/capabilities.json).
@@ -39,9 +43,9 @@ version: "0.1"
 # Optional: Import dependencies
 import:
   rules:
-    - library/rules/fraud/fraud_farm.yaml
+    - rules/fraud/fraud_farm.yaml
   rulesets:
-    - library/rulesets/fraud_detection_core.yaml
+    - rulesets/fraud_detection_core.yaml
 
 ---
 
@@ -74,10 +78,10 @@ version: "0.1"
 # Declare dependencies
 import:
   rules:
-    - library/rules/fraud/fraud_farm.yaml
-    - library/rules/payment/card_testing.yaml
+    - rules/fraud/fraud_farm.yaml
+    - rules/payment/card_testing.yaml
   rulesets:
-    - library/rulesets/fraud_detection_core.yaml
+    - rulesets/fraud_detection_core.yaml
 
 ---
 
@@ -154,10 +158,10 @@ Operators:
 
 ---
 
-### 3.1.2 External API Conditions
+### 3.1.2 Service Result Conditions
 
 ```yaml
-- api.Chainalysis.risk_score > 80
+- service.Chainalysis.risk_score > 80
 ```
 
 ---
@@ -232,8 +236,7 @@ A pipeline defines the entire risk‑processing DAG with explicit orchestration 
 - Router-based routing (conditional branches via `router` step type)
 - Ruleset execution (via `ruleset` step type)
 - Sub-pipeline calls (via `pipeline` step type)
-- Internal service integration (via `service` step type - HTTP/gRPC/MQ)
-- External API calls (via `api` step type)
+- Service invocation through `service + operation`, with transport supplied by a runtime binding
 - **Pipeline-level decision logic** (required `decision` block maps signals to results)
 
 **Architecture:**
@@ -433,8 +436,7 @@ CORINT uses a **flattened namespace architecture** with 7 namespaces organized b
 |-----------|------------|---------|
 | `event` | Read-only | Raw user request data |
 | `features` | Writable | Complex feature computations (DB queries, aggregations) |
-| `api` | Writable | External third-party API results |
-| `service` | Writable | Internal microservice results |
+| `service` | Writable | Service invocation results |
 | `vars` | Writable | Simple variables and calculations |
 | `sys` | Read-only | System auto-generated metadata |
 | `results` | Read-only | Ruleset execution results (pipeline-level) |
@@ -444,7 +446,7 @@ All namespaces use dot notation for field access:
 ```yaml
 event.user.id                    # Nested field access
 features.transaction_count_7d     # Feature value
-api.device_fingerprint.risk_score # Multi-level nesting
+service.device_fingerprint.risk_score # Multi-level nesting
 results.fraud_detection.signal    # Ruleset result
 ```
 
@@ -455,7 +457,7 @@ rule:
     all:
       - event.amount > 1000
       - features.transaction_count_7d > 20
-      - api.device_fingerprint.risk_score > 0.7
+      - service.device_fingerprint.risk_score > 0.7
       - vars.high_risk_threshold < 80
       - sys.hour >= 22
 ```
@@ -478,75 +480,21 @@ Note: Advanced error handling features (retry logic, circuit breaker, fallback c
 
 ---
 
-## 8. Internal Service Integration
+## 8. Service Integration
 
-CDL provides integration with internal microservices and message queues.
+All online service invocations use `type: service`, a logical `service` name and
+an `operation`. HTTP bindings and SDK adapters resolve those names independently
+of deployment location. Results default to `service.<step_id>`.
 
-Service types:
-- **HTTP microservices** (`ms_http`) - Internal RESTful services
-- **gRPC microservices** (`ms_grpc`) - Internal gRPC services
-- **Message queues** (`mq`) - Kafka, RabbitMQ event streaming
+See [Service](service.md) for the supported contract. `api` is not a node type or
+result namespace. No automatic gRPC, MQ or MCP configuration is implied by the
+adapter interface. Feature and List retain their own semantic definitions.
 
-Example:
-```yaml
-pipeline:
-  id: service_integration_example
-  entry: verify_kyc
+## 9. Execution profiles
 
-  steps:
-    # Call internal HTTP microservice
-    - step:
-        id: verify_kyc
-        name: Verify KYC
-        type: service
-        service: kyc_service
-        endpoint: verify_identity
-        next: calculate_risk
-
-    # Call internal gRPC service
-    - step:
-        id: calculate_risk
-        name: Calculate Risk Score
-        type: service
-        service: risk_scoring_service
-        method: calculate_score
-        next: publish_event
-
-    # Publish to message queue
-    - step:
-        id: publish_event
-        name: Publish Decision Event
-        type: service
-        service: event_bus
-        topic: risk_decisions
-
-  decision:
-    - default: true
-      result: approve
-      reason: "Service calls completed"
-```
-
-**Note:** For database and cache access, use **Datasources** (see datasources configuration). For third-party HTTP APIs, use **External APIs** (see [api.md](api.md)).
-
-(See [service.md](service.md) for complete specification.)
-
----
-
-## 9. External API Integration
-
-```yaml
-api.<provider>.<field>
-```
-
-Example:
-
-```yaml
-api.Chainalysis.risk_score > 80
-```
-
-(See [api.md](api.md) for complete specification.)
-
----
+The online runtime supports service invocations. Strict Core remains a closed
+profile without I/O. Select the profile explicitly; a resource appearing in this
+overview does not make it supported by Core.
 
 ## 10. Documentation Structure
 
@@ -569,8 +517,8 @@ CDL documentation is organized as follows:
 ### Advanced Features
 - **feature.md** - Feature engineering and statistical analysis
 - **list.md** - Custom List feature (blocklists, allowlists, multi-backend support)
-- **service.md** - Internal service integration (microservices, message queues)
-- **api.md** - External API integration (third-party services)
+- **service.md** - Service invocation and connector bindings
+- **service.md** - Service invocation and connector bindings
 
 ### Operational
 - (Error handling implemented at runtime level)
@@ -667,7 +615,7 @@ OP ::= "==" | "!=" | "<" | ">" | "<=" | ">=" | "in" | "regex"
 MATCH_OP ::= "contains" | "not_contains"
 
 EXTERNAL_EXPR ::=
-      "api." IDENT "." FIELD OP VALUE
+      "service." IDENT "." FIELD OP VALUE
 
 SIGNAL ::= "approve" | "decline" | "review" | "hold" | "pass"
 
@@ -731,7 +679,7 @@ CDL uses a three-layer decision architecture with clear separation of concerns:
 - Example: "total_score >= 100" → signal: decline
 
 ### Layer 3: Pipelines (Final Decision Makers)
-- Orchestrate execution flow (rulesets, services, APIs)
+- Orchestrate execution flow (rulesets and services)
 - Collect signals from multiple rulesets
 - **Make final decisions** via required `decision` block
 - Map ruleset signals to final results
@@ -776,8 +724,8 @@ CDL provides a modern, explainable DSL for advanced risk engines:
 - High‑performance and auditable
 - Dynamic thresholds and adaptive rules
 - Comprehensive feature engineering and statistical analysis
-- Internal service integration (microservices and message queues)
-- External API integration (third-party services)
+- Unified service invocation through transport adapters
+- Service invocation and connector bindings
 - Designed for banks, fintech, e‑commerce, and Web3
 
 This DSL is the foundation of the Cognitive Risk Intelligence Platform (CORINT).

@@ -5,11 +5,11 @@ version: "0.1"
 
 import:
   rules:
-    - library/rules/geography/suspicious_ip.yaml
-    - library/rules/payment/card_testing.yaml
-    - library/rules/payment/velocity_check.yaml
-    - library/rules/payment/new_account_risk.yaml
-    - library/rules/payment/suspicious_email.yaml
+    - rules/geography/suspicious_ip.yaml
+    - rules/payment/card_testing.yaml
+    - rules/payment/velocity_check.yaml
+    - rules/payment/new_account_risk.yaml
+    - rules/payment/suspicious_email.yaml
 
 ---
 

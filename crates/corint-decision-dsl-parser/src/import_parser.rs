@@ -17,10 +17,10 @@ impl ImportParser {
     /// ```yaml
     /// import:
     ///   rules:
-    ///     - library/rules/fraud/fraud_farm.yaml
-    ///     - library/rules/payment/card_testing.yaml
+    ///     - rules/fraud/fraud_farm.yaml
+    ///     - rules/payment/card_testing.yaml
     ///   rulesets:
-    ///     - library/rulesets/fraud_detection_core.yaml
+    ///     - rulesets/fraud_detection_core.yaml
     ///   pipelines:
     ///     - library/pipelines/common_feature_extraction.yaml
     /// ```
@@ -209,15 +209,15 @@ mod tests {
 version: "0.1"
 import:
   rules:
-    - library/rules/fraud/fraud_farm.yaml
-    - library/rules/payment/card_testing.yaml
+    - rules/fraud/fraud_farm.yaml
+    - rules/payment/card_testing.yaml
 "#;
         let yaml = YamlParser::parse(yaml_str).unwrap();
         let imports = ImportParser::parse_from_yaml(&yaml).unwrap().unwrap();
 
         assert_eq!(imports.rules.len(), 2);
-        assert_eq!(imports.rules[0], "library/rules/fraud/fraud_farm.yaml");
-        assert_eq!(imports.rules[1], "library/rules/payment/card_testing.yaml");
+        assert_eq!(imports.rules[0], "rules/fraud/fraud_farm.yaml");
+        assert_eq!(imports.rules[1], "rules/payment/card_testing.yaml");
         assert!(imports.rulesets.is_empty());
         assert!(imports.pipelines.is_empty());
     }
@@ -227,16 +227,13 @@ import:
         let yaml_str = r#"
 import:
   rulesets:
-    - library/rulesets/fraud_detection_core.yaml
+    - rulesets/fraud_detection_core.yaml
 "#;
         let yaml = YamlParser::parse(yaml_str).unwrap();
         let imports = ImportParser::parse_from_yaml(&yaml).unwrap().unwrap();
 
         assert_eq!(imports.rulesets.len(), 1);
-        assert_eq!(
-            imports.rulesets[0],
-            "library/rulesets/fraud_detection_core.yaml"
-        );
+        assert_eq!(imports.rulesets[0], "rulesets/fraud_detection_core.yaml");
         assert!(imports.rules.is_empty());
     }
 
@@ -278,7 +275,7 @@ rule:
 version: "0.1"
 import:
   rules:
-    - library/rules/fraud_farm.yaml
+    - rules/fraud_farm.yaml
 
 ---
 
@@ -296,7 +293,7 @@ rule:
         assert!(imports.is_some());
         let imports = imports.unwrap();
         assert_eq!(imports.rules.len(), 1);
-        assert_eq!(imports.rules[0], "library/rules/fraud_farm.yaml");
+        assert_eq!(imports.rules[0], "rules/fraud_farm.yaml");
 
         // Check that definition has the rule
         assert!(definition.get("rule").is_some());

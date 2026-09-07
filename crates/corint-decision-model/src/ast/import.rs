@@ -220,9 +220,9 @@ mod tests {
     #[test]
     fn test_imports_creation() {
         let imports = Imports::new()
-            .add_rule("library/rules/fraud/fraud_farm.yaml".to_string())
-            .add_rule("library/rules/payment/card_testing.yaml".to_string())
-            .add_ruleset("library/rulesets/fraud_detection_core.yaml".to_string());
+            .add_rule("rules/fraud/fraud_farm.yaml".to_string())
+            .add_rule("rules/payment/card_testing.yaml".to_string())
+            .add_ruleset("rulesets/fraud_detection_core.yaml".to_string());
 
         assert_eq!(imports.rules.len(), 2);
         assert_eq!(imports.rulesets.len(), 1);
@@ -305,8 +305,8 @@ mod tests {
         let repo_root = base_dir.join("repository");
         let context = ImportContext::with_repository_root(base_dir.clone(), repo_root.clone());
 
-        let resolved = context.resolve_path("library/rules/fraud_farm.yaml");
-        assert_eq!(resolved, repo_root.join("library/rules/fraud_farm.yaml"));
+        let resolved = context.resolve_path("rules/fraud_farm.yaml");
+        assert_eq!(resolved, repo_root.join("rules/fraud_farm.yaml"));
     }
 
     #[test]

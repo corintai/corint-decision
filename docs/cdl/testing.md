@@ -29,7 +29,7 @@ The suite and bundle must both validate before any case runs. The command uses
 `DecisionEngine::from_core`, with no legacy loader, repository discovery or Work
 dependency. The Core executor does not initialize HTTP/feature/service/list clients.
 Unknown capabilities (including connectors) still fail at compilation. A direct
-API instruction given to the offline executor fails before any fallback is used.
+Service instruction given to the offline executor fails when no binding is explicitly installed.
 Compatibility engine constructors retain their existing behavior.
 
 ## Versioned suite format
@@ -46,7 +46,7 @@ a PolicyPackage or a signed evaluation report.
   permissive fallback are supported.
 - Input schema enforcement happens at the real engine entry. Thus missing fields,
   wrong scalar types, nulls and undeclared event fields can be tested as expected
-  errors. Extra request namespaces such as `features`, `vars` or `api` are not
+  errors. Extra request namespaces such as `features`, `vars` or `service` are not
   accepted by the test format.
 
 `expect` must assert all of the following; `explanation` is optional:

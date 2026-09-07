@@ -37,7 +37,7 @@ event.<field>                    # Event data
 event.<nested.field>             # Nested fields
 features.<feature_name>          # Computed features
 results.<ruleset_id>.<field>     # Ruleset results
-api.<api_name>.<field>           # External API results
+service.<step_id>.<field>       # Unified service results
 service.<service_name>.<field>   # Internal service results
 vars.<variable_name>             # Variables
 sys.<field>                      # System metadata
@@ -338,7 +338,7 @@ declared fields, and literal arrays only on the right of `in` / `not in` / `not_
 The membership/string operators listed above are now admitted under the strict
 [Core type and pattern limits](cdl-core.md#membership-and-string-matching).
 `contains` / `starts_with` / `ends_with` require strings; `regex` requires a constant
-pattern checked at compile time. External list/Feature/API references remain outside
+pattern checked at compile time. External list/Feature/Service references remain outside
 Core. The only function admitted by Core is `exists(event.declared_path)`.
 Compatibility parsing additionally recognizes null, literal arrays and function
 calls; their recognition alone does not imply compiler/runtime support. Resource
@@ -397,7 +397,7 @@ event.type.                 # ❌ Cannot end with dot
 
 ### Supported in Rules/Pipelines
 
-- Field access (event, features, results, api, service, vars, sys)
+- Field access (event, features, results, service, vars, sys)
 - Comparison operators (==, !=, <, >, <=, >=)
 - Logical operators (all/any/not)
 - Membership operators (in, not in, in list)

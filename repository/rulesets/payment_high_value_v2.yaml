@@ -5,9 +5,9 @@ version: "0.1"
 
 import:
   rulesets:
-    - library/rulesets/payment_base.yaml
+    - rulesets/payment_base.yaml
   rules:
-    - library/rules/fraud/amount_outlier.yaml  # Add extra rule on top of base
+    - rules/fraud/amount_outlier.yaml  # Add extra rule on top of base
 
 ---
 

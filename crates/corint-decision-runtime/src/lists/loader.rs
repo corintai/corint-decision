@@ -96,7 +96,7 @@ impl ListLoader {
         let mut backends = HashMap::new();
 
         // Find all YAML files in the lists directory
-        let lists_dir = self.base_dir.join("configs/lists");
+        let lists_dir = self.base_dir.join("lists");
         if !lists_dir.exists() {
             tracing::warn!("Lists directory does not exist: {:?}", lists_dir);
             return Ok(backends);
@@ -383,7 +383,7 @@ mod tests {
     #[tokio::test]
     async fn test_load_memory_list() {
         let temp_dir = TempDir::new().unwrap();
-        let lists_dir = temp_dir.path().join("configs/lists");
+        let lists_dir = temp_dir.path().join("lists");
         fs::create_dir_all(&lists_dir).await.unwrap();
 
         let config_file = lists_dir.join("test.yaml");
@@ -414,11 +414,11 @@ lists:
     #[tokio::test]
     async fn test_load_file_list() {
         let temp_dir = TempDir::new().unwrap();
-        let lists_dir = temp_dir.path().join("configs/lists");
+        let lists_dir = temp_dir.path().join("lists");
         fs::create_dir_all(&lists_dir).await.unwrap();
 
         // Create data file
-        let data_dir = temp_dir.path().join("configs/lists/data");
+        let data_dir = temp_dir.path().join("lists/data");
         fs::create_dir_all(&data_dir).await.unwrap();
         let data_file = data_dir.join("values.txt");
         fs::write(&data_file, "item1\nitem2\nitem3").await.unwrap();
@@ -429,7 +429,7 @@ lists:
 id: file_list
 description: "File-based list"
 backend: file
-path: "configs/lists/data/values.txt"
+path: "lists/data/values.txt"
 "#
         .to_string();
         fs::write(&config_file, yaml).await.unwrap();

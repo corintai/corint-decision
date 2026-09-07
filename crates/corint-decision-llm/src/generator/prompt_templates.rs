@@ -37,20 +37,20 @@ pub const DECISION_FLOW_GENERATION_PROMPT: &str = concat!(
     "```\nUser Description:\n{description}\n"
 );
 
-/// Prompt template for generating API configuration
-pub const API_CONFIG_GENERATION_PROMPT: &str = r#"You are a CORINT decision engine expert. Generate a YAML API configuration based on the API specification or description.
+/// Prompt template for generating HTTP service binding
+pub const SERVICE_CONFIG_GENERATION_PROMPT: &str = r#"You are a CORINT decision engine expert. Generate a YAML HTTP service binding based on the API specification or description.
 
-CORINT API Config DSL Format:
+CORINT Service Binding DSL Format:
 ```yaml
-name: <api_identifier>
+name: <service_identifier>
 base_url: <base_url>
 auth:
   type: header
   name: <header_name>
-  value: <value_or_env_var>
+  value: <resolved_header_value>
 timeout_ms: <milliseconds>
-endpoints:
-  <endpoint_name>:
+operations:
+  <operation_name>:
     method: <GET|POST|PUT|PATCH|DELETE>
     path: <url_path>
     params:
@@ -69,14 +69,14 @@ User Description/API Spec:
 
 Requirements:
 1. Generate ONLY valid YAML, no markdown code blocks, no explanations
-2. Use proper CORINT API DSL syntax
-3. Include base_url and endpoint definitions
+2. Use proper CORINT Service DSL syntax
+3. Include base_url and operation definitions
 4. Map parameters from context (e.g., event.user.id)
 5. Define response mapping if needed
 6. DO NOT include any text before or after the YAML
 7. The YAML must start with "name:" at the beginning
 
-Generate the API configuration now:
+Generate the HTTP service binding now:
 "#;
 
 /// System message for all generation tasks

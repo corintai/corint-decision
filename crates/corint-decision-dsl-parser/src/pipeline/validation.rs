@@ -10,18 +10,8 @@ pub(super) const FUNCTION_STEP_FIELDS: &[&str] = &["function", "params"];
 pub(super) const RULE_STEP_FIELDS: &[&str] = &["rule"];
 pub(super) const RULESET_STEP_FIELDS: &[&str] = &["ruleset"];
 pub(super) const PIPELINE_STEP_FIELDS: &[&str] = &["pipeline", "inline"];
-pub(super) const API_STEP_FIELDS: &[&str] = &[
-    "api",
-    "any",
-    "all",
-    "params",
-    "endpoint",
-    "output",
-    "timeout",
-    "on_error",
-    "min_success",
-];
-pub(super) const SERVICE_STEP_FIELDS: &[&str] = &["service", "query", "params"];
+pub(super) const SERVICE_STEP_FIELDS: &[&str] =
+    &["service", "operation", "params", "output", "timeout_ms"];
 pub(super) const ROUTER_STEP_FIELDS: &[&str] = &["routes", "default"];
 pub(super) const TRIGGER_STEP_FIELDS: &[&str] = &["target", "params"];
 // Legacy step types (for backward compatibility only)
@@ -43,7 +33,6 @@ pub(super) fn get_valid_fields_for_step_type(step_type: &str) -> Vec<&'static st
         "ruleset" => RULESET_STEP_FIELDS,
         "pipeline" => PIPELINE_STEP_FIELDS,
         "service" => SERVICE_STEP_FIELDS,
-        "api" => API_STEP_FIELDS,
         "trigger" => TRIGGER_STEP_FIELDS,
         // Legacy step types (backward compatibility)
         "extract" => EXTRACT_STEP_FIELDS,

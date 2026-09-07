@@ -200,7 +200,6 @@ fn test_decide_request_payload_empty() {
         user: None,
         options: None,
         features: None,
-        api: None,
         service: None,
         llm: None,
         vars: None,

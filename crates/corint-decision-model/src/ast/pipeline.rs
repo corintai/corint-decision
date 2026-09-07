@@ -157,53 +157,18 @@ pub enum StepDetails {
         pipeline_id: String,
     },
 
-    /// Service step - internal service call
+    /// Service invocation, independent of transport and deployment boundary.
     Service {
-        /// Service name
         service: String,
-        /// Optional endpoint (for ms_http)
-        #[serde(skip_serializing_if = "Option::is_none")]
-        endpoint: Option<String>,
-        /// Optional method (for ms_grpc)
-        #[serde(skip_serializing_if = "Option::is_none")]
-        method: Option<String>,
-        /// Optional topic (for mq)
-        #[serde(skip_serializing_if = "Option::is_none")]
-        topic: Option<String>,
-        /// Optional query/operation (legacy support)
-        #[serde(skip_serializing_if = "Option::is_none")]
-        query: Option<String>,
-        /// Parameters
+        operation: String,
         #[serde(skip_serializing_if = "Option::is_none")]
         params: Option<HashMap<String, Expression>>,
-        /// Output variable (optional, Convention: service.<name>)
+        /// Defaults to service.<step_id>.
         #[serde(skip_serializing_if = "Option::is_none")]
         output: Option<String>,
-    },
-
-    /// API step - external API call
-    Api {
-        /// API target (single, any, or all)
-        #[serde(flatten)]
-        api_target: ApiTarget,
-        /// Optional endpoint
+        /// Per-invocation deadline in milliseconds.
         #[serde(skip_serializing_if = "Option::is_none")]
-        endpoint: Option<String>,
-        /// Parameters
-        #[serde(skip_serializing_if = "Option::is_none")]
-        params: Option<HashMap<String, Expression>>,
-        /// Output variable (optional, Convention: api.<name>)
-        #[serde(skip_serializing_if = "Option::is_none")]
-        output: Option<String>,
-        /// Timeout in seconds (optional, for 'all' mode aggregation)
-        #[serde(skip_serializing_if = "Option::is_none")]
-        timeout: Option<u64>,
-        /// Error handling for 'all' mode (optional)
-        #[serde(skip_serializing_if = "Option::is_none")]
-        on_error: Option<String>,
-        /// Minimum successful calls for 'all' mode (optional)
-        #[serde(skip_serializing_if = "Option::is_none")]
-        min_success: Option<usize>,
+        timeout_ms: Option<u64>,
     },
 
     /// Trigger step - external action (MQ, Webhook, notification)
@@ -224,27 +189,6 @@ pub enum StepDetails {
 
     /// Catch-all for unknown step types
     Unknown {},
-}
-
-/// API target specification (single, any, or all)
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(untagged)]
-pub enum ApiTarget {
-    /// Single API
-    Single {
-        /// API identifier
-        api: String,
-    },
-    /// Any mode - try in sequence, use first success (fallback/degradation)
-    Any {
-        /// List of APIs to try
-        any: Vec<String>,
-    },
-    /// All mode - parallel execution, wait for all (aggregation)
-    All {
-        /// List of APIs to call
-        all: Vec<String>,
-    },
 }
 
 /// Feature definition for extraction
@@ -269,7 +213,7 @@ pub enum Step {
         features: Vec<FeatureDefinition>,
     },
 
-    /// Call external service (internal)
+    /// Invoke a service capability
     Service {
         /// Step identifier
         id: String,
@@ -279,30 +223,11 @@ pub enum Step {
         operation: String,
         /// Parameters for the service call
         params: HashMap<String, Expression>,
-        /// Output variable path (e.g., "context.result")
+        #[serde(skip_serializing_if = "Option::is_none")]
+        timeout_ms: Option<u64>,
+        /// Output path under service or vars
         #[serde(skip_serializing_if = "Option::is_none")]
         output: Option<String>,
-    },
-
-    /// Call external API (third-party)
-    #[serde(rename = "api")]
-    Api {
-        /// Step identifier
-        id: String,
-        /// API identifier (e.g., "ipinfo", "chainalysis")
-        api: String,
-        /// Endpoint name
-        endpoint: String,
-        /// Parameters for the API call
-        params: HashMap<String, Expression>,
-        /// Output variable path (e.g., "context.ip_info")
-        output: String,
-        /// Timeout in milliseconds
-        #[serde(skip_serializing_if = "Option::is_none")]
-        timeout: Option<u64>,
-        /// Error handling strategy
-        #[serde(skip_serializing_if = "Option::is_none")]
-        on_error: Option<ErrorHandling>,
     },
 
     /// Include a ruleset
@@ -347,30 +272,6 @@ pub enum MergeStrategy {
     Fastest,
     /// Use majority voting
     Majority,
-}
-
-/// Error handling configuration for external API calls
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct ErrorHandling {
-    /// Action to take on error
-    pub action: ErrorAction,
-    /// Fallback value if action is "fallback"
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub fallback: Option<serde_json::Value>,
-}
-
-/// Action to take when API call fails
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum ErrorAction {
-    /// Use fallback value
-    Fallback,
-    /// Skip this step
-    Skip,
-    /// Fail the entire pipeline
-    Fail,
-    /// Retry the call
-    Retry,
 }
 
 impl Pipeline {
@@ -440,24 +341,22 @@ impl PipelineStep {
         }
     }
 
-    /// Create an API step
-    pub fn api(id: String, name: String, api: String) -> Self {
+    /// Create a transport-independent service step.
+    pub fn service(id: String, name: String, service: String, operation: String) -> Self {
         Self {
             id,
             name,
-            step_type: "api".to_string(),
+            step_type: "service".into(),
             routes: None,
             default: None,
             next: None,
             when: None,
-            details: StepDetails::Api {
-                api_target: ApiTarget::Single { api },
-                endpoint: None,
+            details: StepDetails::Service {
+                service,
+                operation,
                 params: None,
                 output: None,
-                timeout: None,
-                on_error: None,
-                min_success: None,
+                timeout_ms: None,
             },
         }
     }
@@ -574,94 +473,6 @@ mod tests {
         assert_eq!(step.step_type, "router");
         assert!(step.routes.is_some());
         assert_eq!(step.default, Some("standard".to_string()));
-    }
-
-    #[test]
-    fn test_api_step_single() {
-        let step = PipelineStep::api(
-            "get_ip_info".to_string(),
-            "Get IP Geolocation".to_string(),
-            "ip_geolocation".to_string(),
-        )
-        .with_next("next_step".to_string());
-
-        assert_eq!(step.id, "get_ip_info");
-        assert_eq!(step.step_type, "api");
-        assert!(matches!(step.next, Some(StepNext::StepId(_))));
-    }
-
-    #[test]
-    fn test_api_step_any_mode() {
-        let details = StepDetails::Api {
-            api_target: ApiTarget::Any {
-                any: vec!["maxmind".to_string(), "ipinfo".to_string()],
-            },
-            endpoint: None,
-            params: None,
-            output: None,
-            timeout: None,
-            on_error: None,
-            min_success: None,
-        };
-
-        let step = PipelineStep {
-            id: "ip_lookup".to_string(),
-            name: "IP Lookup with Fallback".to_string(),
-            step_type: "api".to_string(),
-            routes: None,
-            default: None,
-            next: None,
-            when: None,
-            details,
-        };
-
-        if let StepDetails::Api { api_target, .. } = &step.details {
-            assert!(matches!(api_target, ApiTarget::Any { .. }));
-        } else {
-            panic!("Expected Api step");
-        }
-    }
-
-    #[test]
-    fn test_api_step_all_mode() {
-        let details = StepDetails::Api {
-            api_target: ApiTarget::All {
-                all: vec!["credit_bureau".to_string(), "fraud_detection".to_string()],
-            },
-            endpoint: None,
-            params: None,
-            output: None,
-            timeout: Some(5),
-            on_error: Some("partial".to_string()),
-            min_success: Some(1),
-        };
-
-        let step = PipelineStep {
-            id: "external_checks".to_string(),
-            name: "Parallel External Checks".to_string(),
-            step_type: "api".to_string(),
-            routes: None,
-            default: None,
-            next: None,
-            when: None,
-            details,
-        };
-
-        if let StepDetails::Api {
-            api_target,
-            timeout,
-            on_error,
-            min_success,
-            ..
-        } = &step.details
-        {
-            assert!(matches!(api_target, ApiTarget::All { .. }));
-            assert_eq!(*timeout, Some(5));
-            assert_eq!(on_error.as_deref(), Some("partial"));
-            assert_eq!(*min_success, Some(1));
-        } else {
-            panic!("Expected Api step");
-        }
     }
 
     #[test]

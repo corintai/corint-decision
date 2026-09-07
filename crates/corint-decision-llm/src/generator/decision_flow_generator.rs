@@ -4,7 +4,7 @@
 //! - Individual rules
 //! - Rulesets grouping related rules
 //! - Pipeline orchestrating the flow
-//! - API configurations if needed
+//! - HTTP service bindings if needed
 
 use crate::client::{LLMClient, LLMRequest, LLMResponse};
 use crate::error::{LLMError, Result};
@@ -26,8 +26,8 @@ pub struct DecisionFlow {
     pub ruleset_count: usize,
     /// Number of pipeline documents
     pub pipeline_count: usize,
-    /// Number of API config documents
-    pub api_config_count: usize,
+    /// Number of HTTP service config documents
+    pub service_config_count: usize,
 }
 
 impl DecisionFlow {
@@ -36,7 +36,7 @@ impl DecisionFlow {
         let mut rule_count = 0;
         let mut ruleset_count = 0;
         let mut pipeline_count = 0;
-        let mut api_config_count = 0;
+        let mut service_config_count = 0;
 
         for doc in &documents {
             let trimmed = doc.trim();
@@ -47,8 +47,8 @@ impl DecisionFlow {
             } else if trimmed.starts_with("pipeline:") {
                 pipeline_count += 1;
             } else if trimmed.starts_with("name:") {
-                // API configs start with "name:"
-                api_config_count += 1;
+                // HTTP service configs start with "name:"
+                service_config_count += 1;
             }
         }
 
@@ -57,7 +57,7 @@ impl DecisionFlow {
             rule_count,
             ruleset_count,
             pipeline_count,
-            api_config_count,
+            service_config_count,
         }
     }
 
@@ -88,8 +88,8 @@ impl DecisionFlow {
             .collect()
     }
 
-    /// Get all API config documents
-    pub fn api_configs(&self) -> Vec<&str> {
+    /// Get all HTTP service config documents
+    pub fn service_configs(&self) -> Vec<&str> {
         self.documents
             .iter()
             .filter(|doc| doc.trim().starts_with("name:"))
@@ -314,7 +314,7 @@ pipeline:
     async fn test_generate_with_api_config() {
         let mock_response = r#"name: ipinfo
 base_url: https://ipinfo.io
-endpoints:
+operations:
   get_info:
     method: GET
     path: /{ip}
@@ -333,13 +333,13 @@ pipeline:
 
         let flow = generator.generate("IP check flow").await.unwrap();
 
-        assert_eq!(flow.api_config_count, 1);
+        assert_eq!(flow.service_config_count, 1);
         assert_eq!(flow.rule_count, 1);
         assert_eq!(flow.pipeline_count, 1);
 
-        let api_configs = flow.api_configs();
-        assert_eq!(api_configs.len(), 1);
-        assert!(api_configs[0].contains("ipinfo"));
+        let service_configs = flow.service_configs();
+        assert_eq!(service_configs.len(), 1);
+        assert!(service_configs[0].contains("ipinfo"));
     }
 
     #[tokio::test]

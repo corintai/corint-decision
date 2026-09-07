@@ -7,9 +7,7 @@ use crate::error::{ParseError, Result};
 use crate::expression_parser::ExpressionParser;
 use crate::rule_parser::RuleParser;
 use crate::yaml_parser::YamlParser;
-use corint_decision_model::ast::pipeline::{
-    ApiTarget, ErrorAction, ErrorHandling, PipelineStep, Route, StepDetails, StepNext,
-};
+use corint_decision_model::ast::pipeline::{PipelineStep, Route, StepDetails, StepNext};
 use corint_decision_model::ast::{Branch, FeatureDefinition, MergeStrategy, Step, WhenBlock};
 use serde_yaml::Value as YamlValue;
 use std::collections::HashMap;
@@ -123,41 +121,24 @@ pub(super) fn parse_step_details(step_obj: &YamlValue, step_type: &str) -> Resul
 
         "service" => {
             let service = YamlParser::get_string(step_obj, "service")?;
-            let endpoint = YamlParser::get_optional_string(step_obj, "endpoint");
-            let method = YamlParser::get_optional_string(step_obj, "method");
-            let topic = YamlParser::get_optional_string(step_obj, "topic");
-            let query = YamlParser::get_optional_string(step_obj, "query");
-            let params = parse_params(step_obj)?;
-            let output = YamlParser::get_optional_string(step_obj, "output");
+            let operation = YamlParser::get_string(step_obj, "operation")?;
+            let timeout_ms = step_obj
+                .get("timeout_ms")
+                .map(|v| {
+                    v.as_u64()
+                        .filter(|v| *v > 0)
+                        .ok_or_else(|| ParseError::InvalidValue {
+                            field: "timeout_ms".into(),
+                            message: "Expected a positive integer in milliseconds".into(),
+                        })
+                })
+                .transpose()?;
             Ok(StepDetails::Service {
                 service,
-                endpoint,
-                method,
-                topic,
-                query,
-                params,
-                output,
-            })
-        }
-
-        "api" => {
-            // Parse API target (single, any, all)
-            let api_target = parse_api_target(step_obj)?;
-            let endpoint = YamlParser::get_optional_string(step_obj, "endpoint");
-            let params = parse_params(step_obj)?;
-            let output = YamlParser::get_optional_string(step_obj, "output");
-            let timeout = step_obj.get("timeout").and_then(|v| v.as_u64());
-            let on_error = YamlParser::get_optional_string(step_obj, "on_error");
-            let min_success = step_obj.get("min_success").and_then(|v| v.as_u64());
-
-            Ok(StepDetails::Api {
-                api_target,
-                endpoint,
-                params,
-                output,
-                timeout,
-                on_error,
-                min_success: min_success.map(|v| v as usize),
+                operation,
+                params: parse_params(step_obj)?,
+                output: YamlParser::get_optional_string(step_obj, "output"),
+                timeout_ms,
             })
         }
 
@@ -184,60 +165,13 @@ pub(super) fn parse_step_details(step_obj: &YamlValue, step_type: &str) -> Resul
             Ok(StepDetails::Extract { features })
         }
 
-        _ => Ok(StepDetails::Unknown {}),
+        _ => Err(ParseError::InvalidValue {
+            field: "type".into(),
+            message: format!(
+                "Unknown step type: {step_type}; service invocations use type: service"
+            ),
+        }),
     }
-}
-
-/// Parse API target (single, any, all)
-pub(super) fn parse_api_target(step_obj: &YamlValue) -> Result<ApiTarget> {
-    if ["api", "any", "all"]
-        .iter()
-        .filter(|k| step_obj.get(**k).is_some())
-        .count()
-        != 1
-    {
-        return Err(ParseError::InvalidValue {
-            field: "api".into(),
-            message: "Exactly one of api/any/all is required".into(),
-        });
-    }
-    for field in ["any", "all"] {
-        if step_obj.get(field).is_some_and(|v| {
-            !v.as_sequence()
-                .is_some_and(|a| !a.is_empty() && a.iter().all(|v| v.as_str().is_some()))
-        }) {
-            return Err(ParseError::InvalidValue {
-                field: field.into(),
-                message: "Expected non-empty array of API names".into(),
-            });
-        }
-    }
-    // Try single API
-    if let Some(api) = YamlParser::get_optional_string(step_obj, "api") {
-        return Ok(ApiTarget::Single { api });
-    }
-
-    // Try "any" array (fallback mode)
-    if let Some(any_array) = step_obj.get("any").and_then(|v| v.as_sequence()) {
-        let any = any_array
-            .iter()
-            .filter_map(|v| v.as_str().map(|s| s.to_string()))
-            .collect();
-        return Ok(ApiTarget::Any { any });
-    }
-
-    // Try "all" array (aggregation mode)
-    if let Some(all_array) = step_obj.get("all").and_then(|v| v.as_sequence()) {
-        let all = all_array
-            .iter()
-            .filter_map(|v| v.as_str().map(|s| s.to_string()))
-            .collect();
-        return Ok(ApiTarget::All { all });
-    }
-
-    Err(ParseError::MissingField {
-        field: "api, any, or all".to_string(),
-    })
 }
 
 /// Parse parameters as HashMap<String, Expression>
@@ -256,27 +190,39 @@ pub(super) fn parse_params(
     if let Some(params_obj) = step_obj.get("params").and_then(|v| v.as_mapping()) {
         let mut map = HashMap::new();
         for (key, value) in params_obj {
-            if let Some(key_str) = key.as_str() {
+            if let Some(key_str) = key.as_str().filter(|name| !name.trim().is_empty()) {
                 use corint_decision_model::ast::Expression;
                 use corint_decision_model::Value;
 
-                // Support both string expressions and direct values
-                let expr = if let Some(value_str) = value.as_str() {
-                    // If string contains '.', treat as field access (e.g., "event.ip_address")
-                    // Otherwise, treat as string literal (e.g., "a63066c9a63590")
-                    if value_str.contains('.') {
-                        ExpressionParser::parse(value_str)?
+                let expr = if let Some(text) = value.as_str() {
+                    if let Some(expression) =
+                        text.strip_prefix("${").and_then(|v| v.strip_suffix('}'))
+                    {
+                        ExpressionParser::parse(expression)?
+                    } else if ["event.", "service.", "vars.", "features.", "sys.", "env."]
+                        .iter()
+                        .any(|prefix| text.starts_with(prefix))
+                    {
+                        ExpressionParser::parse(text)?
                     } else {
-                        Expression::literal(Value::String(value_str.to_string()))
+                        Expression::literal(Value::String(text.to_owned()))
                     }
-                } else if let Some(num) = value.as_f64() {
-                    Expression::literal(Value::Number(num))
-                } else if let Some(bool_val) = value.as_bool() {
-                    Expression::literal(Value::Bool(bool_val))
                 } else {
-                    continue; // Skip unsupported types
+                    let literal: Value =
+                        serde_yaml::from_value(value.clone()).map_err(|error| {
+                            ParseError::InvalidValue {
+                                field: format!("params.{key_str}"),
+                                message: error.to_string(),
+                            }
+                        })?;
+                    Expression::literal(literal)
                 };
                 map.insert(key_str.to_string(), expr);
+            } else {
+                return Err(ParseError::InvalidValue {
+                    field: "params".into(),
+                    message: "Parameter names must be strings".into(),
+                });
             }
         }
         Ok(Some(map))
@@ -363,7 +309,6 @@ pub(super) fn parse_step(yaml: &YamlValue) -> Result<Step> {
     match step_type.as_str() {
         "extract" => parse_extract_step(yaml),
         "service" => parse_service_step(yaml),
-        "api" => parse_api_step(yaml),
         "include" => parse_include_step(yaml),
         "branch" => parse_branch_step(yaml),
         "parallel" => parse_parallel_step(yaml),
@@ -403,114 +348,24 @@ pub(super) fn parse_feature_definition(yaml: &YamlValue) -> Result<FeatureDefini
 /// Parse service step
 pub(super) fn parse_service_step(yaml: &YamlValue) -> Result<Step> {
     let id = YamlParser::get_string(yaml, "id")?;
-    let service = YamlParser::get_string(yaml, "service")?;
-    let operation = YamlParser::get_string(yaml, "operation")?;
-
-    let params = if let Some(params_obj) = yaml.get("params").and_then(|v| v.as_mapping()) {
-        let mut map = HashMap::new();
-        for (key, value) in params_obj {
-            if let Some(key_str) = key.as_str() {
-                if let Some(value_str) = value.as_str() {
-                    let expr = ExpressionParser::parse(value_str)?;
-                    map.insert(key_str.to_string(), expr);
-                }
-            }
-        }
-        map
-    } else {
-        HashMap::new()
-    };
-
-    let output = YamlParser::get_optional_string(yaml, "output");
-
-    Ok(Step::Service {
-        id,
+    let StepDetails::Service {
         service,
         operation,
         params,
         output,
-    })
-}
-
-/// Parse API step (external API call)
-pub(super) fn parse_api_step(yaml: &YamlValue) -> Result<Step> {
-    let id = YamlParser::get_string(yaml, "id")?;
-    let api = YamlParser::get_string(yaml, "api")?;
-    let endpoint = YamlParser::get_string(yaml, "endpoint")?;
-    let output = YamlParser::get_string(yaml, "output")?;
-
-    let params = if let Some(params_obj) = yaml.get("params").and_then(|v| v.as_mapping()) {
-        let mut map = HashMap::new();
-        for (key, value) in params_obj {
-            if let Some(key_str) = key.as_str() {
-                use corint_decision_model::ast::Expression;
-                use corint_decision_model::Value;
-
-                // Support both string expressions and direct values
-                let expr = if let Some(value_str) = value.as_str() {
-                    // If string contains '.', treat as field access (e.g., "event.ip_address")
-                    // Otherwise, treat as string literal (e.g., "a63066c9a63590")
-                    if value_str.contains('.') {
-                        ExpressionParser::parse(value_str)?
-                    } else {
-                        Expression::literal(Value::String(value_str.to_string()))
-                    }
-                } else if let Some(num) = value.as_f64() {
-                    Expression::literal(Value::Number(num))
-                } else if let Some(bool_val) = value.as_bool() {
-                    Expression::literal(Value::Bool(bool_val))
-                } else {
-                    continue; // Skip unsupported types
-                };
-                map.insert(key_str.to_string(), expr);
-            }
-        }
-        map
-    } else {
-        HashMap::new()
+        timeout_ms,
+    } = parse_step_details(yaml, "service")?
+    else {
+        unreachable!()
     };
-
-    let timeout = yaml.get("timeout").and_then(|v| v.as_u64());
-
-    let on_error = if let Some(error_obj) = yaml.get("on_error") {
-        Some(parse_error_handling(error_obj)?)
-    } else {
-        None
-    };
-
-    Ok(Step::Api {
+    Ok(Step::Service {
         id,
-        api,
-        endpoint,
-        params,
+        service,
+        operation,
+        params: params.unwrap_or_default(),
         output,
-        timeout,
-        on_error,
+        timeout_ms,
     })
-}
-
-/// Parse error handling configuration
-pub(super) fn parse_error_handling(yaml: &YamlValue) -> Result<ErrorHandling> {
-    let action_str = YamlParser::get_string(yaml, "action")?;
-    let action = match action_str.as_str() {
-        "fallback" => ErrorAction::Fallback,
-        "skip" => ErrorAction::Skip,
-        "fail" => ErrorAction::Fail,
-        "retry" => ErrorAction::Retry,
-        _ => {
-            return Err(ParseError::InvalidValue {
-                field: "action".to_string(),
-                message: format!("Unknown error action: {}", action_str),
-            })
-        }
-    };
-
-    let fallback = yaml.get("fallback").and_then(|v| {
-        // Convert YAML value to serde_json::Value
-        serde_json::to_value(v).ok()
-    });
-
-    Ok(ErrorHandling { action, fallback })
 }
 
 /// Parse include step

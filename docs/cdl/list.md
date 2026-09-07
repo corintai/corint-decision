@@ -109,23 +109,22 @@ rule:
 
 ### 3.1 Configuration File Structure
 
-Lists are defined in YAML files under `repository/configs/lists/`:
+Lists are defined in YAML files under `repository/lists/`:
 
 ```
 repository/
-└── configs/
-    └── lists/
-        ├── blocklists.yaml
-        ├── allowlists.yaml
-        ├── watchlists.yaml
-        └── custom.yaml
+└── lists/
+    ├── blocklists.yaml
+    ├── allowlists.yaml
+    ├── watchlists.yaml
+    └── custom.yaml
 ```
 
 ### 3.2 List Definition Format
 
 **Single List File**:
 ```yaml
-# repository/configs/lists/email_blocklist.yaml
+# repository/lists/email_blocklist.yaml
 id: email_blocklist
 description: "Blocked email addresses"
 backend: postgresql
@@ -133,7 +132,7 @@ backend: postgresql
 
 **Multiple Lists in One File**:
 ```yaml
-# repository/configs/lists/fraud_lists.yaml
+# repository/lists/fraud_lists.yaml
 lists:
   - id: email_blocklist
     description: "Blocked email addresses"
@@ -180,7 +179,7 @@ cache_ttl: 60
 ```yaml
 id: high_risk_countries
 backend: file
-path: "repository/configs/lists/data/high_risk_countries.txt"
+path: "lists/data/high_risk_countries.txt"
 reload_interval: 3600
 ```
 
@@ -451,7 +450,7 @@ pipeline:
 
 **Organize by Domain**:
 ```
-repository/configs/lists/
+repository/lists/
 ├── fraud/
 │   ├── email_blocklist.yaml
 │   ├── ip_blocklist.yaml

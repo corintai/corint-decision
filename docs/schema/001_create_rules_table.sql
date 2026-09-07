@@ -22,7 +22,7 @@ CREATE INDEX IF NOT EXISTS idx_rules_created_at ON rules(created_at DESC);
 -- Add comments for documentation
 COMMENT ON TABLE rules IS 'Stores rule definitions in YAML format';
 COMMENT ON COLUMN rules.id IS 'Unique rule identifier (from YAML id field)';
-COMMENT ON COLUMN rules.path IS 'Optional file path (e.g., library/rules/fraud/fraud_farm.yaml)';
+COMMENT ON COLUMN rules.path IS 'Optional file path (e.g., rules/fraud/fraud_farm.yaml)';
 COMMENT ON COLUMN rules.content IS 'Full YAML content of the rule';
 COMMENT ON COLUMN rules.version IS 'Version number, incremented on each update';
 COMMENT ON COLUMN rules.description IS 'Optional description extracted from rule';

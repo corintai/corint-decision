@@ -93,13 +93,13 @@ impl FileSystemRepository {
     /// Find an artifact by ID in standard locations
     ///
     /// Searches in:
-    /// - library/rules/**/*.yaml
-    /// - library/rulesets/**/*.yaml
+    /// - rules/**/*.yaml
+    /// - rulesets/**/*.yaml
     /// - pipelines/**/*.yaml
     async fn find_by_id(&self, id: &str, artifact_type: &str) -> RepositoryResult<PathBuf> {
         let search_dirs = match artifact_type {
-            "rule" => vec!["library/rules"],
-            "ruleset" => vec!["library/rulesets"],
+            "rule" => vec!["rules"],
+            "ruleset" => vec!["rulesets"],
             "pipeline" => vec!["pipelines"],
             _ => vec![],
         };
@@ -320,11 +320,11 @@ impl Repository for FileSystemRepository {
     }
 
     async fn list_rules(&self) -> RepositoryResult<Vec<String>> {
-        self.list_yaml_files("library/rules").await
+        self.list_yaml_files("rules").await
     }
 
     async fn list_rulesets(&self) -> RepositoryResult<Vec<String>> {
-        self.list_yaml_files("library/rulesets").await
+        self.list_yaml_files("rulesets").await
     }
 
     async fn list_pipelines(&self) -> RepositoryResult<Vec<String>> {

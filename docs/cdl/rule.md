@@ -128,8 +128,8 @@ when:
     - all:
         - any:
             - event.device.is_emulator == true
-            - api.network_check.is_proxy == true
-            - api.network_check.is_tor == true
+            - service.network_check.is_proxy == true
+            - service.network_check.is_tor == true
         - features.login_fail_count_1h >= 3
 ```
 
@@ -181,7 +181,7 @@ Common context variable prefixes for rule conditions:
 |--------|---------|---------|
 | `event.*` | Event data | `event.amount`, `event.user_id`, `event.type` |
 | `features.*` | Computed features | `features.transaction_sum_7d`, `features.login_count_24h` |
-| `api.*` | External API results | `api.device_fingerprint.risk_score`, `api.ip_geolocation.country` |
+| `api.*` | External API results | `service.device_fingerprint.risk_score`, `service.ip_geolocation.country` |
 | `service.*` | Internal service results | `service.user_profile.vip_status` |
 | `vars.*` | Pipeline variables | `vars.high_risk_threshold` |
 | `sys.*` | System variables | `sys.hour`, `sys.timestamp` |
@@ -236,7 +236,7 @@ when:
         - event.device.is_emulator == true
         - features.login_fail_count_1h >= 3
     - all:
-        - api.network_check.is_proxy == true
+        - service.network_check.is_proxy == true
         - event.amount > 5000
 ```
 

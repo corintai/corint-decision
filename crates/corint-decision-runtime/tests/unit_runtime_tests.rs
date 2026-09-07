@@ -27,11 +27,11 @@ fn test_context_input_builder() {
 
     let input = ContextInput::new(event.clone())
         .with_features(features.clone())
-        .with_api(api.clone());
+        .with_service(api.clone());
 
     assert_eq!(input.event.len(), 1);
     assert!(input.features.is_some());
-    assert!(input.api.is_some());
+    assert!(input.service.is_some());
 }
 
 #[test]
@@ -54,15 +54,14 @@ fn test_context_multi_namespace_storage() {
 
     // Store in different namespaces
     ctx.store_feature("user_velocity", Value::Number(25.5));
-    ctx.store_api_result("device_fp", Value::Number(0.8));
+    ctx.store_service_result("device_fp", Value::Number(0.8));
     ctx.store_service_result("user_profile", Value::String("premium".to_string()));
     ctx.store_llm_result("fraud_check", Value::Bool(false));
     ctx.store_var("threshold", Value::Number(100.0));
 
     // Verify storage
     assert_eq!(ctx.features.len(), 1);
-    assert_eq!(ctx.api.len(), 1);
-    assert_eq!(ctx.service.len(), 1);
+    assert_eq!(ctx.service.len(), 2);
     assert_eq!(ctx.llm.len(), 1);
     assert_eq!(ctx.vars.len(), 1);
 
@@ -1042,11 +1041,11 @@ fn test_validation_reserved_prefix_features() {
 }
 
 #[test]
-fn test_validation_reserved_prefix_api() {
+fn test_validation_removed_api_prefix() {
     let mut event = HashMap::new();
     event.insert("api_result".to_string(), Value::String("data".to_string()));
 
-    assert!(validation::validate_event_data(&event).is_err());
+    assert!(validation::validate_event_data(&event).is_ok());
 }
 
 #[test]
@@ -1084,7 +1083,7 @@ fn test_validation_is_reserved_field() {
     assert!(validation::is_reserved_field("triggered_rules"));
     assert!(validation::is_reserved_field("sys_custom"));
     assert!(validation::is_reserved_field("features_data"));
-    assert!(validation::is_reserved_field("api_result"));
+    assert!(!validation::is_reserved_field("api_result"));
 
     assert!(!validation::is_reserved_field("user_id"));
     assert!(!validation::is_reserved_field("amount"));

@@ -12,13 +12,13 @@ async fn create_test_repo() -> (TempDir, FileSystemRepository) {
     let repo_path = temp_dir.path();
 
     // Create directory structure
-    fs::create_dir_all(repo_path.join("library/rules/fraud"))
+    fs::create_dir_all(repo_path.join("rules/fraud"))
         .await
         .unwrap();
-    fs::create_dir_all(repo_path.join("library/rules/kyc"))
+    fs::create_dir_all(repo_path.join("rules/kyc"))
         .await
         .unwrap();
-    fs::create_dir_all(repo_path.join("library/rulesets"))
+    fs::create_dir_all(repo_path.join("rulesets"))
         .await
         .unwrap();
     fs::create_dir_all(repo_path.join("pipelines"))
@@ -36,12 +36,9 @@ rule:
       - amount > 1000
   score: 50
 "#;
-    fs::write(
-        repo_path.join("library/rules/fraud/fraud_check.yaml"),
-        fraud_rule,
-    )
-    .await
-    .unwrap();
+    fs::write(repo_path.join("rules/fraud/fraud_check.yaml"), fraud_rule)
+        .await
+        .unwrap();
 
     let kyc_rule = r#"version: "0.1"
 
@@ -53,12 +50,9 @@ rule:
       - verified == false
   score: 100
 "#;
-    fs::write(
-        repo_path.join("library/rules/kyc/kyc_verification.yaml"),
-        kyc_rule,
-    )
-    .await
-    .unwrap();
+    fs::write(repo_path.join("rules/kyc/kyc_verification.yaml"), kyc_rule)
+        .await
+        .unwrap();
 
     // Create test ruleset
     let ruleset = r#"version: "0.1"
@@ -75,12 +69,9 @@ ruleset:
     - default: true
       action: approve
 "#;
-    fs::write(
-        repo_path.join("library/rulesets/test_ruleset.yaml"),
-        ruleset,
-    )
-    .await
-    .unwrap();
+    fs::write(repo_path.join("rulesets/test_ruleset.yaml"), ruleset)
+        .await
+        .unwrap();
 
     // Create test pipeline
     let pipeline = r#"version: "0.1"
@@ -120,7 +111,7 @@ async fn test_load_rule_by_full_path() {
     let (_temp, repo) = create_test_repo().await;
 
     let (rule, content) = repo
-        .load_rule("library/rules/fraud/fraud_check.yaml")
+        .load_rule("rules/fraud/fraud_check.yaml")
         .await
         .expect("Failed to load rule by path");
 
@@ -145,7 +136,7 @@ async fn test_load_rule_by_id() {
 async fn test_load_rule_by_id_searches_subdirectories() {
     let (_temp, repo) = create_test_repo().await;
 
-    // kyc_verification is in library/rules/kyc/ subdirectory
+    // kyc_verification is in rules/kyc/ subdirectory
     let (rule, _) = repo
         .load_rule("kyc_verification")
         .await
@@ -159,7 +150,7 @@ async fn test_load_ruleset_by_path() {
     let (_temp, repo) = create_test_repo().await;
 
     let (ruleset, content) = repo
-        .load_ruleset("library/rulesets/test_ruleset.yaml")
+        .load_ruleset("rulesets/test_ruleset.yaml")
         .await
         .expect("Failed to load ruleset");
 
@@ -249,7 +240,7 @@ async fn test_cache_separate_for_different_identifiers() {
 
     // Load same rule by different identifiers (path vs ID)
     let _ = repo
-        .load_rule("library/rules/fraud/fraud_check.yaml")
+        .load_rule("rules/fraud/fraud_check.yaml")
         .await
         .unwrap();
     let _ = repo.load_rule("fraud_check").await.unwrap();
@@ -404,7 +395,7 @@ async fn test_exists_true_for_file() {
     let (_temp, repo) = create_test_repo().await;
 
     let exists = repo
-        .exists("library/rules/fraud/fraud_check.yaml")
+        .exists("rules/fraud/fraud_check.yaml")
         .await
         .expect("Failed to check existence");
 
@@ -416,7 +407,7 @@ async fn test_exists_false_for_nonexistent() {
     let (_temp, repo) = create_test_repo().await;
 
     let exists = repo
-        .exists("library/rules/nonexistent.yaml")
+        .exists("rules/nonexistent.yaml")
         .await
         .expect("Failed to check existence");
 
@@ -495,9 +486,7 @@ async fn test_load_with_special_characters_in_id() {
     let temp_dir = TempDir::new().unwrap();
     let repo_path = temp_dir.path();
 
-    fs::create_dir_all(repo_path.join("library/rules"))
-        .await
-        .unwrap();
+    fs::create_dir_all(repo_path.join("rules")).await.unwrap();
 
     let rule = r#"version: "0.1"
 
@@ -509,12 +498,9 @@ rule:
       - "amount > 0"
   score: 10
 "#;
-    fs::write(
-        repo_path.join("library/rules/rule_with_underscore_123.yaml"),
-        rule,
-    )
-    .await
-    .unwrap();
+    fs::write(repo_path.join("rules/rule_with_underscore_123.yaml"), rule)
+        .await
+        .unwrap();
 
     let repo = FileSystemRepository::new(repo_path).unwrap();
 
@@ -531,9 +517,7 @@ async fn test_yml_extension_support() {
     let temp_dir = TempDir::new().unwrap();
     let repo_path = temp_dir.path();
 
-    fs::create_dir_all(repo_path.join("library/rules"))
-        .await
-        .unwrap();
+    fs::create_dir_all(repo_path.join("rules")).await.unwrap();
 
     let rule = r#"version: "0.1"
 
@@ -546,7 +530,7 @@ rule:
   score: 10
 "#;
     // Use .yml extension instead of .yaml
-    fs::write(repo_path.join("library/rules/yml_rule.yml"), rule)
+    fs::write(repo_path.join("rules/yml_rule.yml"), rule)
         .await
         .unwrap();
 

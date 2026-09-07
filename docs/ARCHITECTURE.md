@@ -208,7 +208,7 @@ pub struct RepositoryContent {
     pub templates: Vec<(String, String)>,   // Reusable templates
 
     // Runtime configuration
-    pub api_configs: Vec<ApiConfig>,              // External APIs
+    pub service_configs: Vec<HttpServiceConfig>, // HTTP service bindings
     pub datasource_configs: Vec<DataSourceConfig>, // Data sources
     pub feature_definitions: Vec<FeatureDefinition>, // Features
     pub list_configs: Vec<ListConfig>,            // Blocklists/allowlists
@@ -218,31 +218,14 @@ pub struct RepositoryContent {
 **Repository Structure**:
 ```
 repository/
-├── registry.yaml                    # Pipeline routing configuration
-├── pipelines/                       # Pipeline definitions (entry points)
-│   ├── fraud_detection.yaml
-│   ├── payment_pipeline.yaml
-│   └── login_risk_pipeline.yaml
-├── library/
-│   ├── rules/                       # Rule definitions
-│   │   ├── fraud/
-│   │   ├── compliance/
-│   │   └── common/
-│   ├── rulesets/                    # Ruleset definitions
-│   │   ├── fraud/
-│   │   └── kyc/
-│   └── templates/                   # Reusable templates
-│       └── common/
-└── configs/
-    ├── apis/                        # External API configs
-    │   └── ipinfo.yaml
-    # Note: Datasources are now defined in config/server.yaml (not in configs/datasources/)
-    ├── features/                    # Feature definitions
-    │   ├── user_features.yaml
-    │   └── transaction_features.yaml
-    └── lists/                       # List configurations
-        ├── ip_blocklist.yaml
-        └── high_risk_countries.yaml
+├── registry.yaml           # Event-to-pipeline routing
+├── rules/                  # Reusable rules, grouped by domain
+├── rulesets/               # Reusable rule combinations
+├── pipelines/              # Business orchestration
+├── services/               # Concrete service definitions
+├── features/               # Feature definitions
+└── lists/                  # List definitions
+    └── data/               # Static list data
 ```
 
 **Loading Flow**:
@@ -694,7 +677,7 @@ corint-decision-repository──┘──> corint-decision-model (Error, Value)
 │  - RuleGenerator                                          │
 │  - RulesetGenerator                                       │
 │  - PipelineGenerator                                      │
-│  - APIConfigGenerator                                     │
+│  - ServiceConfigGenerator                                     │
 │  - DecisionFlowGenerator                                  │
 │         ↓                                                  │
 │  Generated YAML Configurations                            │
@@ -748,7 +731,7 @@ let description = "Flag transactions over $10,000 from new accounts (< 30 days o
 let rule_yaml = generator.generate(description).await?;
 
 // Save to repository
-std::fs::write("repository/library/rules/fraud/high_amount_new_account.yaml", rule_yaml)?;
+std::fs::write("repository/rules/fraud/high_amount_new_account.yaml", rule_yaml)?;
 ```
 
 **Key Points**:

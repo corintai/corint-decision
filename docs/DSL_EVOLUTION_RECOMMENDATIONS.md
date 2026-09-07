@@ -244,7 +244,7 @@ when:
 ```text
 event.amount
 features.user_7d_txn_count
-api.ip_reputation.country
+service.ip_reputation.country
 service.account.status
 vars.channel
 results.payment_rules.score
@@ -312,7 +312,7 @@ CDL 引用逻辑资源，目标绑定解析到具体服务或存储；不把 Not
 
 Pipeline 应是有界、显式输入输出的 DAG。每个步骤都需要明确：输入、输出、失败策略、超时预算和下一个节点。
 
-以下统一 Connector 写法属于后续提案，不是当前 `type: api / service` 的可直接替换语法：
+以下统一 Connector 写法属于后续提案，不是当前 `type: service / service` 的可直接替换语法：
 
 ```yaml
 step:
@@ -321,7 +321,7 @@ step:
   connector: ipinfo.lookup
   with:
     ip: { ref: event.ip_address }
-  output: api.ip_reputation
+  output: service.ip_reputation
   timeout_ms: 150
   on_error: use_fallback
   fallback:

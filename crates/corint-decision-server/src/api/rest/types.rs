@@ -42,10 +42,6 @@ pub struct DecideRequestPayload {
     #[serde(default)]
     pub features: Option<HashMap<String, serde_json::Value>>,
 
-    /// External API results (optional)
-    #[serde(default)]
-    pub api: Option<HashMap<String, serde_json::Value>>,
-
     /// Service call results (optional)
     #[serde(default)]
     pub service: Option<HashMap<String, serde_json::Value>>,

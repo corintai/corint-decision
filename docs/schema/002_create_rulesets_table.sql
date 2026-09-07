@@ -32,7 +32,7 @@ ON DELETE SET NULL;
 -- Add comments for documentation
 COMMENT ON TABLE rulesets IS 'Stores ruleset definitions in YAML format';
 COMMENT ON COLUMN rulesets.id IS 'Unique ruleset identifier (from YAML id field)';
-COMMENT ON COLUMN rulesets.path IS 'Optional file path (e.g., library/rulesets/fraud_detection_core.yaml)';
+COMMENT ON COLUMN rulesets.path IS 'Optional file path (e.g., rulesets/fraud_detection_core.yaml)';
 COMMENT ON COLUMN rulesets.content IS 'Full YAML content of the ruleset';
 COMMENT ON COLUMN rulesets.version IS 'Version number, incremented on each update';
 COMMENT ON COLUMN rulesets.extends IS 'Parent ruleset ID for inheritance (Phase 3 feature)';

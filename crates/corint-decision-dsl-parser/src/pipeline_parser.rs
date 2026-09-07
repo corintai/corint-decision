@@ -4,7 +4,7 @@ pub use crate::pipeline::PipelineParser;
 #[cfg(test)]
 mod tests {
     use super::*;
-    use corint_decision_model::ast::pipeline::{ApiTarget, StepDetails, StepNext};
+    use corint_decision_model::ast::pipeline::{StepDetails, StepNext};
 
     #[test]
     fn test_parse_new_format_pipeline() {
@@ -75,89 +75,6 @@ pipeline:
         ));
         // StepNext::End was removed - "end" is now represented as StepNext::StepId("end".to_string())
         assert_eq!(step.next, Some(StepNext::StepId("end".to_string())));
-    }
-
-    #[test]
-    fn test_parse_api_single() {
-        let yaml = r#"
-pipeline:
-  id: test_pipeline
-  name: Test Pipeline
-  entry: api_step
-  steps:
-    - step:
-        id: api_step
-        name: Call Single API
-        type: api
-        api: geolocation_service
-        endpoint: /check
-        output: api.geo
-"#;
-
-        let pipeline = PipelineParser::parse(yaml).unwrap();
-
-        let step = &pipeline.steps[0];
-        assert!(matches!(
-            &step.details,
-            StepDetails::Api { api_target: ApiTarget::Single { api }, .. } if api == "geolocation_service"
-        ));
-    }
-
-    #[test]
-    fn test_parse_api_any_mode() {
-        let yaml = r#"
-pipeline:
-  id: test_pipeline
-  name: Test Pipeline
-  entry: api_step
-  steps:
-    - step:
-        id: api_step
-        name: Call Any API
-        type: api
-        any: [primary_api, backup_api, fallback_api]
-        output: api.result
-"#;
-
-        let pipeline = PipelineParser::parse(yaml).unwrap();
-
-        let step = &pipeline.steps[0];
-        assert!(matches!(
-            &step.details,
-            StepDetails::Api { api_target: ApiTarget::Any { any }, .. } if any.len() == 3
-        ));
-    }
-
-    #[test]
-    fn test_parse_api_all_mode() {
-        let yaml = r#"
-pipeline:
-  id: test_pipeline
-  name: Test Pipeline
-  entry: api_step
-  steps:
-    - step:
-        id: api_step
-        name: Call All APIs
-        type: api
-        all: [api1, api2, api3]
-        timeout: 5000
-        min_success: 2
-        on_error: continue
-"#;
-
-        let pipeline = PipelineParser::parse(yaml).unwrap();
-
-        let step = &pipeline.steps[0];
-        assert!(matches!(
-            &step.details,
-            StepDetails::Api {
-                api_target: ApiTarget::All { all },
-                timeout: Some(5000),
-                min_success: Some(2),
-                ..
-            } if all.len() == 3
-        ));
     }
 
     #[test]

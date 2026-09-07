@@ -42,8 +42,8 @@ version: "0.1"
 
 import:
   rules:
-    - library/rules/fraud/fraud_farm.yaml
-    - library/rules/payment/card_testing.yaml
+    - rules/fraud/fraud_farm.yaml
+    - rules/payment/card_testing.yaml
 
 ---
 
@@ -67,8 +67,8 @@ rule:
     assert!(doc.has_imports());
     let imports = doc.imports();
     assert_eq!(imports.rules.len(), 2);
-    assert_eq!(imports.rules[0], "library/rules/fraud/fraud_farm.yaml");
-    assert_eq!(imports.rules[1], "library/rules/payment/card_testing.yaml");
+    assert_eq!(imports.rules[0], "rules/fraud/fraud_farm.yaml");
+    assert_eq!(imports.rules[1], "rules/payment/card_testing.yaml");
 
     // Check rule definition
     assert_eq!(doc.definition.id, "combined_fraud_rule");
@@ -112,9 +112,9 @@ version: "0.1"
 
 import:
   rules:
-    - library/rules/fraud/fraud_farm.yaml
-    - library/rules/fraud/account_takeover.yaml
-    - library/rules/fraud/velocity_abuse.yaml
+    - rules/fraud/fraud_farm.yaml
+    - rules/fraud/account_takeover.yaml
+    - rules/fraud/velocity_abuse.yaml
 
 ---
 
@@ -155,7 +155,7 @@ ruleset:
     assert!(doc.has_imports());
     let imports = doc.imports();
     assert_eq!(imports.rules.len(), 3);
-    assert_eq!(imports.rules[0], "library/rules/fraud/fraud_farm.yaml");
+    assert_eq!(imports.rules[0], "rules/fraud/fraud_farm.yaml");
 
     // Check ruleset
     assert_eq!(doc.definition.id, "fraud_detection_core");
@@ -172,8 +172,8 @@ version: "0.2"
 
 import:
   rules:
-    - library/rules/fraud/fraud_farm.yaml
-    - library/rules/fraud/account_takeover.yaml
+    - rules/fraud/fraud_farm.yaml
+    - rules/fraud/account_takeover.yaml
 
 ruleset:
   id: fraud_detection_core
@@ -200,11 +200,8 @@ ruleset:
     assert!(doc.has_imports());
     let imports = doc.imports();
     assert_eq!(imports.rules.len(), 2);
-    assert_eq!(imports.rules[0], "library/rules/fraud/fraud_farm.yaml");
-    assert_eq!(
-        imports.rules[1],
-        "library/rules/fraud/account_takeover.yaml"
-    );
+    assert_eq!(imports.rules[0], "rules/fraud/fraud_farm.yaml");
+    assert_eq!(imports.rules[1], "rules/fraud/account_takeover.yaml");
 
     // Check ruleset
     assert_eq!(doc.definition.id, "fraud_detection_core");
@@ -320,7 +317,7 @@ version: "0.1"
 
 import:
   rulesets:
-    - library/rulesets/fraud_detection_core.yaml
+    - rulesets/fraud_detection_core.yaml
 
 ---
 
@@ -346,10 +343,7 @@ pipeline:
     assert!(doc.has_imports());
     let imports = doc.imports();
     assert_eq!(imports.rulesets.len(), 1);
-    assert_eq!(
-        imports.rulesets[0],
-        "library/rulesets/fraud_detection_core.yaml"
-    );
+    assert_eq!(imports.rulesets[0], "rulesets/fraud_detection_core.yaml");
 
     // Check pipeline
     assert_eq!(doc.definition.id, "fraud_detection_pipeline".to_string());
@@ -363,8 +357,8 @@ version: "0.1"
 
 import:
   rulesets:
-    - library/rulesets/payment_standard.yaml
-    - library/rulesets/payment_high_value.yaml
+    - rulesets/payment_standard.yaml
+    - rulesets/payment_high_value.yaml
 
 ---
 

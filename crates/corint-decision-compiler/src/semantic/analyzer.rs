@@ -151,27 +151,6 @@ impl SemanticAnalyzer {
                 }
             }
 
-            Step::Api {
-                id, output, params, ..
-            } => {
-                // Check for duplicate step ID
-                if !step_ids.insert(id.clone()) {
-                    return Err(CompileError::InvalidExpression(format!(
-                        "Duplicate step ID: {}",
-                        id
-                    )));
-                }
-
-                // Analyze parameter expressions
-                for expr in params.values() {
-                    self.analyze_expression(expr)?;
-                    self.collect_variable_references(expr, referenced_vars);
-                }
-
-                // Track output variable (required for API calls)
-                produced_vars.insert(output.clone());
-            }
-
             Step::Include { ruleset } => {
                 // Validate ruleset reference is not empty
                 if ruleset.is_empty() {

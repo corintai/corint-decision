@@ -101,7 +101,7 @@ For now, consider these alternatives:
 1. **Reuse `corint-decision-runtime`**: The existing `PipelineExecutor` already uses optional dependencies (`Option<Arc<...>>`), making it perfect for WASM deployment
 2. **No Data Sources**: Simply don't configure `feature_extractor` - rules that require data sources (PostgreSQL/Redis) won't be used in browser
 3. **No Internal Services**: Simply don't configure `service_client` - rules that require internal services won't be used in browser
-4. **External API via JS Bridge**: Create a WASM-compatible `ExternalApiClient` that uses JavaScript `fetch()` through a callback
+4. **External API via JS Bridge**: Create a WASM-compatible `ServiceClient` adapter that uses JavaScript `fetch()` through a callback
 5. **Rule Configuration**: Browser-compatible rules simply don't include data source or service dependencies
 
 This approach is **simpler, more maintainable, and leverages existing code** rather than duplicating runtime logic.
@@ -164,7 +164,7 @@ This approach is **simpler, more maintainable, and leverages existing code** rat
 
 5. **corint-wasm** (New crate)
    - JavaScript/TypeScript bindings
-   - WASM-compatible ExternalApiClient (JS fetch bridge)
+   - WASM-compatible service adapter (JS fetch bridge)
    - Serialization/Deserialization
    - Error handling
 
@@ -178,195 +178,22 @@ crates/
 ├── corint-decision-dsl-parser/            # ✅ Already WASM-compatible
 ├── corint-decision-compiler/          # ✅ Already WASM-compatible
 ├── corint-decision-runtime/           # ✅ Reused with WASM adaptations
-└── corint-wasm/               # 🆕 JS/TS bindings + WASM ExternalApiClient
+└── corint-wasm/               # 🆕 JS/TS bindings + WASM service adapter
 ```
 
-#### 3.1.1 Reusing Existing `corint-decision-runtime`
+#### 3.1.1 Service adapters in a future WASM runtime
 
-**Key Insight**: The existing `corint-decision-runtime` is already designed with optional dependencies, making it suitable for WASM deployment.
+All invocations now use `service + operation`. The runtime extension point is
+`ServiceClient`, bound by logical name through `PipelineExecutor::with_service`.
+There is no separate ExternalApiClient or internal-service path.
 
-**Current Architecture**:
-- `PipelineExecutor` uses `Option<Arc<...>>` for most dependencies
-- `feature_extractor`: Optional (not needed in browser - no data sources)
-- `llm_client`: Optional (can be provided via JS bridge if needed)
-- `service_client`: Optional (not needed - no internal services)
-- `external_api_client`: Required, but can be adapted for WASM
+A browser implementation would need a host adapter for `fetch`, compatible async
+execution and the runtime's Send/Sync requirements. This is a design requirement,
+not an implemented WASM adapter. The native HTTP connector must not be assumed to
+work in a browser. Strict Core remains an alternative for policies without I/O.
 
-**WASM Adaptations**:
-
-1. **External API Client**: Create a WASM-compatible version that uses JS `fetch()` via callback
-2. **No Data Sources**: Simply don't configure `feature_extractor` - rules won't use data source features
-3. **No Internal Services**: Simply don't configure `service_client` - rules won't use service calls
-4. **Async Support**: WASM supports async/await via `wasm-bindgen-futures`
-
-**Usage Pattern**:
-```rust
-// In WASM bindings
-let executor = PipelineExecutor::new()  // No storage, no services
-    .with_external_api_client(Arc::new(WasmExternalApiClient::new(js_fetch_callback)));
-    // Optional: .with_llm_client(...) if LLM is needed via JS bridge
-```
-
-**Rule Configuration**:
-- Rules that require data sources (PostgreSQL/Redis) simply won't be used in browser
-- Rules that require internal services won't be used in browser
-- Rules with external API calls will work via JS bridge
-- Pure expression-based rules work perfectly
-
-#### 3.1.2 New Crate: `corint-wasm`
-
-**Purpose**: Expose Rust API to JavaScript/TypeScript using `wasm-bindgen`, and provide WASM-compatible ExternalApiClient.
-
-**WASM ExternalApiClient Implementation**:
-```rust
-// crates/corint-wasm/src/external_api.rs
-use wasm_bindgen::prelude::*;
-use wasm_bindgen_futures::JsFuture;
-use js_sys::Promise;
-use corint_decision_runtime::external_api::{ApiConfig, EndpointConfig};
-use corint_decision_model::Value;
-use std::collections::HashMap;
-
-/// WASM-compatible External API Client using JS fetch()
-pub struct WasmExternalApiClient {
-    configs: HashMap<String, ApiConfig>,
-    fetch_callback: js_sys::Function,
-}
-
-impl WasmExternalApiClient {
-    pub fn new(fetch_callback: js_sys::Function) -> Self {
-        Self {
-            configs: HashMap::new(),
-            fetch_callback,
-        }
-    }
-
-    pub fn register_api(&mut self, config: ApiConfig) {
-        self.configs.insert(config.name.clone(), config);
-    }
-
-    pub async fn call(
-        &self,
-        api_name: &str,
-        endpoint_name: &str,
-        params: &HashMap<String, Value>,
-        timeout: Option<u64>,
-        ctx: &ExecutionContext,
-    ) -> Result<Value> {
-        // Build URL (same logic as original)
-        let url = self.build_url(api_name, endpoint_name, params, ctx)?;
-        
-        // Call JS fetch via callback
-        let promise = self.fetch_callback
-            .call1(&JsValue::NULL, &JsValue::from_str(&url))
-            .map_err(|e| RuntimeError::ExternalCallFailed(format!("JS fetch failed: {:?}", e)))?;
-        
-        let promise = Promise::from(promise);
-        let response = JsFuture::from(promise).await
-            .map_err(|e| RuntimeError::ExternalCallFailed(format!("Fetch error: {:?}", e)))?;
-        
-        // Parse response and convert to Value
-        // ... (implementation details)
-    }
-}
-```
-
-**WASM Bindings**:
-```rust
-// crates/corint-wasm/src/lib.rs
-use wasm_bindgen::prelude::*;
-use corint_decision_runtime::engine::PipelineExecutor;
-use corint_decision_runtime::external_api::ExternalApiClient;
-use corint_decision_compiler::Compiler;
-use corint_decision_dsl_parser::*;
-use std::sync::Arc;
-
-#[wasm_bindgen]
-pub struct CorintEngine {
-    compiler: Compiler,
-    executor: Arc<PipelineExecutor>,
-    programs: HashMap<String, Program>,
-}
-
-#[wasm_bindgen]
-impl CorintEngine {
-    #[wasm_bindgen(constructor)]
-    pub fn new(fetch_callback: js_sys::Function) -> Result<CorintEngine, JsValue> {
-        // Create WASM-compatible external API client
-        let external_api = Arc::new(WasmExternalApiClient::new(fetch_callback));
-        
-        // Create executor without data sources or internal services
-        let executor = Arc::new(
-            PipelineExecutor::new()
-                .with_external_api_client(external_api)
-        );
-        
-        Ok(CorintEngine {
-            compiler: Compiler::new(),
-            executor,
-            programs: HashMap::new(),
-        })
-    }
-
-    #[wasm_bindgen]
-    pub async fn load_rules(&mut self, yaml: &str) -> Result<(), JsValue> {
-        // Parse and compile rules
-        let pipeline = PipelineParser::parse(yaml)
-            .map_err(|e| JsValue::from_str(&format!("Parse error: {}", e)))?;
-        
-        let program = self.compiler.compile_pipeline(pipeline)
-            .map_err(|e| JsValue::from_str(&format!("Compile error: {}", e)))?;
-        
-        self.programs.insert(program.metadata.source_id.clone(), program);
-        Ok(())
-    }
-
-    #[wasm_bindgen]
-    pub async fn decide(&self, event_json: &str) -> Result<JsValue, JsValue> {
-        // Execute decision using existing runtime
-        let event: HashMap<String, Value> = serde_json::from_str(event_json)
-            .map_err(|e| JsValue::from_str(&format!("Invalid JSON: {}", e)))?;
-
-        // Find matching pipeline (simplified)
-        let program = self.programs.values().next()
-            .ok_or_else(|| JsValue::from_str("No rules loaded"))?;
-
-        let result = self.executor.execute(program, event).await
-            .map_err(|e| JsValue::from_str(&format!("Execution error: {}", e)))?;
-        
-        Ok(JsValue::from_serde(&result)
-            .map_err(|e| JsValue::from_str(&format!("Serialize error: {}", e)))?)
-    }
-
-    /// Decrypt encrypted rule package
-    #[wasm_bindgen]
-    pub async fn decrypt_rule(
-        &self,
-        encrypted_data: &str,
-        encryption_key: &str,
-        signature: &str,
-        decryption_key: &str,
-    ) -> Result<String, JsValue> {
-        use crate::decryption::RuleDecryptor;
-        
-        let decryptor = RuleDecryptor::new(decryption_key)
-            .map_err(|e| JsValue::from_str(&format!("Decryptor init failed: {}", e)))?;
-        
-        let package = EncryptedRulePackage {
-            encrypted_data: encrypted_data.to_string(),
-            encryption_key: encryption_key.to_string(),
-            signature: signature.to_string(),
-            version: String::new(),
-            expires_at: None,
-        };
-        
-        let decrypted = decryptor.decrypt_rule(&package)
-            .map_err(|e| JsValue::from_str(&format!("Decryption failed: {}", e)))?;
-        
-        Ok(decrypted)
-    }
-}
-```
+See [Service](cdl/service.md) for the implemented native contract. The older WASM
+client sketch based on the removed external_api module has been withdrawn.
 
 ### 3.2 TypeScript/JavaScript SDK
 
@@ -1469,7 +1296,7 @@ export class CorintEngine {
 
 **1. External API Calls** (Supported via JS Bridge)
 ```typescript
-// External API calls work automatically via WASM ExternalApiClient
+// External API calls work automatically via WASM service adapter
 // The WASM module calls JS fetch() through the callback
 const engine = new CorintEngine(fetch);  // Pass native fetch function
 
@@ -1584,7 +1411,7 @@ codegen-units = 1   # Better optimization
 ```
 
 **Note on `corint-decision-runtime` dependencies**:
-- `reqwest` is used by `ExternalApiClient`, but we'll replace it with JS fetch in WASM
+- `reqwest` is used by `ServiceClient` adapter, but we'll replace it with JS fetch in WASM
 - `sqlx` is optional (via feature flag), so we exclude it
 - `tokio` async runtime works in WASM via `wasm-bindgen-futures`
 
@@ -1641,7 +1468,7 @@ https://cdn.corint.io/
 
 ### Phase 1: Core WASM Module (Week 1-2)
 - [ ] Create `corint-wasm` crate
-- [ ] Implement WASM-compatible `ExternalApiClient` (JS fetch bridge)
+- [ ] Implement WASM-compatible `ServiceClient` adapter (JS fetch bridge)
 - [ ] Create WASM bindings for `PipelineExecutor` (reuse existing runtime)
 - [ ] Basic rule parsing and execution
 - [ ] Unit tests for WASM module

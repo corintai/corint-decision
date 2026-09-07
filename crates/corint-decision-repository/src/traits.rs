@@ -18,7 +18,7 @@
 //! let repo = FileSystemRepository::new("repository")?;
 //!
 //! // Load by file path
-//! let (rule, _) = repo.load_rule("library/rules/velocity_check.yaml").await?;
+//! let (rule, _) = repo.load_rule("rules/velocity_check.yaml").await?;
 //!
 //! // Load by ID (searches recursively)
 //! let (rule, _) = repo.load_rule("velocity_check").await?;
@@ -76,7 +76,7 @@ pub trait Repository: Send + Sync {
     /// Load a rule by path or ID
     ///
     /// # Arguments
-    /// * `identifier` - Either a file path (e.g., "library/rules/fraud/fraud_farm.yaml")
+    /// * `identifier` - Either a file path (e.g., "rules/fraud/fraud_farm.yaml")
     ///                  or a rule ID (e.g., "fraud_farm_pattern")
     ///
     /// # Returns
@@ -91,7 +91,7 @@ pub trait Repository: Send + Sync {
     /// let repo = FileSystemRepository::new("repository")?;
     ///
     /// // Load by path
-    /// let (rule, content) = repo.load_rule("library/rules/velocity_check.yaml").await?;
+    /// let (rule, content) = repo.load_rule("rules/velocity_check.yaml").await?;
     ///
     /// // Load by ID (searches directories)
     /// let (rule, content) = repo.load_rule("velocity_check").await?;

@@ -18,7 +18,7 @@ Custom lists (blocklists, allowlists, watchlists) are essential for fraud detect
 Use `list.<list_id>` as a reference to a configured list, where `<list_id>` is defined in the lists configuration.
 
 ```yaml
-# Lists are defined in repository/configs/lists/*.yaml (each file can contain multiple lists)
+# Lists are defined in repository/lists/*.yaml (each file can contain multiple lists)
 # Then referenced in rules using list.<list_id> syntax
 
 rules:
@@ -62,7 +62,7 @@ rules:
 ### Syntax Rules
 
 1. **Format**: `<field> in list.<list_id>` or `<field> not in list.<list_id>`
-2. **List ID**: Must match a list `id` defined in `repository/configs/lists/*.yaml`
+2. **List ID**: Must match a list `id` defined in `repository/lists/*.yaml`
 3. **Field**: Any valid field path (e.g., `user.email`, `event.ip`, `device.fingerprint`)
 4. **Operators**: `in` (membership) and `not in` (non-membership)
 
@@ -108,22 +108,21 @@ rules:
 
 ## List Configuration
 
-Lists are defined in YAML files under `repository/configs/lists/`. Each file can contain multiple list definitions.
+Lists are defined in YAML files under `repository/lists/`. Each file can contain multiple list definitions.
 
 ```
 repository/
-└── configs/
-    └── lists/
-        ├── blocklist.yaml      # Contains multiple blocklist definitions
-        ├── allowlist.yaml      # Contains multiple allowlist definitions
-        ├── watchlist.yaml      # Contains watchlist definitions
-        └── custom.yaml         # Custom lists
+└── lists/
+    ├── blocklist.yaml      # Contains multiple blocklist definitions
+    ├── allowlist.yaml      # Contains multiple allowlist definitions
+    ├── watchlist.yaml      # Contains watchlist definitions
+    └── custom.yaml         # Custom lists
 ```
 
 ### Example: Multiple Lists in One File
 
 ```yaml
-# repository/configs/lists/blocklist.yaml
+# repository/lists/blocklist.yaml
 lists:
   # 默认使用 list_entries 表 (推荐)
   - id: email_blocklist
@@ -149,7 +148,7 @@ lists:
 ```
 
 ```yaml
-# repository/configs/lists/allowlist.yaml
+# repository/lists/allowlist.yaml
 lists:
   # 默认使用 list_entries 表 (推荐)
   - id: trusted_users
@@ -173,12 +172,12 @@ lists:
 ```
 
 ```yaml
-# repository/configs/lists/watchlist.yaml
+# repository/lists/watchlist.yaml
 lists:
   - id: high_risk_countries
     description: "High risk country codes"
     backend: file
-    path: "repository/configs/lists/data/high_risk_countries.txt"
+    path: "lists/data/high_risk_countries.txt"
     reload_interval: 3600
 
   - id: suspicious_ips
@@ -201,12 +200,12 @@ lists:
 ### Single List File (Also Supported)
 
 ```yaml
-# repository/configs/lists/disposable_domains.yaml
+# repository/lists/disposable_domains.yaml
 # Single list without the 'lists:' wrapper
 id: disposable_domains
 description: "Disposable email domains"
 backend: file
-path: "repository/configs/lists/data/disposable_domains.txt"
+path: "lists/data/disposable_domains.txt"
 ```
 
 ## Architecture Design
@@ -687,7 +686,7 @@ curl -X POST http://localhost:8080/v1/lists/suspicious_ips/import \
    - ✅ Execute `ListLookup` instruction
 
 4. **Config** ✅
-   - ✅ Load lists from `repository/configs/lists/*.yaml`
+   - ✅ Load lists from `repository/lists/*.yaml`
 
 ### Phase 2: Backends
 
@@ -721,7 +720,7 @@ curl -X POST http://localhost:8080/v1/lists/suspicious_ips/import \
 ## Example Pipeline
 
 ```yaml
-# Step 1: Configure lists (repository/configs/lists/fraud_lists.yaml)
+# Step 1: Configure lists (repository/lists/fraud_lists.yaml)
 lists:
   - id: email_blocklist
     description: "Blocked emails"
@@ -734,7 +733,7 @@ lists:
   - id: high_risk_countries
     description: "High risk countries"
     backend: file
-    path: "configs/lists/data/high_risk_countries.txt"
+    path: "lists/data/high_risk_countries.txt"
 
   - id: suspicious_ips
     description: "Suspicious IPs"
@@ -745,7 +744,7 @@ lists:
 
 ---
 
-# Step 2: Define ruleset with list checks (library/rulesets/list_based_checks.yaml)
+# Step 2: Define ruleset with list checks (rulesets/list_based_checks.yaml)
 version: "0.1"
 
 ruleset:
@@ -804,7 +803,7 @@ version: "0.1"
 
 import:
   rulesets:
-    - library/rulesets/list_based_checks.yaml
+    - rulesets/list_based_checks.yaml
 
 ---
 

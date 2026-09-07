@@ -1,0 +1,11 @@
+# HTTP service binding; deployment can be internal or external.
+name: kyc_service
+base_url: http://kyc-service.internal:8080
+timeout_ms: 5000
+operations:
+  verify_identity:
+    method: POST
+    path: /api/v1/verify
+    params:
+      user_id: event.user.id
+    request_body: '{"user_id": "${user_id}"}'

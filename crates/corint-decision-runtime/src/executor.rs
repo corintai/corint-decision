@@ -159,7 +159,7 @@ impl Executor {
                 }
 
                 _ => {
-                    // Unsupported instruction (CallFeature, CallLLM, CallService, etc.)
+                    // Unsupported instruction (CallFeature, CallLLM, InvokeService, etc.)
                     return Err(RuntimeError::InvalidOperation(format!(
                         "Unsupported instruction: {:?}",
                         instruction

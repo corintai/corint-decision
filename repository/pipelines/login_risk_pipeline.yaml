@@ -5,7 +5,7 @@ version: "0.1"
 
 import:
   rulesets:
-    - library/rulesets/login_risk.yaml
+    - rulesets/login_risk.yaml
 
 ---
 

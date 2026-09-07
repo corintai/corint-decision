@@ -1,5 +1,10 @@
 # Corint Definition Language (CDL) Architecture
 
+> Service invocation now follows [the unified Service contract](cdl/service.md).
+> There is no separate API node or API results namespace. Service results default
+> to the step ID; older resource-based examples on this design/reference page are not authoritative.
+
+
 > **⚠️ Note:** This document describes the original design architecture. Some syntax examples use earlier terminology that has since evolved. For the latest DSL specifications, please refer to:
 > - `cdl/overall.md` - Complete CDL specification
 > - `cdl/pipeline.md` - Pipeline specification
@@ -117,9 +122,9 @@ ruleset:
 ```yaml
 pipeline:
   # Check IP reputation
-  - type: api
+  - type: service
     id: ip_check
-    api: ip_reputation_service
+    service: ip_reputation_service
 
   # Execute ruleset (decision happens here)
   - include:
@@ -397,8 +402,8 @@ Corint Definition Language documentation is organized into five categories for c
 │
 ├─ 🚀 Advanced Features (Sophisticated capabilities)
 │  ├─ feature.md         Feature engineering, statistical analysis, and aggregations
-│  ├─ service.md         Internal service integration (microservices, message queues)
-│  └─ api.md             External API integration for third-party risk intelligence
+│  ├─ service.md         Service invocation and connector bindings
+│  └─ service.md             External API integration for third-party risk intelligence
 │
 ├─ 🛠️ Development Tools
 │  └─ LLM_GUIDE.md       LLM code generation guide (development-time only)

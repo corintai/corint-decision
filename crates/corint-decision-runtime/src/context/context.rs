@@ -16,9 +16,7 @@ pub struct ContextInput {
     pub event: HashMap<String, Value>,
     /// Complex feature computation results (optional)
     pub features: Option<HashMap<String, Value>>,
-    /// External API call results (optional)
-    pub api: Option<HashMap<String, Value>>,
-    /// Internal service call results (optional)
+    /// Service call results (optional)
     pub service: Option<HashMap<String, Value>>,
     /// LLM analysis results (optional)
     pub llm: Option<HashMap<String, Value>>,
@@ -32,7 +30,6 @@ impl ContextInput {
         Self {
             event,
             features: None,
-            api: None,
             service: None,
             llm: None,
             vars: None,
@@ -42,12 +39,6 @@ impl ContextInput {
     /// Builder method to add features
     pub fn with_features(mut self, features: HashMap<String, Value>) -> Self {
         self.features = Some(features);
-        self
-    }
-
-    /// Builder method to add API results
-    pub fn with_api(mut self, api: HashMap<String, Value>) -> Self {
-        self.api = Some(api);
         self
     }
 
@@ -76,17 +67,14 @@ pub struct ExecutionContext {
     /// Value stack for intermediate calculations
     pub stack: Vec<Value>,
 
-    // ========== 8 Namespaces (Flattened Architecture) ==========
+    // ========== 7 Namespaces (Flattened Architecture) ==========
     /// User request raw data (read-only)
     pub event: HashMap<String, Value>,
 
     /// Complex feature computation results (writable)
     pub features: HashMap<String, Value>,
 
-    /// External API call results (writable)
-    pub api: HashMap<String, Value>,
-
-    /// Internal service call results (writable)
+    /// Service call results (writable)
     pub service: HashMap<String, Value>,
 
     /// LLM analysis results (writable)
@@ -115,7 +103,6 @@ impl ExecutionContext {
             stack: Vec::new(),
             event: input.event,
             features: input.features.unwrap_or_default(),
-            api: input.api.unwrap_or_default(),
             service: input.service.unwrap_or_default(),
             llm: input.llm.unwrap_or_default(),
             vars: input.vars.unwrap_or_default(),
@@ -136,7 +123,6 @@ impl ExecutionContext {
         crate::validation::validate_event_data(&input.event)?;
 
         // Extract namespaced data from result.variables (which may contain data from previous execution)
-        let mut api_ns = input.api.unwrap_or_default();
         let mut service_ns = input.service.unwrap_or_default();
         let mut llm_ns = input.llm.unwrap_or_default();
         let mut vars_ns = input.vars.unwrap_or_default();
@@ -144,11 +130,6 @@ impl ExecutionContext {
         // Check if result.variables contains namespaced data that should be extracted
         for (key, value) in &result.variables {
             match key.as_str() {
-                "api" => {
-                    if let Value::Object(obj) = value {
-                        api_ns.extend(obj.clone());
-                    }
-                }
                 "service" => {
                     if let Value::Object(obj) = value {
                         service_ns.extend(obj.clone());
@@ -170,7 +151,6 @@ impl ExecutionContext {
             stack: Vec::new(),
             event: input.event,
             features: input.features.unwrap_or_default(),
-            api: api_ns,
             service: service_ns,
             llm: llm_ns,
             vars: vars_ns,
@@ -185,11 +165,6 @@ impl ExecutionContext {
     /// Store feature computation result
     pub fn store_feature(&mut self, name: &str, value: Value) {
         self.features.insert(name.to_string(), value);
-    }
-
-    /// Store API call result
-    pub fn store_api_result(&mut self, api_name: &str, result: Value) {
-        self.api.insert(api_name.to_string(), result);
     }
 
     /// Store service call result
@@ -214,7 +189,7 @@ impl ExecutionContext {
     /// Supports dot notation like:
     /// - event.user.id
     /// - features.user_transaction_count_7d
-    /// - api.device_fingerprint.risk_score
+    /// - service.device_fingerprint.risk_score
     /// - service.user_profile.vip_level
     /// - llm.fraud_analysis.reason
     /// - vars.high_risk_threshold
@@ -234,7 +209,6 @@ impl ExecutionContext {
         let namespace_data = match namespace.as_str() {
             "event" => Some(&self.event),
             "features" => Some(&self.features),
-            "api" => Some(&self.api),
             "service" => Some(&self.service),
             "llm" => Some(&self.llm),
             "vars" => Some(&self.vars),
@@ -374,7 +348,6 @@ impl ExecutionContext {
         );
 
         let namespace_map = match namespace {
-            "api" => &mut self.api,
             "service" => &mut self.service,
             "llm" => &mut self.llm,
             "vars" => &mut self.vars,
@@ -495,11 +468,6 @@ impl ExecutionContext {
         // Add features
         for (k, v) in self.features {
             context.insert(k, v);
-        }
-
-        // Add api results under "api" namespace
-        if !self.api.is_empty() {
-            context.insert("api".to_string(), Value::Object(self.api));
         }
 
         // Add service results under "service" namespace
@@ -628,15 +596,14 @@ mod tests {
 
         // Store in different namespaces
         ctx.store_feature("user_count", Value::Number(15.0));
-        ctx.store_api_result("device_fp", Value::Number(0.75));
+        ctx.store_service_result("device_fp", Value::Number(0.75));
         ctx.store_service_result("user_profile", Value::String("vip".to_string()));
         ctx.store_llm_result("fraud_check", Value::Bool(true));
         ctx.store_var("threshold", Value::Number(80.0));
 
         // Verify stored
         assert_eq!(ctx.features.len(), 1);
-        assert_eq!(ctx.api.len(), 1);
-        assert_eq!(ctx.service.len(), 1);
+        assert_eq!(ctx.service.len(), 2);
         assert_eq!(ctx.llm.len(), 1);
         assert_eq!(ctx.vars.len(), 1);
     }

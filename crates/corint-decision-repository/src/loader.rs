@@ -5,8 +5,8 @@
 
 use crate::config::{RepositoryConfig, RepositorySource};
 use crate::content::{
-    ApiConfig, DataSourceConfig, FeatureCache, FeatureDefinition, FeatureFilter, ListConfig,
-    PoolConfig, RepositoryContent, TimeWindow,
+    DataSourceConfig, FeatureCache, FeatureDefinition, FeatureFilter, HttpServiceConfig,
+    ListConfig, PoolConfig, RepositoryContent, TimeWindow,
 };
 use crate::error::{RepositoryError, RepositoryResult};
 use crate::Repository;
@@ -42,7 +42,7 @@ impl RepositoryLoader {
     /// - Pipelines
     /// - Rules
     /// - Rulesets
-    /// - API configs
+    /// - HTTP service configs
     /// - Data source configs
     /// - Feature definitions
     /// - List configs
@@ -100,48 +100,42 @@ impl RepositoryLoader {
             }
         }
 
-        // 5. Load configs directory
-        let configs_path = Path::new(base_path).join("configs");
-        if configs_path.exists() {
-            // Load API configs
-            content.api_configs = self
-                .load_api_configs(&configs_path)
-                .await
-                .unwrap_or_default();
+        // 5. Load resource definitions directly from the repository root.
+        let repository_path = Path::new(base_path);
+        content.service_configs = self.load_service_configs(repository_path).await?;
+        content.feature_definitions = self
+            .load_feature_definitions(repository_path)
+            .await
+            .unwrap_or_default();
+        content.list_configs = self
+            .load_list_configs(repository_path)
+            .await
+            .unwrap_or_default();
 
-            // Load datasource configs
-            content.datasource_configs = self
-                .load_datasource_configs(&configs_path)
-                .await
-                .unwrap_or_default();
-
-            // Load feature definitions
-            content.feature_definitions = self
-                .load_feature_definitions(&configs_path)
-                .await
-                .unwrap_or_default();
-
-            // Load list configs
-            content.list_configs = self
-                .load_list_configs(&configs_path)
-                .await
-                .unwrap_or_default();
-        }
+        // Datasource deployment configuration retains its separate legacy path.
+        content.datasource_configs = self
+            .load_datasource_configs(&repository_path.join("configs"))
+            .await
+            .unwrap_or_default();
 
         Ok(content)
     }
 
-    /// Load API configurations from configs/apis/
-    async fn load_api_configs(&self, configs_path: &Path) -> RepositoryResult<Vec<ApiConfig>> {
-        let apis_path = configs_path.join("apis");
-        if !apis_path.exists() {
+    /// Load HTTP service configurations from services/
+    async fn load_service_configs(
+        &self,
+        repository_path: &Path,
+    ) -> RepositoryResult<Vec<HttpServiceConfig>> {
+        let services_path = repository_path.join("services");
+        if !services_path.exists() {
             return Ok(Vec::new());
         }
 
         let mut configs = Vec::new();
 
-        let entries = std::fs::read_dir(&apis_path)
-            .map_err(|e| RepositoryError::Other(format!("Failed to read apis directory: {}", e)))?;
+        let entries = std::fs::read_dir(&services_path).map_err(|e| {
+            RepositoryError::Other(format!("Failed to read services directory: {}", e))
+        })?;
 
         for entry in entries.flatten() {
             let path = entry.path();
@@ -149,24 +143,22 @@ impl RepositoryLoader {
                 .extension()
                 .is_some_and(|ext| ext == "yaml" || ext == "yml")
             {
-                if let Ok(config) = self.load_api_config_file(&path).await {
-                    configs.push(config);
-                }
+                configs.push(self.load_service_config_file(&path).await?);
             }
         }
 
         Ok(configs)
     }
 
-    /// Load a single API config file
-    async fn load_api_config_file(&self, path: &Path) -> RepositoryResult<ApiConfig> {
+    /// Load a single HTTP service config file
+    async fn load_service_config_file(&self, path: &Path) -> RepositoryResult<HttpServiceConfig> {
         let content = tokio::fs::read_to_string(path)
             .await
             .map_err(|e| RepositoryError::Other(format!("Failed to read {:?}: {}", path, e)))?;
 
-        // Parse YAML directly into ApiConfig structure
+        // Parse YAML directly into HttpServiceConfig structure
         // serde will handle the deserialization based on our struct definition
-        let config: ApiConfig = serde_yaml::from_str(&content).map_err(|e| {
+        let config: HttpServiceConfig = serde_yaml::from_str(&content).map_err(|e| {
             RepositoryError::ParseError(format!("Failed to parse {:?}: {}", path, e))
         })?;
 
@@ -262,12 +254,12 @@ impl RepositoryLoader {
         })
     }
 
-    /// Load feature definitions from configs/features/
+    /// Load feature definitions from features/
     async fn load_feature_definitions(
         &self,
-        configs_path: &Path,
+        repository_path: &Path,
     ) -> RepositoryResult<Vec<FeatureDefinition>> {
-        let features_path = configs_path.join("features");
+        let features_path = repository_path.join("features");
         if !features_path.exists() {
             return Ok(Vec::new());
         }
@@ -391,9 +383,9 @@ impl RepositoryLoader {
         })
     }
 
-    /// Load list configurations from configs/lists/
-    async fn load_list_configs(&self, configs_path: &Path) -> RepositoryResult<Vec<ListConfig>> {
-        let lists_path = configs_path.join("lists");
+    /// Load list configurations from lists/
+    async fn load_list_configs(&self, repository_path: &Path) -> RepositoryResult<Vec<ListConfig>> {
+        let lists_path = repository_path.join("lists");
         if !lists_path.exists() {
             return Ok(Vec::new());
         }
@@ -591,6 +583,40 @@ mod tests {
         let content = loader.load_all().await.unwrap();
 
         assert!(content.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_filesystem_resources_without_configs_directory() {
+        let root = tempfile::tempdir().unwrap();
+        for name in ["services", "features", "lists"] {
+            std::fs::create_dir(root.path().join(name)).unwrap();
+        }
+        std::fs::write(
+            root.path().join("services/risk.yaml"),
+            "name: risk\nbase_url: https://risk.example.com\noperations:\n  assess:\n    method: GET\n    path: /assess\n",
+        )
+        .unwrap();
+        std::fs::write(
+            root.path().join("features/count.yaml"),
+            "features:\n  - name: event_count\n    operator: count\n    datasource: events\n",
+        )
+        .unwrap();
+        std::fs::write(
+            root.path().join("lists/blocked.yaml"),
+            "lists:\n  - id: blocked\n    backend: memory\n    initial_values: [blocked_user]\n",
+        )
+        .unwrap();
+
+        let config = RepositoryConfig::file_system(root.path().to_str().unwrap());
+        let content = RepositoryLoader::new(config).load_all().await.unwrap();
+
+        assert!(!root.path().join("configs").exists());
+        assert_eq!(content.service_configs.len(), 1);
+        assert_eq!(content.service_configs[0].name, "risk");
+        assert_eq!(content.feature_definitions.len(), 1);
+        assert_eq!(content.feature_definitions[0].name, "event_count");
+        assert_eq!(content.list_configs.len(), 1);
+        assert_eq!(content.list_configs[0].id, "blocked");
     }
 
     #[tokio::test]

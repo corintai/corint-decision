@@ -5,7 +5,7 @@ version: "0.1"
 
 import:
   rulesets:
-    - library/rulesets/fraud_detection_core.yaml
+    - rulesets/fraud_detection_core.yaml
 
 ---
 

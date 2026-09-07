@@ -3,6 +3,9 @@
 //! This module defines the content types loaded from a repository,
 //! including pipelines, rules, rulesets, and various configurations.
 
+pub use corint_decision_model::service::{
+    HttpServiceConfig, ServiceAuth, ServiceOperation, ServiceResponseMapping,
+};
 use serde::{Deserialize, Serialize};
 
 /// All content loaded from a repository
@@ -23,8 +26,8 @@ pub struct RepositoryContent {
     /// Ruleset definitions (id, yaml content)
     pub rulesets: Vec<(String, String)>,
 
-    /// API configurations
-    pub api_configs: Vec<ApiConfig>,
+    /// HTTP service bindings
+    pub service_configs: Vec<HttpServiceConfig>,
 
     /// Data source configurations
     pub datasource_configs: Vec<DataSourceConfig>,
@@ -69,7 +72,7 @@ impl RepositoryContent {
         self.pipelines.extend(other.pipelines);
         self.rules.extend(other.rules);
         self.rulesets.extend(other.rulesets);
-        self.api_configs.extend(other.api_configs);
+        self.service_configs.extend(other.service_configs);
         self.datasource_configs.extend(other.datasource_configs);
         self.feature_definitions.extend(other.feature_definitions);
         self.list_configs.extend(other.list_configs);
@@ -81,7 +84,7 @@ impl RepositoryContent {
             && self.pipelines.is_empty()
             && self.rules.is_empty()
             && self.rulesets.is_empty()
-            && self.api_configs.is_empty()
+            && self.service_configs.is_empty()
             && self.datasource_configs.is_empty()
             && self.feature_definitions.is_empty()
             && self.list_configs.is_empty()
@@ -93,100 +96,11 @@ impl RepositoryContent {
             + self.pipelines.len()
             + self.rules.len()
             + self.rulesets.len()
-            + self.api_configs.len()
+            + self.service_configs.len()
             + self.datasource_configs.len()
             + self.feature_definitions.len()
             + self.list_configs.len()
     }
-}
-
-// Re-export API types defined in corint-decision-runtime
-// Note: These types need to be available for repository loading,
-// but the actual implementation is in corint-decision-runtime
-// We define them here to avoid circular dependencies
-/// External API configuration
-///
-/// Defines how to connect to an external API service.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ApiConfig {
-    /// API name/identifier
-    pub name: String,
-
-    /// Base URL
-    pub base_url: String,
-
-    /// Optional authentication configuration
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub auth: Option<ApiAuth>,
-
-    /// Timeout in milliseconds (default: 10000)
-    #[serde(default = "default_timeout")]
-    pub timeout_ms: u64,
-
-    /// Endpoint definitions (as a map: endpoint_name -> endpoint_config)
-    #[serde(default)]
-    pub endpoints: std::collections::HashMap<String, ApiEndpoint>,
-}
-
-/// Authentication configuration for API
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ApiAuth {
-    /// Authentication type (currently only "header" is supported)
-    #[serde(rename = "type")]
-    pub auth_type: String,
-
-    /// Header name (e.g., "Authorization", "X-API-Key")
-    pub name: String,
-
-    /// Header value (can use ${env.x.y.z} for environment variables)
-    pub value: String,
-}
-
-fn default_timeout() -> u64 {
-    10000 // Changed from 5000 to 10000 per docs
-}
-
-/// API endpoint definition
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ApiEndpoint {
-    /// HTTP method (GET, POST, PUT, DELETE, PATCH)
-    pub method: String,
-
-    /// Path (can include path parameters like {id})
-    pub path: String,
-
-    /// Optional timeout for this endpoint (overrides API default)
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub timeout_ms: Option<u64>,
-
-    /// Parameter mapping from context or literals
-    /// Key: param name, Value: context path (e.g., "event.user.id") or literal value
-    #[serde(default, skip_serializing_if = "std::collections::HashMap::is_empty")]
-    pub params: std::collections::HashMap<String, serde_json::Value>,
-
-    /// Query parameter names (array of param names to include in query string)
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub query_params: Vec<String>,
-
-    /// Request body template for POST/PUT/PATCH (with ${param_name} placeholders)
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub request_body: Option<String>,
-
-    /// Response handling configuration
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub response: Option<ApiResponse>,
-}
-
-/// Response handling configuration
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ApiResponse {
-    /// Field mapping: output_field -> response_field
-    #[serde(default, skip_serializing_if = "std::collections::HashMap::is_empty")]
-    pub mapping: std::collections::HashMap<String, String>,
-
-    /// Fallback value on error (4xx, 5xx, timeout)
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub fallback: Option<serde_json::Value>,
 }
 
 /// Data source configuration
@@ -406,13 +320,13 @@ mod tests {
     }
 
     #[test]
-    fn test_api_config() {
-        let config = ApiConfig {
+    fn test_http_service_config() {
+        let config = HttpServiceConfig {
             name: "ipinfo".to_string(),
             base_url: "https://ipinfo.io".to_string(),
             auth: None,
             timeout_ms: 10000,
-            endpoints: std::collections::HashMap::new(),
+            operations: std::collections::HashMap::new(),
         };
 
         assert_eq!(config.name, "ipinfo");

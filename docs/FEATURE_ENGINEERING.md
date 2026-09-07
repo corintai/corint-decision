@@ -2752,6 +2752,6 @@ When adding new operators:
 ## References
 
 - [Operator Implementation](../crates/corint-decision-runtime/src/feature/operator.rs)
-- [Feature Definitions](../repository/configs/features/)
+- [Feature Definitions](../repository/features/)
 - [Data Source Integration](../crates/corint-decision-runtime/src/datasource/)
-- [Risk Rule Examples](../repository/library/rules/)
+- [Risk Rule Examples](../repository/rules/)

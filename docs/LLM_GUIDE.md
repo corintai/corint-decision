@@ -1,5 +1,10 @@
 # CORINT LLM Code Generation (v1.0)
 
+> Service invocation now follows [the unified Service contract](cdl/service.md).
+> There is no separate API node or API results namespace. Service results default
+> to the step ID; older resource-based examples on this design/reference page are not authoritative.
+
+
 **⚠️ IMPORTANT: LLM is NO LONGER a runtime step type in CORINT pipelines.**
 
 This document describes the `corint-decision-llm` crate, which provides **development-time code generation** capabilities. LLM is used to generate YAML configurations from natural language descriptions, not for real-time decision execution.
@@ -121,7 +126,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let rule_yaml = generator.generate(description).await?;
 
     // Save to repository
-    std::fs::write("repository/library/rules/fraud/high_amount_new_account.yaml", rule_yaml)?;
+    std::fs::write("repository/rules/fraud/high_amount_new_account.yaml", rule_yaml)?;
 
     println!("Rule generated successfully!");
     Ok(())
@@ -169,7 +174,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     "#;
 
     let ruleset_yaml = generator.generate(description).await?;
-    std::fs::write("repository/library/rulesets/fraud_detection.yaml", ruleset_yaml)?;
+    std::fs::write("repository/rulesets/fraud_detection.yaml", ruleset_yaml)?;
 
     Ok(())
 }
@@ -206,26 +211,26 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("Generated {} rules", flow.rule_count);
     println!("Generated {} rulesets", flow.ruleset_count);
     println!("Generated {} pipelines", flow.pipeline_count);
-    println!("Generated {} API configs", flow.api_config_count);
+    println!("Generated {} HTTP service bindings", flow.service_config_count);
 
     // Save each component to appropriate directory
-    for (i, api_config) in flow.api_configs().iter().enumerate() {
+    for (i, api_config) in flow.service_configs().iter().enumerate() {
         std::fs::write(
-            format!("repository/configs/apis/generated_api_{}.yaml", i),
+            format!("repository/services/generated_service_{}.yaml", i),
             api_config
         )?;
     }
 
     for (i, rule) in flow.rules().iter().enumerate() {
         std::fs::write(
-            format!("repository/library/rules/fraud/generated_rule_{}.yaml", i),
+            format!("repository/rules/fraud/generated_rule_{}.yaml", i),
             rule
         )?;
     }
 
     for (i, ruleset) in flow.rulesets().iter().enumerate() {
         std::fs::write(
-            format!("repository/library/rulesets/generated_ruleset_{}.yaml", i),
+            format!("repository/rulesets/generated_ruleset_{}.yaml", i),
             ruleset
         )?;
     }
@@ -369,7 +374,7 @@ let rule = RuleParser::parse(&rule_yaml)?;
 println!("Validated: {}", rule.id);
 
 // Save after review
-std::fs::write("repository/library/rules/fraud/new_rule.yaml", rule_yaml)?;
+std::fs::write("repository/rules/fraud/new_rule.yaml", rule_yaml)?;
 ```
 
 ### 3. Version Control
@@ -416,13 +421,13 @@ assert_eq!(result.score, 75);
 cargo run --example generate_fraud_rules
 
 # 2. Review generated files
-ls repository/library/rules/fraud/
+ls repository/rules/fraud/
 
 # 3. Test generated rules
 cargo test --test fraud_rule_tests
 
 # 4. Commit if tests pass
-git add repository/library/rules/fraud/
+git add repository/rules/fraud/
 git commit -m "Add LLM-generated fraud detection rules"
 
 # 5. Deploy
@@ -438,7 +443,7 @@ See the `crates/corint-decision-llm/examples/` directory for complete examples:
 - **generate_rule.rs**: Simple rule generation
 - **generate_ruleset.rs**: Ruleset creation
 - **generate_pipeline.rs**: Pipeline workflow generation
-- **generate_api_config.rs**: External API configuration
+- **ServiceConfigGenerator**: HTTP service configuration
 - **generate_decision_flow.rs**: Complete decision flow with all components
 
 Run an example:
@@ -496,7 +501,7 @@ For runtime decision logic, use standard CORINT DSL components:
 - **Rules**: Detection logic with conditions
 - **Rulesets**: Rule collections with conclusion logic
 - **Pipelines**: Orchestration workflows
-- **External APIs**: Third-party service calls (non-LLM)
+- **Services**: Named capability calls through HTTP or custom adapters
 - **Data Sources**: Feature extraction
 
 LLM is a development tool, not a runtime component.

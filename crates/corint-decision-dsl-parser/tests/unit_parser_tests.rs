@@ -534,7 +534,7 @@ pipeline:
 }
 
 #[test]
-fn test_parse_pipeline_with_api_step() {
+fn test_parse_http_service_step() {
     let yaml = r#"
 version: "0.1"
 
@@ -546,20 +546,20 @@ pipeline:
     - step:
         id: api_step
         name: Call Geolocation API
-        type: api
-        api: geo_service
-        endpoint: /lookup
+        type: service
+        service: geo_service
+        operation: lookup
         params:
           ip: event.ip_address
-        output: api.geo
-        timeout: 5000
+        output: service.geo
+        timeout_ms: 5000
 "#;
 
     let result = PipelineParser::parse(yaml);
     assert!(result.is_ok());
 
     let pipeline = result.unwrap();
-    assert_eq!(pipeline.steps[0].step_type, "api");
+    assert_eq!(pipeline.steps[0].step_type, "service");
 }
 
 #[test]
@@ -577,7 +577,7 @@ pipeline:
         name: Query Database
         type: service
         service: postgres
-        query: SELECT * FROM users WHERE id = ?
+        operation: find_user
         params:
           user_id: event.user_id
 "#;
@@ -891,10 +891,10 @@ version: "0.1"
 
 import:
   rules:
-    - library/rules/fraud/velocity_check.yaml
-    - library/rules/fraud/geo_check.yaml
+    - rules/fraud/velocity_check.yaml
+    - rules/fraud/geo_check.yaml
   rulesets:
-    - library/rulesets/fraud_detection.yaml
+    - rulesets/fraud_detection.yaml
 "#;
 
     let yaml_value = corint_decision_dsl_parser::yaml_parser::YamlParser::parse(yaml).unwrap();
@@ -941,9 +941,9 @@ version: "0.1"
 
 import:
   rules:
-    - library/rules/rule1.yaml
+    - rules/rule1.yaml
   rulesets:
-    - library/rulesets/ruleset1.yaml
+    - rulesets/ruleset1.yaml
   pipelines:
     - library/pipelines/pipeline1.yaml
 "#;

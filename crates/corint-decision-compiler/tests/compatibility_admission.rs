@@ -1,8 +1,6 @@
 use corint_decision_compiler::codegen::PipelineCompiler;
-use corint_decision_model::ast::{
-    pipeline::{ApiTarget, Pipeline, PipelineStep, StepDetails},
-    WhenBlock,
-};
+use corint_decision_model::ast::pipeline::{Pipeline, PipelineStep};
+use corint_decision_model::ast::WhenBlock;
 fn pipeline(step: PipelineStep) -> Pipeline {
     Pipeline::new("p".into(), "P".into(), "entry".into()).with_steps(vec![
         PipelineStep::ruleset("entry".into(), "Entry".into(), "rules".into()),
@@ -23,49 +21,6 @@ fn unreachable_unsupported_steps_and_mismatched_details_are_rejected() {
     }
 }
 #[test]
-fn guards_and_every_ignored_api_option_are_rejected_before_codegen() {
-    let base = PipelineStep::api("unused".into(), "Unused".into(), "api".into());
-    let mut guard = base.clone();
-    guard.when = Some(WhenBlock::default());
-    assert!(PipelineCompiler::compile(&pipeline(guard))
-        .unwrap_err()
-        .to_string()
-        .contains("when"));
-    for option in ["params", "on_error", "min_success", "any", "all"] {
-        let mut step = base.clone();
-        if let StepDetails::Api {
-            api_target,
-            params,
-            on_error,
-            min_success,
-            ..
-        } = &mut step.details
-        {
-            match option {
-                "params" => *params = Some(Default::default()),
-                "on_error" => *on_error = Some("ignore".into()),
-                "min_success" => *min_success = Some(1),
-                "any" => {
-                    *api_target = ApiTarget::Any {
-                        any: vec!["a".into(), "b".into()],
-                    }
-                }
-                "all" => {
-                    *api_target = ApiTarget::All {
-                        all: vec!["a".into(), "b".into()],
-                    }
-                }
-                _ => unreachable!(),
-            }
-        }
-        assert!(PipelineCompiler::compile(&pipeline(step))
-            .unwrap_err()
-            .to_string()
-            .contains(option));
-    }
-}
-
-#[test]
 fn deferred_compatibility_rulesets_cannot_feed_a_router_condition() {
     use corint_decision_model::ast::{pipeline::Route, Expression};
     let mut step = PipelineStep::router("unused".into(), "Unused".into());
@@ -85,4 +40,40 @@ fn deferred_compatibility_rulesets_cannot_feed_a_router_condition() {
         .unwrap_err()
         .to_string()
         .contains("result-dependent"));
+}
+
+#[test]
+fn invalid_unreachable_service_outputs_and_parameters_are_rejected() {
+    use corint_decision_model::{
+        ast::{pipeline::StepDetails, Expression},
+        Value,
+    };
+    for invalid in ["event.amount", "api.risk", "service.", ""] {
+        let mut step = PipelineStep::service(
+            "unused".into(),
+            "Unused".into(),
+            "risk".into(),
+            "score".into(),
+        );
+        if let StepDetails::Service { output, .. } = &mut step.details {
+            *output = Some(invalid.into());
+        }
+        assert!(
+            PipelineCompiler::compile(&pipeline(step)).is_err(),
+            "{invalid}"
+        );
+    }
+    let mut step = PipelineStep::service(
+        "unused".into(),
+        "Unused".into(),
+        "risk".into(),
+        "score".into(),
+    );
+    if let StepDetails::Service { params, .. } = &mut step.details {
+        *params = Some(std::collections::HashMap::from([(
+            "".into(),
+            Expression::literal(Value::Null),
+        )]));
+    }
+    assert!(PipelineCompiler::compile(&pipeline(step)).is_err());
 }

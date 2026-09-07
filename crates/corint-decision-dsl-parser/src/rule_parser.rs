@@ -580,7 +580,7 @@ rule:
 version: "0.1"
 import:
   rules:
-    - library/rules/fraud/fraud_farm.yaml
+    - rules/fraud/fraud_farm.yaml
 
 ---
 
@@ -602,7 +602,7 @@ rule:
 
         let imports = doc.imports();
         assert_eq!(imports.rules.len(), 1);
-        assert_eq!(imports.rules[0], "library/rules/fraud/fraud_farm.yaml");
+        assert_eq!(imports.rules[0], "rules/fraud/fraud_farm.yaml");
 
         assert_eq!(doc.definition.id, "fraud_detection");
         assert_eq!(doc.definition.name, "Fraud Detection Rule");
@@ -615,10 +615,10 @@ rule:
 version: "0.1"
 import:
   rules:
-    - library/rules/rule1.yaml
-    - library/rules/rule2.yaml
+    - rules/rule1.yaml
+    - rules/rule2.yaml
   rulesets:
-    - library/rulesets/ruleset1.yaml
+    - rulesets/ruleset1.yaml
 
 ---
 

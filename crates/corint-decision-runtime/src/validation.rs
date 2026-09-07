@@ -10,8 +10,7 @@
 //! - User-submitted event data (event namespace)
 //! - System-generated metadata (sys namespace)
 //! - Computed features (features namespace)
-//! - External API results (api namespace)
-//! - Internal service results (service namespace)
+//! - Service results (service namespace)
 //! - LLM analysis results (llm namespace)
 //!
 //! # Validation Rules
@@ -31,7 +30,6 @@
 //! Field names starting with these prefixes are also forbidden:
 //! - `sys_` - Reserved for system namespace fields
 //! - `features_` - Reserved for computed features
-//! - `api_` - Reserved for external API results
 //! - `service_` - Reserved for service call results
 //! - `llm_` - Reserved for LLM analysis results
 //!
@@ -90,7 +88,6 @@ const RESERVED_FIELDS: &[&str] = &[
 const RESERVED_PREFIXES: &[&str] = &[
     "sys_",      // System namespace
     "features_", // Features namespace
-    "api_",      // API namespace
     "service_",  // Service namespace
     "llm_",      // LLM namespace
 ];
@@ -283,11 +280,11 @@ mod tests {
     }
 
     #[test]
-    fn test_reserved_prefix_api() {
+    fn test_removed_api_prefix_is_available_for_event_fields() {
         let mut event = create_valid_event();
         event.insert("api_result".to_string(), Value::String("data".to_string()));
 
-        assert!(validate_event_data(&event).is_err());
+        assert!(validate_event_data(&event).is_ok());
     }
 
     #[test]
@@ -332,7 +329,7 @@ mod tests {
         assert!(is_reserved_field("triggered_rules"));
         assert!(is_reserved_field("sys_request_id"));
         assert!(is_reserved_field("features_count"));
-        assert!(is_reserved_field("api_result"));
+        assert!(!is_reserved_field("api_result"));
         assert!(is_reserved_field("service_data"));
         assert!(is_reserved_field("llm_analysis"));
 

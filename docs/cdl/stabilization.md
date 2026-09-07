@@ -14,7 +14,7 @@
 
 历史片段的 `core-negative` 验证其严格 Core 拒绝边界，不证明旧兼容运行时行为。
 可接受的 Registry 片段提供完整输入与 Pipeline 包装，真实执行 first-match；其他语法说明保持 `syntax-reference`。
-Rule/Ruleset/Pipeline/flow 生成模板使用已执行 fixture；API 配置生成器仍是兼容能力，不能用于声明严格 Core Connector 支持。
+Rule/Ruleset/Pipeline/flow 生成模板使用已执行 fixture；HTTP Service 配置生成器面向在线运行时，不能用于声明严格 Core Connector 支持。
 
 ## 性能测量
 

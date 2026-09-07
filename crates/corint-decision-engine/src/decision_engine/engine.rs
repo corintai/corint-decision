@@ -14,8 +14,8 @@ use corint_decision_model::ir::Program;
 use corint_decision_model::Value;
 use corint_decision_runtime::result::CoreConditionTrace;
 use corint_decision_runtime::{
-    ApiConfig, ConditionTrace, DecisionResult, ExecutionTrace, ExternalApiClient, MetricsCollector,
-    PipelineExecutor, PipelineTrace, RuleTrace, RulesetTrace,
+    ConditionTrace, DecisionResult, ExecutionTrace, HttpServiceClient, HttpServiceConfig,
+    MetricsCollector, PipelineExecutor, PipelineTrace, RuleTrace, RulesetTrace,
 };
 use std::collections::HashMap;
 use std::path::Path;
@@ -170,7 +170,8 @@ impl DecisionEngine {
         feature_executor: Option<Arc<corint_decision_runtime::feature::FeatureExecutor>>,
         list_service: Option<Arc<corint_decision_runtime::lists::ListService>>,
     ) -> Result<Self> {
-        Self::new_with_repository(config, feature_executor, list_service, None).await
+        Self::new_with_repository(config, feature_executor, list_service, None, HashMap::new())
+            .await
     }
 
     pub(crate) async fn new_with_repository(
@@ -178,6 +179,7 @@ impl DecisionEngine {
         feature_executor: Option<Arc<corint_decision_runtime::feature::FeatureExecutor>>,
         list_service: Option<Arc<corint_decision_runtime::lists::ListService>>,
         repository_config: Option<corint_decision_repository::RepositoryConfig>,
+        services: HashMap<String, Arc<dyn corint_decision_runtime::ServiceClient>>,
     ) -> Result<Self> {
         let repository_root = repository_config
             .as_ref()
@@ -240,46 +242,39 @@ impl DecisionEngine {
 
         let registry_guards = Self::compile_registry_guards(registry.as_ref())?;
 
-        // Load external API configurations
-        let mut api_client = ExternalApiClient::new();
-
-        // Load API configs from repository/configs/apis directory
-        let api_config_dir = Path::new(repository_root).join("configs/apis");
-        tracing::debug!("Checking for API configs in: {:?}", api_config_dir);
-        if api_config_dir.exists() {
-            if let Ok(entries) = std::fs::read_dir(&api_config_dir) {
-                for entry in entries.flatten() {
-                    let path = entry.path();
-                    tracing::debug!("Found file: {:?}", path);
-                    if path.extension().and_then(|s| s.to_str()) == Some("yaml") {
-                        match std::fs::read_to_string(&path) {
-                            Ok(content) => match serde_yaml::from_str::<ApiConfig>(&content) {
-                                Ok(api_config) => {
-                                    tracing::info!("✓ Loaded API config: {}", api_config.name);
-                                    api_client.register_api(api_config);
-                                }
-                                Err(e) => {
-                                    tracing::warn!(
-                                        "Failed to parse API config from {:?}: {}",
-                                        path,
-                                        e
-                                    );
-                                }
-                            },
-                            Err(e) => {
-                                tracing::warn!("Failed to read API config file {:?}: {}", path, e);
-                            }
-                        }
-                    }
+        // HTTP bindings use the same logical service names as custom adapters.
+        let mut http_client = HttpServiceClient::new();
+        for binding in &config.http_services {
+            http_client.register_service(binding.clone())?;
+        }
+        let config_dir = Path::new(repository_root).join("services");
+        if config_dir.exists() {
+            let mut paths = std::fs::read_dir(&config_dir)?
+                .map(|entry| entry.map(|e| e.path()))
+                .collect::<std::io::Result<Vec<_>>>()?;
+            paths.sort();
+            for path in paths {
+                if path
+                    .extension()
+                    .is_some_and(|ext| ext == "yaml" || ext == "yml")
+                {
+                    let content = std::fs::read_to_string(&path)?;
+                    let binding: HttpServiceConfig =
+                        serde_yaml::from_str(&content).map_err(|error| {
+                            EngineError::Config(format!(
+                                "Invalid service binding {}: {error}",
+                                path.display()
+                            ))
+                        })?;
+                    http_client.register_service(binding)?;
                 }
             }
-        } else {
-            tracing::warn!("API config directory does not exist: {:?}", api_config_dir);
         }
-
-        // Create executor with API client
         let mut pipeline_executor =
-            PipelineExecutor::new().with_external_api_client(Arc::new(api_client));
+            PipelineExecutor::new().with_http_service_client(Arc::new(http_client));
+        for (name, client) in services {
+            pipeline_executor = pipeline_executor.with_service(name, client)?;
+        }
 
         // Clone feature_executor and list_service before using them (they will be moved)
         let feature_executor_clone = feature_executor.clone();
@@ -322,7 +317,6 @@ impl DecisionEngine {
         if let Some(schema) = &self.core_input_schema {
             corint_decision_compiler::core::validate_core_input(schema, &request.event_data)?;
             if request.features.is_some()
-                || request.api.is_some()
                 || request.service.is_some()
                 || request.llm.is_some()
                 || request.vars.is_some()

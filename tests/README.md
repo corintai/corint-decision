@@ -378,15 +378,14 @@ tests/
 │   │   ├── transaction_test.yaml    # Transaction flow pipeline
 │   │   ├── login_test.yaml          # Login flow pipeline
 │   │   └── payment_test.yaml        # Payment flow pipeline
-│   └── configs/
-│       ├── datasources/
-│       │   └── sqlite_e2e.yaml      # SQLite datasource config
-│       ├── features/
-│       │   └── e2e_features.yaml    # 17 comprehensive features
-│       └── lists/
-│           ├── blocked_users.yaml   # Memory-backed blocked users list
-│           ├── blocked_ips.yaml     # Memory-backed blocked IPs list
-│           └── high_risk_countries.yaml  # Memory-backed country list
+│   ├── configs/datasources/          # Legacy datasource fixtures
+│   │   └── sqlite_e2e.yaml
+│   ├── features/
+│   │   └── e2e_features.yaml         # Generated feature definitions
+│   └── lists/
+│       ├── blocked_users.yaml
+│       ├── blocked_ips.yaml
+│       └── high_risk_countries.yaml
 ├── scripts/
 │   ├── generate_test_data.py        # Generate SQLite test data + lists
 │   ├── verify_db_lists.sh           # Verify database list entries
@@ -542,7 +541,7 @@ run_test_case "My New Test" '{
 
 ### Add New Feature
 
-Edit `tests/e2e_repo/configs/features/e2e_features.yaml`:
+Edit `tests/e2e_repo/features/e2e_features.yaml`:
 
 ```yaml
 - name: my_new_feature

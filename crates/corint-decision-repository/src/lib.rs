@@ -24,7 +24,7 @@
 //!     let repo = FileSystemRepository::new("repository")?;
 //!
 //!     // Load a rule by path
-//!     let (rule, content) = repo.load_rule("library/rules/fraud/fraud_farm.yaml").await?;
+//!     let (rule, content) = repo.load_rule("rules/fraud/fraud_farm.yaml").await?;
 //!     println!("Loaded rule: {}", rule.id);
 //!
 //!     // Or load by ID (searches recursively)
@@ -177,8 +177,8 @@ pub use config::{ConfigError, RepositoryConfig, RepositorySource};
 
 // Re-exports - Content
 pub use content::{
-    ApiConfig, ApiEndpoint, DataSourceConfig, FeatureCache, FeatureDefinition, FeatureFilter,
-    ListConfig, PoolConfig, RepositoryContent, TimeWindow,
+    DataSourceConfig, FeatureCache, FeatureDefinition, FeatureFilter, HttpServiceConfig,
+    ListConfig, PoolConfig, RepositoryContent, ServiceOperation, TimeWindow,
 };
 
 // Re-exports - Loader

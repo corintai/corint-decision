@@ -64,7 +64,7 @@ CONFIG_BACKUP="$CONFIG_DIR/server.yaml.backup"
 TEST_CONFIG_FILE="tests/e2e_server.yaml"
 
 # Feature files
-FEATURES_DIR="$TEST_REPO/configs/features"
+FEATURES_DIR="$TEST_REPO/features"
 FEATURES_TEMPLATES="$TEST_REPO/templates/features"
 ACTIVE_FEATURES="$FEATURES_DIR/e2e_features.yaml"
 

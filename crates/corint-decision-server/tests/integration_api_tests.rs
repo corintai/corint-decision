@@ -26,10 +26,8 @@ async fn create_test_engine() -> (TempDir, Arc<corint_decision_engine::DecisionE
     fs::create_dir_all(repo_path.join("pipelines"))
         .await
         .unwrap();
-    fs::create_dir_all(repo_path.join("library/rules"))
-        .await
-        .unwrap();
-    fs::create_dir_all(repo_path.join("library/rulesets"))
+    fs::create_dir_all(repo_path.join("rules")).await.unwrap();
+    fs::create_dir_all(repo_path.join("rulesets"))
         .await
         .unwrap();
 
@@ -45,14 +43,14 @@ rule:
   score: 100
 "#;
 
-    fs::write(repo_path.join("library/rules/test_rule.yaml"), rule_yaml)
+    fs::write(repo_path.join("rules/test_rule.yaml"), rule_yaml)
         .await
         .unwrap();
 
     // Create a test ruleset
     let ruleset_yaml = r#"version: "0.1"
 import:
-  rules: [library/rules/test_rule.yaml]
+  rules: [rules/test_rule.yaml]
 ---
 ruleset:
   id: test_ruleset
@@ -68,17 +66,14 @@ ruleset:
       signal: approve
 "#;
 
-    fs::write(
-        repo_path.join("library/rulesets/test_ruleset.yaml"),
-        ruleset_yaml,
-    )
-    .await
-    .unwrap();
+    fs::write(repo_path.join("rulesets/test_ruleset.yaml"), ruleset_yaml)
+        .await
+        .unwrap();
 
     // Create a pipeline
     let pipeline_yaml = r#"version: "0.1"
 import:
-  rulesets: [library/rulesets/test_ruleset.yaml]
+  rulesets: [rulesets/test_ruleset.yaml]
 ---
 pipeline:
   id: test_pipeline

@@ -23,7 +23,7 @@ use tower::ServiceExt;
 
 const PIPELINE: &str = r#"version: "0.1"
 import:
-  rulesets: [library/rulesets/risk.yaml]
+  rulesets: [rulesets/risk.yaml]
 ---
 pipeline:
   id: payment
@@ -47,7 +47,7 @@ pipeline:
 "#;
 const RULESET: &str = r#"version: "0.1"
 import:
-  rules: [library/rules/amount.yaml]
+  rules: [rules/amount.yaml]
 ---
 ruleset:
   id: risk
@@ -60,7 +60,7 @@ ruleset:
 "#;
 fn write_rule(root: &Path, score: i32) {
     std::fs::write(
-        root.join("library/rules/amount.yaml"),
+        root.join("rules/amount.yaml"),
         format!(
             r#"version: "0.1"
 rule:
@@ -75,11 +75,11 @@ rule:
 }
 fn repository() -> TempDir {
     let dir = TempDir::new().unwrap();
-    for path in ["pipelines", "library/rules", "library/rulesets"] {
+    for path in ["pipelines", "rules", "rulesets"] {
         std::fs::create_dir_all(dir.path().join(path)).unwrap();
     }
     std::fs::write(dir.path().join("pipelines/payment.yaml"), PIPELINE).unwrap();
-    std::fs::write(dir.path().join("library/rulesets/risk.yaml"), RULESET).unwrap();
+    std::fs::write(dir.path().join("rulesets/risk.yaml"), RULESET).unwrap();
     write_rule(dir.path(), 10);
     dir
 }
@@ -272,7 +272,7 @@ async fn invalid_pipeline_registry_and_import_preserve_both_transports() {
     for path in [
         "pipelines/payment.yaml",
         "registry.yaml",
-        "library/rules/amount.yaml",
+        "rules/amount.yaml",
     ] {
         let path = repo.path().join(path);
         let original = std::fs::read(&path).ok();
@@ -363,14 +363,14 @@ async fn request_waiting_for_connector_does_not_block_reload() {
         }),
     );
     let server = tokio::spawn(async move { axum::serve(listener, connector).await.unwrap() });
-    std::fs::create_dir_all(repo.path().join("configs/apis")).unwrap();
+    std::fs::create_dir_all(repo.path().join("services")).unwrap();
     std::fs::write(
-        repo.path().join("configs/apis/slow.yaml"),
+        repo.path().join("services/slow.yaml"),
         format!(
             r#"name: slow
 base_url: http://{address}
 timeout_ms: 30000
-endpoints:
+operations:
   check:
     method: GET
     path: /check
@@ -389,9 +389,9 @@ pipeline:
     - step:
         id: check
         name: Slow check
-        type: api
-        api: slow
-        endpoint: check
+        type: service
+        service: slow
+        operation: check
         next: end
   decision:
     - default: true
@@ -609,7 +609,7 @@ async fn terminal_router_branch_cannot_fall_through_into_the_other_branch() {
         repo.path().join("pipelines/payment.yaml"),
         r#"version: "0.1"
 import:
-  rulesets: [library/rulesets/risk.yaml]
+  rulesets: [rulesets/risk.yaml]
 ---
 pipeline:
   id: payment

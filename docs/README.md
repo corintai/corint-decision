@@ -38,3 +38,5 @@
 | 2026-09-05 | 增加当前 CDL、公共契约与服务快照的阅读入口。 |
 
 CDL 规范、示例、Feature、回放与容量验收入口见 [六项增强](cdl/stabilization.md)。
+
+Online service invocation: [CDL contract](cdl/service.md) · [Integration guide](SERVICE_GUIDE.md).

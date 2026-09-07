@@ -129,10 +129,10 @@ mod tests {
   entry: check_ip
   steps:
     - id: check_ip
-      type: api
-      api: ipinfo
-      endpoint: get_info
-      output: ip_info
+      type: service
+      service: ipinfo
+      operation: get_info
+      output: service.ip_info
       next: fraud_check
     - id: fraud_check
       type: ruleset
@@ -192,8 +192,11 @@ pipeline:
   entry: step1
   steps:
     - step:
-        type: api
+        type: service
         id: step1
+        name: Check
+        service: risk
+        operation: score
 ```"#;
 
         let provider = Arc::new(MockProvider::with_response(mock_response.to_string()));

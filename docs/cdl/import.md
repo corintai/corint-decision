@@ -13,7 +13,10 @@
 
 ## Overview
 
-CDL provides a module system for code reuse. The `import` mechanism allows importing rules and rulesets from library files.
+CDL provides a module system for code reuse. The `import` mechanism references
+reusable definitions in the repository's top-level `rules/` and `rulesets/`
+directories. Paths are relative to the repository root, including imports from
+nested business-domain directories.
 
 ---
 
@@ -29,10 +32,10 @@ version: "0.1"
 # Import section (first document)
 import:
   rules:
-    - library/rules/fraud/fraud_farm.yaml
-    - library/rules/payment/card_testing.yaml
+    - rules/fraud/fraud_farm.yaml
+    - rules/payment/card_testing.yaml
   rulesets:
-    - library/rulesets/fraud_detection_core.yaml
+    - rulesets/fraud_detection_core.yaml
 
 ---
 
@@ -65,7 +68,7 @@ ruleset:
 
 <path_list>       ::= "- " <file_path> ( "\n- " <file_path> )*
 
-<file_path>       ::= <string>  // Relative to repository root, e.g., "library/rules/fraud/fraud_farm.yaml"
+<file_path>       ::= <string>  // Relative to repository root, e.g., "rules/fraud/fraud_farm.yaml"
 
 <cdl_document>    ::= <version>? <import>? "---" <definition>
 
@@ -98,7 +101,7 @@ When a pipeline imports a ruleset, the compiler automatically loads all rules th
 # Pipeline imports ruleset
 import:
   rulesets:
-    - library/rulesets/fraud_detection_core.yaml
+    - rulesets/fraud_detection_core.yaml
 
 # Compiler automatically loads:
 # 1. fraud_detection_core.yaml
@@ -116,7 +119,7 @@ Import paths are **relative to repository root**:
 ```yaml
 import:
   rules:
-    - library/rules/fraud/fraud_farm.yaml  # Valid
+    - rules/fraud/fraud_farm.yaml  # Valid
     # ❌ Not supported: ../rules/fraud_farm.yaml (relative paths)
     # ❌ Not supported: ./fraud_farm.yaml (current directory)
 ```
@@ -183,7 +186,7 @@ Circular dependencies occur when A imports B, and B imports A (directly or indir
 ### Rule File
 
 ```yaml
-# library/rules/fraud/fraud_farm.yaml
+# rules/fraud/fraud_farm.yaml
 version: "0.1"
 
 rule:
@@ -197,13 +200,13 @@ rule:
 ### Ruleset with Import
 
 ```yaml
-# library/rulesets/fraud_detection_core.yaml
+# rulesets/fraud_detection_core.yaml
 version: "0.1"
 
 import:
   rules:
-    - library/rules/fraud/fraud_farm.yaml
-    - library/rules/fraud/account_takeover.yaml
+    - rules/fraud/fraud_farm.yaml
+    - rules/fraud/account_takeover.yaml
 
 ---
 
@@ -227,7 +230,7 @@ version: "0.1"
 
 import:
   rulesets:
-    - library/rulesets/fraud_detection_core.yaml
+    - rulesets/fraud_detection_core.yaml
 
 ---
 
@@ -282,7 +285,7 @@ import:
   pipelines: [path, ...]
 
 Path Format:
-  Relative to repository root: "library/rules/category/name.yaml"
+  Relative to repository root: "rules/category/name.yaml"
 
 Reference:
   Imported rules/rulesets referenced by ID in rules/rulesets arrays

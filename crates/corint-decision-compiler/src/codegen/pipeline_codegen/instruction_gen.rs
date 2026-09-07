@@ -5,10 +5,10 @@
 use super::compiler::CompileContext;
 use super::condition_compiler::compile_when_block;
 use super::validator::get_next_step_id;
+use crate::codegen::expression_codegen::ExpressionCompiler;
 use crate::error::{CompileError, Result};
 use corint_decision_model::ast::pipeline::{PipelineStep, StepDetails, StepNext};
 use corint_decision_model::ir::Instruction;
-use std::collections::HashMap;
 
 /// Compile a single pipeline step
 pub(super) fn compile_step(step: &PipelineStep, ctx: &mut CompileContext) -> Result<()> {
@@ -41,7 +41,7 @@ pub(super) fn compile_step(step: &PipelineStep, ctx: &mut CompileContext) -> Res
     match step.step_type.as_str() {
         "router" => compile_router_step(step, ctx),
         "ruleset" => compile_ruleset_step(step, ctx),
-        "api" => compile_api_step(step, ctx),
+        "service" if !ctx.strict_core => compile_service_step(step, ctx),
         "rule" | "pipeline" if ctx.strict_core => {
             let resource_id = match &step.details {
                 StepDetails::Rule { rule } => rule.clone(),
@@ -69,7 +69,6 @@ pub(super) fn compile_step(step: &PipelineStep, ctx: &mut CompileContext) -> Res
 
 /// Reject unsupported semantics before reachability filtering, including dead nodes.
 pub(super) fn validate_step(step: &PipelineStep) -> Result<()> {
-    use corint_decision_model::ast::pipeline::ApiTarget;
     let reject = |field: &str| {
         CompileError::UnsupportedFeature(format!("step {}: {} is not implemented", step.id, field))
     };
@@ -99,26 +98,36 @@ pub(super) fn validate_step(step: &PipelineStep) -> Result<()> {
         }
         ("ruleset", StepDetails::Ruleset { ruleset }) if !ruleset.is_empty() => {}
         (
-            "api",
-            StepDetails::Api {
-                api_target,
+            "service",
+            StepDetails::Service {
+                service,
+                operation,
+                timeout_ms,
                 params,
-                on_error,
-                min_success,
-                ..
+                output,
             },
         ) => {
-            if !matches!(api_target, ApiTarget::Single { api } if !api.is_empty()) {
-                return Err(reject("api.any/all/empty target"));
+            if service.trim().is_empty() || operation.trim().is_empty() {
+                return Err(reject("service/operation must be non-empty"));
             }
-            if params.is_some() {
-                return Err(reject("api.params"));
+            let output_path = output
+                .clone()
+                .unwrap_or_else(|| format!("service.{}", step.id));
+            if !["service.", "vars."]
+                .iter()
+                .any(|prefix| output_path.starts_with(prefix))
+                || output_path.split('.').any(|part| part.is_empty())
+            {
+                return Err(reject("output must be a path under service or vars"));
             }
-            if on_error.is_some() {
-                return Err(reject("api.on_error"));
+            for (name, expression) in params.iter().flat_map(|params| params.iter()) {
+                if name.trim().is_empty() {
+                    return Err(reject("parameter names must be non-empty"));
+                }
+                ExpressionCompiler::compile(expression)?;
             }
-            if min_success.is_some() {
-                return Err(reject("api.min_success"));
+            if *timeout_ms == Some(0) {
+                return Err(reject("timeout_ms must be positive"));
             }
         }
         _ => return Err(reject(&step.step_type)),
@@ -201,58 +210,62 @@ fn compile_ruleset_step(step: &PipelineStep, ctx: &mut CompileContext) -> Result
     compile_next_jump(step, ctx)
 }
 
-/// Compile an API step
-fn compile_api_step(step: &PipelineStep, ctx: &mut CompileContext) -> Result<()> {
-    let next_step_id = get_next_step_id(step);
-
-    // Mark step as executed
+/// Compile a service with deterministic parameter evaluation order.
+fn compile_service_step(step: &PipelineStep, ctx: &mut CompileContext) -> Result<()> {
+    let (service, operation, params, output, timeout_ms) = match &step.details {
+        StepDetails::Service {
+            service,
+            operation,
+            params,
+            output,
+            timeout_ms,
+        } => (
+            service.clone(),
+            operation.clone(),
+            params,
+            output
+                .clone()
+                .unwrap_or_else(|| format!("service.{}", step.id)),
+            *timeout_ms,
+        ),
+        _ => return Err(CompileError::UnsupportedFeature("service target".into())),
+    };
+    if !["service.", "vars."]
+        .iter()
+        .any(|prefix| output.starts_with(prefix))
+        || output.split('.').any(|part| part.is_empty())
+    {
+        return Err(CompileError::InvalidExpression(
+            "Service output must be a non-empty path under service or vars".into(),
+        ));
+    }
     ctx.instructions.push(Instruction::MarkStepExecuted {
         step_id: step.id.clone(),
-        next_step_id: next_step_id.clone(),
+        next_step_id: get_next_step_id(step),
         route_index: None,
         is_default_route: false,
     });
-
-    if let StepDetails::Api {
-        api_target,
-        endpoint,
-        params: _,
-        output,
-        timeout,
-        on_error: _,
-        min_success: _,
-    } = &step.details
-    {
-        // For now, we'll handle simple single API calls
-        // TODO: Implement any/all modes
-        use corint_decision_model::ast::pipeline::ApiTarget;
-
-        let api_name = match api_target {
-            ApiTarget::Single { api } => api.clone(),
-            _ => return Err(CompileError::UnsupportedFeature("api.any/all".into())),
-        };
-
-        ctx.instructions.push(Instruction::CallExternal {
-            api: api_name.clone(),
-            endpoint: endpoint.clone().unwrap_or_default(),
-            params: HashMap::new(), // TODO: Compile params
-            timeout: *timeout,
-            fallback: None,
-        });
-
-        // Store result
-        let endpoint_name = endpoint.clone().unwrap_or_default();
-        let output_var = output.clone().unwrap_or_else(|| {
-            if !endpoint_name.is_empty() {
-                format!("api.{}.{}", api_name, endpoint_name)
-            } else {
-                format!("api.{}", api_name)
-            }
-        });
-        ctx.instructions
-            .push(Instruction::Store { name: output_var });
+    let mut parameters: Vec<_> = params.iter().flat_map(|p| p.iter()).collect();
+    if parameters.iter().any(|(name, _)| name.trim().is_empty()) {
+        return Err(CompileError::InvalidExpression(
+            "Service parameter names must be non-empty".into(),
+        ));
     }
-
+    parameters.sort_by(|a, b| a.0.cmp(b.0));
+    for (_, expression) in &parameters {
+        ctx.instructions
+            .extend(ExpressionCompiler::compile(expression)?);
+    }
+    ctx.instructions.push(Instruction::InvokeService {
+        service,
+        operation,
+        parameter_names: parameters
+            .into_iter()
+            .map(|(name, _)| name.clone())
+            .collect(),
+        timeout_ms,
+    });
+    ctx.instructions.push(Instruction::Store { name: output });
     compile_next_jump(step, ctx)
 }
 

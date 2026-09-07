@@ -48,36 +48,14 @@ pub(super) fn build_steps_metadata(steps: &[&PipelineStep]) -> String {
                 StepDetails::Ruleset { ruleset } => {
                     info["ruleset"] = serde_json::Value::String(ruleset.clone());
                 }
-                StepDetails::Api {
-                    api_target,
-                    endpoint,
-                    output,
-                    ..
-                } => {
-                    use corint_decision_model::ast::pipeline::ApiTarget;
-                    let api_name = match api_target {
-                        ApiTarget::Single { api } => api.clone(),
-                        ApiTarget::Any { any } => format!("any:{}", any.join(",")),
-                        ApiTarget::All { all } => format!("all:{}", all.join(",")),
-                    };
-                    info["api"] = serde_json::Value::String(api_name);
-                    if let Some(ep) = endpoint {
-                        info["endpoint"] = serde_json::Value::String(ep.clone());
-                    }
-                    if let Some(out) = output {
-                        info["output"] = serde_json::Value::String(out.clone());
-                    }
-                }
                 StepDetails::Service {
                     service,
-                    query,
+                    operation,
                     output,
                     ..
                 } => {
                     info["service"] = serde_json::Value::String(service.clone());
-                    if let Some(q) = query {
-                        info["query"] = serde_json::Value::String(q.clone());
-                    }
+                    info["operation"] = serde_json::Value::String(operation.clone());
                     if let Some(out) = output {
                         info["output"] = serde_json::Value::String(out.clone());
                     }

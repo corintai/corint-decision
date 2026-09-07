@@ -80,7 +80,7 @@ version: "0.1"
 # =============================================================================
 #
 # API definitions are referenced by pipeline steps of type "api"
-# See repository/configs/apis/ for actual API configuration files
+# See repository/services/ for concrete service definitions
 #
 # Example API Configuration (fraud_detector):
 # ---
@@ -129,10 +129,10 @@ version: "0.1"
 
 import:
   rulesets:
-    - library/rulesets/payment_high_value.yaml
-    - library/rulesets/payment_standard.yaml
-    - library/rulesets/vip_fast_rules.yaml
-    - library/rulesets/cn_region_rules.yaml
+    - rulesets/payment_high_value.yaml
+    - rulesets/payment_standard.yaml
+    - rulesets/vip_fast_rules.yaml
+    - rulesets/cn_region_rules.yaml
   pipelines:
     - library/pipelines/high_value_verification.yaml
 

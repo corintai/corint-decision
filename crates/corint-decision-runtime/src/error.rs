@@ -40,7 +40,7 @@ pub enum RuntimeError {
 
     /// External API call failed
     #[error("External API call failed: {0}")]
-    ExternalCallFailed(String),
+    ServiceCallFailed(String),
 
     /// Reserved field in event data
     #[error("Reserved field '{field}': {reason}")]

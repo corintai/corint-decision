@@ -12,4 +12,4 @@ lists:
   - id: blocked_emails
     description: "List of blocked email addresses"
     backend: file
-    path: "configs/lists/data/high_risk_emails.txt"
+    path: "lists/data/high_risk_emails.txt"

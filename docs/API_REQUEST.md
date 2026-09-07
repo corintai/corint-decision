@@ -28,7 +28,7 @@
 均为 `false`。`async` 仅接受缺省或 `false`；`async: true` 返回 400，不提供任务轮询接口。
 未知请求字段和未知选项会被拒绝。
 
-调用者只能提交 event。值不为 `null` 的 `user`、`features`、`api`、`service`、`llm`、`vars`
+调用者只能提交 event。值不为 `null` 的 `user`、`features`、`service`、`llm`、`vars`
 命名空间以及 `event.tenant_id` 会被拒绝，不能用来覆盖可信数据。
 租户由操作员注入；业务用户属性如需作为输入，应放入策略约定的 event 字段。
 
@@ -65,3 +65,5 @@ FFI 原生响应结构不同，不能直接套用本页的 HTTP 响应格式。
 
 本页请求示例由 [生产 REST router 测试](../crates/corint-decision-server/tests/shared_snapshots.rs)
 直接执行，覆盖请求接受、被禁止字段、异步拒绝及小写响应。
+
+`api` 已从请求模型移除；即使值为 `null` 也按未知字段拒绝。在线 SDK 的服务结果统一使用 `service`。

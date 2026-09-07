@@ -31,8 +31,8 @@
       "scope": "design"
     },
     {
-      "path": "EXTERNAL_API_GUIDE.md",
-      "scope": "compatibility-reference"
+      "path": "SERVICE_GUIDE.md",
+      "scope": "contract"
     },
     {
       "path": "FEATURE_ENGINEERING.md",
@@ -60,10 +60,6 @@
     },
     {
       "path": "cdl/agent-workflow.md",
-      "scope": "compatibility-reference"
-    },
-    {
-      "path": "cdl/api.md",
       "scope": "compatibility-reference"
     },
     {
@@ -148,7 +144,7 @@
     },
     {
       "path": "cdl/service.md",
-      "scope": "compatibility-reference"
+      "scope": "contract"
     },
     {
       "path": "cdl/testing.md",
@@ -205,6 +201,18 @@
       "id": "decide-request",
       "test_file": "crates/corint-decision-server/tests/shared_snapshots.rs",
       "test_name": "documented_http_example_runs_and_reserved_fields_are_rejected"
+    },
+    {
+      "id": "service-parameters",
+      "page": "cdl/service.md",
+      "test_file": "crates/corint-decision-engine/tests/service_execution.rs",
+      "test_name": "service_parameters_and_step_results_are_preserved"
+    },
+    {
+      "id": "service-http",
+      "page": "cdl/service.md",
+      "test_file": "crates/corint-decision-engine/tests/service_execution.rs",
+      "test_name": "http_connector_executes_the_same_service_instruction"
     }
   ]
 }

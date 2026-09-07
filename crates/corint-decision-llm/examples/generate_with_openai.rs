@@ -66,7 +66,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     println!("\n=== Generation Complete ===");
     println!("\nThe generated rules can be saved to your repository:");
-    println!("  repository/library/rules/generated/");
+    println!("  repository/rules/generated/");
     println!("\nYou can then reference them in rulesets and pipelines.");
 
     Ok(())

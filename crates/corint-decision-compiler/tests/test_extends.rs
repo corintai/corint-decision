@@ -34,7 +34,7 @@ fn test_extends_rules_merge() {
     let mut resolver = ImportResolver::new("repository");
 
     // Load payment_base
-    let base_content = std::fs::read_to_string("repository/library/rulesets/payment_base.yaml");
+    let base_content = std::fs::read_to_string("repository/rulesets/payment_base.yaml");
 
     if let Ok(content) = base_content {
         let base_doc = RulesetParser::parse_with_imports(&content).unwrap();
@@ -43,8 +43,7 @@ fn test_extends_rules_merge() {
     }
 
     // Load payment_high_value_v2 which extends payment_base and adds amount_outlier
-    let child_content =
-        std::fs::read_to_string("repository/library/rulesets/payment_high_value_v2.yaml");
+    let child_content = std::fs::read_to_string("repository/rulesets/payment_high_value_v2.yaml");
 
     if let Ok(content) = child_content {
         let child_doc = RulesetParser::parse_with_imports(&content).unwrap();
@@ -87,7 +86,7 @@ fn test_extends_decision_logic_override() {
     use corint_decision_dsl_parser::RulesetParser;
 
     // payment_standard_v2 should override decision_logic from payment_base
-    let content = std::fs::read_to_string("repository/library/rulesets/payment_standard_v2.yaml");
+    let content = std::fs::read_to_string("repository/rulesets/payment_standard_v2.yaml");
 
     if let Ok(content) = content {
         let doc = RulesetParser::parse_with_imports(&content).unwrap();
@@ -109,7 +108,7 @@ fn test_extends_decision_logic_override() {
 fn test_extends_metadata_inheritance() {
     use corint_decision_dsl_parser::RulesetParser;
 
-    let content = std::fs::read_to_string("repository/library/rulesets/payment_high_value_v2.yaml");
+    let content = std::fs::read_to_string("repository/rulesets/payment_high_value_v2.yaml");
 
     if let Ok(content) = content {
         let doc = RulesetParser::parse_with_imports(&content).unwrap();

@@ -95,8 +95,8 @@ pub async fn init_engine(config: &ServerConfig) -> Result<corint_decision_engine
     }
 
     // Build engine - corint-decision-engine will automatically initialize:
-    // - FeatureExecutor from server.yaml datasources (or repository/configs/datasources) and repository/configs/features
-    // - ListService from repository/configs/lists
+    // - FeatureExecutor from server.yaml datasources (or repository/configs/datasources) and repository/features
+    // - ListService from repository/lists
     // - ResultWriter from database_url (if configured)
     let engine = builder.build().await?;
 

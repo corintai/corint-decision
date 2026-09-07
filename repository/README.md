@@ -6,32 +6,15 @@ This is the production rule and policy repository for Corint Decision Engine.
 
 ```
 repository/
-├── registry.yaml           # Event-to-pipeline routing (entry point)
-│
-├── library/                 # Reusable components library
-│   ├── rules/               # Individual rule definitions
-│   │   ├── account/         # Account security rules
-│   │   ├── device/          # Device fingerprinting rules
-│   │   ├── fraud/           # Fraud detection rules
-│   │   ├── geography/       # Geography-based rules
-│   │   └── payment/         # Payment risk rules
-│   └── rulesets/            # Reusable ruleset definitions
-│
-├── pipelines/               # Business scenario orchestration
-│   ├── fraud_detection.yaml
-│   ├── payment_pipeline.yaml
-│   ├── login_risk_pipeline.yaml
-│   └── supabase_feature_ruleset.yaml
-│
-├── configs/                 # Runtime configurations
-│   ├── apis/                # External API configs
-│   ├── features/            # Feature definitions
-│   ├── lists/               # Custom lists (blocklists, allowlists)
-│   └── services/            # Internal service configs (microservices, message queues)
-│
-│   Note: Datasources are now defined in config/server.yaml (not in repository/configs/datasources/)
-│
-└── test_data/               # Test data and scripts
+├── README.md
+├── registry.yaml           # Event-to-pipeline routing
+├── rules/                  # Rules grouped by business domain
+├── rulesets/               # Reusable rule combinations
+├── pipelines/              # Business scenario orchestration
+├── services/               # Concrete service and operation definitions
+├── features/               # Feature definitions
+└── lists/                  # List definitions
+    └── data/               # Static list data
 ```
 
 ## Design Philosophy
@@ -71,7 +54,7 @@ Rules (detect) → Scores → Ruleset (conclude) → Signals → Pipeline (decid
 
 ### Repository Structure
 
-1. **Library Layer** (`library/`): Reusable rules and rulesets
+1. **Decision Logic** (`rules/`, `rulesets/`): Reusable rules and rulesets
    - Rules are atomic detection units
    - Rulesets combine rules with decision logic
    - All dependencies are explicitly declared via `import`
@@ -81,9 +64,10 @@ Rules (detect) → Scores → Ruleset (conclude) → Signals → Pipeline (decid
    - Define event routing and step execution
    - Make final decisions via `decision` block
 
-3. **Config Layer** (`configs/`): Runtime configurations
-   - Data sources, features, lists, and external APIs
-   - Separate from business logic for flexibility
+3. **Resource Definitions** (`services/`, `features/`, `lists/`): Decision dependencies
+   - Service operations, feature calculations, and list definitions
+   - Pipelines and rules reference these reusable resources
+   - Deployment settings and datasource connections belong in `config/server.yaml` outside this repository
 
 4. **Registry** (`registry.yaml`): Event-to-pipeline routing
    - Top-to-bottom matching (first match wins)
@@ -120,7 +104,7 @@ version: "0.1"
 
 import:
   rulesets:
-    - library/rulesets/fraud_detection_core.yaml
+    - rulesets/fraud_detection_core.yaml
 
 ---
 
@@ -151,7 +135,7 @@ pipeline:
 ### Creating Custom Rules
 
 ```yaml
-# library/rules/custom/my_rule.yaml
+# rules/custom/my_rule.yaml
 version: "0.1"
 
 rule:
@@ -174,14 +158,14 @@ rule:
 ### Creating Custom Rulesets
 
 ```yaml
-# library/rulesets/my_custom_ruleset.yaml
+# rulesets/my_custom_ruleset.yaml
 version: "0.1"
 
 # Explicitly import rule dependencies
 import:
   rules:
-    - library/rules/fraud/fraud_farm.yaml
-    - library/rules/custom/my_rule.yaml
+    - rules/fraud/fraud_farm.yaml
+    - rules/custom/my_rule.yaml
 
 ---
 
@@ -219,11 +203,11 @@ rule:
   score: 80
 ```
 
-Features are defined in `configs/features/` and calculated on-demand from datasources during rule execution.
+Features are defined in `features/` and calculated on-demand from datasources during rule execution.
 
 ## Available Rules
 
-### Fraud Detection Rules (`library/rules/fraud/`)
+### Fraud Detection Rules (`rules/fraud/`)
 
 | Rule ID | Score | Description |
 |---------|-------|-------------|
@@ -234,7 +218,7 @@ Features are defined in `configs/features/` and calculated on-demand from dataso
 | `new_user_fraud_pattern` | 50 | New account suspicious behavior |
 | `velocity_pattern` | 60 | General velocity pattern |
 
-### Payment Risk Rules (`library/rules/payment/`)
+### Payment Risk Rules (`rules/payment/`)
 
 | Rule ID | Score | Description |
 |---------|-------|-------------|
@@ -243,7 +227,7 @@ Features are defined in `configs/features/` and calculated on-demand from dataso
 | `new_account_risk` | 60 | New account high-value purchase |
 | `suspicious_email` | 35 | Disposable email detection |
 
-### Account Security Rules (`library/rules/account/`)
+### Account Security Rules (`rules/account/`)
 
 | Rule ID | Score | Description |
 |---------|-------|-------------|
@@ -251,14 +235,14 @@ Features are defined in `configs/features/` and calculated on-demand from dataso
 | `off_hours_activity` | 40 | Unusual time-based patterns |
 | `password_change_risk` | 55 | Risky password change behavior |
 
-### Device Rules (`library/rules/device/`)
+### Device Rules (`rules/device/`)
 
 | Rule ID | Score | Description |
 |---------|-------|-------------|
 | `device_emulator` | 90 | Emulator/simulator detection |
 | `device_spoofing` | 85 | Device fingerprint spoofing |
 
-### Geography Rules (`library/rules/geography/`)
+### Geography Rules (`rules/geography/`)
 
 | Rule ID | Score | Description |
 |---------|-------|-------------|
@@ -353,7 +337,7 @@ Examples:
 - `payment_standard`
 - `payment_high_value`
 
-## Configuration Files
+## Resource Definitions and Deployment Configuration
 
 ### Datasources (defined in `config/server.yaml`)
 All datasources are now defined in `config/server.yaml` under the `datasource` section, including:
@@ -365,19 +349,21 @@ All datasources are now defined in `config/server.yaml` under the `datasource` s
 
 **Note:** The `repository/configs/datasources/` directory is deprecated. All datasource configurations should be defined in `config/server.yaml` to avoid duplication and confusion.
 
-### Features (`configs/features/`)
+### Features (`features/`)
 - `user_features.yaml` - User behavior aggregations
 - `device_features.yaml` - Device fingerprinting features
 - `ip_features.yaml` - IP reputation and geolocation
 - `statistical_features.yaml` - Statistical analysis features
 
-### Lists (`configs/lists/`)
+### Lists (`lists/`)
 - `example.yaml` - Example blocklist/allowlist configuration
 
-### Services (`configs/services/`)
+### Services (`services/`)
 - `kyc_service.yaml` - KYC verification service
-- `risk_scoring_service.yaml` - Risk scoring gRPC service
-- `event_bus.yaml` - Message queue configuration
+- `ipinfo.yaml` - IP lookup HTTP service
+
+Service definitions cover internal and external providers. The current declarative
+format supports HTTP; other protocols require an SDK adapter.
 
 ## Resources
 

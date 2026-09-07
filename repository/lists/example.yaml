@@ -28,5 +28,5 @@ lists:
   - id: high_risk_countries
     description: "High risk country codes"
     backend: file
-    path: "configs/lists/data/high_risk_countries.txt"
+    path: "lists/data/high_risk_countries.txt"
     reload_interval: 3600  # Reload every hour

@@ -1,7 +1,7 @@
 use corint_decision_dsl_parser::RuleParser;
 
 #[test]
-fn malformed_api_options_cannot_bypass_compiler_admission() {
+fn malformed_service_options_cannot_bypass_compiler_admission() {
     use corint_decision_dsl_parser::PipelineParser;
     for option in [
         "params: null",
@@ -14,7 +14,7 @@ fn malformed_api_options_cannot_bypass_compiler_admission() {
         "min_success: -1",
         "min_success: '1'",
     ] {
-        let yaml = format!("pipeline:\n  id: p\n  name: P\n  entry: lookup\n  steps:\n    - step:\n        id: lookup\n        name: Lookup\n        type: api\n        api: test_api\n        next: end\n        {option}\n");
+        let yaml = format!("pipeline:\n  id: p\n  name: P\n  entry: lookup\n  steps:\n    - step:\n        id: lookup\n        name: Lookup\n        type: service\n        service: test_service\n        operation: lookup\n        next: end\n        {option}\n");
         assert!(PipelineParser::parse(&yaml).is_err(), "{option}");
     }
 }
