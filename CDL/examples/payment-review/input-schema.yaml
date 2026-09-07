@@ -1,0 +1,39 @@
+name: payment-review-input
+fields:
+  type: {name: type, field_type: string, required: true}
+  amount_cents: {name: amount_cents, field_type: number, required: true}
+  currency: {name: currency, field_type: string, required: true}
+  customer:
+    name: customer
+    required: true
+    field_type:
+      object:
+        schema:
+          name: customer-input
+          fields:
+            id: {name: id, field_type: string, required: true}
+            email: {name: email, field_type: string, required: true}
+  device:
+    name: device
+    required: false
+    field_type:
+      object:
+        schema:
+          name: device-input
+          fields:
+            id: {name: id, field_type: string, required: true}
+  evidence:
+    name: evidence
+    required: true
+    field_type:
+      object:
+        schema:
+          name: prepared-evidence
+          fields:
+            blocked_email: {name: blocked_email, field_type: boolean, required: true}
+            loyal_customer: {name: loyal_customer, field_type: boolean, required: true}
+            payment_count_1h: {name: payment_count_1h, field_type: number, required: true}
+            average_amount_cents: {name: average_amount_cents, field_type: number, required: false}
+            provider_required: {name: provider_required, field_type: boolean, required: true}
+            provider_available: {name: provider_available, field_type: boolean, required: true}
+            provider_score: {name: provider_score, field_type: number, required: true}

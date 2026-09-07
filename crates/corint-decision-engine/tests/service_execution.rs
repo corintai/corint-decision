@@ -27,6 +27,14 @@ async fn read_http_headers(socket: &mut tokio::net::TcpStream) -> String {
 fn compile(fields: &str) -> Program {
     PipelineCompiler::compile(&PipelineParser::parse(&format!("pipeline:\n  id: p\n  name: P\n  entry: lookup\n  steps:\n    - step:\n        id: lookup\n        name: Lookup\n        type: service\n        service: risk\n        operation: score\n{fields}")).unwrap()).unwrap()
 }
+
+fn fixture(id: &str) -> &'static str {
+    match id {
+        "service-http" => include_str!("../../../tests/conformance/service/customer-risk.yaml"),
+        "service-parameters" => include_str!("../../../tests/conformance/service/pipeline.yaml"),
+        _ => panic!("unknown test fixture: {id}"),
+    }
+}
 struct Echo;
 #[async_trait]
 impl ServiceClient for Echo {
@@ -153,18 +161,26 @@ async fn http_connector_executes_the_same_service_instruction() {
         let (mut socket, _) = listener.accept().await.unwrap();
         assert!(read_http_headers(&mut socket)
             .await
-            .starts_with("GET /score/42 "));
-        socket.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 12\r\nContent-Type: application/json\r\nConnection: close\r\n\r\n{\"score\":42}").await.unwrap();
+            .starts_with("GET /customers/customer%2F42?amount=41&channel=web "));
+        socket.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 17\r\nContent-Type: application/json\r\nConnection: close\r\n\r\n{\"risk_score\":42}").await.unwrap();
     });
-    let binding: HttpServiceConfig = serde_yaml::from_str(&format!("name: risk\nbase_url: http://{address}\noperations:\n  score:\n    method: GET\n    path: /score/{{id}}\n")).unwrap();
+    let mut binding: HttpServiceConfig = serde_yaml::from_str(fixture("service-http")).unwrap();
+    // Keep the published definition intact except for the local test transport.
+    binding.base_url = format!("http://{address}");
+    let program =
+        PipelineCompiler::compile(&PipelineParser::parse(fixture("service-parameters")).unwrap())
+            .unwrap();
     let mut client = HttpServiceClient::new();
     client.register_service(binding.clone()).unwrap();
     assert!(client.register_service(binding).is_err());
     let result = PipelineExecutor::new()
         .with_http_service_client(Arc::new(client))
         .execute(
-            &compile("        params:\n          id: event.id\n"),
-            HashMap::from([("id".into(), Value::Number(42.0))]),
+            &program,
+            HashMap::from([
+                ("customer_id".into(), Value::String("customer/42".into())),
+                ("amount".into(), Value::Number(40.0)),
+            ]),
         )
         .await
         .unwrap();
@@ -176,25 +192,14 @@ async fn http_connector_executes_the_same_service_instruction() {
         panic!()
     };
     assert_eq!(response["score"], Value::Number(42.0));
+    assert!(!response.contains_key("risk_score"));
 }
 
 #[test]
 fn service_documentation_and_binding_schema_agree() {
-    let doc = include_str!("../../../docs/cdl/service.md");
-    let example = |id: &str| {
-        doc.split(&format!("<!-- executable-example: {id} -->"))
-            .nth(1)
-            .unwrap()
-            .split("```yaml\n")
-            .nth(1)
-            .unwrap()
-            .split("```")
-            .next()
-            .unwrap()
-    };
-    PipelineCompiler::compile(&PipelineParser::parse(example("service-parameters")).unwrap())
+    PipelineCompiler::compile(&PipelineParser::parse(fixture("service-parameters")).unwrap())
         .unwrap();
-    let binding: HttpServiceConfig = serde_yaml::from_str(example("service-http")).unwrap();
+    let binding: HttpServiceConfig = serde_yaml::from_str(fixture("service-http")).unwrap();
     HttpServiceClient::new().register_service(binding).unwrap();
     let old = "name: risk\nbase_url: http://localhost\nendpoints: {}\n";
     assert!(serde_yaml::from_str::<HttpServiceConfig>(old).is_err());
@@ -245,4 +250,71 @@ async fn http_errors_are_not_implicit_null_results() {
         .await;
     server.await.unwrap();
     assert!(result.unwrap_err().to_string().contains("503"));
+}
+
+#[tokio::test]
+async fn http_fallback_distinguishes_json_errors_from_response_transport_errors() {
+    use tokio::{io::AsyncWriteExt, net::TcpListener};
+    for (label, status, body, incomplete, hold_open) in [
+        ("mapped", "200 OK", r#"{"risk_score":42}"#, false, false),
+        ("status", "503 Unavailable", "{}", false, false),
+        ("json", "200 OK", "invalid JSON", false, false),
+        ("truncated", "200 OK", "{", true, false),
+        ("timeout", "200 OK", "{", true, true),
+    ] {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            let (mut socket, _) = listener.accept().await.unwrap();
+            assert!(read_http_headers(&mut socket)
+                .await
+                .starts_with("GET /score "));
+            let length = body.len() + if incomplete { 100 } else { 0 };
+            let response = format!("HTTP/1.1 {status}\r\nContent-Length: {length}\r\nContent-Type: application/json\r\nConnection: close\r\n\r\n{body}");
+            socket.write_all(response.as_bytes()).await.unwrap();
+            if hold_open {
+                std::future::pending::<()>().await;
+            }
+        });
+        let config: HttpServiceConfig = serde_json::from_value(serde_json::json!({
+            "name":"risk", "base_url":format!("http://{address}"),
+            "timeout_ms": if hold_open { 200 } else { 2000 },
+            "operations":{"score":{"method":"GET","path":"/score",
+                "response":{"mapping":{"score":"risk_score"},"fallback":{"available":false}}}}
+        }))
+        .unwrap();
+        let mut client = HttpServiceClient::new();
+        client.register_service(config).unwrap();
+        let result = tokio::time::timeout(
+            std::time::Duration::from_secs(3),
+            PipelineExecutor::new_offline()
+                .with_http_service_client(Arc::new(client))
+                .execute(&compile(""), HashMap::new()),
+        )
+        .await
+        .expect("bounded HTTP test");
+        if hold_open {
+            server.abort();
+            assert!(server.await.unwrap_err().is_cancelled());
+        } else {
+            server.await.unwrap();
+        }
+        if incomplete {
+            assert!(
+                result.is_err(),
+                "{label} must not become a fallback success"
+            );
+        } else {
+            let result = result.unwrap();
+            let Value::Object(services) = &result.context["service"] else {
+                panic!("service outputs")
+            };
+            let expected = if label == "mapped" {
+                Value::Object(HashMap::from([("score".into(), Value::Number(42.0))]))
+            } else {
+                Value::Object(HashMap::from([("available".into(), Value::Bool(false))]))
+            };
+            assert_eq!(services["lookup"], expected, "{label}");
+        }
+    }
 }

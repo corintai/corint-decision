@@ -1,218 +1,165 @@
 {
-  "version": 1,
-  "note": "Scope is a reading boundary, not production acceptance. CDL runnable examples remain governed by docs/cdl/examples.json and conformance tests.",
+  "version": 2,
+  "note": "Page paths are repository-relative. CDL/ contains language definitions; docs/ contains tool, runtime and integration guides. Reading scope is not production acceptance. Documentation examples are bound to executable fixtures by tests/conformance/documentation/examples.json and executable_examples below.",
   "pages": [
     {
-      "path": "API_REQUEST.md",
+      "path": "docs/API_REQUEST.md",
       "scope": "contract"
     },
     {
-      "path": "ARCHITECTURE.md",
+      "path": "docs/ARCHITECTURE.md",
       "scope": "design"
     },
     {
-      "path": "CONTEXT_GUIDE.md",
-      "scope": "compatibility-reference"
-    },
-    {
-      "path": "CUSTOMLIST.md",
-      "scope": "compatibility-reference"
-    },
-    {
-      "path": "DEV_GUIDE_WASM.md",
-      "scope": "design"
-    },
-    {
-      "path": "DSL_DESIGN.md",
-      "scope": "design"
-    },
-    {
-      "path": "DSL_EVOLUTION_RECOMMENDATIONS.md",
-      "scope": "design"
-    },
-    {
-      "path": "SERVICE_GUIDE.md",
+      "path": "docs/SERVICE_GUIDE.md",
       "scope": "contract"
     },
     {
-      "path": "FEATURE_ENGINEERING.md",
-      "scope": "compatibility-reference"
-    },
-    {
-      "path": "LLM_GUIDE.md",
-      "scope": "compatibility-reference"
-    },
-    {
-      "path": "LOGGING.md",
-      "scope": "compatibility-reference"
-    },
-    {
-      "path": "README.md",
+      "path": "docs/README.md",
       "scope": "navigation"
     },
     {
-      "path": "TEMPLATE_SYNTAX.md",
+      "path": "docs/cli.md",
+      "scope": "contract"
+    },
+    {
+      "path": "CDL/context.md",
       "scope": "compatibility-reference"
     },
     {
-      "path": "TODO_LIST.md",
+      "path": "CDL/expression.md",
+      "scope": "compatibility-reference"
+    },
+    {
+      "path": "CDL/feature.md",
+      "scope": "contract"
+    },
+    {
+      "path": "docs/generation.md",
+      "scope": "contract"
+    },
+    {
+      "path": "CDL/import.md",
+      "scope": "contract"
+    },
+    {
+      "path": "CDL/list.md",
+      "scope": "compatibility-reference"
+    },
+    {
+      "path": "CDL/metadata.md",
+      "scope": "compatibility-reference"
+    },
+    {
+      "path": "CDL/overall.md",
+      "scope": "contract"
+    },
+    {
+      "path": "docs/packages.md",
+      "scope": "contract"
+    },
+    {
+      "path": "CDL/pipeline.md",
+      "scope": "contract"
+    },
+    {
+      "path": "CDL/registry.md",
+      "scope": "contract"
+    },
+    {
+      "path": "docs/resolution.md",
+      "scope": "contract"
+    },
+    {
+      "path": "CDL/rule.md",
+      "scope": "contract"
+    },
+    {
+      "path": "CDL/ruleset.md",
+      "scope": "contract"
+    },
+    {
+      "path": "CDL/service.md",
+      "scope": "contract"
+    },
+    {
+      "path": "docs/testing.md",
+      "scope": "contract"
+    },
+    {
+      "path": "docs/contracts/README.md",
+      "scope": "navigation"
+    },
+    {
+      "path": "docs/contracts/compatibility-server-snapshots.md",
+      "scope": "contract"
+    },
+    {
+      "path": "docs/contracts/core-operations.md",
+      "scope": "contract"
+    },
+    {
+      "path": "docs/contracts/core-server.md",
+      "scope": "contract"
+    },
+    {
+      "path": "docs/contracts/feature-runtime.md",
+      "scope": "contract"
+    },
+    {
+      "path": "docs/contracts/phase0.md",
+      "scope": "contract"
+    },
+    {
+      "path": "docs/schema/README.md",
+      "scope": "navigation"
+    },
+    {
+      "path": "docs/replay.md",
+      "scope": "contract"
+    },
+    {
+      "path": "docs/contracts/feature-pipeline.md",
+      "scope": "contract"
+    },
+    {
+      "path": "docs/runtime-validation.md",
+      "scope": "contract"
+    },
+    {
+      "path": "docs/core-development.md",
       "scope": "design"
     },
     {
-      "path": "cdl/agent-workflow.md",
+      "path": "docs/feature-configuration.md",
       "scope": "compatibility-reference"
     },
     {
-      "path": "cdl/cdl-core.md",
-      "scope": "contract"
-    },
-    {
-      "path": "cdl/cli.md",
-      "scope": "contract"
-    },
-    {
-      "path": "cdl/condition-trace.md",
-      "scope": "contract"
-    },
-    {
-      "path": "cdl/context.md",
+      "path": "docs/list-configuration.md",
       "scope": "compatibility-reference"
     },
     {
-      "path": "cdl/exchange.md",
-      "scope": "contract"
-    },
-    {
-      "path": "cdl/expression.md",
-      "scope": "compatibility-reference"
-    },
-    {
-      "path": "cdl/feature.md",
-      "scope": "compatibility-reference"
-    },
-    {
-      "path": "cdl/generation.md",
-      "scope": "contract"
-    },
-    {
-      "path": "cdl/import.md",
-      "scope": "compatibility-reference"
-    },
-    {
-      "path": "cdl/list.md",
-      "scope": "compatibility-reference"
-    },
-    {
-      "path": "cdl/metadata.md",
-      "scope": "compatibility-reference"
-    },
-    {
-      "path": "cdl/overall.md",
-      "scope": "compatibility-reference"
-    },
-    {
-      "path": "cdl/packages.md",
-      "scope": "contract"
-    },
-    {
-      "path": "cdl/pipeline-compatibility.md",
-      "scope": "compatibility-reference"
-    },
-    {
-      "path": "cdl/pipeline.md",
-      "scope": "contract"
-    },
-    {
-      "path": "cdl/registry.md",
-      "scope": "compatibility-reference"
-    },
-    {
-      "path": "cdl/resolution.md",
-      "scope": "contract"
-    },
-    {
-      "path": "cdl/rule.md",
-      "scope": "compatibility-reference"
-    },
-    {
-      "path": "cdl/ruleset.md",
-      "scope": "compatibility-reference"
-    },
-    {
-      "path": "cdl/runtime-extensions.md",
-      "scope": "compatibility-reference"
-    },
-    {
-      "path": "cdl/service.md",
-      "scope": "contract"
-    },
-    {
-      "path": "cdl/testing.md",
-      "scope": "contract"
-    },
-    {
-      "path": "contracts/README.md",
+      "path": "CDL/examples/payment-review/guide.md",
       "scope": "navigation"
-    },
-    {
-      "path": "contracts/compatibility-server-snapshots.md",
-      "scope": "contract"
-    },
-    {
-      "path": "contracts/core-operations.md",
-      "scope": "contract"
-    },
-    {
-      "path": "contracts/core-server.md",
-      "scope": "contract"
-    },
-    {
-      "path": "contracts/feature-runtime.md",
-      "scope": "contract"
-    },
-    {
-      "path": "contracts/phase0.md",
-      "scope": "contract"
-    },
-    {
-      "path": "schema/README.md",
-      "scope": "navigation"
-    },
-    {
-      "path": "cdl/stability.md",
-      "scope": "contract"
-    },
-    {
-      "path": "cdl/replay.md",
-      "scope": "contract"
-    },
-    {
-      "path": "contracts/feature-pipeline.md",
-      "scope": "contract"
-    },
-    {
-      "path": "cdl/stabilization.md",
-      "scope": "contract"
     }
   ],
   "executable_examples": [
     {
-      "page": "API_REQUEST.md",
+      "page": "docs/API_REQUEST.md",
       "id": "decide-request",
       "test_file": "crates/corint-decision-server/tests/shared_snapshots.rs",
       "test_name": "documented_http_example_runs_and_reserved_fields_are_rejected"
     },
     {
-      "id": "service-parameters",
-      "page": "cdl/service.md",
-      "test_file": "crates/corint-decision-engine/tests/service_execution.rs",
-      "test_name": "service_parameters_and_step_results_are_preserved"
-    },
-    {
-      "id": "service-http",
-      "page": "cdl/service.md",
-      "test_file": "crates/corint-decision-engine/tests/service_execution.rs",
-      "test_name": "http_connector_executes_the_same_service_instruction"
+      "id": "payment-review",
+      "page": "CDL/examples/payment-review/guide.md",
+      "source": "CDL/examples/payment-review/registry.yaml",
+      "test_file": "crates/corint-decision-engine/tests/cdl_payment_review.rs",
+      "test_name": "complete_project_executes_from_online_facts_through_imported_decisions"
     }
+  ],
+  "roots": [
+    "CDL",
+    "docs"
   ]
 }

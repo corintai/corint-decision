@@ -250,8 +250,10 @@ fn verify(record: &DecisionRecord) -> Result<(), CoreError> {
     }
 
     let schema = jsonschema::JSONSchema::compile(
-        &serde_json::from_str(include_str!("../../../docs/cdl/schema/replay-record.json"))
-            .expect("record schema JSON"),
+        &serde_json::from_str(include_str!(
+            "../../../docs/contracts/schema/replay-record.json"
+        ))
+        .expect("record schema JSON"),
     )
     .expect("record schema");
     if !schema.is_valid(&serde_json::to_value(record).expect("record JSON")) {

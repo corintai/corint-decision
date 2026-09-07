@@ -1,0 +1,5 @@
+{
+  "email_blocklist": ["fraud@example.com"],
+  "vip_users": ["vip_1"],
+  "trusted_users": ["trusted_1"]
+}

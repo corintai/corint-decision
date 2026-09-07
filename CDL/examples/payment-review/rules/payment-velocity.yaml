@@ -1,0 +1,17 @@
+version: "0.1"
+rule:
+  id: payment_velocity
+  name: Large payment with unusual velocity
+  when:
+    all:
+      - event.amount_cents > 100000
+      - event.currency in ["USD", "EUR", "GBP"]
+      - any:
+          - event.evidence.payment_count_1h >= 3
+          - all:
+              - exists(event.evidence.average_amount_cents)
+              - event.evidence.average_amount_cents > 0
+              - event.amount_cents / event.evidence.average_amount_cents >= 3
+      - not:
+          - event.type != "payment"
+  score: 50

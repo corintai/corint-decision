@@ -1,9 +1,9 @@
 use corint_decision_compiler::core::{
     compile_core, parse_core_input_schema, validate_core_document, CoreSource,
 };
-use corint_decision_engine::{DecisionEngine, DecisionRequest};
-use serde_json::{json, Value};
-use std::{collections::HashMap, path::PathBuf};
+use corint_decision_dsl_parser::{PipelineParser, RuleParser, RulesetParser};
+use serde_json::Value;
+use std::path::PathBuf;
 
 fn blocks(text: &str) -> Vec<String> {
     let mut blocks = Vec::new();
@@ -29,13 +29,16 @@ fn source(name: &str, value: Value) -> CoreSource {
     }
 }
 
-#[tokio::test]
-async fn historical_snippets_run_declared_admission_and_wrappers() {
+#[test]
+fn historical_snippets_run_declared_admission_and_wrappers() {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
-    let docs = root.join("docs/cdl");
-    let inventory: Value =
-        serde_json::from_str(&std::fs::read_to_string(docs.join("snippets.json")).unwrap())
-            .unwrap();
+    let inventory: Value = serde_json::from_str(
+        &std::fs::read_to_string(root.join("tests/conformance/documentation/snippets.json"))
+            .unwrap(),
+    )
+    .unwrap();
+    assert_eq!(inventory["version"], 2);
+    assert_eq!(inventory["path_base"], "repository");
     let mut checked = 0;
     for snippet in inventory["snippets"]
         .as_array()
@@ -44,69 +47,73 @@ async fn historical_snippets_run_declared_admission_and_wrappers() {
         .filter(|s| s["kind"] != "syntax-reference")
     {
         let page = snippet["page"].as_str().unwrap();
-        let text = std::fs::read_to_string(docs.join(page)).unwrap();
+        let text = std::fs::read_to_string(root.join(page)).unwrap();
         let fragment = CoreSource {
             path: format!("{page}#{}", snippet["id"].as_str().unwrap()),
             yaml: blocks(&text)[snippet["block"].as_u64().unwrap() as usize - 1].clone(),
         };
-        if snippet["kind"] == "core-fragment" {
-            assert_eq!(snippet["wrapper"], "registry_first_match");
-            let registry: Value = serde_yaml::from_str(&fragment.yaml).unwrap();
-            let mut sources = vec![fragment];
-            for entry in registry["registry"].as_array().unwrap() {
-                let id = entry["pipeline"].as_str().unwrap();
-                sources.push(source(&format!("{id}.yaml"),json!({"version":"0.1","pipeline":{"id":id,"name":id,"entry":"r","steps":[{"step":{"id":"r","name":"r","type":"router","routes":[{"when":"true","next":"end"}],"default":"end"}}],"decision":[{"default":true,"result":"review"}]}})));
-            }
-            let input = source(
-                "input.json",
-                json!({"name":"registry","fields":{"type":{"name":"type","field_type":"string","required":true},"shadow":{"name":"shadow","field_type":"boolean","required":true},"geo":{"name":"geo","required":true,"field_type":{"object":{"schema":{"name":"geo","fields":{"country":{"name":"country","field_type":"string","required":true}}}}}}}}),
-            );
-            let engine =
-                DecisionEngine::from_core(&sources, parse_core_input_schema(&input).unwrap())
-                    .unwrap();
-            for (kind, country, expected) in [
-                ("login", "US", "login_pipeline"),
-                ("payment", "BR", "payment_br_pipeline"),
-                ("payment", "US", "payment_main_pipeline"),
-                ("loan_application", "US", "loan_pipeline"),
-            ] {
-                let event: HashMap<_, _> = serde_json::from_value(
-                    json!({"type":kind,"geo":{"country":country},"shadow":true}),
+        if snippet["gate"] == "metadata_parse_and_core_rejection" {
+            let kind = snippet["resource"].as_str().unwrap();
+            let mut document: Value = serde_yaml::from_str(&fragment.yaml).unwrap();
+            let parsed_metadata = match kind {
+                "rule" => RuleParser::parse(&fragment.yaml).unwrap().metadata.unwrap(),
+                "ruleset" => RulesetParser::parse(&fragment.yaml)
+                    .unwrap()
+                    .metadata
+                    .unwrap(),
+                "pipeline" => serde_json::to_value(
+                    PipelineParser::parse(&fragment.yaml)
+                        .unwrap()
+                        .metadata
+                        .unwrap(),
                 )
-                .unwrap();
-                for trace in [false, true] {
-                    let r = DecisionRequest::new(event.clone());
-                    let result = engine
-                        .decide(if trace { r.with_trace() } else { r })
-                        .await
-                        .unwrap();
-                    assert_eq!(result.pipeline_id.as_deref(), Some(expected));
-                }
-            }
-        } else if snippet["gate"] == "compile_with_core_wrapper" {
-            validate_core_document(&fragment).unwrap();
-            let rule: Value = serde_yaml::from_str(&fragment.yaml).unwrap();
+                .unwrap(),
+                _ => panic!("Unknown metadata example resource: {kind}"),
+            };
+            assert!(document[kind]["metadata"].is_object());
+            assert_eq!(parsed_metadata, document[kind]["metadata"]);
+
+            let error = validate_core_document(&fragment).unwrap_err();
+            let expected = &snippet["rejection"];
+            assert_eq!(error.diagnostic.code, expected["code"].as_str().unwrap());
+            assert_eq!(
+                error.diagnostic.stage.as_deref(),
+                Some(expected["stage"].as_str().unwrap())
+            );
+            assert_eq!(
+                error.diagnostic.field_path.as_deref(),
+                Some(expected["field_path"].as_str().unwrap())
+            );
+
+            // The rejection must be caused only by metadata, not incomplete
+            // resource syntax or a missing reference in the example.
+            document[kind].as_object_mut().unwrap().remove("metadata");
             let base = root.join("tests/conformance/cdl_core");
             let read = |name: &str| CoreSource {
                 path: name.into(),
                 yaml: std::fs::read_to_string(base.join(name)).unwrap(),
             };
-            let mut ruleset: Value = serde_yaml::from_str(&read("ruleset.yaml").yaml).unwrap();
-            ruleset["ruleset"]["rules"] = json!([rule["rule"]["id"]]);
-            let sources = vec![
-                fragment,
-                source("ruleset.yaml", ruleset),
-                read("pipeline.yaml"),
-                read("registry.yaml"),
-            ];
-            assert!(
-                compile_core(
-                    &sources,
-                    parse_core_input_schema(&read("input-schema.yaml")).unwrap()
-                )
-                .is_err(),
-                "{snippet}"
+            let mut sources: Vec<_> = [
+                "rule.yaml",
+                "ruleset.yaml",
+                "pipeline.yaml",
+                "registry.yaml",
+            ]
+            .into_iter()
+            .map(read)
+            .collect();
+            let index = sources
+                .iter()
+                .position(|s| s.path == format!("{kind}.yaml"))
+                .unwrap();
+            let control: Value = serde_yaml::from_str(&sources[index].yaml).unwrap();
+            assert_eq!(
+                document, control,
+                "Example logic must match its Core fixture"
             );
+            sources[index] = source(&fragment.path, document);
+            let input = parse_core_input_schema(&read("input-schema.yaml")).unwrap();
+            compile_core(&sources, input).unwrap();
         } else {
             assert!(
                 validate_core_document(&fragment).is_err(),
@@ -116,5 +123,9 @@ async fn historical_snippets_run_declared_admission_and_wrappers() {
         }
         checked += 1;
     }
-    assert!(checked > 100);
+    // Document removals change the corpus size; check_docs.py verifies complete bindings.
+    assert!(
+        checked > 0,
+        "Snippet inventory must include admission checks"
+    );
 }

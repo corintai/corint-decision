@@ -1,0 +1,271 @@
+{
+  "version": 2,
+  "path_base": "repository",
+  "scope": "Historical snippets retain explicit compatibility status; executable Core admission is checked for each YAML/JSON block",
+  "snippets": [
+    {
+      "id": "expression-1",
+      "page": "CDL/expression.md",
+      "block": 1,
+      "language": "text",
+      "sha256": "c2ffd147761d9ade458df719bdb2cdbeff337124206d9c57c9c28eb2f7c6d57d",
+      "kind": "syntax-reference",
+      "compatibility_execution": "not_verified"
+    },
+    {
+      "id": "expression-2",
+      "page": "CDL/expression.md",
+      "block": 2,
+      "language": "text",
+      "sha256": "ffdb75bbafd60ff0b0f8c65be321b3c31112efb657f9992719c33e359ce5bcb0",
+      "kind": "syntax-reference",
+      "compatibility_execution": "not_verified"
+    },
+    {
+      "id": "expression-3",
+      "page": "CDL/expression.md",
+      "block": 3,
+      "language": "text",
+      "sha256": "90270869f063c0bc9c0364038946a200c9047a87a5fc29c774a04e334ba58a72",
+      "kind": "syntax-reference",
+      "compatibility_execution": "not_verified"
+    },
+    {
+      "id": "expression-4",
+      "page": "CDL/expression.md",
+      "block": 4,
+      "language": "yaml",
+      "sha256": "6423ceafd4e84aff5471901a2ed26ca199cd97d830506f8388babec25a3a4716",
+      "kind": "core-negative",
+      "compatibility_execution": "not_verified"
+    },
+    {
+      "id": "expression-5",
+      "page": "CDL/expression.md",
+      "block": 5,
+      "language": "yaml",
+      "sha256": "b6614611e5dfbdf3ba8df63fc69a48915a7c09a110e4fc48a4e84772c9606cb7",
+      "kind": "core-negative",
+      "compatibility_execution": "not_verified"
+    },
+    {
+      "id": "expression-6",
+      "page": "CDL/expression.md",
+      "block": 6,
+      "language": "yaml",
+      "sha256": "4fa7c6f37c94fd5a12e250c2fa9d4e9d1671c09b1113a24aad76d9836695bc64",
+      "kind": "core-negative",
+      "compatibility_execution": "not_verified"
+    },
+    {
+      "id": "expression-7",
+      "page": "CDL/expression.md",
+      "block": 7,
+      "language": "yaml",
+      "sha256": "1b903085044ff3594e4e5a8d8c2bac003267de06c9900ef3cb58e75b399691e0",
+      "kind": "core-negative",
+      "compatibility_execution": "not_verified"
+    },
+    {
+      "id": "expression-8",
+      "page": "CDL/expression.md",
+      "block": 8,
+      "language": "text",
+      "sha256": "3c38e084f11edda2b4bd5fad4371dc18209bf7bb03c5da821f3c6ffabb6deaa7",
+      "kind": "syntax-reference",
+      "compatibility_execution": "not_verified"
+    },
+    {
+      "id": "expression-9",
+      "page": "CDL/expression.md",
+      "block": 9,
+      "language": "text",
+      "sha256": "818887f0fa9097c2cd817e514b34dc8438ca4e78132f09fb5248ca8ccc774ec7",
+      "kind": "syntax-reference",
+      "compatibility_execution": "not_verified"
+    },
+    {
+      "id": "expression-10",
+      "page": "CDL/expression.md",
+      "block": 10,
+      "language": "yaml",
+      "sha256": "d9cece52b0deb5345dc6cb00cf49ca97349154806a724a1f3e72e784d7733380",
+      "kind": "core-negative",
+      "compatibility_execution": "not_verified"
+    },
+    {
+      "id": "expression-11",
+      "page": "CDL/expression.md",
+      "block": 11,
+      "language": "yaml",
+      "sha256": "463b516d616f0918c87d2f5ef17e120e1d4237fa8564d8bb6394e20060abebf8",
+      "kind": "core-negative",
+      "compatibility_execution": "not_verified"
+    },
+    {
+      "id": "expression-12",
+      "page": "CDL/expression.md",
+      "block": 12,
+      "language": "yaml",
+      "sha256": "36c546f1425f67162bfeaf2746ac69fa2c1a00e891d0d2a57a6608b2b5fcc4eb",
+      "kind": "core-negative",
+      "compatibility_execution": "not_verified"
+    },
+    {
+      "id": "expression-13",
+      "page": "CDL/expression.md",
+      "block": 13,
+      "language": "yaml",
+      "sha256": "649e0357dc1dcd4c5fe76dfe9122d65fb5e0aa4fffe3cdecbb5de4f733d393c9",
+      "kind": "core-negative",
+      "compatibility_execution": "not_verified"
+    },
+    {
+      "id": "expression-14",
+      "page": "CDL/expression.md",
+      "block": 14,
+      "language": "yaml",
+      "sha256": "a4b3b8a80706ffa1eb38c58a0d3c5349ab3375d64a2cccd78f95b0a78ea359c6",
+      "kind": "core-negative",
+      "compatibility_execution": "not_verified"
+    },
+    {
+      "id": "expression-15",
+      "page": "CDL/expression.md",
+      "block": 15,
+      "language": "yaml",
+      "sha256": "2b740b32138fb3cd60d7141cccfcf05959e2359b5ada7eef385d5ee787cef514",
+      "kind": "core-negative",
+      "compatibility_execution": "not_verified"
+    },
+    {
+      "id": "expression-16",
+      "page": "CDL/expression.md",
+      "block": 16,
+      "language": "yaml",
+      "sha256": "2c3c966be178f8c07efed07a328dcb7f3c078ab087c105c11e57b568fe13a453",
+      "kind": "core-negative",
+      "compatibility_execution": "not_verified"
+    },
+    {
+      "id": "expression-17",
+      "page": "CDL/expression.md",
+      "block": 17,
+      "language": "text",
+      "sha256": "decd3e3b579bdb9a7abec188a2b57d4123ce6ceca9fc4795144f9f3a32cc4ec4",
+      "kind": "syntax-reference",
+      "compatibility_execution": "not_verified"
+    },
+    {
+      "id": "expression-18",
+      "page": "CDL/expression.md",
+      "block": 18,
+      "language": "bnf",
+      "sha256": "4f6599a7a81a9e04d92c6aaa3e6433b01b50f84649d349cc75ffbbd5bd20a271",
+      "kind": "syntax-reference",
+      "compatibility_execution": "not_verified"
+    },
+    {
+      "id": "expression-19",
+      "page": "CDL/expression.md",
+      "block": 19,
+      "language": "text",
+      "sha256": "9edda53c670b8c80b15ef16cd5bf52a0c84ee7fa4258a5e8c9fd25b63e69bc6e",
+      "kind": "syntax-reference",
+      "compatibility_execution": "not_verified"
+    },
+    {
+      "id": "expression-20",
+      "page": "CDL/expression.md",
+      "block": 20,
+      "language": "text",
+      "sha256": "56bf8903b271fee2fea7baf0b42fd7fc2297c2554f44008e88c7682ef5698e7a",
+      "kind": "syntax-reference",
+      "compatibility_execution": "not_verified"
+    },
+    {
+      "id": "expression-21",
+      "page": "CDL/expression.md",
+      "block": 21,
+      "language": "text",
+      "sha256": "402595fde6906e5fe8bfe7bbce64e6141684de1ddbbff1866486cabcb85803c9",
+      "kind": "syntax-reference",
+      "compatibility_execution": "not_verified"
+    },
+    {
+      "id": "feature-26",
+      "page": "docs/feature-configuration.md",
+      "block": 1,
+      "language": "yaml",
+      "sha256": "14757e4580712027e1ffb39460ca50740d8cb03fe964043e2f6d8dda739de89b",
+      "kind": "core-negative",
+      "compatibility_execution": "not_verified"
+    },
+    {
+      "id": "list-11",
+      "page": "docs/list-configuration.md",
+      "block": 2,
+      "language": "yaml",
+      "sha256": "6cef8d3f0795cea26bf530d64831ac65985a2f14bbc6b31f7343c1358bc29562",
+      "kind": "core-negative",
+      "compatibility_execution": "not_verified"
+    },
+    {
+      "id": "list-12",
+      "page": "docs/list-configuration.md",
+      "block": 1,
+      "language": "yaml",
+      "sha256": "8f38e9366ccaab0aa0af5b05331cccd0846c723266f4b9fb8d3e0bebded76ece",
+      "kind": "core-negative",
+      "compatibility_execution": "not_verified"
+    },
+    {
+      "id": "metadata-2",
+      "page": "CDL/metadata.md",
+      "block": 1,
+      "language": "yaml",
+      "sha256": "331e073c25bc51e588af751af51d6b96f6897af46692f1b6401445dc4fd88299",
+      "kind": "core-negative",
+      "compatibility_execution": "not_verified",
+      "gate": "metadata_parse_and_core_rejection",
+      "resource": "rule",
+      "rejection": {
+        "stage": "validate",
+        "code": "E_UNKNOWN_FIELD",
+        "field_path": "/rule"
+      }
+    },
+    {
+      "id": "metadata-3",
+      "page": "CDL/metadata.md",
+      "block": 2,
+      "language": "yaml",
+      "sha256": "a6c9b1cd898802cc062061fa866f8eb24c45cb9673e527ec57829adf94e4c608",
+      "kind": "core-negative",
+      "compatibility_execution": "not_verified",
+      "gate": "metadata_parse_and_core_rejection",
+      "resource": "ruleset",
+      "rejection": {
+        "stage": "validate",
+        "code": "E_UNKNOWN_FIELD",
+        "field_path": "/ruleset"
+      }
+    },
+    {
+      "id": "metadata-4",
+      "page": "CDL/metadata.md",
+      "block": 3,
+      "language": "yaml",
+      "sha256": "ea255b7454345416500102645609a66873a2033767ff68db3eeee873653801d7",
+      "kind": "core-negative",
+      "compatibility_execution": "not_verified",
+      "gate": "metadata_parse_and_core_rejection",
+      "resource": "pipeline",
+      "rejection": {
+        "stage": "validate",
+        "code": "E_UNKNOWN_FIELD",
+        "field_path": "/pipeline"
+      }
+    }
+  ]
+}

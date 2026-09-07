@@ -8,7 +8,7 @@ use jsonschema::JSONSchema;
 use serde::{Deserialize, Serialize};
 use std::{collections::BTreeSet, path::Path};
 
-pub const BUNDLE_SCHEMA: &str = include_str!("../../../docs/cdl/schema/source-bundle.json");
+pub const BUNDLE_SCHEMA: &str = include_str!("../../../docs/contracts/schema/source-bundle.json");
 
 /// Source content only. Edit the public source fields in memory, then re-import to
 /// test and rebuild. There is deliberately no validation/approval flag here.

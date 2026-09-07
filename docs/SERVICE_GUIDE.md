@@ -2,9 +2,15 @@
 
 Define concrete services in `services`; reference their names and
 operations from Pipeline `type: service` steps. Internal and external capabilities
-use the same resource and invocation model. The [CDL Service contract](cdl/service.md)
+use the same resource and invocation model. The [CDL Service contract](../CDL/service.md)
 defines service configuration, invocation parameters, output paths and execution
 semantics. This guide covers runtime registration and SDK integration.
+
+The default repository layout stores one service per `services/<name>.yaml` file.
+The definition's `name` is the reference key; filenames organize files and do not
+override that name. The current filesystem loader accepts HTTP configurations.
+Other protocols require a custom SDK adapter; no separate contract or binding file
+is required for the HTTP definition.
 
 1. Choose a logical service name and operation, such as `customer_risk.assess`.
 2. For HTTP, create one `HttpServiceConfig` YAML file under `services`.
@@ -27,6 +33,7 @@ The filesystem engine loads HTTP service definitions from `services/*.yaml`
 and `*.yml` under the repository root. Repository and runtime share the
 `HttpServiceConfig` model. SDK callers can also supply this configuration through
 `DecisionEngineBuilder::with_http_service`.
+Malformed files, unknown fields and duplicate service names fail initialization.
 
 For direct runtime use, deserialize `HttpServiceConfig`, call
 `HttpServiceClient::register_service`, then install it with
@@ -40,10 +47,20 @@ For a custom adapter, use `DecisionEngineBuilder::with_service(name, adapter)` o
 `status: success`, and `data` becomes the step result. Adapters may connect to
 internal or external systems using the same interface.
 
+## Reload and deployment
+
 Policy reload retains startup service bindings. Rebuild the engine to change
 service configurations or adapters. Authentication values must already be resolved;
 the runtime does not expand environment-variable placeholders in credentials.
+Resolve secrets in deployment configuration before registering the service.
+
+Internal/external ownership, credentials, network access and any future trust-domain
+metadata are deployment concerns. A provider or protocol change that preserves the
+logical service contract does not require a different Pipeline node type.
+
+## Protocol extension boundaries
 
 The former API node, API result namespace and API configuration directory have
 been removed. Native gRPC/MQ test clients remain SDK examples, not declarative
-repository configuration. A built-in MCP connector is future work.
+repository configuration. Declarative gRPC, MQ and MCP configurations and a built-in
+MCP client are not implemented. Existing test clients are not production adapters.

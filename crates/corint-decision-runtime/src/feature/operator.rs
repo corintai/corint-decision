@@ -671,8 +671,19 @@ impl TimeSinceOperator {
         datasource: &DataSourceClient,
         context: &HashMap<String, Value>,
     ) -> Result<Value> {
-        let dimension_value = resolve_template(&self.dimension_value, context)?;
+        let dimension_value = super::expression::ExpressionEvaluator::substitute_template(
+            &self.dimension_value,
+            context,
+        )
+        .map_err(|error| RuntimeError::InvalidValue(error.to_string()))?;
+        self.execute_resolved(datasource, dimension_value).await
+    }
 
+    pub(super) async fn execute_resolved(
+        &self,
+        datasource: &DataSourceClient,
+        dimension_value: String,
+    ) -> Result<Value> {
         // Build filters from config
         let mut filters = vec![Filter {
             field: self.dimension.clone(),

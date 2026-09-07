@@ -13,7 +13,7 @@ pub const BUSINESS_CONTEXT_SCHEMA: &str =
     include_str!("../../../docs/contracts/schema/business-context.json");
 pub const TARGET_CAPABILITIES_SCHEMA: &str =
     include_str!("../../../docs/contracts/schema/target-capabilities.json");
-const INVENTORY: &str = include_str!("../../../docs/cdl/schema/capabilities.json");
+const INVENTORY: &str = include_str!("../../../docs/contracts/schema/capabilities.json");
 
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]

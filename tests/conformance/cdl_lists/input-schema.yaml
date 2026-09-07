@@ -1,0 +1,14 @@
+name: list-screening-event
+fields:
+  email:
+    name: email
+    field_type: string
+    required: true
+  user_id:
+    name: user_id
+    field_type: string
+    required: true
+  amount:
+    name: amount
+    field_type: number
+    required: true

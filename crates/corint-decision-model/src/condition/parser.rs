@@ -175,29 +175,24 @@ impl ConditionParser {
     /// - Booleans: `true`, `false`
     /// - Null: `null`, `nil`
     /// - Arrays: `["a", "b", 1, 2]`
-    /// - Templates: `{event.user_id}` or `"{event.user_id}"`
+    /// - Whole-value templates: `${event.user_id}`, optionally quoted.
+    ///   The legacy `{event.user_id}` spelling is also accepted.
     pub fn parse_value(&self, value_str: &str) -> Result<ParsedValue, ParseError> {
         let value_str = value_str.trim();
 
-        // Check for template variable: {context.field}
-        if value_str.starts_with('{') && value_str.ends_with('}') {
-            let path = value_str[1..value_str.len() - 1].to_string();
-            return Ok(self.resolve_template(&path));
+        let quoted = value_str.len() >= 2
+            && ((value_str.starts_with('"') && value_str.ends_with('"'))
+                || (value_str.starts_with('\'') && value_str.ends_with('\'')));
+        let content = if quoted {
+            &value_str[1..value_str.len() - 1]
+        } else {
+            value_str
+        };
+        if let Some(value) = self.parse_template(content)? {
+            return Ok(value);
         }
-
-        // Check for quoted string
-        if (value_str.starts_with('"') && value_str.ends_with('"'))
-            || (value_str.starts_with('\'') && value_str.ends_with('\''))
-        {
-            let unquoted = &value_str[1..value_str.len() - 1];
-
-            // Check for template inside quotes: "{event.field}"
-            if unquoted.starts_with('{') && unquoted.ends_with('}') {
-                let path = unquoted[1..unquoted.len() - 1].to_string();
-                return Ok(self.resolve_template(&path));
-            }
-
-            return Ok(ParsedValue::literal(Value::String(unquoted.to_string())));
+        if quoted {
+            return Ok(ParsedValue::literal(Value::String(content.to_string())));
         }
 
         // Check for boolean
@@ -229,41 +224,48 @@ impl ConditionParser {
         Ok(ParsedValue::literal(Value::String(value_str.to_string())))
     }
 
+    fn parse_template(&self, text: &str) -> Result<Option<ParsedValue>, ParseError> {
+        let Some(inner) = text.strip_prefix("${").or_else(|| text.strip_prefix('{')) else {
+            if text.contains("${") {
+                return Err(ParseError {
+                    message: "Filter templates must occupy a complete value".into(),
+                    condition: text.into(),
+                });
+            }
+            return Ok(None);
+        };
+        let invalid = || ParseError {
+            message: "Invalid or unclosed filter template".into(),
+            condition: text.into(),
+        };
+        let path = inner.strip_suffix('}').ok_or_else(invalid)?;
+        if path.split('.').any(|part| {
+            part.is_empty() || !part.chars().all(|ch| ch.is_alphanumeric() || ch == '_')
+        }) {
+            return Err(invalid());
+        }
+        Ok(Some(self.resolve_template(path)))
+    }
+
     /// Resolve a template variable from context
     fn resolve_template(&self, path: &str) -> ParsedValue {
-        // Try to resolve from context
-        // Path format: "event.field" or "context.field.subfield"
-        let parts: Vec<&str> = path.split('.').collect();
-
-        // Try the last part of the path as the key (simple resolution)
-        if let Some(key) = parts.last() {
-            if let Some(value) = self.context.get(*key) {
-                let mut parsed = ParsedValue::template(path.to_string());
-                parsed.resolve(value.clone());
-                return parsed;
-            }
+        let field_path = path
+            .strip_prefix("event.")
+            .or_else(|| path.strip_prefix("context."))
+            .unwrap_or(path);
+        let mut parts = field_path.split('.');
+        let mut value = self.context.get(parts.next().unwrap_or_default());
+        for part in parts {
+            value = match value {
+                Some(Value::Object(fields)) => fields.get(part),
+                _ => None,
+            };
         }
-
-        // Try the full path as key
-        if let Some(value) = self.context.get(path) {
-            let mut parsed = ParsedValue::template(path.to_string());
+        let mut parsed = ParsedValue::template(path.to_string());
+        if let Some(value) = value {
             parsed.resolve(value.clone());
-            return parsed;
         }
-
-        // Try nested resolution for paths like "event.user_id"
-        if parts.len() >= 2 {
-            // Skip the first part (usually "event", "context", etc.)
-            let field_key = parts[1..].join(".");
-            if let Some(value) = self.context.get(&field_key) {
-                let mut parsed = ParsedValue::template(path.to_string());
-                parsed.resolve(value.clone());
-                return parsed;
-            }
-        }
-
-        // Return unresolved template
-        ParsedValue::template(path.to_string())
+        parsed
     }
 
     /// Parse array elements from a string like `"a", "b", 1, 2`
@@ -288,9 +290,7 @@ impl ConditionParser {
                     let trimmed = current.trim();
                     if !trimmed.is_empty() {
                         let value = self.parse_value(trimmed)?;
-                        if let Some(v) = value.try_to_value() {
-                            elements.push(v);
-                        }
+                        elements.push(Self::array_literal(value, trimmed)?);
                     }
                     current.clear();
                 }
@@ -304,12 +304,25 @@ impl ConditionParser {
         let trimmed = current.trim();
         if !trimmed.is_empty() {
             let value = self.parse_value(trimmed)?;
-            if let Some(v) = value.try_to_value() {
-                elements.push(v);
-            }
+            elements.push(Self::array_literal(value, trimmed)?);
         }
 
         Ok(elements)
+    }
+
+    fn array_literal(value: ParsedValue, text: &str) -> Result<Value, ParseError> {
+        if value.is_template() {
+            return Err(ParseError {
+                message:
+                    "Templates inside literal arrays are unsupported; use a whole-array template"
+                        .into(),
+                condition: text.into(),
+            });
+        }
+        value.try_to_value().ok_or_else(|| ParseError {
+            message: "Unresolved array value".into(),
+            condition: text.into(),
+        })
     }
 
     /// Parse multiple condition strings (all/and logic)
@@ -334,6 +347,60 @@ impl ConditionParser {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn feature_templates_resolve_whole_values_and_nested_paths() {
+        let parser = ConditionParser::with_context(HashMap::from([
+            ("id".into(), Value::String("wrong-entity".into())),
+            (
+                "user".into(),
+                Value::Object(HashMap::from([
+                    ("id".into(), Value::String("customer-1".into())),
+                    ("threshold".into(), Value::Number(42.0)),
+                ])),
+            ),
+        ]));
+        for text in [
+            "amount > ${event.user.threshold}",
+            "amount > \"${event.user.threshold}\"",
+            "amount > {event.user.threshold}",
+        ] {
+            assert_eq!(
+                parser.parse_condition(text).unwrap().value.try_to_value(),
+                Some(Value::Number(42.0)),
+                "{text}"
+            );
+        }
+        assert_eq!(
+            parser
+                .parse_condition("user_id == ${event.user.id}")
+                .unwrap()
+                .value
+                .try_to_value(),
+            Some(Value::String("customer-1".into()))
+        );
+        assert!(parser
+            .parse_condition("user_id == ${event.missing.id}")
+            .unwrap()
+            .value
+            .try_to_value()
+            .is_none());
+    }
+
+    #[test]
+    fn malformed_and_partial_filter_templates_are_rejected() {
+        let parser = ConditionParser::new();
+        for text in [
+            "id == ${event.id",
+            "id == ${}",
+            "id == ${event..id}",
+            "id == \"prefix-${event.id}\"",
+            "id in [${event.id}]",
+            "id in [{event.id}]",
+        ] {
+            assert!(parser.parse_condition(text).is_err(), "{text}");
+        }
+    }
 
     #[test]
     fn test_parse_simple_eq() {

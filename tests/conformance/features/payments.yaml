@@ -1,0 +1,36 @@
+version: "0.2"
+features:
+  - name: payment_count_1h
+    type: aggregation
+    method: count
+    datasource: events
+    entity: events
+    dimension: user_id
+    dimension_value: "${event.user.id}"
+    timestamp_field: occurred_at
+    window: 1h
+    when:
+      all:
+        - kind == "payment"
+        - amount > ${event.min_amount}
+        - country == "${event.country}"
+
+  - name: payment_amount_1h
+    type: aggregation
+    method: sum
+    datasource: events
+    entity: events
+    dimension: user_id
+    dimension_value: "${event.user.id}"
+    timestamp_field: occurred_at
+    field: amount
+    window: 1h
+    when:
+      all:
+        - kind == "payment"
+        - amount > ${event.min_amount}
+        - country == "${event.country}"
+
+  - name: average_payment_1h
+    type: expression
+    expression: payment_amount_1h / payment_count_1h

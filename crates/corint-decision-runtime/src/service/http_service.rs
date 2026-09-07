@@ -118,9 +118,12 @@ impl HttpServiceClient {
                 config.name
             ))
         })?;
-        if !["http", "https"].contains(&url.scheme()) || url.host_str().is_none() {
+        if !["http", "https"].contains(&url.scheme())
+            || url.host_str().is_none()
+            || url.fragment().is_some()
+        {
             return Err(RuntimeError::InvalidOperation(
-                "Service base_url requires HTTP or HTTPS and a host".into(),
+                "Service base_url requires HTTP or HTTPS, a host and no fragment".into(),
             ));
         }
         if self.configs.contains_key(&config.name) {
@@ -136,6 +139,18 @@ impl HttpServiceClient {
             {
                 return Err(RuntimeError::InvalidOperation(format!(
                     "Invalid service operation: {}::{name}",
+                    config.name
+                )));
+            }
+            Self::validate_operation_path(&operation.path)?;
+            if operation.request_body.is_some()
+                && !matches!(
+                    HttpMethod::from_str(&operation.method),
+                    Some(HttpMethod::POST | HttpMethod::PUT | HttpMethod::PATCH)
+                )
+            {
+                return Err(RuntimeError::InvalidOperation(format!(
+                    "Service {}::{name}: request_body requires POST, PUT or PATCH",
                     config.name
                 )));
             }
@@ -275,15 +290,14 @@ impl HttpServiceClient {
             )));
         }
 
-        // Parse JSON response
-        let json: serde_json::Value = match response.json().await {
+        // Read errors (including a truncated body) are transport failures.
+        // Only JSON parsing after a complete read is eligible for fallback.
+        let bytes = response.bytes().await.map_err(|error| {
+            RuntimeError::ServiceCallFailed(format!("Service response transport failed: {error}"))
+        })?;
+        let json: serde_json::Value = match serde_json::from_slice(&bytes) {
             Ok(j) => j,
             Err(e) => {
-                if e.is_timeout() || e.is_connect() {
-                    return Err(RuntimeError::ServiceCallFailed(format!(
-                        "Service response transport failed: {e}"
-                    )));
-                }
                 // Explicit fallback covers invalid JSON, not transport failure.
                 if let Some(response_config) = &endpoint.response {
                     if let Some(fallback) = &response_config.fallback {
@@ -320,7 +334,27 @@ impl HttpServiceClient {
         Ok(value)
     }
 
-    /// Build the complete URL for an API call
+    fn validate_operation_path(path: &str) -> Result<()> {
+        let has_dot_segment = path.split('/').any(|part| {
+            matches!(
+                part.replace("%2e", ".").replace("%2E", ".").as_str(),
+                "." | ".."
+            )
+        });
+        if path.trim().is_empty()
+            || path.contains(['?', '#', '\\'])
+            || path.contains("://")
+            || path.chars().any(char::is_control)
+            || has_dot_segment
+        {
+            return Err(RuntimeError::InvalidOperation(
+                "Service path must be non-empty, with no URL, query, fragment, backslash or dot segments".into(),
+            ));
+        }
+        Ok(())
+    }
+
+    /// Append the operation path to the base prefix and encode parameter data.
     fn build_url(
         &self,
         service_config: &HttpServiceConfig,
@@ -328,42 +362,50 @@ impl HttpServiceClient {
         params: &HashMap<String, Value>,
         ctx: &ExecutionContext,
     ) -> Result<String> {
-        // Start with base URL and path
-        let mut path = endpoint.path.clone();
-
-        // Resolve parameters (merge endpoint defaults with pipeline overrides)
+        Self::validate_operation_path(&endpoint.path)?;
         let resolved_params = self.resolve_params(&endpoint.params, params, ctx)?;
-
-        // Replace path parameters (find all {placeholder} in path)
-        for (key, value) in &resolved_params {
-            let placeholder = format!("{{{}}}", key);
-            if path.contains(&placeholder) {
-                let value_str = self.value_to_string(value)?;
-                path = path.replace(&placeholder, &value_str);
-            }
-        }
-
-        // Build query string from query_params list
-        let mut query_parts = Vec::new();
-        for param_name in &endpoint.query_params {
-            if let Some(value) = resolved_params.get(param_name) {
-                let value_str = self.value_to_string(value)?;
-                query_parts.push(format!(
-                    "{}={}",
-                    param_name,
-                    urlencoding::encode(&value_str)
+        let mut path = String::new();
+        let mut remaining = endpoint.path.as_str();
+        while let Some((prefix, suffix)) = remaining.split_once('{') {
+            let (name, rest) = suffix.split_once('}').ok_or_else(|| {
+                RuntimeError::ServiceCallFailed("Unclosed service path placeholder".into())
+            })?;
+            if prefix.contains('}') || name.trim().is_empty() || name.contains('{') {
+                return Err(RuntimeError::ServiceCallFailed(
+                    "Invalid service path placeholder".into(),
                 ));
             }
+            let value = resolved_params.get(name).ok_or_else(|| {
+                RuntimeError::ServiceCallFailed(format!("Missing service path parameter: {name}"))
+            })?;
+            path.push_str(prefix);
+            path.push_str(&urlencoding::encode(&self.value_to_string(value)?));
+            remaining = rest;
         }
-
-        // Combine base URL, path, and query string
-        let mut url = format!("{}{}", service_config.base_url, path);
-        if !query_parts.is_empty() {
-            url.push('?');
-            url.push_str(&query_parts.join("&"));
+        if remaining.contains('}') {
+            return Err(RuntimeError::ServiceCallFailed(
+                "Unexpected closing brace in service path".into(),
+            ));
         }
-
-        Ok(url)
+        path.push_str(remaining);
+        // A parameter consisting of a dot segment must not be normalized away.
+        Self::validate_operation_path(&path)?;
+        let mut url = reqwest::Url::parse(&service_config.base_url).map_err(|error| {
+            RuntimeError::ServiceCallFailed(format!("Invalid service base URL: {error}"))
+        })?;
+        let combined_path = format!(
+            "{}/{}",
+            url.path().trim_end_matches('/'),
+            path.trim_start_matches('/')
+        );
+        url.set_path(&combined_path);
+        for param_name in &endpoint.query_params {
+            if let Some(value) = resolved_params.get(param_name) {
+                url.query_pairs_mut()
+                    .append_pair(param_name, &self.value_to_string(value)?);
+            }
+        }
+        Ok(url.into())
     }
 
     /// Resolve parameters by merging endpoint defaults with pipeline overrides
@@ -394,8 +436,7 @@ impl HttpServiceClient {
     }
 
     /// Resolve a single parameter value
-    /// If it's a string without quotes and contains '.', treat as context path
-    /// Otherwise, treat as literal value
+    /// Defaults use namespace paths or scalar/null literals, without expressions.
     fn resolve_param_value(
         &self,
         value: &serde_json::Value,
@@ -407,8 +448,27 @@ impl HttpServiceClient {
                     .iter()
                     .any(|prefix| s.starts_with(prefix))
                 {
-                    let path: Vec<_> = s.split('.').map(str::to_owned).collect();
-                    ctx.load_field(&path)
+                    let mut path = s.split('.');
+                    let data = match path.next().expect("namespace prefix") {
+                        "event" => &ctx.event,
+                        "service" => &ctx.service,
+                        "vars" => &ctx.vars,
+                        "features" => &ctx.features,
+                        "sys" => &ctx.sys,
+                        "env" => &ctx.env,
+                        _ => unreachable!("checked namespace prefix"),
+                    };
+                    let missing = || RuntimeError::FieldNotFound(s.clone());
+                    let mut value = data
+                        .get(path.next().expect("field after prefix"))
+                        .ok_or_else(missing)?;
+                    for part in path {
+                        value = match value {
+                            Value::Object(object) => object.get(part).ok_or_else(missing)?,
+                            _ => return Err(missing()),
+                        };
+                    }
+                    Ok(value.clone())
                 } else {
                     Ok(Value::String(s.clone()))
                 }
@@ -440,27 +500,79 @@ impl HttpServiceClient {
         ctx: &ExecutionContext,
     ) -> Result<String> {
         let resolved_params = self.resolve_params(endpoint_params, pipeline_params, ctx)?;
-
-        let mut body = template.to_string();
-
-        // Replace ${param_name} with actual values
-        for (key, value) in &resolved_params {
-            let placeholder = format!("${{{}}}", key);
-            if body.contains(&placeholder) {
-                // For JSON, we need to preserve type information
-                let replacement = serde_json::to_string(value).map_err(|error| {
-                    RuntimeError::ServiceCallFailed(format!(
-                        "Cannot encode service parameter: {error}"
-                    ))
+        let invalid = |message: &str| RuntimeError::ServiceCallFailed(message.into());
+        let replace = |placeholder: &str, head: &str, tail: &str| -> Result<String> {
+            let name = placeholder
+                .strip_prefix("${")
+                .and_then(|name| name.strip_suffix('}'))
+                .filter(|name| !name.trim().is_empty() && !name.contains(['{', '}']))
+                .ok_or_else(|| {
+                    invalid("Service body placeholders must occupy a complete JSON value")
                 })?;
+            if tail.trim_start().starts_with(':') {
+                return Err(invalid("Service body placeholders cannot be object keys"));
+            }
+            if !matches!(
+                head.trim_end().chars().next_back(),
+                None | Some(':' | '[' | ',')
+            ) || !matches!(
+                tail.trim_start().chars().next(),
+                None | Some(',' | ']' | '}')
+            ) {
+                return Err(invalid(
+                    "Service body placeholders must occupy a complete JSON value",
+                ));
+            }
+            let value = resolved_params.get(name).ok_or_else(|| {
+                RuntimeError::ServiceCallFailed(format!("Missing service body parameter: {name}"))
+            })?;
+            serde_json::to_string(value).map_err(|error| {
+                RuntimeError::ServiceCallFailed(format!("Cannot encode service parameter: {error}"))
+            })
+        };
 
-                // If placeholder is already quoted (e.g., "${param}"), replace including quotes
-                let quoted_placeholder = format!("\"{}\"", placeholder);
-                if body.contains(&quoted_placeholder) {
-                    body = body.replace(&quoted_placeholder, &replacement);
-                } else {
-                    body = body.replace(&placeholder, &replacement);
+        // Scan only the original template. Inserted values are never interpreted
+        // as new placeholders, regardless of parameter iteration order.
+        let mut body = String::new();
+        let mut chars = template.char_indices().peekable();
+        while let Some((start, ch)) = chars.next() {
+            if ch == '"' {
+                let mut escaped = false;
+                let mut end = None;
+                for (index, ch) in chars.by_ref() {
+                    if escaped {
+                        escaped = false;
+                    } else if ch == '\\' {
+                        escaped = true;
+                    } else if ch == '"' {
+                        end = Some(index + 1);
+                        break;
+                    }
                 }
+                let end = end.ok_or_else(|| invalid("Unclosed JSON string in service body"))?;
+                let token = &template[start..end];
+                let text: String = serde_json::from_str(token).map_err(|error| {
+                    RuntimeError::ServiceCallFailed(format!("Invalid service body string: {error}"))
+                })?;
+                if text.contains("${") {
+                    body.push_str(&replace(&text, &template[..start], &template[end..])?);
+                } else {
+                    body.push_str(token);
+                }
+            } else if ch == '$' && chars.peek().is_some_and(|(_, ch)| *ch == '{') {
+                chars.next();
+                let end = chars
+                    .by_ref()
+                    .find(|(_, ch)| *ch == '}')
+                    .map(|(index, _)| index + 1)
+                    .ok_or_else(|| invalid("Unclosed service body placeholder"))?;
+                body.push_str(&replace(
+                    &template[start..end],
+                    &template[..start],
+                    &template[end..],
+                )?);
+            } else {
+                body.push(ch);
             }
         }
 
@@ -671,5 +783,223 @@ mod tests {
         assert!(url.starts_with("https://api.example.com/data?"));
         assert!(url.contains("token=abc123"));
         assert!(url.contains("format=json"));
+    }
+
+    fn binding(method: &str, path: &str) -> HttpServiceConfig {
+        serde_json::from_value(serde_json::json!({
+            "name": "risk", "base_url": "https://api.example.com",
+            "operations": {"score": {"method": method, "path": path}}
+        }))
+        .unwrap()
+    }
+
+    #[test]
+    fn url_preserves_base_prefix_and_encodes_parameter_data() {
+        let client = HttpServiceClient::new();
+        let mut config = binding("GET", "/users/{id}");
+        config.base_url = "https://api.example.com/v1/?fixed=yes".into();
+        config.operations.get_mut("score").unwrap().query_params =
+            vec!["tag&kind".into(), "optional".into()];
+        let params = HashMap::from([
+            ("id".into(), Value::String("a/b?x=1#é".into())),
+            ("tag&kind".into(), Value::String("x=y&z".into())),
+        ]);
+        let ctx = ExecutionContext::from_event(HashMap::new()).unwrap();
+        let url = client
+            .build_url(&config, &config.operations["score"], &params, &ctx)
+            .unwrap();
+        let url = reqwest::Url::parse(&url).unwrap();
+        assert_eq!(url.path(), "/v1/users/a%2Fb%3Fx%3D1%23%C3%A9");
+        assert_eq!(url.fragment(), None);
+        assert_eq!(
+            url.query_pairs().into_owned().collect::<Vec<_>>(),
+            [
+                ("fixed".into(), "yes".into()),
+                ("tag&kind".into(), "x=y&z".into())
+            ]
+        );
+    }
+
+    #[test]
+    fn missing_malformed_and_dot_path_parameters_are_rejected() {
+        let client = HttpServiceClient::new();
+        let ctx = ExecutionContext::from_event(HashMap::new()).unwrap();
+        for path in [
+            "/users/{missing}",
+            "/users/{id",
+            "/users/id}",
+            "/users/../admin",
+            "/users/%2E%2e/admin",
+            "/users?admin=true",
+            "/users#fragment",
+        ] {
+            let config = binding("GET", path);
+            assert!(
+                client
+                    .build_url(&config, &config.operations["score"], &HashMap::new(), &ctx)
+                    .is_err(),
+                "{path}"
+            );
+        }
+        let config = binding("GET", "/users/{id}");
+        for id in [".", ".."] {
+            let params = HashMap::from([("id".into(), Value::String(id.into()))]);
+            assert!(client
+                .build_url(&config, &config.operations["score"], &params, &ctx)
+                .is_err());
+        }
+    }
+
+    #[test]
+    fn body_placeholders_preserve_types_without_recursive_substitution() {
+        let client = HttpServiceClient::new();
+        let ctx = ExecutionContext::from_event(HashMap::new()).unwrap();
+        let params = HashMap::from([
+            ("id".into(), Value::String("a\"\\${other}".into())),
+            ("other".into(), Value::Number(7.0)),
+            ("number".into(), Value::Number(2.0)),
+            (
+                "payload".into(),
+                Value::Object(HashMap::from([("active".into(), Value::Bool(true))])),
+            ),
+            ("items".into(), Value::Array(vec![Value::Null])),
+            ("empty".into(), Value::Null),
+        ]);
+        let template = r#"{"quoted":"${id}","bare":${id},"number":"${number}","payload":${payload},"items":"${items}","null":${empty}}"#;
+        let body = client
+            .substitute_body_template(template, &HashMap::new(), &params, &ctx)
+            .unwrap();
+        let body: serde_json::Value = serde_json::from_str(&body).unwrap();
+        assert_eq!(body["quoted"], "a\"\\${other}");
+        assert_eq!(body["bare"], body["quoted"]);
+        assert_eq!(body["number"].as_f64(), Some(2.0));
+        assert_eq!(body["payload"], serde_json::json!({"active": true}));
+        assert_eq!(body["items"], serde_json::json!([null]));
+        assert!(body["null"].is_null());
+    }
+
+    #[test]
+    fn body_missing_values_partial_strings_and_dynamic_keys_are_rejected() {
+        let client = HttpServiceClient::new();
+        let ctx = ExecutionContext::from_event(HashMap::new()).unwrap();
+        let params = HashMap::from([
+            ("id".into(), Value::String("42".into())),
+            ("number".into(), Value::Number(2.0)),
+        ]);
+        for template in [
+            r#"{"id":"${missing}"}"#,
+            r#"{"id":${missing}}"#,
+            r#"{"id":"prefix-${id}"}"#,
+            r#"{"${id}":1}"#,
+            r#"{"id":"${}"}"#,
+            r#"{"id":"${id"}"#,
+            r#"{"id":1${number}}"#,
+            r#"{"id":${number}0}"#,
+            r#"{"id":1"${number}"}"#,
+        ] {
+            assert!(
+                client
+                    .substitute_body_template(template, &HashMap::new(), &params, &ctx)
+                    .is_err(),
+                "{template}"
+            );
+        }
+    }
+
+    #[test]
+    fn operation_defaults_have_explicit_literal_and_override_semantics() {
+        let client = HttpServiceClient::new();
+        let ctx = ExecutionContext::from_event(HashMap::from([
+            ("id".into(), Value::Number(42.0)),
+            (
+                "profile".into(),
+                Value::Object(HashMap::from([
+                    ("nullable".into(), Value::Null),
+                    ("items".into(), Value::Array(vec![Value::Bool(true)])),
+                ])),
+            ),
+        ]))
+        .unwrap();
+        let defaults = HashMap::from([
+            ("id".into(), serde_json::json!("event.id")),
+            ("expression".into(), serde_json::json!("${event.id + 1}")),
+            ("unused".into(), serde_json::json!("event.missing")),
+            ("nil".into(), serde_json::Value::Null),
+            (
+                "nullable".into(),
+                serde_json::json!("event.profile.nullable"),
+            ),
+            ("items".into(), serde_json::json!("event.profile.items")),
+        ]);
+        let overrides = HashMap::from([("unused".into(), Value::Array(vec![Value::Bool(true)]))]);
+        let resolved = client.resolve_params(&defaults, &overrides, &ctx).unwrap();
+        assert_eq!(resolved["id"], Value::Number(42.0));
+        assert_eq!(
+            resolved["expression"],
+            Value::String("${event.id + 1}".into())
+        );
+        assert_eq!(resolved["unused"], overrides["unused"]);
+        assert_eq!(resolved["nil"], Value::Null);
+        assert_eq!(resolved["nullable"], Value::Null);
+        assert_eq!(resolved["items"], Value::Array(vec![Value::Bool(true)]));
+        for path in ["event.profile.missing", "event.id.child"] {
+            assert!(client
+                .resolve_param_value(&serde_json::json!(path), &ctx)
+                .is_err());
+        }
+        assert!(client
+            .resolve_params(&defaults, &HashMap::new(), &ctx)
+            .is_err());
+        for value in [serde_json::json!([]), serde_json::json!({})] {
+            assert!(client.resolve_param_value(&value, &ctx).is_err());
+        }
+    }
+
+    #[test]
+    fn response_mapping_defines_missing_paths_and_non_object_results() {
+        let client = HttpServiceClient::new();
+        let mapping = HashMap::from([
+            ("result.score".into(), "risk.score".into()),
+            ("missing".into(), "risk.missing".into()),
+            ("array".into(), "items.0".into()),
+        ]);
+        let response = HttpServiceClient::json_to_value(
+            serde_json::json!({"risk":{"score":42},"items":[7],"extra":true}),
+        )
+        .unwrap();
+        let result = client.apply_response_mapping(response, &mapping).unwrap();
+        let Value::Object(result) = result else {
+            panic!("mapped object")
+        };
+        assert_eq!(result["result.score"], Value::Number(42.0));
+        assert_eq!(result["missing"], Value::Null);
+        assert_eq!(result["array"], Value::Null);
+        assert!(!result.contains_key("extra"));
+        for value in [
+            Value::Null,
+            Value::Number(42.0),
+            Value::Array(vec![Value::Bool(true)]),
+        ] {
+            assert_eq!(
+                client
+                    .apply_response_mapping(value.clone(), &mapping)
+                    .unwrap(),
+                value
+            );
+        }
+    }
+
+    #[test]
+    fn request_body_on_bodyless_methods_is_rejected_at_registration() {
+        for method in ["GET", "DELETE", "POST", "PUT", "PATCH"] {
+            let mut config = binding(method, "/users");
+            config.operations.get_mut("score").unwrap().request_body = Some("{}".into());
+            let result = HttpServiceClient::new().register_service(config);
+            assert_eq!(
+                result.is_ok(),
+                matches!(method, "POST" | "PUT" | "PATCH"),
+                "{method}"
+            );
+        }
     }
 }

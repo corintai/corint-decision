@@ -1,7 +1,7 @@
 # CORINT Decision Engine
 
 Service invocations use a unified `service + operation` node. See the
-[CDL Service contract](docs/cdl/service.md) for HTTP bindings and custom adapters.
+[CDL Service contract](CDL/service.md) for HTTP bindings and custom adapters.
 
 
 <div align="center">
@@ -9,7 +9,7 @@ Service invocations use a unified `service + operation` node. See the
 **High-performance, AI-augmented risk decision engine with unified DSL**
 
 [![License](https://img.shields.io/badge/license-Elastic-blue.svg)](LICENSE)
-[![Documentation](https://img.shields.io/badge/docs-latest-green.svg)](docs/cdl/)
+[![Documentation](https://img.shields.io/badge/docs-latest-green.svg)](CDL/)
 
 *Part of the **CORINT – Cognitive Risk Intelligence Framework***
 
@@ -25,11 +25,10 @@ Service invocations use a unified `service + operation` node. See the
 
 ## 🚀 Overview
 
-For the experimental strict CDL Core, use the [offline validation CLI](docs/cdl/cli.md),
-[behavior testing CLI](docs/cdl/testing.md), [source packages](docs/cdl/packages.md),
-[source exchange](docs/cdl/exchange.md),
-[strict generation API](docs/cdl/generation.md)
-and [bounded specification](docs/cdl/cdl-core.md). Compile-time validation is
+For the experimental strict CDL Core, use the [offline validation CLI](docs/cli.md),
+[behavior testing CLI](docs/testing.md), [source packages and exchange](docs/packages.md),
+[strict generation API](docs/generation.md)
+and [language references](CDL/overall.md). Compile-time validation is
 not behavior testing, business evaluation or production certification.
 
 **CORINT Decision** is a modern, real-time risk decision engine that uniquely combines:
@@ -408,7 +407,7 @@ let (rule, version) = repo.load_rule("fraud_check").await?;
 
 #### 3. Remote API Repository 📋 *Planned*
 
-**Use Case:** WASM edge-side risk control, distributed systems, microservices, centralized rule management
+**Use Case:** Distributed systems, microservices, centralized rule management
 
 ```rust
 // Load rules from remote API (planned)
@@ -416,11 +415,9 @@ let repo = HttpRepository::new("https://rule-api.example.com")?;
 let (rule, _) = repo.load_rule("fraud_check").await?;
 ```
 
-**Primary Use Case - WASM Edge-Side Risk Control:**
-- **Browser/Mobile WASM**: Load rules from server to run risk checks client-side
-- **Edge Computing**: Deploy lightweight WASM modules that fetch rules from central API
-- **Offline Capability**: Cache rules locally for offline decision-making
-- **Dynamic Updates**: Update client-side rules without app redistribution
+Browser-side risk scoring was another proposed use case, but
+[WASM implementation is postponed](docs/ARCHITECTURE.md#2-wasm-browseredge).
+The current workspace has no browser execution entry point.
 
 **Additional Benefits:**
 - **Centralized Management**: Single source of truth for multiple services
@@ -719,28 +716,28 @@ RUST_LOG=trace cargo run -p corint-decision-server     # Trace (all details)
 
 | Document | Description |
 |----------|-------------| 
-| [**overall.md**](docs/cdl/overall.md) | overall document |
+| [**overall.md**](CDL/overall.md) | Resource roles, execution flow, capability boundaries and a complete Core example |
 
 #### CDL Core Concepts
 
 | Document | Description |
 |----------|-------------| 
-| [**expression.md**](docs/cdl/expression.md) | Expression language reference |
-| [**rule.md**](docs/cdl/rule.md) | Rule specification and patterns |
-| [**ruleset.md**](docs/cdl/ruleset.md) | Ruleset and decision logic |
-| [**pipeline.md**](docs/cdl/pipeline.md) | Pipeline orchestration |
-| [**registry.md**](docs/cdl/registry.md) | Pipeline Registry |
+| [**expression.md**](CDL/expression.md) | Expression language reference |
+| [**rule.md**](CDL/rule.md) | Rule specification and patterns |
+| [**ruleset.md**](CDL/ruleset.md) | Ruleset and decision logic |
+| [**pipeline.md**](CDL/pipeline.md) | Pipeline orchestration |
+| [**registry.md**](CDL/registry.md) | Pipeline Registry |
 
 #### Advanced Features
 
 | Document | Description |
 |----------|-------------|
-| [**import.md**](docs/cdl/import.md) | Import rules or rulesets |
-| [**context.md**](docs/cdl/context.md) | Context and variable management |
-| [**feature.md**](docs/FEATURE_ENGINEERING.md) ⭐ | **Feature engineering and statistical analysis** |
-| [**list.md**](docs/cdl/list.md) ⭐ | **Custom lists (blocklists/allowlists)** |
-| [**service.md**](docs/cdl/service.md) | External API defination|
-| [**service.md**](docs/cdl/service.md) | Internal services defination |
+| [**import.md**](CDL/import.md) | Import syntax, resource composition and dependency constraints |
+| [**context.md**](CDL/context.md) | Context and variable management |
+| [**feature.md**](CDL/feature.md) ⭐ | **Feature definitions and supported semantics** |
+| [**list.md**](CDL/list.md) ⭐ | **Custom lists (blocklists/allowlists)** |
+| [**service.md**](CDL/service.md) | External API defination|
+| [**service.md**](CDL/service.md) | Internal services defination |
 
 ### Extensible
 

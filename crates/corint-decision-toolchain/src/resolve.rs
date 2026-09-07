@@ -12,7 +12,7 @@ use std::{
 };
 
 pub const SOURCE_PROFILE: &str = "cdl-core-import-draft-1";
-pub const HEADER_SCHEMA: &str = include_str!("../../../docs/cdl/schema/import-header.json");
+pub const HEADER_SCHEMA: &str = include_str!("../../../CDL/schema/import-header.json");
 const MAX_FILES: usize = 256;
 const MAX_FILE_BYTES: usize = 1024 * 1024;
 const MAX_TOTAL_BYTES: usize = 16 * 1024 * 1024;

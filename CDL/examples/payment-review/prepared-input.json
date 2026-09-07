@@ -1,0 +1,21 @@
+{
+  "type": "payment",
+  "amount_cents": 150000,
+  "currency": "USD",
+  "customer": {
+    "id": "customer/001",
+    "email": "buyer@example.test"
+  },
+  "device": {
+    "id": "browser-001"
+  },
+  "evidence": {
+    "blocked_email": false,
+    "loyal_customer": false,
+    "payment_count_1h": 3,
+    "average_amount_cents": 80000,
+    "provider_required": true,
+    "provider_available": true,
+    "provider_score": 20
+  }
+}

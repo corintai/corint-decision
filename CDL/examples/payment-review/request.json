@@ -1,0 +1,12 @@
+{
+  "type": "payment",
+  "amount_cents": 150000,
+  "currency": "USD",
+  "customer": {
+    "id": "customer/001",
+    "email": "buyer@example.test"
+  },
+  "device": {
+    "id": "browser-001"
+  }
+}

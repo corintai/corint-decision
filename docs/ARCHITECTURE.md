@@ -9,7 +9,7 @@ CORINT is a high-performance, flexible decision engine designed for real-time ri
 ### Core Principles
 
 1. **Separation of Concerns**: Clear boundaries between detection (Rules), decision-making (Rulesets), and orchestration (Pipelines)
-2. **Unified Integration**: Single SDK entry point for all integration scenarios (HTTP Server, WASM, FFI)
+2. **Shared Engine**: HTTP Server, Rust SDK and FFI integrations share the engine; browser WASM support is postponed.
 3. **Configuration as Code**: Business logic defined in declarative YAML, separate from application configuration
 4. **Performance First**: Compile-time optimization, JIT compilation, and runtime efficiency
 5. **Extensibility**: Plugin architecture for external services, features, and data sources
@@ -18,71 +18,18 @@ CORINT is a high-performance, flexible decision engine designed for real-time ri
 
 ## High-Level Architecture
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                    Integration Layer                             │
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐          │
-│  │ HTTP Server  │  │     WASM     │  │ FFI Bindings │          │
-│  │   (Axum)     │  │ (Browser/API)│  │ (Python/Go)  │          │
-│  └──────┬───────┘  └──────┬───────┘  └──────┬───────┘          │
-│         │                  │                  │                  │
-│         │    config/server.yaml               │                  │
-│         │   (Application Config)              │                  │
-│         └──────────────────┼──────────────────┘                  │
-│       HTTP Server ─────────┼──> corint-decision-engine           │
-│       FFI / WASM ──────────┴──> corint-decision-sdk              │
-└────────────────────────────┼─────────────────────────────────────┘
-                             ▼
-┌─────────────────────────────────────────────────────────────────┐
-│                corint-decision-sdk (Developer API Facade)        │
-│                                                                  │
-│  Curated public API and re-exports for SDK consumers             │
-│                                                                  │
-└────────────────────────────┬────────────────────────────────────┘
-                             │ delegates to
-                             ▼
-┌─────────────────────────────────────────────────────────────────┐
-│              corint-decision-engine (Core Orchestration)         │
-│                                                                  │
-│  DecisionEngineBuilder::new()                                   │
-│      .with_repository(RepositoryConfig::file_system("repo"))    │
-│      .with_feature_executor(executor)                           │
-│      .with_list_service(list_service)                           │
-│      .enable_metrics(true)                                      │
-│      .build()                                                   │
-│                                                                  │
-│  → DecisionEngine::decide(request) → DecisionResult            │
-└────────────────────────────┬────────────────────────────────────┘
-                             │
-        ┌────────────────────┼────────────────────┐
-        ▼                    ▼                    ▼
-┌──────────────┐  ┌──────────────────┐  ┌─────────────────┐
-│  corint-     │  │  corint-         │  │  corint-        │
-│  repository  │  │  compiler        │  │  runtime        │
-│              │  │                  │  │                 │
-│ Load all     │  │ Parse → AST      │  │ Execute VM      │
-│ business     │  │ Analyze → Opts   │  │ Features        │
-│ configs:     │  │ Codegen → Bytecode│  │ Lists          │
-│ - Pipelines  │  │                  │  │ Data Sources   │
-│ - Rules      │  │                  │  │ Persistence    │
-│ - Features   │  │                  │  │ Observability  │
-│ - Lists      │  │                  │  │                 │
-│ - APIs       │  │                  │  │                 │
-└──────┬───────┘  └─────────┬────────┘  └────────┬────────┘
-       │                    │                     │
-       └────────────────────┼─────────────────────┘
-                            │ All depend on
-                            ▼
-       ┌─────────────────────────────────────────────────┐
-       │           corint-decision-model (Foundation)              │
-       │                                                  │
-       │  Shared Types & Abstractions:                   │
-       │  - AST (Abstract Syntax Tree)                   │
-       │  - Value System (runtime data)                  │
-       │  - Bytecode (VM instructions)                   │
-       │  - Error Types (standardized errors)            │
-       │  - Common Utilities                             │
-       └─────────────────────────────────────────────────┘
+```mermaid
+flowchart TD
+    HTTP[HTTP Server] --> ENGINE[corint-decision-engine]
+    APP[Rust application] --> SDK[corint-decision-sdk]
+    FFI[FFI bindings] --> SDK
+    SDK --> ENGINE
+    ENGINE --> REPOSITORY[Repository loaders]
+    ENGINE --> COMPILER[CDL compiler]
+    ENGINE --> RUNTIME[Runtime and adapters]
+    REPOSITORY --> MODEL[Shared model types]
+    COMPILER --> MODEL
+    RUNTIME --> MODEL
 ```
 
 ---
@@ -95,7 +42,7 @@ CORINT is a high-performance, flexible decision engine designed for real-time ri
 
 **Components**:
 - **HTTP Server** (`corint-decision-server`): REST API for decision execution
-- **WASM** (`corint-wasm`): Browser/edge runtime support
+- **Rust SDK** (`corint-decision-sdk`): API facade for embedded Rust applications
 - **FFI** (`corint-decision-ffi`): Language bindings (Python, Go, etc.)
 
 **Key Characteristics**:
@@ -185,7 +132,7 @@ pub enum RepositorySource {
     FileSystem,  // Load from local file system
     Database,    // Load from PostgreSQL
     Api,         // Load from HTTP API
-    Memory,      // In-memory (for testing/WASM)
+    Memory,      // In-memory (for testing/embedded use)
 }
 
 pub struct RepositoryConfig {
@@ -656,93 +603,20 @@ corint-decision-repository──┘──> corint-decision-model (Error, Value)
 
 ### 8. LLM Layer (`corint-decision-llm`) - Development-Time Only
 
-**⚠️ IMPORTANT**: LLM is **NOT** a runtime component. It is a development-time code generation tool.
+The LLM crate generates candidate configuration during authoring. Executing a compiled policy
+in the engine does not automatically invoke a generator. The host selects the provider and
+controls whether generated sources are stored or deployed.
 
-**Responsibility**: Generate CORINT YAML configurations from natural language descriptions during development.
+The [generation guide](generation.md) owns provider configuration and API usage. Its two paths
+have different validation boundaries:
 
-**Why LLM is NOT in Runtime**:
-1. **Latency Incompatibility**: LLM inference takes 2-5 seconds, while CORINT requires <100-300ms decision latency (10-50x mismatch)
-2. **Reliability**: External API dependencies, network timeouts, and rate limits introduce failure points
-3. **Cost**: Per-request LLM calls are expensive at scale
-4. **Complexity**: Error handling, fallback logic, and observability challenges
+- `CoreGenerator` compiles a complete Core resource collection, runs independent behavior
+  cases and builds a source package when those cases pass.
+- Compatibility generators return YAML drafts or a `DecisionFlow`; callers must validate
+  them against the intended compiler and runtime before adopting them.
 
-**Architecture**:
-```
-┌──────────────────────────────────────────────────────────┐
-│ Development Time (Offline)                                │
-├──────────────────────────────────────────────────────────┤
-│  Natural Language Description                             │
-│         ↓                                                  │
-│  corint-decision-llm (LLM-powered generator)                       │
-│  - RuleGenerator                                          │
-│  - RulesetGenerator                                       │
-│  - PipelineGenerator                                      │
-│  - ServiceConfigGenerator                                     │
-│  - DecisionFlowGenerator                                  │
-│         ↓                                                  │
-│  Generated YAML Configurations                            │
-│         ↓                                                  │
-│  Developer Review & Version Control                       │
-└──────────────────────────────────────────────────────────┘
-
-┌──────────────────────────────────────────────────────────┐
-│ Production Time (Real-time <100ms)                       │
-├──────────────────────────────────────────────────────────┤
-│  Event Input                                              │
-│         ↓                                                  │
-│  CORINT Runtime (No LLM)                                  │
-│  - Rules                                                   │
-│  - Rulesets                                               │
-│  - Pipelines                                              │
-│  - External APIs (non-LLM)                                │
-│  - Data Sources                                           │
-│         ↓                                                  │
-│  Decision Output (<100-300ms)                             │
-└──────────────────────────────────────────────────────────┘
-```
-
-**Supported LLM Providers**:
-```rust
-// OpenAI
-let provider = OpenAIProvider::new(api_key);
-
-// Anthropic
-let provider = AnthropicProvider::new(api_key);
-
-// Google Gemini
-let provider = GeminiProvider::new(api_key);
-
-// DeepSeek
-let provider = DeepSeekProvider::new(api_key);
-
-// Mock (for testing)
-let provider = MockProvider::with_response(yaml);
-```
-
-**Usage Example**:
-```rust
-use corint_decision_llm::{RuleGenerator, OpenAIProvider};
-
-// Generate a rule from natural language
-let provider = Arc::new(OpenAIProvider::new(api_key));
-let generator = RuleGenerator::with_defaults(provider);
-
-let description = "Flag transactions over $10,000 from new accounts (< 30 days old)";
-let rule_yaml = generator.generate(description).await?;
-
-// Save to repository
-std::fs::write("repository/rules/fraud/high_amount_new_account.yaml", rule_yaml)?;
-```
-
-**Key Points**:
-- ✅ LLM generates YAML configurations offline
-- ✅ Developers review and commit generated YAML to version control
-- ✅ CORINT runtime executes compiled YAML with zero LLM calls
-- ❌ NO LLM calls at runtime
-- ❌ NO performance impact on production decisions
-- ❌ NO external dependencies in production
-
-**Documentation**: See [LLM_GUIDE.md](LLM_GUIDE.md) for complete usage guide.
+Generation quality and provider latency require separate measurement. Successful generation
+or passing synthetic tests does not establish business effectiveness or authorize activation.
 
 ---
 
@@ -1026,25 +900,15 @@ let engine = DecisionEngineBuilder::new()
 
 ### 2. WASM (Browser/Edge)
 
-**Use Case**: Client-side risk scoring, edge computing
+**Status: postponed, not implemented.** The browser deployment investigation was postponed
+on 2025-12-20. The current [Cargo workspace](../Cargo.toml) has no WASM crate or browser
+execution entry point. Client-side scoring, offline browser execution and a JavaScript SDK
+remain possible use cases, not supported deployment options.
 
-**Configuration**:
-```rust
-// Load from backend API
-let engine = DecisionEngineBuilder::new()
-    .with_repository(
-        RepositoryConfig::api("https://api.example.com/repository")
-            .with_api_key("secret-key")
-    )
-    .build()
-    .await?;
-```
-
-**Features**:
-- No file system dependency
-- Smaller binary size
-- API-based configuration loading
-- Browser-compatible
+The investigation identified the work needed to adapt the asynchronous engine, host I/O
+and dependencies to the browser. A separate synchronous VM was considered but not adopted,
+as it would add a second execution path to maintain. Resuming this work requires a target-specific
+build and execution assessment; the historical design is not evidence of browser compatibility.
 
 ### 3. FFI (Python/Go/etc.)
 
@@ -1195,22 +1059,8 @@ conclusion:
 
 ### Edge Deployment
 
-```
-┌────────────┐
-│  Browser   │  WASM Instance
-└─────┬──────┘
-      │
-      │ API (config loading)
-      │
-┌─────┴──────┐
-│   Backend  │  HTTP Server
-│   API      │
-└─────┬──────┘
-      │
-┌─────┴──────┐
-│ PostgreSQL │
-└────────────┘
-```
+Browser-hosted execution remains [postponed](#2-wasm-browseredge). A browser can call the
+HTTP service, but this does not run the decision engine locally in WASM.
 
 ---
 
@@ -1249,6 +1099,28 @@ test:
 
 ## Future Roadmap
 
+### Feature directions
+
+Unimplemented Feature directions include additional statistical methods and baseline/calendar
+state, ordered-event and time-series analysis (including CEP), graph relationships, and versioned
+model inference. These are research directions without committed delivery dates or accepted DSL
+syntax. Current applications can use supported Aggregation/Expression methods, host-supplied time
+and session fields, and Lookup for precomputed scores. Method and backend support remain defined
+by the [Feature runtime contract](contracts/feature-runtime.md); configuration and use cases are in
+the [Feature configuration guide](feature-configuration.md).
+
+### Shadow / Observe Mode
+
+**Status: not implemented.** The proposed mode would evaluate a sampled candidate alongside
+the active policy, retain separate comparison results and traces, and leave the business
+decision under the active policy's control. Stable sampling by an event key, traffic allocation
+and result isolation still need implementation. `pipeline.mode: shadow` and `traffic` are
+not supported DSL fields.
+
+The [Registry shadow-routing fixture](../tests/conformance/cdl_registry/registry.yaml) selects one
+Pipeline per request. Its name does not enable mirrored execution or suppress that Pipeline's
+decision. Native shadow execution remains separate from ordinary Registry selection.
+
 ### Short-term
 
 - [ ] GraphQL API support
@@ -1267,8 +1139,8 @@ test:
 
 ## Reference Documentation
 
-- **DSL Design**: `docs/DSL_DESIGN.md` - Three-layer decision model, design patterns, and best practices for rule authors
-- **CDL Syntax Reference**: `docs/cdl/` - Complete CDL specification (rule.md, ruleset.md, pipeline.md, expression.md, etc.)
+- [CDL overview](../CDL/overall.md): Resource roles, execution flow and complete language examples.
+- **CDL Syntax Reference**: `CDL/` - Complete CDL specification (rule.md, ruleset.md, pipeline.md, expression.md, etc.)
 - **SDK/Server Separation Plan**: `docs/SDK_SERVER_SEPARATION_PLAN.md` - Architecture refactoring and unified integration approach
 - **API Documentation**: `docs/api/`
 - **Examples**: `repository/pipelines/`, `examples/`

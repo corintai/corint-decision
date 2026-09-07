@@ -1,0 +1,11 @@
+version: "0.1"
+ruleset:
+  id: list_risk
+  rules: [blocked_email, vip_score_reduction, untrusted_large_transaction]
+  conclusion:
+    - when: total_score >= 200
+      signal: decline
+    - when: total_score > 0
+      signal: review
+    - default: true
+      signal: approve

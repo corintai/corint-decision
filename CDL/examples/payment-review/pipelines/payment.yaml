@@ -1,0 +1,84 @@
+version: "0.1"
+import:
+  rules:
+    - rules/blocked-email.yaml
+    - rules/loyalty-credit.yaml
+    # Shared with the child; importing a Rule does not invoke it.
+    - rules/provider-risk.yaml
+  rulesets:
+    - rulesets/payment-risk.yaml
+  pipelines:
+    - pipelines/identity-review.yaml
+pipeline:
+  id: payment_review
+  name: Payment review
+  description: Select one final payment decision from prepared facts.
+  when: event.amount_cents > 0
+  entry: blocklist_check
+  steps:
+    - step:
+        id: blocklist_check
+        name: Check blocked email
+        type: rule
+        rule: blocklisted_email
+        next: risk_check
+    - step:
+        id: risk_check
+        name: Evaluate payment risk
+        type: ruleset
+        ruleset: payment_risk
+        when: '!results.blocklisted_email.matched'
+        next: identity_check
+    - step:
+        id: identity_check
+        name: Evaluate provider assessment
+        type: pipeline
+        pipeline: identity_review
+        when: '!results.blocklisted_email.matched && event.evidence.provider_required'
+        next: credit_route
+    - step:
+        id: credit_route
+        name: Decide whether a loyalty credit is allowed
+        type: router
+        routes:
+          - when: results.blocklisted_email.matched
+            next: end
+          - when: results.payment_risk.status == "completed" && results.payment_risk.signal == "decline"
+            next: end
+          - when: total_score >= 70
+            next: end
+          - when: results.identity_review.status == "completed" && results.identity_review.signal == "review"
+            next: end
+        default: loyalty_adjustment
+    - step:
+        id: loyalty_adjustment
+        name: Apply a bounded loyalty credit
+        type: rule
+        rule: loyalty_credit
+        when: event.evidence.loyal_customer
+        next: end
+  decision:
+    - when: results.blocklisted_email.matched
+      result: decline
+      actions: [BLOCK_PAYMENT]
+      reason: The email is explicitly blocked.
+    - when: event.evidence.provider_required && results.identity_review.status == "skipped"
+      result: hold
+      actions: [REQUEST_IDENTITY_CHECK]
+      reason: Required provider facts are unavailable.
+    - when: total_score >= 70
+      result: decline
+      actions: [BLOCK_PAYMENT]
+      reason: Combined risk exceeds the decline threshold.
+    - when: results.identity_review.status == "completed" && results.identity_review.signal == "review"
+      result: review
+      actions: [OPEN_REVIEW]
+      reason: The provider assessment requires review.
+    - when: total_score >= 40
+      result: review
+      actions: [OPEN_REVIEW]
+      reason: The payment pattern requires review.
+    - default: true
+      result: approve
+      actions: []
+      reason: No review or decline condition matched.

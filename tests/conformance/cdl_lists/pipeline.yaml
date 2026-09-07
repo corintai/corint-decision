@@ -1,0 +1,19 @@
+version: "0.1"
+pipeline:
+  id: list_screening
+  name: List risk screening
+  entry: check_lists
+  steps:
+    - step:
+        id: check_lists
+        name: Evaluate list rules
+        type: ruleset
+        ruleset: list_risk
+        next: end
+  decision:
+    - when: results.list_risk.signal == "decline"
+      result: decline
+    - when: results.list_risk.signal == "review"
+      result: review
+    - default: true
+      result: approve

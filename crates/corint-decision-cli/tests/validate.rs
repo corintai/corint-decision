@@ -43,17 +43,22 @@ fn fixture(name: &str) -> String {
 
 #[test]
 fn cli_capability_and_input_artifacts_are_in_sync() {
-    let capabilities: Value =
-        serde_json::from_str(include_str!("../../../docs/cdl/schema/capabilities.json")).unwrap();
+    let capabilities: Value = serde_json::from_str(include_str!(
+        "../../../docs/contracts/schema/capabilities.json"
+    ))
+    .unwrap();
     assert_eq!(capabilities["profile"], PROFILE);
-    assert_eq!(capabilities["input_schema"], "input.json");
+    assert_eq!(
+        capabilities["input_schema"],
+        "../../../CDL/schema/input.json"
+    );
     let tool = &capabilities["tools"]["validate_cli"];
     assert_eq!(tool["entry_point"], "compile_core");
     assert_eq!(tool["scope"], "compile_only");
     assert_eq!(tool["execution_checked"], false);
     assert_eq!(tool["business_evaluation"], "not_performed");
     let evidence = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../../docs/cdl/schema")
+        .join("../../docs/contracts/schema")
         .join(tool["evidence"].as_str().unwrap())
         .canonicalize()
         .unwrap();

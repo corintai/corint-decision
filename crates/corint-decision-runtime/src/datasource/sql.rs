@@ -198,15 +198,15 @@ impl SQLClient {
                         SQLProvider::SQLite => {
                             // Compare instants, not text (RFC3339 uses T; SQLite uses a space).
                             sql.push_str(&format!(
-                                "julianday({}) >= julianday('now', '-{} seconds')",
-                                time_window.time_field, seconds
+                                "julianday({}) >= julianday('now', '-{} seconds') AND julianday({}) < julianday('now')",
+                                time_window.time_field, seconds, time_window.time_field
                             ));
                         }
                         _ => {
                             // PostgreSQL and others use INTERVAL
                             sql.push_str(&format!(
-                                "{} >= NOW() - INTERVAL '{} seconds'",
-                                time_window.time_field, seconds
+                                "{} >= NOW() - INTERVAL '{} seconds' AND {} < NOW()",
+                                time_window.time_field, seconds, time_window.time_field
                             ));
                         }
                     }
@@ -824,6 +824,45 @@ mod time_window_tests {
     use super::*;
     use crate::datasource::query::{QueryType, RelativeWindow, TimeUnit, TimeWindow};
 
+    #[test]
+    fn relative_window_sql_has_an_exclusive_upper_bound() {
+        let query = Query {
+            query_type: QueryType::Count,
+            entity: "events".into(),
+            filters: vec![],
+            time_window: Some(TimeWindow {
+                time_field: "occurred_at".into(),
+                window_type: TimeWindowType::Relative(RelativeWindow {
+                    value: 1,
+                    unit: TimeUnit::Hours,
+                }),
+            }),
+            aggregations: vec![],
+            group_by: vec![],
+            limit: None,
+        };
+        for provider in [SQLProvider::PostgreSQL, SQLProvider::SQLite] {
+            let client = SQLClient {
+                config: SQLConfig {
+                    provider,
+                    connection_string: String::new(),
+                    database: "test".into(),
+                    events_table: "events".into(),
+                    options: Default::default(),
+                },
+                pg_pool: None,
+                sqlite_pool: None,
+            };
+            let sql = client.build_sql(&query).unwrap();
+            assert!(sql.contains("3600"), "{sql}");
+            assert!(
+                sql.contains("occurred_at < NOW()")
+                    || sql.contains("julianday(occurred_at) < julianday('now')"),
+                "{sql}"
+            );
+        }
+    }
+
     #[tokio::test]
     async fn sqlite_windows_compare_instants_across_timestamp_formats() {
         let directory = tempfile::tempdir().unwrap();
@@ -887,7 +926,7 @@ mod time_window_tests {
             .execute(pool)
             .await
             .unwrap();
-        sqlx::query("INSERT INTO events VALUES (strftime('%Y-%m-%dT%H:%M:%SZ', 'now', '-10 minutes')), (datetime('now', '-10 minutes')), (strftime('%Y-%m-%dT%H:%M:%SZ', 'now', '-2 hours'))")
+        sqlx::query("INSERT INTO events VALUES (strftime('%Y-%m-%dT%H:%M:%SZ', 'now', '-10 minutes')), (datetime('now', '-10 minutes')), (strftime('%Y-%m-%dT%H:%M:%SZ', 'now', '-2 hours')), (datetime('now', '+1 hour'))")
             .execute(pool).await.unwrap();
         query.time_window.as_mut().unwrap().window_type =
             TimeWindowType::Relative(RelativeWindow {

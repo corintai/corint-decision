@@ -260,6 +260,6 @@ mod tests {
 
 ## Related Documentation
 
-- [Ruleset Inheritance](../../docs/cdl/ruleset.md#55-ruleset-inheritance-extends--implemented)
-- [Parameterized Rules](../../docs/cdl/rule.md)
-- [Import System](../../docs/cdl/import.md)
+- [Ruleset Core reference](../../CDL/ruleset.md) - Fields, local scoring and conclusions.
+- [Rule Core reference](../../CDL/rule.md) - Conditions, input types and scoring.
+- [Imports (strict authoring contract)](../../CDL/import.md)

@@ -291,8 +291,10 @@ fn bundle_schema_and_capability_inventory_match_the_implemented_gate() {
     .unwrap();
     let value = serde_json::to_value(bundle).unwrap();
     assert!(validator.is_valid(&value));
-    let inventory: Value =
-        serde_json::from_str(include_str!("../../../docs/cdl/schema/capabilities.json")).unwrap();
+    let inventory: Value = serde_json::from_str(include_str!(
+        "../../../docs/contracts/schema/capabilities.json"
+    ))
+    .unwrap();
     assert_eq!(inventory["source_bundle_schema"], "source-bundle.json");
     let tool = &inventory["tools"]["source_exchange_cli"];
     assert_eq!(tool["commands"], json!(["corint export", "corint import"]));

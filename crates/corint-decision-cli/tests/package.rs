@@ -650,10 +650,14 @@ fn rehashed_bundles_still_require_complete_unique_canonical_resources() {
 
 #[test]
 fn package_schema_and_capability_artifacts_are_in_sync() {
-    let capabilities: Value =
-        serde_json::from_str(include_str!("../../../docs/cdl/schema/capabilities.json")).unwrap();
-    let schema: Value =
-        serde_json::from_str(include_str!("../../../docs/cdl/schema/source-package.json")).unwrap();
+    let capabilities: Value = serde_json::from_str(include_str!(
+        "../../../docs/contracts/schema/capabilities.json"
+    ))
+    .unwrap();
+    let schema: Value = serde_json::from_str(include_str!(
+        "../../../docs/contracts/schema/source-package.json"
+    ))
+    .unwrap();
     assert_eq!(capabilities["source_package_schema"], "source-package.json");
     assert_eq!(
         schema["properties"]["profile"]["const"],
@@ -666,7 +670,7 @@ fn package_schema_and_capability_artifacts_are_in_sync() {
     assert_eq!(tool["commands"], json!(["corint build", "corint verify"]));
     assert_eq!(
         root()
-            .join("../../../docs/cdl/schema")
+            .join("../../../docs/contracts/schema")
             .join(tool["evidence"].as_str().unwrap())
             .canonicalize()
             .unwrap(),

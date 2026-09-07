@@ -1,0 +1,6 @@
+version: "0.1"
+rule:
+  id: loyalty_credit
+  name: Loyalty credit
+  when: event.evidence.loyal_customer
+  score: -20

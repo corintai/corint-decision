@@ -1,0 +1,11 @@
+name: customer_risk
+base_url: https://risk.example.com
+timeout_ms: 3000
+operations:
+  assess:
+    method: GET
+    path: /customers/{customer_id}
+    query_params: [amount, channel]
+    response:
+      mapping:
+        score: risk_score

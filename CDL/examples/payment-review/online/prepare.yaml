@@ -1,0 +1,65 @@
+# This online Pipeline is loaded separately from the Core import closure.
+version: "0.1"
+pipeline:
+  id: prepare_payment
+  name: Prepare payment facts
+  metadata:
+    version: "1.0.0"
+    author: example-author
+    owner: payments-team
+    updated: "2026-09-07T00:00:00Z"
+    tags: [teaching, payment-review]
+    description: Annotations do not alter decisions or execute an LLM.
+  entry: lookup
+  steps:
+    - step:
+        id: lookup
+        name: Obtain provider facts
+        type: service
+        service: customer_risk
+        operation: assess
+        params:
+          customer_id: event.customer.id
+          amount_cents: event.amount_cents
+          currency: event.currency
+          channel: example
+          request_id: sys.request_id
+          score_limit: env.max_score
+          flow: vars.flow
+          note: '${llm.review_note}'
+          tags: [payment-review, synthetic]
+        timeout_ms: 1000
+        next: explanation_route
+    - step:
+        id: explanation_route
+        name: Explain an available assessment
+        type: router
+        routes:
+          - when: service.lookup.available == true
+            next: explain
+        default: list_checks
+    - step:
+        id: explain
+        name: Store a reusable explanation
+        type: service
+        service: customer_risk
+        operation: explain
+        params:
+          reference: service.lookup.reference
+          score: service.lookup.score
+          note: '${llm.review_note}'
+        output: vars.review_note
+        next: list_checks
+    - step:
+        id: list_checks
+        name: Mark blocklist and loyalty facts
+        type: ruleset
+        ruleset: preparation_markers
+        next: end
+  decision:
+    - when: service.lookup.available == false
+      result: hold
+      reason: Provider facts could not be obtained.
+    - default: true
+      result: pass
+      reason: Facts are ready for the payment policy.

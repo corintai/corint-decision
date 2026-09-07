@@ -1,0 +1,11 @@
+# Import paths are relative to this example's root directory.
+version: "0.1"
+import:
+  pipelines:
+    - pipelines/payment.yaml
+    - pipelines/unhandled.yaml
+registry:
+  - pipeline: payment_review
+    when: event.type == "payment"
+  - pipeline: unhandled_event
+    when: "true"

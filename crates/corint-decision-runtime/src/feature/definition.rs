@@ -411,7 +411,7 @@ pub struct FeatureDefinition {
 
     /// Lookup-specific configuration
     /// For lookup features, datasource, key, and fallback are at the top level in YAML
-    /// This is populated in post-processing after deserialization
+    /// Deserialization populates this config directly, including JSON fallback values.
     #[serde(skip, default)]
     pub lookup: Option<LookupConfig>,
 
@@ -453,7 +453,8 @@ impl<'de> Deserialize<'de> for FeatureDefinition {
         // Deserialize based on type
         match feature_type {
             FeatureType::Lookup => {
-                // For lookup, manually extract fields (avoid recursion)
+                let lookup_config: LookupConfig =
+                    serde_yaml::from_value(value.clone()).map_err(serde::de::Error::custom)?;
                 let name = value
                     .get("name")
                     .and_then(|v| v.as_str())
@@ -495,7 +496,7 @@ impl<'de> Deserialize<'de> for FeatureDefinition {
                     sequence: None,
                     graph: None,
                     expression: None,
-                    lookup: None, // Will be set in post-processing
+                    lookup: Some(lookup_config),
                     description,
                     dependencies,
                     tags,
@@ -804,30 +805,12 @@ impl<'de> Deserialize<'de> for FeatureDefinition {
 }
 
 impl FeatureDefinition {
-    /// Post-process feature definition to populate lookup config from raw YAML value
-    /// This should be called after deserialization for lookup features
+    /// Compatibility helper for manually constructed definitions.
+    /// Normal deserialization already populates the complete Lookup config.
     pub fn fixup_lookup_from_yaml(&mut self, yaml_value: &serde_yaml::Value) {
         if self.feature_type == FeatureType::Lookup && self.lookup.is_none() {
-            if let (Some(datasource), Some(key)) = (
-                yaml_value.get("datasource").and_then(|v| v.as_str()),
-                yaml_value.get("key").and_then(|v| v.as_str()),
-            ) {
-                let fallback = yaml_value.get("fallback").and_then(|v| {
-                    // Convert serde_yaml::Value to corint_decision_model::Value
-                    match v {
-                        serde_yaml::Value::Bool(b) => Some(Value::Bool(*b)),
-                        serde_yaml::Value::Number(n) => n.as_f64().map(Value::Number),
-                        serde_yaml::Value::String(s) => Some(Value::String(s.clone())),
-                        serde_yaml::Value::Null => Some(Value::Null),
-                        _ => None,
-                    }
-                });
-
-                self.lookup = Some(LookupConfig {
-                    datasource: datasource.to_string(),
-                    key: key.to_string(),
-                    fallback,
-                });
+            if let Ok(config) = serde_yaml::from_value(yaml_value.clone()) {
+                self.lookup = Some(config);
             }
         }
     }
@@ -918,8 +901,47 @@ impl FeatureDefinition {
     /// Validate the feature definition
     pub fn validate(&self) -> Result<(), String> {
         // Check name is not empty
-        if self.name.is_empty() {
+        if self.name.trim().is_empty() {
             return Err("Feature name cannot be empty".to_string());
+        }
+
+        if let Some(config) = &self.aggregation {
+            if self
+                .method
+                .as_deref()
+                .is_some_and(|method| method != "count")
+                && config
+                    .field
+                    .as_ref()
+                    .is_none_or(|field| field.trim().is_empty())
+            {
+                return Err(format!(
+                    "Feature '{}': field required for this aggregation",
+                    self.name
+                ));
+            }
+            if config.percentile.is_some_and(|p| p > 100) {
+                return Err(format!(
+                    "Feature '{}': percentile must be between 0 and 100",
+                    self.name
+                ));
+            }
+        }
+        if let Some(config) = &self.state {
+            if self.method.as_deref() == Some("time_since") {
+                if config.window.is_some() {
+                    return Err(format!(
+                        "Feature '{}': time_since does not support window",
+                        self.name
+                    ));
+                }
+                if !matches!(config.unit.as_deref(), Some("minutes" | "hours" | "days")) {
+                    return Err(format!(
+                        "Feature '{}': time_since requires unit minutes, hours or days",
+                        self.name
+                    ));
+                }
+            }
         }
 
         if let Some(window) = self
@@ -1165,6 +1187,25 @@ mod tests {
 
         assert!(feature.validate().is_ok());
         assert_eq!(feature.feature_type, FeatureType::Aggregation);
+    }
+
+    #[test]
+    fn aggregation_fields_and_percentile_bounds_are_validated() {
+        let mut feature: FeatureDefinition = serde_yaml::from_str("name: p\ntype: aggregation\nmethod: percentile\ndatasource: events\nentity: events\ndimension: user_id\ndimension_value: u1\nfield: amount\n").unwrap();
+        for percentile in [None, Some(0), Some(50), Some(100)] {
+            feature.aggregation.as_mut().unwrap().percentile = percentile;
+            assert!(feature.validate().is_ok());
+        }
+        feature.aggregation.as_mut().unwrap().percentile = Some(101);
+        assert!(feature
+            .validate()
+            .unwrap_err()
+            .contains("between 0 and 100"));
+        feature.aggregation.as_mut().unwrap().percentile = None;
+        feature.aggregation.as_mut().unwrap().field = None;
+        assert!(feature.validate().unwrap_err().contains("field required"));
+        feature.method = Some("count".into());
+        assert!(feature.validate().is_ok());
     }
 
     #[test]

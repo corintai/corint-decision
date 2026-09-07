@@ -696,8 +696,10 @@ fn binary_core_startup_failure_does_not_log_secrets_or_fall_back_to_legacy_loadi
 
 #[test]
 fn published_server_capability_scope_matches_this_gate() {
-    let inventory: Value =
-        serde_json::from_str(include_str!("../../../docs/cdl/schema/capabilities.json")).unwrap();
+    let inventory: Value = serde_json::from_str(include_str!(
+        "../../../docs/contracts/schema/capabilities.json"
+    ))
+    .unwrap();
     let capability = &inventory["tools"]["core_server"];
     assert_eq!(capability["entry_point"], "CORINT_CORE_CONFIG");
     assert_eq!(capability["scope"], "local_repository_reload");

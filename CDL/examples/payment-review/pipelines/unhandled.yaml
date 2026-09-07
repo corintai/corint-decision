@@ -1,0 +1,19 @@
+version: "0.1"
+pipeline:
+  id: unhandled_event
+  name: Non-payment event
+  entry: finish
+  steps:
+    - step:
+        id: finish
+        name: Finish without scoring
+        type: router
+        routes:
+          - when: event.type != "payment"
+            next: end
+        default: end
+  decision:
+    - default: true
+      result: pass
+      actions: []
+      reason: This policy only reviews payments.

@@ -367,6 +367,6 @@ format supports HTTP; other protocols require an SDK adapter.
 
 ## Resources
 
-- [CDL Documentation](../docs/cdl/) - Complete CDL specification
-- [Feature Engineering](../docs/FEATURE_ENGINEERING.md) - Feature definition guide
-- [Examples](../docs/cdl/examples/) - Tutorial and learning resources
+- [CDL Documentation](../CDL/) - Complete CDL specification
+- [Feature definitions](../CDL/feature.md) and [datasource configuration](../docs/feature-configuration.md)
+- [Core conformance fixtures](../tests/conformance/cdl_core/) - Test resources and expected behavior

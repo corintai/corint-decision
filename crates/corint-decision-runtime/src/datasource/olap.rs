@@ -20,6 +20,45 @@ pub(super) struct OLAPClient {
     http_client: reqwest::Client,
 }
 
+#[cfg(test)]
+mod time_window_tests {
+    use super::*;
+    use crate::datasource::query::{QueryType, RelativeWindow, TimeUnit, TimeWindow};
+
+    #[tokio::test]
+    async fn clickhouse_relative_window_has_an_exclusive_upper_bound() {
+        let client = OLAPClient::new(OLAPConfig {
+            provider: OLAPProvider::ClickHouse,
+            connection_string: "http://127.0.0.1:0".into(),
+            database: "test".into(),
+            events_table: "events".into(),
+            options: Default::default(),
+        })
+        .await
+        .unwrap();
+        let query = Query {
+            query_type: QueryType::Count,
+            entity: "events".into(),
+            filters: vec![],
+            time_window: Some(TimeWindow {
+                time_field: "occurred_at".into(),
+                window_type: TimeWindowType::Relative(RelativeWindow {
+                    value: 1,
+                    unit: TimeUnit::Hours,
+                }),
+            }),
+            aggregations: vec![],
+            group_by: vec![],
+            limit: None,
+        };
+        let sql = client.build_sql(&query).unwrap();
+        assert!(
+            sql.contains("occurred_at >= now() - INTERVAL 3600 SECOND AND occurred_at < now()"),
+            "{sql}"
+        );
+    }
+}
+
 impl OLAPClient {
     pub(super) async fn new(config: OLAPConfig) -> Result<Self> {
         tracing::info!("Initializing OLAP client: {:?}", config.provider);
@@ -165,8 +204,8 @@ impl OLAPClient {
                 TimeWindowType::Relative(rel) => {
                     let seconds = rel.to_seconds();
                     sql.push_str(&format!(
-                        "{} >= now() - INTERVAL {} SECOND",
-                        time_window.time_field, seconds
+                        "{} >= now() - INTERVAL {} SECOND AND {} < now()",
+                        time_window.time_field, seconds, time_window.time_field
                     ));
                 }
                 TimeWindowType::Absolute { start, end } => {

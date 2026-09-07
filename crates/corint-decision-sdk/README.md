@@ -500,9 +500,9 @@ async fn test_with_metadata() {
 ## Related Documentation
 
 - [Getting Started Guide](../../README.md#quick-start)
-- [CDL Overview](../../docs/cdl/overall.md)
-- [Pipeline Registry](../../docs/cdl/registry.md)
-- [Feature Engineering](../../docs/cdl/feature.md)
+- [CDL Overview](../../CDL/overall.md)
+- [Pipeline Registry](../../CDL/registry.md)
+- [Feature Engineering](../../CDL/feature.md)
 - [Example Applications](../../examples/README.md)
 
 Services are bound with `DecisionEngineBuilder::with_service(name, adapter)` or

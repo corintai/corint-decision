@@ -406,7 +406,7 @@ async fn manifest_behavior_and_trace_parity() {
                 if let Some(trace) = response.trace {
                     let records = trace.core_conditions_v1.as_ref().unwrap();
                     let trace_schema: Json = serde_json::from_str(include_str!(
-                        "../../../docs/cdl/schema/condition-trace.json"
+                        "../../../docs/contracts/schema/condition-trace.json"
                     ))
                     .unwrap();
                     let validator = jsonschema::JSONSchema::compile(&trace_schema).unwrap();
@@ -959,8 +959,10 @@ async fn condition_trace_covers_scopes_skips_and_shared_rule_invocations() {
 
 #[test]
 fn capability_evidence_and_schema_are_in_sync() {
-    let capabilities: Json =
-        serde_json::from_str(include_str!("../../../docs/cdl/schema/capabilities.json")).unwrap();
+    let capabilities: Json = serde_json::from_str(include_str!(
+        "../../../docs/contracts/schema/capabilities.json"
+    ))
+    .unwrap();
     assert_eq!(capabilities["profile"], PROFILE);
     assert_eq!(capabilities["language_version"], "0.1");
     assert_eq!(
@@ -972,7 +974,10 @@ fn capability_evidence_and_schema_are_in_sync() {
         "trace.core_conditions_v1"
     );
     assert_eq!(capabilities["condition_trace"]["raw_operand_values"], false);
-    assert_eq!(capabilities["example_registry"], "../examples.json");
+    assert_eq!(
+        capabilities["example_registry"],
+        "../../../tests/conformance/documentation/examples.json"
+    );
     let manifest = manifest();
     let test_source = include_str!("cdl_core_conformance.rs");
     let mut ids = std::collections::BTreeSet::new();
@@ -1031,6 +1036,7 @@ fn capability_evidence_and_schema_are_in_sync() {
 #[serde(deny_unknown_fields)]
 struct ExampleRegistry {
     version: u32,
+    path_base: String,
     profile: String,
     language_version: String,
     pages: Vec<String>,
@@ -1094,10 +1100,12 @@ fn check_source_examples(
 
 #[test]
 fn standalone_source_examples_have_valid_yaml_and_explicit_scope() {
-    let index: ExampleRegistry =
-        serde_json::from_str(include_str!("../../../docs/cdl/examples.json")).unwrap();
-    let docs = root().join("../../../docs/cdl");
-    let mut directories = vec![docs.join("examples")];
+    let index: ExampleRegistry = serde_json::from_str(include_str!(
+        "../../../tests/conformance/documentation/examples.json"
+    ))
+    .unwrap();
+    let repository = root().join("../../..");
+    let mut directories = vec![repository.join("tests/conformance/documentation/legacy")];
     let mut files = HashMap::new();
     while let Some(directory) = directories.pop() {
         for entry in std::fs::read_dir(directory).unwrap() {
@@ -1109,7 +1117,7 @@ fn standalone_source_examples_have_valid_yaml_and_explicit_scope() {
                 Some("yaml" | "yml")
             ) {
                 files.insert(
-                    path.strip_prefix(&docs)
+                    path.strip_prefix(&repository)
                         .unwrap()
                         .to_str()
                         .unwrap()
@@ -1135,7 +1143,10 @@ fn standalone_source_examples_have_valid_yaml_and_explicit_scope() {
         assert!(check_source_examples(&index, &invalid).is_err());
     }
     let mut invalid = files.clone();
-    invalid.insert("examples/unregistered.yml".into(), files[path].clone());
+    invalid.insert(
+        "tests/conformance/documentation/legacy/unregistered.yml".into(),
+        files[path].clone(),
+    );
     assert!(check_source_examples(&index, &invalid).is_err());
 }
 #[derive(Clone, Deserialize)]
@@ -1145,7 +1156,27 @@ struct DocumentExample {
     kind: String,
     page: String,
     fixture: String,
+    source: String,
     case_id: String,
+}
+
+fn page_links_to(page: &str, text: &str, target: &str) -> bool {
+    let repository = root().join("../../..");
+    let Ok(target) = repository.join(target).canonicalize() else {
+        return false;
+    };
+    let source = repository.join(page);
+    text.split("](")
+        .skip(1)
+        .filter_map(|link| link.split_once(')'))
+        .any(|(link, _)| {
+            source
+                .parent()
+                .unwrap()
+                .join(link.split('#').next().unwrap())
+                .canonicalize()
+                .is_ok_and(|resolved| resolved == target)
+        })
 }
 
 fn check_example_mapping(
@@ -1153,8 +1184,12 @@ fn check_example_mapping(
     pages: &HashMap<String, String>,
 ) -> Result<(), String> {
     use std::collections::BTreeSet;
-    if index.version != 1 || index.profile != PROFILE || index.language_version != "0.1" {
-        return Err("version/profile".into());
+    if index.version != 2
+        || index.path_base != "repository"
+        || index.profile != PROFILE
+        || index.language_version != "0.1"
+    {
+        return Err("version/path base/profile".into());
     }
     let registered: BTreeSet<_> = index.pages.iter().collect();
     if registered.len() != index.pages.len() || registered.is_empty() {
@@ -1169,9 +1204,10 @@ fn check_example_mapping(
     for page in &index.compatibility_pages {
         let text = pages.get(page).ok_or("missing compatibility page")?;
         if !text.contains("<!-- cdl-scope: compatibility-unverified -->")
-            || !text.contains("This page is an unverified compatibility reference. Its snippets are not Core support evidence.")
-            || !text.contains("](cdl-core.md)")
-            || !text.contains("](schema/capabilities.json)")
+            || !(text.contains("This page is an unverified compatibility reference. Its snippets are not Core support evidence.")
+                || text.contains("Historical snippets on this page are unverified compatibility references. They are not Core support evidence."))
+            || !page_links_to(page, text, "CDL/overall.md")
+            || (!page.starts_with("CDL/") && !page_links_to(page, text, "docs/contracts/schema/capabilities.json"))
         {
             return Err(format!("missing compatibility scope: {page}"));
         }
@@ -1227,10 +1263,10 @@ fn check_example_mapping(
         if !markers.remove(&(example.page.clone(), example.id.clone())) {
             return Err("missing marker".into());
         }
-        if example.fixture != "../../tests/conformance/cdl_core/manifest.yaml"
-            || !pages[&example.page].contains(&format!("]({})", example.fixture))
+        if example.fixture != "tests/conformance/cdl_core/manifest.yaml"
+            || !page_links_to(&example.page, &pages[&example.page], &example.source)
         {
-            return Err("missing fixture link".into());
+            return Err("missing example source link".into());
         }
         match example.kind.as_str() {
             "supported_complete" => {
@@ -1241,6 +1277,13 @@ fn check_example_mapping(
                     .ok_or("missing behavior case")?;
                 if case.runs.is_empty() || case.documents.is_empty() {
                     return Err("incomplete example".into());
+                }
+                if !case
+                    .documents
+                    .iter()
+                    .any(|file| example.source == format!("tests/conformance/cdl_core/{file}"))
+                {
+                    return Err("example source is not executed by its bound case".into());
                 }
                 for file in &case.documents {
                     if !root().join(file).is_file() {
@@ -1254,6 +1297,9 @@ fn check_example_mapping(
                     .iter()
                     .find(|c| c.id == example.case_id)
                     .ok_or("missing negative case")?;
+                if example.source != format!("tests/conformance/cdl_core/{}", case.document) {
+                    return Err("negative example source does not match its bound case".into());
+                }
                 if case.code.is_empty() || case.stage.is_empty() {
                     return Err("missing expected error".into());
                 }
@@ -1269,14 +1315,21 @@ fn check_example_mapping(
 
 #[test]
 fn documentation_examples_are_classified_and_bound_to_executed_fixtures() {
-    let index: ExampleRegistry =
-        serde_json::from_str(include_str!("../../../docs/cdl/examples.json")).unwrap();
-    let docs = root().join("../../../docs/cdl");
+    let index: ExampleRegistry = serde_json::from_str(include_str!(
+        "../../../tests/conformance/documentation/examples.json"
+    ))
+    .unwrap();
+    let repository = root().join("../../..");
     let pages: HashMap<_, _> = index
         .pages
         .iter()
         .chain(&index.compatibility_pages)
-        .map(|p| (p.clone(), std::fs::read_to_string(docs.join(p)).unwrap()))
+        .map(|p| {
+            (
+                p.clone(),
+                std::fs::read_to_string(repository.join(p)).unwrap(),
+            )
+        })
         .collect();
     check_example_mapping(&index, &pages).unwrap();
     let mut invalid = index.clone();
@@ -1284,25 +1337,26 @@ fn documentation_examples_are_classified_and_bound_to_executed_fixtures() {
     assert!(check_example_mapping(&invalid, &pages).is_err());
     let mut invalid = pages.clone();
     invalid
-        .get_mut("cdl-core.md")
+        .get_mut("docs/runtime-validation.md")
         .unwrap()
         .push_str("\n<!-- cdl-example: unregistered -->\n");
     assert!(check_example_mapping(&index, &invalid).is_err());
     let mut invalid = pages.clone();
-    *invalid.get_mut("condition-trace.md").unwrap() = pages["condition-trace.md"].replace(
-        "../../tests/conformance/cdl_core/manifest.yaml",
-        "missing.yaml",
-    );
+    *invalid.get_mut("docs/runtime-validation.md").unwrap() = pages["docs/runtime-validation.md"]
+        .replace(
+            "../tests/conformance/cdl_core/trace_rule.yaml",
+            "missing.yaml",
+        );
     assert!(check_example_mapping(&index, &invalid).is_err());
     let mut invalid = pages.clone();
     invalid
-        .get_mut("cdl-core.md")
+        .get_mut("docs/runtime-validation.md")
         .unwrap()
         .push_str("\n```yaml\nrule: {}\n```\n");
     assert!(check_example_mapping(&index, &invalid).is_err());
     let mut invalid = pages.clone();
     invalid
-        .get_mut("pipeline.md")
+        .get_mut("docs/runtime-validation.md")
         .unwrap()
         .push_str("\n~~~YAML\npipeline: {}\n~~~\n");
     assert!(check_example_mapping(&index, &invalid).is_err());
@@ -1325,17 +1379,19 @@ fn documentation_examples_are_classified_and_bound_to_executed_fixtures() {
         }
     }
     let mut invalid = index.clone();
-    invalid.compatibility_pages.push("pipeline.md".into());
+    invalid
+        .compatibility_pages
+        .push("docs/runtime-validation.md".into());
     assert!(check_example_mapping(&invalid, &pages).is_err());
     let mut invalid = index;
-    invalid.examples[0].page = "api.md".into();
+    invalid.examples[0].page = "CDL/api.md".into();
     assert!(check_example_mapping(&invalid, &pages).is_err());
 }
 
 #[test]
 fn condition_trace_schema_distinguishes_skipped_from_false_and_is_additive() {
     let schema: Json = serde_json::from_str(include_str!(
-        "../../../docs/cdl/schema/condition-trace.json"
+        "../../../docs/contracts/schema/condition-trace.json"
     ))
     .unwrap();
     let validator = jsonschema::JSONSchema::compile(&schema).unwrap();
@@ -1624,6 +1680,84 @@ async fn core_extension_errors_are_structured_and_trace_invariant() {
 }
 
 #[test]
+fn core_pipeline_duplicate_calls_report_the_resource_field() {
+    for (kind, target) in [
+        ("rule", "marker"),
+        ("ruleset", "risk"),
+        ("pipeline", "child"),
+    ] {
+        let mut docs = pipeline_call_sources(kind, target);
+        DecisionEngine::from_core(&docs, extension_schema()).unwrap();
+        modify(&mut docs, "pipeline.yaml", |d| {
+            let steps = d["pipeline"]["steps"].as_array_mut().unwrap();
+            let mut duplicate = steps[1].clone();
+            duplicate["step"]["id"] = "second".into();
+            steps[1]["step"]["next"] = "second".into();
+            steps.push(duplicate);
+        });
+        let error = core_error(DecisionEngine::from_core(&docs, extension_schema()));
+        assert_eq!(error.diagnostic.code, "E_INVALID_GRAPH", "{kind}: {error}");
+        assert_eq!(error.diagnostic.stage.as_deref(), Some("resolve"));
+        assert_eq!(error.diagnostic.source.as_deref(), Some("pipeline.yaml"));
+        assert_eq!(
+            error.diagnostic.field_path.as_deref(),
+            Some(format!("/pipeline/steps/2/step/{kind}").as_str()),
+            "{kind}: {error}"
+        );
+    }
+}
+
+#[test]
+fn core_pipeline_unresolved_calls_report_the_resource_field() {
+    for (kind, target, wrong_kind_target) in [
+        ("rule", "marker", "risk"),
+        ("ruleset", "risk", "marker"),
+        ("pipeline", "child", "risk"),
+    ] {
+        let base = pipeline_call_sources(kind, target);
+        DecisionEngine::from_core(&base, extension_schema()).unwrap();
+        for invalid_target in ["unknown", wrong_kind_target] {
+            let mut docs = base.clone();
+            modify(&mut docs, "pipeline.yaml", |d| {
+                d["pipeline"]["steps"][1]["step"][kind] = invalid_target.into();
+            });
+            let error = core_error(DecisionEngine::from_core(&docs, extension_schema()));
+            assert_eq!(
+                error.diagnostic.code, "E_UNRESOLVED_REF",
+                "{kind} {invalid_target}: {error}"
+            );
+            assert_eq!(error.diagnostic.stage.as_deref(), Some("resolve"));
+            assert_eq!(error.diagnostic.source.as_deref(), Some("pipeline.yaml"));
+            assert_eq!(
+                error.diagnostic.field_path.as_deref(),
+                Some(format!("/pipeline/steps/1/step/{kind}").as_str()),
+                "{kind} {invalid_target}: {error}"
+            );
+        }
+    }
+}
+
+fn pipeline_call_sources(kind: &str, target: &str) -> Vec<CoreSource> {
+    let mut docs = extension_sources();
+    modify(&mut docs, "pipeline.yaml", |d| {
+        d["pipeline"]["entry"] = "route".into();
+        // The source index must include router steps as well as resource calls.
+        d["pipeline"]["steps"] = serde_json::json!([
+            {"step": {
+                "id": "route", "name": "Route", "type": "router",
+                "routes": [{"when": "true", "next": "first"}], "default": "end"
+            }},
+            {"step": {
+                "id": "first", "name": "Call", "type": kind, (kind): target,
+                "next": "end"
+            }}
+        ]);
+        d["pipeline"]["decision"] = serde_json::json!([{"default": true, "result": "pass"}]);
+    });
+    docs
+}
+
+#[test]
 fn core_call_graph_and_expression_extensions_fail_closed() {
     for (file, field, expression, code) in [
         (
@@ -1778,8 +1912,10 @@ fn core_call_expansion_and_depth_are_bounded_before_execution() {
 
 #[tokio::test]
 async fn core_call_trace_schema_rejects_fabricated_skipped_outputs() {
-    let schema: Json =
-        serde_json::from_str(include_str!("../../../docs/cdl/schema/call-trace.json")).unwrap();
+    let schema: Json = serde_json::from_str(include_str!(
+        "../../../docs/contracts/schema/call-trace.json"
+    ))
+    .unwrap();
     let validator = jsonschema::JSONSchema::compile(&schema).unwrap();
     let engine = DecisionEngine::from_core(&extension_sources(), extension_schema()).unwrap();
     let response = engine

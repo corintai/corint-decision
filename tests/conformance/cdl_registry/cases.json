@@ -1,0 +1,9 @@
+[
+  {"id":"main_small","event":{"type":"payment","country":"US","shadow":false,"amount":500},"entry":2,"pipeline":"payment_main","score":0,"signal":"approve","triggered_rules":[]},
+  {"id":"main_large","event":{"type":"payment","country":"US","shadow":false,"amount":1500},"entry":2,"pipeline":"payment_main","score":60,"signal":"decline","triggered_rules":["large_amount"]},
+  {"id":"br_small","event":{"type":"payment","country":"BR","shadow":false,"amount":500},"entry":1,"pipeline":"payment_br","score":0,"signal":"review","triggered_rules":[]},
+  {"id":"br_large","event":{"type":"payment","country":"BR","shadow":false,"amount":1500},"entry":1,"pipeline":"payment_br","score":60,"signal":"decline","triggered_rules":["large_amount"]},
+  {"id":"shadow_us","event":{"type":"payment","country":"US","shadow":true,"amount":1500},"entry":0,"pipeline":"payment_shadow","score":60,"signal":"pass","triggered_rules":["large_amount"]},
+  {"id":"shadow_br","event":{"type":"payment","country":"BR","shadow":true,"amount":1500},"entry":0,"pipeline":"payment_shadow","score":60,"signal":"pass","triggered_rules":["large_amount"]},
+  {"id":"fallback","event":{"type":"refund","country":"US","shadow":true,"amount":1500},"entry":3,"pipeline":"unhandled_event","score":0,"signal":"review","triggered_rules":[]}
+]

@@ -1,0 +1,10 @@
+version: "0.1"
+ruleset:
+  id: preparation_markers
+  name: Preparation markers
+  metadata:
+    owner: payments-team
+  rules: [email_on_blocklist, loyal_customer_marker]
+  conclusion:
+    - default: true
+      signal: pass

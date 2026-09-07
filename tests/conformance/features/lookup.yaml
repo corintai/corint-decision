@@ -1,0 +1,7 @@
+version: "0.2"
+features:
+  - name: user_risk_score
+    type: lookup
+    datasource: profiles
+    key: "${event.user.id}"
+    fallback: 50

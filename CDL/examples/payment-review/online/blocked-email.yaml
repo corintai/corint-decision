@@ -1,0 +1,9 @@
+version: "0.1"
+rule:
+  id: email_on_blocklist
+  name: Mark blocked email membership
+  metadata:
+    owner: payments-team
+    purpose: Produce an explicit fact for the host input mapping.
+  when: event.customer.email in list.blocked_emails
+  score: 0

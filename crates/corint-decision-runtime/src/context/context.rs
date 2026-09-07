@@ -99,7 +99,19 @@ impl ExecutionContext {
         // Validate event data doesn't contain reserved fields
         crate::validation::validate_event_data(&input.event)?;
 
-        Ok(Self {
+        Ok(Self::from_input(input))
+    }
+
+    /// Core validates event fields against its declared schema and keeps all reads
+    /// under event paths separate from runtime-owned aggregates and variables.
+    pub(crate) fn from_core_event(event: HashMap<String, Value>, result: ExecutionResult) -> Self {
+        let mut context = Self::from_input(ContextInput::new(event));
+        context.result = result;
+        context
+    }
+
+    fn from_input(input: ContextInput) -> Self {
+        Self {
             stack: Vec::new(),
             event: input.event,
             features: input.features.unwrap_or_default(),
@@ -109,7 +121,7 @@ impl ExecutionContext {
             sys: super::system_vars::build_system_vars(),
             env: super::env_vars::load_environment_vars(),
             result: ExecutionResult::new(),
-        })
+        }
     }
 
     /// Create a new execution context from event data only (convenience method)

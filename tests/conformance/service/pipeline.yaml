@@ -1,0 +1,17 @@
+pipeline:
+  id: checkout
+  name: Checkout
+  entry: lookup
+  steps:
+    - step:
+        id: lookup
+        name: Assess customer
+        type: service
+        service: customer_risk
+        operation: assess
+        params:
+          customer_id: event.customer_id
+          amount: '${event.amount + 1}'
+          channel: web
+        timeout_ms: 1000
+        next: end

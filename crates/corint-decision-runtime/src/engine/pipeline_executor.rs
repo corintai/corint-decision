@@ -283,11 +283,9 @@ impl PipelineExecutor {
         self.metrics.counter("executions_total").inc();
 
         let mut ctx = if program.metadata.custom.contains_key("core_source") {
-            // Core cannot read legacy vars namespaces. Keep its growing execution
-            // journal in one owned result instead of cloning all prior records.
-            let mut context = ExecutionContext::new(context_input.clone())?;
-            context.result = existing_result;
-            context
+            // Core field admission comes from the input schema, not legacy bare
+            // name restrictions. Its result journal remains runtime-owned.
+            ExecutionContext::from_core_event(context_input.event.clone(), existing_result)
         } else {
             ExecutionContext::with_result(context_input.clone(), existing_result)?
         };
@@ -301,29 +299,86 @@ impl PipelineExecutor {
                 );
             }
         }
-        let mut condition_observer = ConditionObserver::new(program, &mut ctx)?;
+        Self::validate_jumps(&program.instructions)?;
+        if let Some(instructions) = &program.decision_instructions {
+            Self::validate_jumps(instructions)?;
+        }
+        let mut remaining_instructions = 1_000_000usize;
+        self.execute_instructions(
+            program,
+            &context_input,
+            &mut ctx,
+            &mut remaining_instructions,
+        )
+        .await?;
+
+        let pipeline_skipped = self.ruleset_programs.is_some()
+            && program.metadata.custom.contains_key("core_pipeline_guard")
+            && ctx.result.variables.get("__core_pipeline_entered__") != Some(&Value::Bool(true));
+        if let Some(instructions) = program
+            .decision_instructions
+            .as_ref()
+            .filter(|_| !pipeline_skipped)
+        {
+            // Continue in the same context and VM, with the budget left by the
+            // main block. Only the condition source map changes for this phase.
+            let mut decision = Program {
+                instructions: instructions.clone(),
+                metadata: program.metadata.clone(),
+                decision_instructions: None,
+            };
+            decision.metadata.custom.remove(CONDITION_MAP);
+            if let Some(map) = decision.metadata.custom.remove(DECISION_CONDITION_MAP) {
+                decision.metadata.custom.insert(CONDITION_MAP.into(), map);
+            }
+            self.execute_instructions(
+                &decision,
+                &context_input,
+                &mut ctx,
+                &mut remaining_instructions,
+            )
+            .await?;
+        }
+
+        self.metrics
+            .record_execution_time("program_execution", start_time.elapsed());
+        Ok(ctx.into_decision_result())
+    }
+
+    async fn execute_instructions(
+        &self,
+        program: &Program,
+        context_input: &crate::ContextInput,
+        ctx: &mut ExecutionContext,
+        remaining_instructions: &mut usize,
+    ) -> Result<()> {
+        let mut condition_observer = ConditionObserver::new(program, ctx)?;
         let mut pc = 0; // Program Counter
 
         tracing::debug!("Program has {} instructions", program.instructions.len());
         for (i, inst) in program.instructions.iter().enumerate() {
             tracing::trace!("  [{}]: {:?}", i, inst);
         }
-        Self::validate_jumps(&program.instructions)?;
-        if let Some(instructions) = &program.decision_instructions {
-            Self::validate_jumps(instructions)?;
-        }
-        let mut remaining_instructions = 1_000_000usize;
         while pc < program.instructions.len() {
-            Self::consume_instruction(&mut remaining_instructions)?;
+            Self::consume_instruction(remaining_instructions)?;
             if let Some(observer) = &mut condition_observer {
-                observer.observe(pc, &ctx)?;
+                observer.observe(pc, ctx)?;
             }
             let instruction = &program.instructions[pc];
             tracing::trace!("Executing pc={}: {:?}", pc, instruction);
 
             match instruction {
                 Instruction::LoadField { path } => {
-                    let value = self.handle_load_field(&mut ctx, path).await?;
+                    let value = if program.metadata.custom.contains_key("core_source")
+                        && path.len() == 1
+                        && path[0] == "total_score"
+                    {
+                        // A declared event.total_score must never shadow the
+                        // current resource's aggregate.
+                        Value::Number(ctx.result.score as f64)
+                    } else {
+                        self.handle_load_field(ctx, path).await?
+                    };
                     if self.ruleset_programs.is_some() && value == Value::Null {
                         return Err(RuntimeError::FieldNotFound(path.join(".")));
                     }
@@ -340,7 +395,7 @@ impl PipelineExecutor {
                     resource_type,
                     resource_id,
                 } => {
-                    self.execute_core_call(resource_type, resource_id, &context_input, &mut ctx)
+                    self.execute_core_call(resource_type, resource_id, context_input, ctx)
                         .await?;
                     pc += 1;
                 }
@@ -362,7 +417,7 @@ impl PipelineExecutor {
                                 Value::String("skipped".into()),
                             )])),
                         );
-                        self.record_core_call(id, "skipped", None, &mut ctx)?;
+                        self.record_core_call(id, "skipped", None, ctx)?;
                     }
                     pc += 1;
                 }
@@ -652,7 +707,7 @@ impl PipelineExecutor {
 
                 Instruction::CallRuleset { ruleset_id } => {
                     if self.ruleset_programs.is_some() {
-                        self.execute_core_call("ruleset", ruleset_id, &context_input, &mut ctx)
+                        self.execute_core_call("ruleset", ruleset_id, context_input, ctx)
                             .await?;
                         pc += 1;
                         continue;
@@ -735,7 +790,7 @@ impl PipelineExecutor {
                     // Handle nested paths like "service.ip_lookup"
                     if name.contains('.') {
                         let parts: Vec<&str> = name.split('.').collect();
-                        Self::store_nested_value(&mut ctx, &parts, value);
+                        Self::store_nested_value(ctx, &parts, value);
                     } else {
                         // Simple variable name
                         ctx.store_variable(name.clone(), value);
@@ -781,7 +836,7 @@ impl PipelineExecutor {
                         params.insert(name.clone(), ctx.pop()?);
                     }
                     let value = self
-                        .invoke_service(service, operation, &params, *timeout_ms, &ctx)
+                        .invoke_service(service, operation, &params, *timeout_ms, ctx)
                         .await?;
                     ctx.push(value);
                     pc += 1;
@@ -790,151 +845,10 @@ impl PipelineExecutor {
         }
 
         if let Some(observer) = condition_observer {
-            observer.finish(program, &mut ctx)?;
+            observer.finish(program, ctx)?;
         }
 
-        // Execute decision logic if present
-        let pipeline_skipped = self.ruleset_programs.is_some()
-            && program.metadata.custom.contains_key("core_pipeline_guard")
-            && ctx.result.variables.get("__core_pipeline_entered__") != Some(&Value::Bool(true));
-        if let Some(decision_instructions) = program
-            .decision_instructions
-            .as_ref()
-            .filter(|_| !pipeline_skipped)
-        {
-            if self.ruleset_programs.is_some() {
-                // Core final decisions use the SAME VM instruction set after all
-                // selected calls complete, never the legacy reduced interpreter.
-                let mut decision = Program {
-                    instructions: decision_instructions.clone(),
-                    metadata: program.metadata.clone(),
-                    decision_instructions: None,
-                };
-                decision.metadata.custom.remove(CONDITION_MAP);
-                if let Some(map) = decision.metadata.custom.remove(DECISION_CONDITION_MAP) {
-                    decision.metadata.custom.insert(CONDITION_MAP.into(), map);
-                }
-                return Box::pin(self.execute_with_result(&decision, context_input, ctx.result))
-                    .await;
-            }
-            tracing::debug!(
-                "Executing {} decision instructions",
-                decision_instructions.len()
-            );
-
-            let mut decision_pc = 0;
-            while decision_pc < decision_instructions.len() {
-                Self::consume_instruction(&mut remaining_instructions)?;
-                let instruction = &decision_instructions[decision_pc];
-                tracing::trace!("Decision pc={}: {:?}", decision_pc, instruction);
-
-                match instruction {
-                    Instruction::LoadField { path } => {
-                        let value = self.handle_load_field(&mut ctx, path).await?;
-                        ctx.push(value);
-                        decision_pc += 1;
-                    }
-
-                    Instruction::LoadConst { value } => {
-                        ctx.push(value.clone());
-                        decision_pc += 1;
-                    }
-
-                    Instruction::LoadResult { ruleset_id, field } => {
-                        // Load result field from ruleset execution
-                        let result_key = match ruleset_id {
-                            Some(id) => format!("__ruleset_result__.{}", id),
-                            None => "__last_ruleset_result__".to_string(),
-                        };
-
-                        let value = match ctx.load_variable(&result_key) {
-                            Ok(Value::Object(map)) => {
-                                map.get(field).cloned().unwrap_or(Value::Null)
-                            }
-                            Ok(_) => {
-                                tracing::warn!(
-                                    "Result '{}' is not an object, returning Null",
-                                    result_key
-                                );
-                                Value::Null
-                            }
-                            Err(_) => {
-                                tracing::debug!(
-                                    "Result '{}' not found, returning Null (no ruleset executed yet?)",
-                                    result_key
-                                );
-                                Value::Null
-                            }
-                        };
-
-                        tracing::debug!(
-                            "Decision LoadResult: {}.{} = {:?}",
-                            ruleset_id.as_deref().unwrap_or("(last)"),
-                            field,
-                            value
-                        );
-                        ctx.push(value);
-                        decision_pc += 1;
-                    }
-
-                    Instruction::Compare { op } => {
-                        let right = ctx.pop()?;
-                        let left = ctx.pop()?;
-                        let result = operators::execute_compare(&left, op, &right)?;
-                        ctx.push(Value::Bool(result));
-                        decision_pc += 1;
-                    }
-
-                    Instruction::JumpIfFalse { offset } => {
-                        let condition = ctx.pop()?;
-                        if !Self::is_truthy(&condition) {
-                            decision_pc = (decision_pc as isize + offset) as usize;
-                        } else {
-                            decision_pc += 1;
-                        }
-                    }
-
-                    Instruction::Jump { offset } => {
-                        decision_pc = (decision_pc as isize + offset) as usize;
-                    }
-
-                    Instruction::SetSignal { signal } => {
-                        tracing::debug!("Decision: SetSignal {:?}", signal);
-                        ctx.set_signal(signal.clone());
-                        decision_pc += 1;
-                    }
-
-                    Instruction::SetReason { reason } => {
-                        tracing::debug!("Decision: SetReason {}", reason);
-                        ctx.set_reason(reason.clone());
-                        decision_pc += 1;
-                    }
-
-                    Instruction::SetActions { actions } => {
-                        tracing::debug!("Decision: SetActions {:?}", actions);
-                        ctx.set_actions(actions.clone());
-                        decision_pc += 1;
-                    }
-
-                    Instruction::Return => {
-                        break;
-                    }
-
-                    _ => {
-                        return Err(RuntimeError::RuntimeError(format!(
-                            "Unsupported instruction in decision logic: {:?}",
-                            instruction
-                        )));
-                    }
-                }
-            }
-        }
-
-        let duration = start_time.elapsed();
-        self.metrics
-            .record_execution_time("program_execution", duration);
-
-        Ok(ctx.into_decision_result())
+        Ok(())
     }
 
     /// Placeholder feature value for when storage is not available

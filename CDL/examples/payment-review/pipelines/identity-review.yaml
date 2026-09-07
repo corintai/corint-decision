@@ -1,0 +1,23 @@
+version: "0.1"
+import:
+  rules: [rules/provider-risk.yaml]
+pipeline:
+  id: identity_review
+  name: Identity review
+  when: event.evidence.provider_available
+  entry: assess_provider
+  steps:
+    - step:
+        id: assess_provider
+        name: Score provider facts
+        type: rule
+        rule: provider_risk
+        next: end
+  decision:
+    - when: total_score >= 40
+      result: review
+      actions: [CHILD_REVIEW_HINT]
+      reason: The provider score is elevated.
+    - default: true
+      result: pass
+      actions: []

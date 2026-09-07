@@ -1,0 +1,9 @@
+version: "0.1"
+rule:
+  id: untrusted_large_transaction
+  name: Untrusted user large transaction
+  when:
+    all:
+      - event.user_id not in list.trusted_users
+      - event.amount > 10000
+  score: 100

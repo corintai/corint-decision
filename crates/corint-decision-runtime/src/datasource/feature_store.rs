@@ -95,8 +95,9 @@ impl FeatureStoreClient {
             tracing::debug!("Fetching Redis key: {}", redis_key);
 
             let Some(ref conn) = self.redis_conn else {
-                tracing::warn!("Redis connection not initialized, returning None");
-                return Ok(None);
+                return Err(RuntimeError::RuntimeError(
+                    "Redis connection not initialized".into(),
+                ));
             };
 
             let mut conn = conn.clone();
@@ -356,6 +357,10 @@ mod tests {
 
         // But redis_conn should be None
         assert!(client.redis_conn.is_none());
+        assert!(
+            client.get_feature("risk", "u1").await.is_err(),
+            "An unavailable connection is not a missing key"
+        );
     }
 
     #[test]

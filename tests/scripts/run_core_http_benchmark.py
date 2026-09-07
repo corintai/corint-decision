@@ -38,7 +38,7 @@ with tempfile.TemporaryDirectory(prefix="corint-http-bench-") as directory:
     resources = ["rule.yaml", "ruleset.yaml", "pipeline.yaml", "registry.yaml"]
     fixtures = root / "tests/conformance"
     for name in resources + ["input-schema.yaml"]:
-        shutil.copyfile(fixtures / "cdl_core" / name, author / name)
+        shutil.copyfile(root / "tests/conformance/cdl_core" / name, author / name)
     for name, source in [("cases.yaml", "cdl_core/behavior.yaml"), ("context.yaml", "contracts/business-context.yaml"), ("target.json", "contracts/target-capabilities.json")]:
         shutil.copyfile(fixtures / source, directory / name)
     command = [str(binary / "corint"), "prepare-repository", "--root", str(author), "--input-schema", "input-schema.yaml", "--cases", str(directory / "cases.yaml"), "--context", str(directory / "context.yaml"), "--target", str(directory / "target.json"), "--revision", "synthetic-benchmark-v1", "--output", str(directory / "repository"), "--format", "json", *resources]

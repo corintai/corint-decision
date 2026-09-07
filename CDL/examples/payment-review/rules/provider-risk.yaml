@@ -1,0 +1,6 @@
+version: "0.1"
+rule:
+  id: provider_risk
+  name: Elevated provider score
+  when: event.evidence.provider_score >= 70
+  score: 40

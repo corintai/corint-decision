@@ -131,8 +131,8 @@ fn real_file_resolution_matches_virtual_repository_and_existing_engine_behavior(
     )
     .unwrap();
     let actual = behavior::test(
-        &resolved.bundle().sources,
-        parse_core_input_schema(&resolved.bundle().input_schema).unwrap(),
+        &memory.bundle().sources,
+        parse_core_input_schema(&memory.bundle().input_schema).unwrap(),
         &cases,
     )
     .unwrap();
@@ -490,8 +490,10 @@ fn cli_requires_explicit_profile_is_no_clobber_and_old_core_still_rejects_import
 
 #[test]
 fn published_profile_schema_and_c08_fixture_match_actual_resolution() {
-    let inventory: Value =
-        serde_json::from_str(include_str!("../../../docs/cdl/schema/capabilities.json")).unwrap();
+    let inventory: Value = serde_json::from_str(include_str!(
+        "../../../docs/contracts/schema/capabilities.json"
+    ))
+    .unwrap();
     let tool = &inventory["tools"]["resolve_cli"];
     assert_eq!(tool["source_profile"], resolve::SOURCE_PROFILE);
     assert_eq!(tool["cases"], json!(["C08"]));

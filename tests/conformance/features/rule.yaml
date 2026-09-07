@@ -1,0 +1,10 @@
+version: "0.1"
+rule:
+  id: high_value_payments
+  name: High value payments
+  when:
+    all:
+      - event.type == "payment"
+      - features.payment_count_1h >= 2
+      - features.average_payment_1h > 100
+  score: 80

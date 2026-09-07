@@ -93,7 +93,9 @@ impl RuleCompiler {
         ExpressionCompiler::compile(&Self::group_expression(group))
     }
 
-    fn group_expression(group: &ConditionGroup) -> corint_decision_model::ast::Expression {
+    pub(super) fn group_expression(
+        group: &ConditionGroup,
+    ) -> corint_decision_model::ast::Expression {
         use corint_decision_model::ast::{Expression, LogicalGroupOp};
         let (op, conditions, negate) = match group {
             ConditionGroup::All(items) => (LogicalGroupOp::All, items, false),

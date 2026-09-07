@@ -11,8 +11,10 @@ use std::sync::{Arc, Mutex};
 
 #[test]
 fn generation_capability_contract_points_to_real_gate() {
-    let capabilities: Value =
-        serde_json::from_str(include_str!("../../../docs/cdl/schema/capabilities.json")).unwrap();
+    let capabilities: Value = serde_json::from_str(include_str!(
+        "../../../docs/contracts/schema/capabilities.json"
+    ))
+    .unwrap();
     let tool = &capabilities["tools"]["core_generator"];
     assert_eq!(
         tool["entry_points"],
@@ -283,6 +285,11 @@ async fn generates_tests_and_reverifies_with_shared_toolchain_inside_async_runti
         assert_eq!(request.max_tokens, Some(8192));
         assert!(!request.prompt.contains("private-heldout-marker-83456"));
         assert!(!request.prompt.contains("above_threshold"));
+        assert!(request.prompt.contains("## Strict Core Registry"));
+        assert!(request.prompt.contains("`E_UNRESOLVED_REF`"));
+        assert!(request.prompt.contains("4096 pattern"));
+        assert!(!request.prompt.contains("Engine logs a warning at startup"));
+        assert!(!request.prompt.contains("## Compatibility namespaces"));
         assert!(request
             .prompt
             .contains(corint_decision_compiler::core::CORE_SCHEMA));

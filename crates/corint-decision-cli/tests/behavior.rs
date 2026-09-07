@@ -382,10 +382,14 @@ fn runtime_input_diagnostics_are_stable_and_escape_json_pointers() {
 
 #[test]
 fn test_capability_evidence_and_suite_contract_are_in_sync() {
-    let capabilities: Value =
-        serde_json::from_str(include_str!("../../../docs/cdl/schema/capabilities.json")).unwrap();
-    let schema: Value =
-        serde_json::from_str(include_str!("../../../docs/cdl/schema/test-suite.json")).unwrap();
+    let capabilities: Value = serde_json::from_str(include_str!(
+        "../../../docs/contracts/schema/capabilities.json"
+    ))
+    .unwrap();
+    let schema: Value = serde_json::from_str(include_str!(
+        "../../../docs/contracts/schema/test-suite.json"
+    ))
+    .unwrap();
     assert_eq!(
         schema["properties"]["profile"]["const"],
         capabilities["profile"]
@@ -399,7 +403,7 @@ fn test_capability_evidence_and_suite_contract_are_in_sync() {
     assert_eq!(tool["business_evaluation"], "not_performed");
     assert_eq!(
         root()
-            .join("../../../docs/cdl/schema")
+            .join("../../../docs/contracts/schema")
             .join(tool["evidence"].as_str().unwrap())
             .canonicalize()
             .unwrap(),

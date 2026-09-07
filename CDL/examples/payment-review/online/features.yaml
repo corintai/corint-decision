@@ -1,0 +1,55 @@
+# Feature collections have their own format version.
+version: "0.2"
+metadata:
+  owner: payments-team
+features:
+  - name: payment_count_1h
+    type: aggregation
+    method: count
+    datasource: payment_history
+    entity: payments
+    dimension: customer_id
+    dimension_value: "${event.customer.id}"
+    window: 1h
+    timestamp_field: occurred_at
+    when:
+      all:
+        - status == "settled"
+        - currency == "${event.currency}"
+  - name: payment_amount_1h
+    type: aggregation
+    method: sum
+    datasource: payment_history
+    entity: payments
+    dimension: customer_id
+    dimension_value: "${event.customer.id}"
+    field: amount_cents
+    window: 1h
+    timestamp_field: occurred_at
+    when:
+      all:
+        - status == "settled"
+        - currency == "${event.currency}"
+  - name: average_payment_1h
+    type: expression
+    expression: features.payment_amount_1h / max(features.payment_count_1h, 1)
+    dependencies: [payment_count_1h, payment_amount_1h]
+  - name: account_age_days
+    type: state
+    method: time_since
+    datasource: payment_history
+    entity: customers
+    dimension: customer_id
+    dimension_value: "${event.customer.id}"
+    timestamp_field: created_at
+    unit: days
+    fallback: 0
+  - name: customer_trust_score
+    type: lookup
+    datasource: customer_profiles
+    key: "${event.customer.id}"
+    fallback: 0
+    description: A stored value is fetched without coercion.
+    enabled: true
+    version: "1.0"
+    tags: [payment-review]

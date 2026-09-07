@@ -24,8 +24,8 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
 use std::sync::OnceLock;
 
 pub const PROFILE: &str = "cdl-core-risk-draft-1";
-pub const CORE_SCHEMA: &str = include_str!("../../../docs/cdl/schema/core.json");
-pub const CORE_INPUT_SCHEMA: &str = include_str!("../../../docs/cdl/schema/input.json");
+pub const CORE_SCHEMA: &str = include_str!("../../../CDL/schema/core.json");
+pub const CORE_INPUT_SCHEMA: &str = include_str!("../../../CDL/schema/input.json");
 
 /// A source supplied explicitly by the caller, never implicitly loaded from disk.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -660,17 +660,15 @@ fn check_pipeline(
         )?;
     }
     let mut steps = BTreeMap::new();
-    let mut called_rulesets = BTreeSet::new();
+    let mut called_resources = BTreeSet::new();
     for (i, wrapper) in body["steps"].as_array().unwrap().iter().enumerate() {
         let step = &wrapper["step"];
-        if let Some(id) = step
-            .get(step["type"].as_str().unwrap())
-            .and_then(Json::as_str)
-        {
-            if !called_rulesets.insert(id) {
+        let kind = step["type"].as_str().unwrap();
+        if let Some(id) = step.get(kind).and_then(Json::as_str) {
+            if !called_resources.insert(id) {
                 return Err(diagnostic(
                     source,
-                    &format!("/pipeline/steps/{i}/step/ruleset"),
+                    &format!("/pipeline/steps/{i}/step/{kind}"),
                     "resolve",
                     "E_INVALID_GRAPH",
                     "One call site per resource in each pipeline is required",
@@ -711,7 +709,7 @@ fn check_pipeline(
                 step[kind].as_str().unwrap(),
                 kind,
                 source,
-                &format!("/pipeline/steps/{i}/step/ruleset"),
+                &format!("/pipeline/steps/{i}/step/{kind}"),
             )?;
             vec![step["next"].as_str().unwrap()]
         } else {
@@ -1226,7 +1224,12 @@ fn check_call_graph(resources: &Resources<'_>) -> CoreResult<()> {
         }
         let mut cost = 1;
         let mut depth = 1;
-        for wrapper in doc.value["pipeline"]["steps"].as_array().unwrap() {
+        for (i, wrapper) in doc.value["pipeline"]["steps"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .enumerate()
+        {
             let step = &wrapper["step"];
             let kind = step["type"].as_str().unwrap();
             if kind == "router" {
@@ -1234,7 +1237,13 @@ fn check_call_graph(resources: &Resources<'_>) -> CoreResult<()> {
                 continue;
             }
             let target = step[kind].as_str().unwrap();
-            require_resource(resources, target, kind, &doc.source, "/pipeline/steps")?;
+            require_resource(
+                resources,
+                target,
+                kind,
+                &doc.source,
+                &format!("/pipeline/steps/{i}/step/{kind}"),
+            )?;
             if kind == "pipeline" {
                 let (child_cost, child_depth) = visit(target, resources, active, memo)?;
                 cost += child_cost;

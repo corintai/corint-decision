@@ -1,0 +1,399 @@
+{
+  "profile": "cdl-core-risk-draft-1",
+  "language_version": "0.1",
+  "status": "experimental",
+  "entry_point": "DecisionEngine::from_core",
+  "schema": "../../../CDL/schema/core.json",
+  "input_schema": "../../../CDL/schema/input.json",
+  "test_suite_schema": "test-suite.json",
+  "source_package_schema": "source-package.json",
+  "generation_response_schema": "generation-response.json",
+  "source_bundle_schema": "source-bundle.json",
+  "condition_trace": {
+    "status": "experimental",
+    "field": "trace.core_conditions_v1",
+    "schema": "condition-trace.json",
+    "raw_operand_values": false,
+    "cases": [
+      "condition_trace_short_circuit"
+    ],
+    "tests": [
+      "boolean_forms_share_short_circuit_execution",
+      "condition_trace_covers_scopes_skips_and_shared_rule_invocations"
+    ]
+  },
+  "example_registry": "../../../tests/conformance/documentation/examples.json",
+  "tools": {
+    "prepare_repository_cli": {
+      "status": "experimental",
+      "command": "corint prepare-repository --root DIR --input-schema LABEL --cases PATH --context PATH --target PATH --revision REV --output NEW_DIR ENTRY...",
+      "entry_point": "corint-decision-toolchain::candidate",
+      "scope": "repository_candidate",
+      "source_profile": "cdl-core-import-draft-1",
+      "output_profile": "cdl-core-risk-draft-1",
+      "requires_work": false,
+      "requires_generator_sdk": false,
+      "overwrites_existing_output": false,
+      "publication_approval": "not_granted",
+      "activates_policy": false,
+      "evidence": "../../../crates/corint-decision-cli/tests/candidate.rs",
+      "process_evidence": "../../../crates/corint-decision-cli/tests/core_process_e2e.rs",
+      "implementation_status": "implemented_in_declared_scope"
+    },
+    "core_process_e2e": {
+      "status": "experimental",
+      "command": "bash tests/scripts/run_core_e2e_tests.sh",
+      "scope": "synthetic_core_delivery_and_execution",
+      "model_provider": "fixed_mock_response",
+      "agent_neutral_path_without_model": true,
+      "real_cli_and_server_processes": true,
+      "transport": "loopback_tcp_http",
+      "live_work_integration": false,
+      "business_evaluation": "not_performed",
+      "evidence": "../../../crates/corint-decision-cli/tests/core_process_e2e.rs",
+      "implementation_status": "implemented_in_declared_scope"
+    },
+    "resolve_cli": {
+      "status": "experimental",
+      "source_profile": "cdl-core-import-draft-1",
+      "output_profile": "cdl-core-risk-draft-1",
+      "command": "corint resolve --source-profile cdl-core-import-draft-1 --root DIR --input-schema LABEL --output PATH ENTRY...",
+      "entry_point": "corint-decision-toolchain::resolve",
+      "scope": "authoring_import_resolution",
+      "cases": [
+        "C08"
+      ],
+      "execution_checked": false,
+      "runtime_filesystem_access": false,
+      "publication_approval": "not_granted",
+      "evidence": "../../../crates/corint-decision-cli/tests/resolve.rs",
+      "implementation_status": "implemented_in_declared_scope"
+    },
+    "core_server": {
+      "status": "experimental",
+      "entry_point": "CORINT_CORE_CONFIG",
+      "scope": "local_repository_reload",
+      "config_version": "3",
+      "supported_config_versions": [
+        "2",
+        "3"
+      ],
+      "durable_audit_required_in_v3": true,
+      "source_of_truth": "repository",
+      "repository_backends": [
+        "filesystem",
+        "sqlite",
+        "postgres",
+        "http"
+      ],
+      "non_file_protocol": "atomic_publication_document_v1",
+      "business_evidence_gate": "operator_attestation_with_expiry_and_revocation",
+      "feedback_transport": "authenticated_http",
+      "delivery": "durable_leased_at_least_once",
+      "repository_manifest_schema": "core-repository.json",
+      "reload_reads_repository": true,
+      "uploads_policy_content": false,
+      "loopback_only": true,
+      "publication_history_owner": "repository",
+      "business_evaluation": "not_performed",
+      "evidence": "../../../crates/corint-decision-server/tests/core_activation.rs",
+      "implementation_status": "implemented_in_declared_scope"
+    },
+    "target_check": {
+      "status": "experimental",
+      "command": "corint check-target --input-schema PATH --context PATH --target PATH --format json FILE...",
+      "entry_point": "corint-decision-toolchain::contracts::TargetContracts",
+      "scope": "declared_target_compatibility",
+      "execution_checked": false,
+      "live_target_verified": false,
+      "business_semantics_checked": false,
+      "publication_approval": "not_granted",
+      "evidence": "../../../crates/corint-decision-cli/tests/contracts.rs",
+      "implementation_status": "implemented_in_declared_scope"
+    },
+    "source_exchange_cli": {
+      "status": "experimental",
+      "commands": [
+        "corint export",
+        "corint import"
+      ],
+      "entry_point": "corint-decision-toolchain::transfer",
+      "scope": "editable_source_exchange_and_fresh_local_evidence",
+      "historical_evidence_transferred": false,
+      "filesystem_extraction": false,
+      "business_evaluation": "not_performed",
+      "publication_approval": "not_granted",
+      "evidence": "../../../crates/corint-decision-cli/tests/transfer.rs",
+      "implementation_status": "implemented_in_declared_scope"
+    },
+    "validate_cli": {
+      "status": "experimental",
+      "command": "corint validate --input-schema PATH --format json FILE...",
+      "entry_point": "compile_core",
+      "scope": "compile_only",
+      "execution_checked": false,
+      "business_evaluation": "not_performed",
+      "evidence": "../../../crates/corint-decision-cli/tests/validate.rs",
+      "implementation_status": "implemented_in_declared_scope"
+    },
+    "test_cli": {
+      "status": "experimental",
+      "command": "corint test --input-schema PATH --cases PATH --format json FILE...",
+      "entry_point": "DecisionEngine::from_core",
+      "scope": "declared_examples_only",
+      "trace_modes": [
+        false,
+        true
+      ],
+      "business_evaluation": "not_performed",
+      "evidence": "../../../crates/corint-decision-cli/tests/behavior.rs",
+      "implementation_status": "implemented_in_declared_scope"
+    },
+    "core_generator": {
+      "status": "experimental",
+      "feature": "corint-decision-llm/core-generation",
+      "entry_points": [
+        "CoreGenerator::generate",
+        "CoreGenerator::revise"
+      ],
+      "targeted_entry_points": [
+        "CoreGenerator::generate_for_target",
+        "CoreGenerator::revise_for_target"
+      ],
+      "shared_toolchain": "corint-decision-toolchain",
+      "scope": "complete_closure_and_caller_owned_examples",
+      "acceptance_cases_sent_to_model": false,
+      "automatic_retries": 0,
+      "business_evaluation": "not_performed",
+      "publication_approval": "not_granted",
+      "evidence": "../../../crates/corint-decision-llm/tests/core_generation.rs",
+      "implementation_status": "implemented_in_declared_scope"
+    },
+    "source_package_cli": {
+      "status": "experimental",
+      "commands": [
+        "corint build",
+        "corint verify"
+      ],
+      "entry_point": "DecisionEngine::from_core",
+      "scope": "source_snapshot_and_fresh_example_evidence",
+      "authenticity": "unsigned",
+      "publication_approval": "not_granted",
+      "business_evaluation": "not_performed",
+      "evidence": "../../../crates/corint-decision-cli/tests/package.rs",
+      "implementation_status": "implemented_in_declared_scope"
+    },
+    "decision_replay": {
+      "status": "experimental",
+      "implementation_status": "implemented_in_declared_scope",
+      "entry_point": "corint-decision-toolchain::replay",
+      "scope": "same_executable_offline_core_replay",
+      "commands": [
+        "corint record",
+        "corint replay"
+      ],
+      "schema": "replay-record.json",
+      "evidence": "../../../crates/corint-decision-toolchain/tests/replay.rs"
+    },
+    "feature_input_binding": {
+      "status": "experimental",
+      "implementation_status": "implemented_in_declared_scope",
+      "entry_point": "corint_decision_engine::feature_pipeline::FeaturePipeline",
+      "scope": "sdk_fixed_cutoff_aggregation_expression_before_core",
+      "evidence": "../../../crates/corint-decision-engine/tests/feature_pipeline.rs",
+      "http_enabled": false,
+      "live_work_integration": false
+    },
+    "capacity_benchmark": {
+      "status": "experimental",
+      "implementation_status": "implemented_in_declared_scope",
+      "entry_point": "core_benchmark",
+      "scope": "synthetic_engine_and_loopback_http_measurements",
+      "evidence": "../../../crates/corint-decision-engine/examples/core_benchmark.rs",
+      "commands": [
+        "python3 tests/scripts/run_core_benchmark.py",
+        "python3 tests/scripts/run_core_http_benchmark.py"
+      ]
+    }
+  },
+  "evidence_scope": "Named executable profiles and evidence only; maturity is independent of scoped implementation status",
+  "capabilities": [
+    {
+      "id": "rule.score",
+      "status": "supported",
+      "cases": [
+        "payment_boundaries"
+      ],
+      "tests": []
+    },
+    {
+      "id": "ruleset.local_score_and_first_match",
+      "status": "supported",
+      "cases": [
+        "payment_boundaries",
+        "result_dependent_router"
+      ],
+      "tests": []
+    },
+    {
+      "id": "pipeline.first_match_and_action_intents",
+      "status": "supported",
+      "cases": [
+        "payment_boundaries"
+      ],
+      "tests": []
+    },
+    {
+      "id": "pipeline.synchronous_ruleset_router",
+      "status": "supported",
+      "cases": [
+        "result_dependent_router"
+      ],
+      "tests": [
+        "node_order_does_not_change_control_flow",
+        "graph_and_reference_guards"
+      ]
+    },
+    {
+      "id": "registry.first_match",
+      "status": "supported",
+      "cases": [
+        "payment_boundaries"
+      ],
+      "tests": [
+        "input_errors_and_registry_no_match_are_not_approval"
+      ]
+    },
+    {
+      "id": "expressions.pure_boolean",
+      "status": "supported",
+      "cases": [],
+      "tests": [
+        "boolean_forms_share_short_circuit_execution",
+        "boolean_conditions_work_across_public_scopes",
+        "expression_precedence_strings_and_negation_preserve_decisions_and_trace"
+      ]
+    },
+    {
+      "id": "strict.version_shape_references",
+      "status": "supported",
+      "cases": [],
+      "tests": [
+        "manifest_invalid_documents_fail_at_expected_stage",
+        "graph_and_reference_guards",
+        "imports_and_legacy_generator_shapes_are_not_silently_accepted"
+      ]
+    },
+    {
+      "id": "input.required_flat_scalars",
+      "status": "supported",
+      "cases": [],
+      "tests": [
+        "input_errors_and_registry_no_match_are_not_approval"
+      ]
+    },
+    {
+      "id": "score.checked_accumulation",
+      "status": "supported",
+      "cases": [],
+      "tests": [
+        "score_overflow_is_a_controlled_error"
+      ]
+    },
+    {
+      "id": "pipeline.synchronous_rule_and_subpipeline",
+      "status": "supported",
+      "cases": [],
+      "tests": [
+        "core_calls_guards_and_nested_optional_inputs_share_the_vm"
+      ]
+    },
+    {
+      "id": "pipeline.guards_and_scoped_results",
+      "status": "supported",
+      "cases": [],
+      "tests": [
+        "core_zero_score_match_and_guarded_router_do_not_fall_through"
+      ]
+    },
+    {
+      "id": "input.optional_closed_objects",
+      "status": "supported",
+      "cases": [],
+      "tests": [
+        "core_calls_guards_and_nested_optional_inputs_share_the_vm"
+      ]
+    },
+    {
+      "id": "expressions.exists_and_checked_arithmetic",
+      "status": "supported",
+      "cases": [],
+      "tests": [
+        "core_extension_errors_are_structured_and_trace_invariant",
+        "expression_precedence_strings_and_negation_preserve_decisions_and_trace"
+      ]
+    },
+    {
+      "id": "runtime.bounded_calls_and_structured_errors",
+      "status": "supported",
+      "cases": [],
+      "tests": [
+        "core_call_graph_and_expression_extensions_fail_closed"
+      ]
+    },
+    {
+      "id": "expressions.literal_membership_and_string_matching",
+      "status": "supported",
+      "cases": [],
+      "tests": [
+        "core_membership_and_string_matching_preserve_execution_and_trace",
+        "core_matching_rejects_invalid_types_patterns_and_collection_limits",
+        "core_matching_works_in_all_condition_scopes_and_missing_inputs_fail"
+      ]
+    }
+  ],
+  "not_enabled": [
+    "import",
+    "connector",
+    "dynamic_feature",
+    "list",
+    "model",
+    "rule_parameters",
+    "ruleset_inheritance",
+    "structured_action"
+  ],
+  "pending": [
+    "import_dependency_version_ranges",
+    "full_operand_trace",
+    "multi_node_package_distribution_and_activation",
+    "live_provider_and_Work_generator_integration",
+    "enterprise_identity_and_cross_host_publication_trust",
+    "complete_cross_product_contracts",
+    "full_W01_W10"
+  ],
+  "call_trace": {
+    "status": "experimental",
+    "field": "trace.core_calls_v1",
+    "schema": "call-trace.json",
+    "tests": [
+      "core_calls_guards_and_nested_optional_inputs_share_the_vm"
+    ],
+    "order": "completion",
+    "actions": "local_intents_not_executed"
+  },
+  "contract_revision": "2026-09-07",
+  "limits": {
+    "expression_tokens": 4096,
+    "expression_ast_depth": 128,
+    "pipeline_call_depth": 16,
+    "expanded_call_nodes": 4096,
+    "input_object_depth": 16,
+    "input_fields": 1024,
+    "membership_array_items": 1024,
+    "regex_pattern_bytes": 4096,
+    "regex_syntax_depth": 64,
+    "regex_compiled_bytes": 1048576,
+    "regex_cache_entries": 32,
+    "regex_dfa_cache_bytes": 262144
+  }
+}

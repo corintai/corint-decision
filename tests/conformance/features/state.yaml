@@ -1,0 +1,13 @@
+version: "0.2"
+features:
+  - name: account_age_days
+    type: state
+    method: time_since
+    datasource: events
+    entity: events
+    dimension: user_id
+    dimension_value: "${event.user.id}"
+    timestamp_field: occurred_at
+    unit: days
+    when: kind == "register"
+    fallback: 0

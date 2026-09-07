@@ -1,7 +1,61 @@
 //! Prompt templates for code generation
 
-/// Shared, executable Core examples; compatibility generators still return candidates.
-const CORINT_CDL_SPEC: &str = include_str!("../../../../docs/cdl/cdl-core.md");
+/// Read the normative sections from their owning language references. Historical
+/// Registry fallback sketches and compatibility namespaces must not enter a Core prompt.
+pub(crate) fn core_language_reference() -> String {
+    fn section<'a>(document: &'a str, start: &str, end: &str) -> &'a str {
+        let start = document.find(start).expect("CDL section start must exist");
+        let section = &document[start..];
+        let end = section.find(end).expect("CDL section end must exist");
+        &section[..end]
+    }
+
+    let expressions = include_str!("../../../../CDL/expression.md");
+    [
+        section(
+            include_str!("../../../../CDL/overall.md"),
+            "### Document and resource constraints\n",
+            "## 2. From sources to a decision\n",
+        ),
+        section(
+            include_str!("../../../../CDL/rule.md"),
+            "## 1. Document and fields\n",
+            "## 4. Related documentation\n",
+        ),
+        section(
+            include_str!("../../../../CDL/ruleset.md"),
+            "## 1. Document and fields\n",
+            "## 4. Related documentation\n",
+        ),
+        section(
+            include_str!("../../../../CDL/pipeline.md"),
+            "## 1. Pipeline structure\n",
+            "## 4. Invalid structures and unsupported capabilities\n",
+        ),
+        include_str!("../../../../CDL/registry.md"),
+        section(
+            expressions,
+            "## Operator Precedence\n",
+            "## Condition Fragments\n",
+        ),
+        section(
+            expressions,
+            "### Array Membership\n",
+            "### List Membership\n",
+        ),
+        section(
+            expressions,
+            "## String Operators\n",
+            "## Arithmetic Operators\n",
+        ),
+        section(
+            include_str!("../../../../CDL/context.md"),
+            "## Strict Core input and results\n",
+            "## Compatibility namespaces\n",
+        ),
+    ]
+    .join("\n")
+}
 
 pub const RULE_GENERATION_PROMPT: &str = concat!(
     "Generate a single Rule candidate. Output only YAML beginning with rule:. Use this executable shape:\n```yaml\n",
@@ -24,7 +78,7 @@ pub const PIPELINE_GENERATION_PROMPT: &str = concat!(
 pub fn build_pipeline_prompt(description: &str) -> String {
     format!(
         "{}\n{}",
-        CORINT_CDL_SPEC,
+        core_language_reference(),
         PIPELINE_GENERATION_PROMPT.replace("{description}", description)
     )
 }

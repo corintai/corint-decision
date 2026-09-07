@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value as Json};
 use std::collections::{BTreeSet, HashMap};
 
-const SUITE_SCHEMA: &str = include_str!("../../../docs/cdl/schema/test-suite.json");
+const SUITE_SCHEMA: &str = include_str!("../../../docs/contracts/schema/test-suite.json");
 
 #[derive(Deserialize)]
 struct Suite {

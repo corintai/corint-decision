@@ -1,12 +1,22 @@
 # 公共契约（实验性）
 
-这是改进提案 §5.4 / §8.3 的首个可执行增量，面向通用 Agent、Corint Work 和独立 CLI，
-不是新增的 CDL 顶层语法，也不增加 DecisionPolicy 层。
+本目录定义通用 Agent、Corint Work 和独立 CLI 使用的目标兼容性、资源、评估审批与反馈契约。
+这些契约属于工具与组件集成，不增加 CDL 顶层语法或 DecisionPolicy 层。
 当前仅支持 `cdl-core-risk-draft-1`；不代表完整跨产品契约或真实 Work/生产发布集成已完成。
 
 新增 [阶段 0 资源、评估审批与反馈契约 v1](phase0.md)：8 份 schema、正反例和离线消费者覆盖 W04/W07/W08 及相关证据约束。以下章节继续说明已接入 CLI/生成器/server 的 Core 目标兼容性；新契约尚未接入这些发布入口。
 
 ## 版本与职责
+
+语言资源、输入类型和严格导入头的定义位于 [CDL/schema/](../../CDL/schema/)。
+本目录的 `schema/` 收录工具、运行结果和跨组件契约：
+
+- [能力清单](schema/capabilities.json)：实现范围、入口和验证证据。
+- [测试集](schema/test-suite.json)、[源码包](schema/source-package.json)、[源码交换](schema/source-bundle.json)和[生成响应](schema/generation-response.json)。
+- [条件观察](schema/condition-trace.json)、[调用观察](schema/call-trace.json)和[回放记录](schema/replay-record.json)。
+
+相应操作见 [CLI](../cli.md)、[行为测试](../testing.md)、[打包](../packages.md)、
+[生成](../generation.md)和[回放](../replay.md)指南。
 
 | 契约 | 生产者 → 消费者 | 当前内容 |
 |---|---|---|
@@ -19,7 +29,7 @@
 未知版本、额外字段、重复键和缺失必填字段均拒绝；`permissions`、`approval` 等自述字段不授予权限。
 报告 schema 只描述成功结果；失败通过现有 Diagnostic 返回，不生成成功报告。
 
-BusinessContext 的 `input_schema` 直接复用已有 [输入模型及 schema](../cdl/schema/input.json)，
+BusinessContext 的 `input_schema` 直接复用已有 [输入模型及 schema](../../CDL/schema/input.json)，
 不是第二套类型系统。外部验证器须离线注册 `urn:corint:core-input` 为该 schema；Rust 工具链已内置注册。
 实际输入仍需通过共享编译器的语义检查。传入的 input-schema 必须与上下文中反序列化后的 Schema 一致，
 包括元数据；字段说明必须恰好覆盖输入字段，且实体引用必须存在。
@@ -28,7 +38,7 @@ BusinessContext 的 `input_schema` 直接复用已有 [输入模型及 schema](.
 例如把“元”改成“分”会使旧绑定失效，但新检查通过不表示阈值已正确换算，仍需人工审核和独立测试。
 
 目标检查采用保守的精确匹配：目标声明的引擎版本须等于本地 `ENGINE_VERSION`，语言/Profile 须匹配，
-能力列表须恰好包含 [能力清单](../cdl/schema/capabilities.json) 中全部 `supported` 能力。
+能力列表须恰好包含 [能力清单](schema/capabilities.json) 中全部 `supported` 能力。
 draft-1 暂按整体 Profile 检查，不协商能力子集或跨版本兼容；新增未知能力也拒绝。
 `status: unavailable` 拒绝；`ready` **只是声明，不证明远端在线**。
 所有 Pipeline 决策分支的 action（包括样例未触达的分支）须同时出现在两份契约的动作列表中。
@@ -54,13 +64,13 @@ cargo build -p corint-decision-cli --locked --offline
 这是本地声明 fixture，不是真实客户或在线环境。缺少依赖缓存时构建需去掉 `--offline`；运行不需要网络。
 命令不修改输入，不运行行为样例，不发布策略。CLI 输出一个 JSON 对象，`scope: compatibility`，
 成功时其 `compatibility` 字段包含上述报告。退出码 0 为声明兼容，1 为校验失败，2 为用法/I/O 错误。
-行为检查请另行运行 [`corint test`](../cdl/testing.md)。
+行为检查请另行运行 [`corint test`](../testing.md)。
 
 ## 指纹与旧证据
 
 - 目标的 `context` 必须精确固定 BusinessContext 的 ID、revision 和原始 UTF-8 字节 SHA-256。
   注释或排版变化也会改变这个指纹；不因 ID/revision 相同而信任旧内容。
-- `policy_sha256` 复用现有 [source package 内容身份](../cdl/packages.md)，包括输入契约和整个源码闭包。
+- `policy_sha256` 复用现有 [source package 内容身份](../packages.md)，包括输入契约和整个源码闭包。
 - `checker_version` 是共享工具链版本，`checker_sha256` 是当前宿主可执行文件的 SHA-256，
   不是远端引擎指纹；CLI、测试程序或 Work 宿主不同会产生不同的检查程序绑定。
 - `binding_sha256` 复用包的规范化 JSON 哈希算法：SHA-256 的输入为
@@ -86,7 +96,7 @@ cargo build -p corint-decision-cli --locked --offline
 `check(sources, input_schema, expected_binding)` 使用共享 Core 编译器与包内容身份计算。
 CLI 和严格生成器使用同一个实现，没有另一套表达式解释器。
 
-生成器提供 `generate_for_target` / `revise_for_target`，详见 [生成 API](../cdl/generation.md)。
+生成器提供 `generate_for_target` / `revise_for_target`，详见 [生成 API](../generation.md)。
 调用者明确选择这些入口后，两份契约会发送给选定模型；请先审核其中的敏感信息。
 独立验收样例仍不发送。兼容性检查通过也不能替代行为验收。
 

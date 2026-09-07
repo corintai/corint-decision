@@ -1,0 +1,4 @@
+version: "0.1"
+registry:
+  - pipeline: list_screening
+    when: "true"

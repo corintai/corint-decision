@@ -1,0 +1,16 @@
+version: "0.1"
+registry:
+  - pipeline: payment_shadow
+    when:
+      all:
+        - event.type == "payment"
+        - event.shadow == true
+  - pipeline: payment_br
+    when:
+      all:
+        - event.type == "payment"
+        - event.country == "BR"
+  - pipeline: payment_main
+    when: event.type == "payment"
+  - pipeline: unhandled_event
+    when: "true"

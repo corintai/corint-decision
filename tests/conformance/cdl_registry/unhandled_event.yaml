@@ -1,0 +1,18 @@
+version: "0.1"
+pipeline:
+  id: unhandled_event
+  name: Review an unhandled event
+  entry: finish
+  steps:
+    - step:
+        id: finish
+        name: Reach the review decision
+        type: router
+        routes:
+          - when: "true"
+            next: end
+        default: end
+  decision:
+    - default: true
+      result: review
+      reason: No specialized event policy

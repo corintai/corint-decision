@@ -1,0 +1,17 @@
+version: "0.1"
+pipeline:
+  id: payment_shadow
+  name: Payment risk observation
+  when: event.amount > 0
+  entry: check_risk
+  steps:
+    - step:
+        id: check_risk
+        name: Observe payment risk
+        type: ruleset
+        ruleset: payment_risk
+        next: end
+  decision:
+    - default: true
+      result: pass
+      reason: Record risk score for observation

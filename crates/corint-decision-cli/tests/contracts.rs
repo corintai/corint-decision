@@ -104,8 +104,10 @@ fn error(report: &Value, code: &str) {
 
 #[test]
 fn check_binds_exact_sources_contracts_and_checker_without_claiming_authority() {
-    let inventory: Value =
-        serde_json::from_str(include_str!("../../../docs/cdl/schema/capabilities.json")).unwrap();
+    let inventory: Value = serde_json::from_str(include_str!(
+        "../../../docs/contracts/schema/capabilities.json"
+    ))
+    .unwrap();
     let tool = &inventory["tools"]["target_check"];
     assert_eq!(
         tool["entry_point"],

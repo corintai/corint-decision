@@ -1,0 +1,9 @@
+version: "0.1"
+ruleset:
+  id: payment_risk
+  rules: [large_amount]
+  conclusion:
+    - when: total_score >= 60
+      signal: decline
+    - default: true
+      signal: approve

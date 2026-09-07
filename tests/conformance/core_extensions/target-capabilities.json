@@ -26,7 +26,8 @@
       "pipeline.guards_and_scoped_results",
       "input.optional_closed_objects",
       "expressions.exists_and_checked_arithmetic",
-      "runtime.bounded_calls_and_structured_errors"
+      "runtime.bounded_calls_and_structured_errors",
+      "expressions.literal_membership_and_string_matching"
     ]
   },
   "context": {

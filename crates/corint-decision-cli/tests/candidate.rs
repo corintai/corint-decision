@@ -81,8 +81,10 @@ fn candidate_contains_checked_originals_and_server_can_load_it() {
     let dir = setup();
     let before = fs::read(dir.path().join("author/rule.yaml")).unwrap();
     let report = run(dir.path(), &[], 0);
-    let inventory: Value =
-        serde_json::from_str(include_str!("../../../docs/cdl/schema/capabilities.json")).unwrap();
+    let inventory: Value = serde_json::from_str(include_str!(
+        "../../../docs/contracts/schema/capabilities.json"
+    ))
+    .unwrap();
     let declared = &inventory["tools"]["prepare_repository_cli"];
     assert_eq!(declared["scope"], report["scope"]);
     assert_eq!(declared["activates_policy"], report["activated"]);

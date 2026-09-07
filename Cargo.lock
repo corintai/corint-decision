@@ -571,6 +571,7 @@ dependencies = [
  "corint-decision-model",
  "corint-decision-repository",
  "corint-decision-runtime",
+ "corint-decision-toolchain",
  "jsonschema",
  "rand 0.8.5",
  "serde",

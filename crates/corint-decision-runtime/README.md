@@ -396,6 +396,6 @@ Note: Advanced observability features (Prometheus export, OTLP tracing) are not 
 
 ## Related Documentation
 
-- [Feature Engineering](../../docs/cdl/feature.md)
-- [Datasource Configuration](../../docs/cdl/feature.md#8-data-source-configuration)
-- [Expression Evaluation](../../docs/cdl/expression.md)
+- [Feature Engineering](../../CDL/feature.md)
+- [Datasource Configuration](../../docs/feature-configuration.md)
+- [Expression Evaluation](../../CDL/expression.md)

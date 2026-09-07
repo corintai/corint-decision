@@ -58,8 +58,8 @@ pub struct ServiceOperation {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub timeout_ms: Option<u64>,
 
-    /// Parameter mapping from context or literals
-    /// Key: param name, Value: context path (e.g., "event.user.id") or literal value
+    /// Defaults from explicit namespace paths or scalar/null literals.
+    /// Pipeline parameters override defaults; expression strings are not evaluated here.
     #[serde(default, skip_serializing_if = "HashMap::is_empty")]
     pub params: HashMap<String, serde_json::Value>,
 
@@ -67,7 +67,7 @@ pub struct ServiceOperation {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub query_params: Vec<String>,
 
-    /// Request body template for POST/PUT/PATCH (with ${param_name} placeholders)
+    /// JSON text for POST/PUT/PATCH with whole-value ${param_name} placeholders.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub request_body: Option<String>,
 
@@ -84,7 +84,8 @@ pub struct ServiceResponseMapping {
     #[serde(default, skip_serializing_if = "HashMap::is_empty")]
     pub mapping: HashMap<String, String>,
 
-    /// Fallback value on error (4xx, 5xx, timeout)
+    /// Final output for non-2xx status or invalid JSON after a complete body read.
+    /// Transport errors/timeouts never use fallback; None also represents YAML null.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub fallback: Option<serde_json::Value>,
 }

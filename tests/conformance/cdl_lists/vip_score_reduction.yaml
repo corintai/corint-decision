@@ -1,0 +1,6 @@
+version: "0.1"
+rule:
+  id: vip_score_reduction
+  name: VIP risk score reduction
+  when: event.user_id in list.vip_users
+  score: -200

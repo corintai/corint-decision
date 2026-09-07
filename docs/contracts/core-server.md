@@ -35,7 +35,7 @@
 ```
 
 `input_schema`、`entries` 和 import 路径均相对于 repo 根目录，遵守
-[严格 import 路径与资源限制](../cdl/resolution.md)。没有 import 的文件集合可在 entries 中列出所有资源。
+[严格 import 路径与资源限制](../resolution.md)。没有 import 的文件集合可在 entries 中列出所有资源。
 只读取声明可达的闭包，不扫描目录猜测入口。拒绝越界路径、符号链接、重复 ID、缺失引用和不支持语义。
 `published.json` 最大 64 KiB，必须是常规文件；重复字段、未知字段/版本、非法 revision 和指纹均拒绝。
 

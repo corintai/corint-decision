@@ -835,16 +835,19 @@ impl FeatureExecutor {
                             crate::datasource::query::FilterOperator::Le => FilterOp::Lte,
                             crate::datasource::query::FilterOperator::In => FilterOp::In,
                             crate::datasource::query::FilterOperator::NotIn => FilterOp::NotIn,
-                            _ => FilterOp::Eq, // Default for unsupported operators
+                            _ => anyhow::bail!(
+                                "Unsupported time_since filter operator: {:?}",
+                                f.operator
+                            ),
                         };
 
-                        FilterConfig {
+                        Ok(FilterConfig {
                             field: f.field.clone(),
                             operator,
                             value: f.value.clone(),
-                        }
+                        })
                     })
-                    .collect();
+                    .collect::<Result<_>>()?;
 
                 let timestamp_field = config
                     .timestamp_field
@@ -859,8 +862,9 @@ impl FeatureExecutor {
                     unit,
                     timestamp_field,
                 };
-
-                match operator.execute(datasource, context).await {
+                let dimension_value =
+                    ExpressionEvaluator::substitute_template(&config.dimension_value, context)?;
+                match operator.execute_resolved(datasource, dimension_value).await {
                     Ok(value) => Ok(value),
                     Err(e) => {
                         // If execution fails and fallback is available, use fallback
@@ -877,14 +881,7 @@ impl FeatureExecutor {
             _ => {
                 warn!("State feature '{}' has method '{}' which is not yet implemented. Available methods: time_since. State config: {:?}", 
                       feature.name, method, config);
-                // If fallback is available, use it instead of failing
-                if let Some(fallback) = &config.fallback {
-                    warn!("Using fallback value {:?} for state feature '{}' with unsupported method '{}'", 
-                          fallback, feature.name, method);
-                    Ok(fallback.clone())
-                } else {
-                    Err(anyhow::anyhow!("State method '{}' not yet implemented for feature '{}'. Supported methods: time_since", method, feature.name))
-                }
+                Err(anyhow::anyhow!("State method '{}' not yet implemented for feature '{}'. Supported methods: time_since", method, feature.name))
             }
         }
     }
@@ -988,14 +985,14 @@ impl FeatureExecutor {
                 );
                 Ok(config.fallback.clone().unwrap_or(Value::Null))
             }
-            Err(e) => {
-                warn!(
-                    "Lookup feature '{}' error: {}, using fallback",
-                    feature.name, e
-                );
-                // On error, return fallback
-                Ok(config.fallback.clone().unwrap_or(Value::Null))
-            }
+            Err(e) => match &config.fallback {
+                Some(fallback) => Ok(fallback.clone()),
+                None => Err(anyhow::anyhow!(
+                    "Lookup feature '{}' failed: {}",
+                    feature.name,
+                    e
+                )),
+            },
         }
     }
 
@@ -1155,7 +1152,7 @@ mod tests {
             .execute(&pool)
             .await
             .unwrap();
-        sqlx::query("INSERT INTO events VALUES ('user-1', datetime('now')), ('user-1', datetime('now', '-2 minutes')), ('other', datetime('now'))")
+        sqlx::query("INSERT INTO events VALUES ('user-1', datetime('now', '-1 second')), ('user-1', datetime('now', '-2 minutes')), ('user-1', datetime('now', '+10 minutes')), ('other', datetime('now'))")
             .execute(&pool).await.unwrap();
         let config = serde_json::from_value(serde_json::json!({
             "name": "events", "type": "sql", "provider": "sqlite",
@@ -1181,7 +1178,7 @@ mod tests {
                 .execute_aggregation(&feature, &datasource, &context)
                 .await
                 .unwrap(),
-            Value::Number(2.0)
+            Value::Number(3.0)
         );
         // Bypass registration deliberately: the query path itself must reject
         // invalid windows, even with a cached all-history result available.

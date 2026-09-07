@@ -1,0 +1,18 @@
+name: registry-routing-event
+fields:
+  type:
+    name: type
+    field_type: string
+    required: true
+  country:
+    name: country
+    field_type: string
+    required: true
+  shadow:
+    name: shadow
+    field_type: boolean
+    required: true
+  amount:
+    name: amount
+    field_type: number
+    required: true

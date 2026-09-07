@@ -1,0 +1,18 @@
+version: "0.1"
+pipeline:
+  id: payment_br
+  name: Brazilian payment screening
+  when: event.amount > 0
+  entry: check_risk
+  steps:
+    - step:
+        id: check_risk
+        name: Check payment risk
+        type: ruleset
+        ruleset: payment_risk
+        next: end
+  decision:
+    - when: results.payment_risk.signal == "decline"
+      result: decline
+    - default: true
+      result: review

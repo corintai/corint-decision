@@ -1,0 +1,12 @@
+version: "0.1"
+rule:
+  id: loyal_customer_marker
+  name: Mark a trusted long-standing customer
+  when:
+    all:
+      - event.customer.email not in list.blocked_emails
+      - event.customer.id in list.trusted_customers
+      - event.customer.email ends_with "@example.test"
+      - features.account_age_days >= 365
+      - features.customer_trust_score >= 80
+  score: 0

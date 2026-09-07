@@ -1,0 +1,16 @@
+version: "0.1"
+import:
+  rules:
+    - rules/payment-velocity.yaml
+    - rules/device-pattern.yaml
+ruleset:
+  id: payment_risk
+  name: Payment risk
+  rules: [payment_velocity, suspicious_device]
+  conclusion:
+    - when: total_score >= 70
+      signal: decline
+    - when: total_score >= 40
+      signal: review
+    - default: true
+      signal: approve

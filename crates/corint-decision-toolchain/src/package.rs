@@ -12,7 +12,7 @@ use sha2::{Digest, Sha256};
 use std::io::{Read, Write};
 use std::path::Path;
 
-const PACKAGE_SCHEMA: &str = include_str!("../../../docs/cdl/schema/source-package.json");
+const PACKAGE_SCHEMA: &str = include_str!("../../../docs/contracts/schema/source-package.json");
 const INPUT_PATH: &str = "input-schema.yaml";
 const SUITE_PATH: &str = "test-suite.yaml";
 

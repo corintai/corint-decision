@@ -1,0 +1,31 @@
+name: customer_risk
+base_url: https://risk.example.invalid/v1
+timeout_ms: 5000
+operations:
+  assess:
+    method: POST
+    path: /customers/{customer_id}/risk
+    timeout_ms: 2000
+    params:
+      channel: web
+    query_params: [currency, channel]
+    request_body: >-
+      {"amount_cents": ${amount_cents}, "request_id": ${request_id},
+       "note": ${note}, "flow": ${flow}, "score_limit": ${score_limit},
+       "tags": ${tags}}
+    response:
+      mapping:
+        score: risk.score
+        available: available
+        reference: reference
+      fallback:
+        score: 0
+        available: false
+        reference: unavailable
+  explain:
+    method: POST
+    path: /assessments/{reference}/explanation
+    request_body: '{"score": ${score}, "note": ${note}}'
+    response:
+      mapping:
+        text: explanation

@@ -1,0 +1,13 @@
+version: "0.1"
+rule:
+  id: suspicious_device
+  name: Suspicious device identifier
+  when:
+    all:
+      - exists(event.device.id)
+      - any:
+          - all:
+              - event.device.id starts_with "emulator-"
+              - event.device.id regex "^emulator-[0-9]+$"
+          - event.device.id contains "proxy"
+  score: 25

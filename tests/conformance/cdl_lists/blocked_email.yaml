@@ -1,0 +1,6 @@
+version: "0.1"
+rule:
+  id: blocked_email
+  name: Email blocklist check
+  when: event.email in list.email_blocklist
+  score: 500
