@@ -10,6 +10,7 @@ pub mod ast;
 pub mod condition;
 pub mod error;
 pub mod ir;
+pub mod matching;
 pub mod types;
 
 // Keep old path for backward compatibility

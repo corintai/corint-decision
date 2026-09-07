@@ -340,6 +340,16 @@
       "tests": [
         "core_call_graph_and_expression_extensions_fail_closed"
       ]
+    },
+    {
+      "id": "expressions.literal_membership_and_string_matching",
+      "status": "supported",
+      "cases": [],
+      "tests": [
+        "core_membership_and_string_matching_preserve_execution_and_trace",
+        "core_matching_rejects_invalid_types_patterns_and_collection_limits",
+        "core_matching_works_in_all_condition_scopes_and_missing_inputs_fail"
+      ]
     }
   ],
   "not_enabled": [
@@ -371,7 +381,7 @@
     "order": "completion",
     "actions": "local_intents_not_executed"
   },
-  "contract_revision": "2026-09-06",
+  "contract_revision": "2026-09-07",
   "stability_policy": "../stability.md",
   "limits": {
     "expression_tokens": 4096,
@@ -379,6 +389,12 @@
     "pipeline_call_depth": 16,
     "expanded_call_nodes": 4096,
     "input_object_depth": 16,
-    "input_fields": 1024
+    "input_fields": 1024,
+    "membership_array_items": 1024,
+    "regex_pattern_bytes": 4096,
+    "regex_syntax_depth": 64,
+    "regex_compiled_bytes": 1048576,
+    "regex_cache_entries": 32,
+    "regex_dfa_cache_bytes": 262144
   }
 }

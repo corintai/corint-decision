@@ -21,7 +21,7 @@ CORINT expressions are used in:
 
 | Context | Evaluator | Supported Operations |
 |---------|-----------|---------------------|
-| **Compiled Rule/Pipeline/Registry conditions** | Shared ExpressionParser → ExpressionCompiler → VM | Checked arithmetic, comparisons, boolean short-circuiting; compatibility additionally parses membership/string operations |
+| **Compiled Rule/Pipeline/Registry conditions** | Shared ExpressionParser → ExpressionCompiler → VM | Core supports checked arithmetic, comparisons, boolean short-circuiting, typed literal-array membership and string matching; external namespaces remain compatibility-only |
 | **Feature Expressions** | ExpressionEvaluator | Basic arithmetic (+, -, *, /, parentheses) only |
 
 ---
@@ -333,8 +333,13 @@ compatibility-op = "in" | "not in" | "not_in" | "contains"
                  | "starts_with" | "ends_with" | "regex"
 ```
 
-String literals follow the escaping rules above. Core admits scalar literals
-and declared fields, and only the function `exists(event.declared_path)`.
+String literals follow the escaping rules above. Core admits scalar literals,
+declared fields, and literal arrays only on the right of `in` / `not in` / `not_in`.
+The membership/string operators listed above are now admitted under the strict
+[Core type and pattern limits](cdl-core.md#membership-and-string-matching).
+`contains` / `starts_with` / `ends_with` require strings; `regex` requires a constant
+pattern checked at compile time. External list/Feature/API references remain outside
+Core. The only function admitted by Core is `exists(event.declared_path)`.
 Compatibility parsing additionally recognizes null, literal arrays and function
 calls; their recognition alone does not imply compiler/runtime support. Resource
 IDs and input schema field names remain subject to their respective schema rules.

@@ -923,6 +923,37 @@ fn expression_type(
         }
         Expression::Binary { left, op, right } => {
             let l = expression_type(left, schema, aggregate, available, source, path)?;
+            if matches!(op, Operator::In | Operator::NotIn) {
+                if !matches!(
+                    l,
+                    FieldType::Number | FieldType::String | FieldType::Boolean
+                ) {
+                    return Err(err("E_TYPE", "Membership requires a scalar left operand"));
+                }
+                let Expression::Literal(Value::Array(items)) = right.as_ref() else {
+                    return Err(err("E_TYPE", "Membership requires a literal array"));
+                };
+                if items.len() > 1024 {
+                    return Err(err(
+                        "E_EXPRESSION_LIMIT",
+                        "Membership array exceeds 1024 items",
+                    ));
+                }
+                for item in items {
+                    let compatible = matches!(
+                        (&l, item),
+                        (FieldType::String, Value::String(_))
+                            | (FieldType::Boolean, Value::Bool(_))
+                    ) || matches!((&l, item), (FieldType::Number, Value::Number(n)) if n.is_finite());
+                    if !compatible {
+                        return Err(err(
+                            "E_TYPE",
+                            "Membership elements must match the scalar operand type",
+                        ));
+                    }
+                }
+                return Ok(FieldType::Boolean);
+            }
             let r = expression_type(right, schema, aggregate, available, source, path)?;
             let valid = match op {
                 Operator::Eq | Operator::Ne => {
@@ -943,6 +974,20 @@ fn expression_type(
                     l == FieldType::Number && r == l
                 }
                 Operator::And | Operator::Or => l == FieldType::Boolean && r == l,
+                Operator::Contains | Operator::StartsWith | Operator::EndsWith => {
+                    l == FieldType::String && r == l
+                }
+                Operator::Regex => {
+                    if l != FieldType::String || r != FieldType::String {
+                        return Err(err("E_TYPE", "Regex operands must be strings"));
+                    }
+                    let Expression::Literal(Value::String(pattern)) = right.as_ref() else {
+                        return Err(err("E_TYPE", "Regex pattern must be a string literal"));
+                    };
+                    corint_decision_model::matching::compile_regex(pattern)
+                        .map_err(|message| err("E_INVALID_REGEX", message))?;
+                    true
+                }
                 _ => {
                     return Err(err(
                         "E_UNSUPPORTED_CAPABILITY",

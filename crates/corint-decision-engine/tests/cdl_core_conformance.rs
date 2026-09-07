@@ -82,6 +82,244 @@ fn sources(files: &[String]) -> Vec<CoreSource> {
 fn request(amount: f64) -> DecisionRequest {
     DecisionRequest::new(HashMap::from([("amount".into(), Value::Number(amount))]))
 }
+
+fn matching_fixture() -> (Vec<CoreSource>, Schema, HashMap<String, Value>) {
+    let sources = sources(
+        &[
+            "rule.yaml",
+            "ruleset.yaml",
+            "pipeline.yaml",
+            "registry.yaml",
+        ]
+        .map(String::from),
+    );
+    let mut input = schema();
+    for name in ["country", "text", "needle", "optional"] {
+        input.fields.insert(
+            name.into(),
+            SchemaField {
+                name: name.into(),
+                field_type: FieldType::String,
+                required: name != "optional",
+                description: None,
+                default: None,
+            },
+        );
+    }
+    let event = HashMap::from([
+        ("amount".into(), Value::Number(1001.0)),
+        ("country".into(), Value::String("中国".into())),
+        ("text".into(), Value::String("支付🙂.COM".into())),
+        ("needle".into(), Value::String("🙂".into())),
+    ]);
+    (sources, input, event)
+}
+
+#[tokio::test]
+async fn core_membership_and_string_matching_preserve_execution_and_trace() {
+    use corint_decision_compiler::{Compiler, CompilerOptions};
+    use corint_decision_dsl_parser::RuleParser;
+    use corint_decision_runtime::PipelineExecutor;
+    let (base, input, event) = matching_fixture();
+    for (expression, expected) in [
+        (r#"event.country in ["US", "中国", "中国"]"#, true),
+        (r#"event.country not in ["US", "中国"]"#, false),
+        (r#"event.country not_in ["US"]"#, true),
+        ("event.amount - 1002 in [-1, 0]", true),
+        ("true in [false, true]", true),
+        ("event.amount in []", false),
+        ("event.country not in []", true),
+        ("-0 in [0]", true),
+        (r#"event.text contains event.needle"#, true),
+        (r#"event.text contains "com""#, false),
+        (r#"event.text starts_with "支付""#, true),
+        (r#"event.text ends_with ".COM""#, true),
+        (r#"event.text ends_with ".com""#, false),
+        (r#"event.text contains """#, true),
+        (r#""" starts_with """#, true),
+        (r#""" ends_with """#, true),
+        (r#""é" contains "é""#, false),
+        (r#"event.text regex "支付""#, true),
+        (r#"event.text regex "^支付$""#, false),
+        (r#"event.text regex "(?i)com$""#, true),
+        (r#"event.text regex "\\p{Han}+""#, true),
+        (r#"event.text regex """#, true),
+        (r#"true || event.optional contains "x""#, true),
+        (r#"false && event.optional regex "x""#, false),
+        (
+            r#"exists(event.optional) && event.optional starts_with "x""#,
+            false,
+        ),
+        ("false || true in [true] && 1 in [1]", true),
+        (r#""in contains regex" in ["in contains regex"]"#, true),
+    ] {
+        let mut sources = base.clone();
+        modify(&mut sources, "rule.yaml", |doc| {
+            doc["rule"]["when"] = expression.into()
+        });
+        let engine = DecisionEngine::from_core(&sources, input.clone())
+            .unwrap_or_else(|e| panic!("{expression}: {e}"));
+        let mut plain = None;
+        for trace in [false, true] {
+            let mut req = DecisionRequest::new(event.clone());
+            req.options.enable_trace = trace;
+            let response = engine
+                .decide(req)
+                .await
+                .unwrap_or_else(|e| panic!("{expression}: {e}"));
+            assert_eq!(
+                response.result.score,
+                if expected { 60 } else { 0 },
+                "{expression}"
+            );
+            if let Some(previous) = &plain {
+                assert_eq!(&response.result, previous, "{expression}");
+            } else {
+                plain = Some(response.result.clone());
+            }
+            assert_eq!(response.trace.is_some(), trace);
+        }
+        // Compare the same parsed rule through optimized and unoptimized VM programs.
+        // Optional input errors are a strict entry contract; skip those cases here.
+        if !expression.contains("optional") {
+            let rule = RuleParser::parse(&sources[0].yaml).unwrap();
+            for optimized in [false, true] {
+                let program = Compiler::with_options(CompilerOptions {
+                    enable_constant_folding: optimized,
+                    enable_dead_code_elimination: optimized,
+                    ..Default::default()
+                })
+                .compile_rule(&rule)
+                .unwrap();
+                let result = PipelineExecutor::new_offline()
+                    .execute(&program, event.clone())
+                    .await
+                    .unwrap();
+                assert_eq!(
+                    result.score,
+                    if expected { 60 } else { 0 },
+                    "{expression}, optimized={optimized}"
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn core_matching_rejects_invalid_types_patterns_and_collection_limits() {
+    let (base, input, _) = matching_fixture();
+    let oversized_array = format!("event.amount in [{}]", vec!["1"; 1025].join(","));
+    let oversized_pattern = format!("event.text regex \"{}\"", "a".repeat(4097));
+    for (expression, code) in [
+        ("event.amount in [1, \"1\"]", "E_TYPE"),
+        ("event.amount in [true]", "E_TYPE"),
+        ("event.amount in [null]", "E_TYPE"),
+        ("event.amount in [[1]]", "E_TYPE"),
+        ("event.amount in [1e999]", "E_TYPE"),
+        ("event.amount in event.country", "E_TYPE"),
+        ("event.text contains 1", "E_TYPE"),
+        ("event.amount starts_with \"1\"", "E_TYPE"),
+        ("event.text ends_with false", "E_TYPE"),
+        ("event.text regex event.needle", "E_TYPE"),
+        ("event.amount regex \"1\"", "E_TYPE"),
+        ("false && event.text regex \"[\"", "E_INVALID_REGEX"),
+        ("event.text regex \"(?=x)\"", "E_INVALID_REGEX"),
+        ("event.text regex \"a{10000000}\"", "E_INVALID_REGEX"),
+        (&oversized_array, "E_EXPRESSION_LIMIT"),
+        (&oversized_pattern, "E_INVALID_REGEX"),
+        ("event.text in list.blocked", "E_UNSUPPORTED_CAPABILITY"),
+    ] {
+        let mut sources = base.clone();
+        modify(&mut sources, "rule.yaml", |doc| {
+            doc["rule"]["when"] = expression.into()
+        });
+        let error = core_error(DecisionEngine::from_core(&sources, input.clone()));
+        assert_eq!(error.diagnostic.code, code, "{expression}: {error}");
+        assert_eq!(error.diagnostic.field_path.as_deref(), Some("/rule/when"));
+    }
+}
+
+#[tokio::test]
+async fn core_matching_works_in_all_condition_scopes_and_missing_inputs_fail() {
+    let (mut sources, input, event) = matching_fixture();
+    let condition = r#"event.country in ["中国"] && event.text contains "🙂" && event.text starts_with "支付" && event.text ends_with ".COM" && event.text regex "^支付" && event.country not in ["US"]"#;
+    modify(&mut sources, "registry.yaml", |doc| {
+        doc["registry"][0]["when"] = condition.into()
+    });
+    modify(&mut sources, "rule.yaml", |doc| {
+        doc["rule"]["when"] = condition.into()
+    });
+    modify(&mut sources, "ruleset.yaml", |doc| {
+        doc["ruleset"]["conclusion"] = serde_json::json!([
+            {"when":condition,"signal":"decline"}, {"default":true,"signal":"approve"}
+        ])
+    });
+    modify(&mut sources, "pipeline.yaml", |doc| {
+        let pipeline = &mut doc["pipeline"];
+        pipeline["when"] = condition.into();
+        pipeline["steps"][0]["step"]["when"] = condition.into();
+        pipeline["steps"][0]["step"]["next"] = "route".into();
+        pipeline["steps"]
+            .as_array_mut()
+            .unwrap()
+            .push(serde_json::json!({"step":{
+                "id":"route","name":"Route","type":"router",
+                "routes":[{"when":condition,"next":"end"}],"default":"end"
+            }}));
+        pipeline["decision"] = serde_json::json!([
+            {"when":condition,"result":"decline"}, {"default":true,"result":"approve"}
+        ]);
+    });
+    let engine = DecisionEngine::from_core(&sources, input.clone()).unwrap();
+    let plain = engine
+        .decide(DecisionRequest::new(event.clone()))
+        .await
+        .unwrap();
+    let traced = engine
+        .decide(DecisionRequest::new(event.clone()).with_trace())
+        .await
+        .unwrap();
+    assert_eq!(plain.result, traced.result);
+    assert_eq!(plain.result.score, 60);
+    assert_eq!(
+        serde_json::to_value(plain.result.signal).unwrap()["type"],
+        "decline"
+    );
+    let records = traced.trace.unwrap().core_conditions_v1.unwrap();
+    for prefix in [
+        "/registry/0/when",
+        "/rule/when",
+        "/ruleset/conclusion/0/when",
+        "/pipeline/when",
+        "/pipeline/steps/0/step/when",
+        "/pipeline/steps/1/step/routes/0/when",
+        "/pipeline/decision/0/when",
+    ] {
+        assert!(
+            records.iter().any(|r| r.field_path == prefix),
+            "Missing trace: {prefix}"
+        );
+    }
+    for expression in [
+        r#"event.optional in ["x"]"#,
+        r#"event.optional contains "x""#,
+        r#"event.optional regex "x""#,
+    ] {
+        let (mut base, _, _) = matching_fixture();
+        modify(&mut base, "rule.yaml", |doc| {
+            doc["rule"]["when"] = expression.into()
+        });
+        let engine = DecisionEngine::from_core(&base, input.clone()).unwrap();
+        for trace in [false, true] {
+            let mut req = DecisionRequest::new(event.clone());
+            req.options.enable_trace = trace;
+            let Err(EngineError::Core(error)) = engine.decide(req).await else {
+                panic!("Missing field admitted");
+            };
+            assert_eq!(error.diagnostic.code, "E_MISSING_INPUT");
+        }
+    }
+}
 fn modify(sources: &mut [CoreSource], file: &str, f: impl FnOnce(&mut Json)) {
     let doc = sources.iter_mut().find(|s| s.path == file).unwrap();
     let mut json: Json = serde_yaml::from_str(&doc.yaml).unwrap();

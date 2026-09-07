@@ -51,6 +51,13 @@ pub(crate) fn execute_binary_op(left: &Value, op: &Operator, right: &Value) -> R
             Ok(Value::Bool(l.starts_with(r)))
         }
         (Value::String(l), Operator::EndsWith, Value::String(r)) => Ok(Value::Bool(l.ends_with(r))),
+        (Value::String(l), Operator::Regex, Value::String(r)) => {
+            let compiled =
+                corint_decision_model::matching::compile_regex(r).map_err(|message| {
+                    RuntimeError::InvalidOperation(format!("E_INVALID_REGEX: {message}"))
+                })?;
+            Ok(Value::Bool(compiled.is_match(l)))
+        }
 
         // Array operations
         (Value::Array(arr), Operator::Contains, val) => {

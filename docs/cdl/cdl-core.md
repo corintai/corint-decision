@@ -95,7 +95,8 @@ Accepted forms: string expressions, nonempty `all`/`any`, and `not` with exactly
 one item (the existing one-element sequence spelling). Nested groups are allowed.
 Expressions support scalar literals, declared fields, comparisons, boolean
 `&& / || / !`, unary numeric negation and parentheses. No coercion, arbitrary
-functions, templates or implicit feature access. Numeric `+ - * / %` and `exists(event.path)` are supported.
+functions, templates or implicit feature access. Numeric `+ - * / %`, `exists(event.path)`,
+literal-array membership and string matching are supported as specified below.
 `Ruleset.conclusion.when` remains string-only in this increment; use `&& / || / !`
 there. Group objects are accepted in the other condition positions defined by the schema.
 
@@ -103,7 +104,7 @@ Boolean spellings normalize to the existing short-circuit expression AST,
 including Registry, Rule, Router, Ruleset conclusion and Pipeline decision.
 Operands evaluate left-to-right within the parsed tree; `&&` / `||` short-circuit.
 Precedence, highest first: parentheses; unary `!` / `-`; `* / %`; `+ -`;
-`< <= > >=`; `== !=`; `&&`; `||`. Binary operators of equal precedence associate
+`< <= > >= in not in not_in contains starts_with ends_with regex`; `== !=`; `&&`; `||`. Binary operators of equal precedence associate
 left-to-right. Thus `true || false && false` is true. Negative literals,
 `-event.amount`, and scientific notation such as `1e-3` are accepted.
 Strings accept single or double quotes, Unicode text, and escapes `\\`, `\"`,
@@ -115,6 +116,39 @@ Expressions are bounded to 4096 tokens and 128 actual AST levels. Parser recursi
 operators and precedence descent. Trace does not evaluate skipped operands.
 The VM fault-injection test for short-circuiting intentionally bypasses input
 validation; this does not make malformed inputs valid at the public engine entry.
+
+### Membership and string matching
+
+`in` and `not in` (`not_in` alias) compare a number, string or boolean to a literal
+array of the same scalar type. For example, `event.country in ["CN", "US"]`.
+There is no coercion; mixed types, null, nested arrays and nonfinite elements fail
+with `E_TYPE`. Arrays are admitted only as the right operand of membership, not as
+event input types. Empty arrays are valid: membership is false and non-membership
+is true. Duplicates do not affect the result. Arrays have at most 1024 items;
+larger arrays fail with `E_EXPRESSION_LIMIT` (the shared token bound also applies).
+External `list.<id>` lookups remain disabled.
+
+`contains`, `starts_with` and `ends_with` require two strings, including declared
+string fields on either side. They use case-sensitive literal Unicode text matching
+without normalization; an empty needle matches every string, including an empty string.
+`regex` requires a string left operand and a **string literal** pattern on the right.
+It uses the Rust regex engine's Unicode-aware search semantics: use anchors for a
+whole-string match; inline flags such as `(?i)` opt into case-insensitive matching.
+An empty regex matches. Look-around and backreferences are rejected. Patterns are
+validated before execution, even in unreachable boolean operands; malformed or
+over-limit patterns produce `E_INVALID_REGEX`. Limits are 4096 pattern bytes,
+64 syntax nesting levels and 1 MiB compiled regex size. The bounded shared cache
+retains at most 32 patterns with a 256 KiB DFA cache limit per pattern.
+
+All these operators are available in every Core condition scope and preserve
+left-to-right short-circuiting. Reading a missing optional field still fails with
+`E_MISSING_INPUT`; guard it with `exists`. Trace does not evaluate skipped operands.
+Executable evidence: the `core_membership_and_string_matching_preserve_execution_and_trace`,
+`core_matching_rejects_invalid_types_patterns_and_collection_limits` and
+`core_matching_works_in_all_condition_scopes_and_missing_inputs_fail` tests in the
+[Core conformance suite](../../crates/corint-decision-engine/tests/cdl_core_conformance.rs).
+
+### Input types and references
 
 Input schema uses the existing model `Schema`/`SchemaField` types. This increment
 accepts non-null `number / string / boolean` fields and closed nested objects, with explicit required/optional fields and no defaults. Inputs may omit optional fields; undeclared fields and nonfinite numbers are
@@ -176,6 +210,7 @@ Codes include `E_INVALID_STRUCTURE`, `E_UNKNOWN_FIELD`, `E_MISSING_FIELD`,
 `E_INVALID_VERSION`, `E_UNSUPPORTED_VERSION`, `E_UNSUPPORTED_CAPABILITY`,
 `E_DUPLICATE_ID`, `E_UNRESOLVED_REF`, `E_INVALID_GRAPH`, `E_INVALID_REF`,
 `E_INVALID_EXPRESSION`, `E_TYPE`, `E_INPUT_SCHEMA`, `E_NO_PIPELINE_MATCH`, `E_COMPILE`,
+`E_INVALID_REGEX`, `E_EXPRESSION_LIMIT`,
 `E_CALL_CYCLE` and `E_CALL_LIMIT`. Core execution errors are structured
 `EngineError::Core` diagnostics with stage `execute`: `E_MISSING_INPUT`,
 `E_RESULT_UNAVAILABLE`, `E_DIVISION_BY_ZERO`, `E_NUMBER_OVERFLOW`,
