@@ -583,3 +583,113 @@ fn directory_symlink_cycles_do_not_recurse() {
     .unwrap();
     has(&run(dir.path(), &["policies"], 2), "E_PATH");
 }
+
+fn write_auxiliary_files(dir: &Path) {
+    let files = [
+        ("schema.yaml", "name: event\nfields: {}"),
+        (
+            "cases.json",
+            r#"{"version":"1","profile":"core","cases":[]}"#,
+        ),
+        (
+            "validation.json",
+            r#"{"report_version":"1","profile":"cdl-static-1","diagnostics":[],"valid":true}"#,
+        ),
+        (
+            "quality.json",
+            r#"{"rows":20,"columns":["amount"],"source":"sample.csv","sha256":"sample"}"#,
+        ),
+        (
+            "summary.json",
+            r#"{"metrics":[],"source_sha256":"sample","status":"complete"}"#,
+        ),
+    ];
+    for (name, text) in files {
+        std::fs::write(dir.join(name), text).unwrap();
+    }
+}
+
+#[test]
+fn directory_discovery_reports_auxiliary_documents_as_skipped() {
+    let dir = setup();
+    write_auxiliary_files(dir.path());
+    let report = run(dir.path(), &["."], 0);
+    assert_eq!(report["sources"].as_array().unwrap().len(), 7);
+    // The existing input-schema fixture is also discovered and skipped.
+    assert_eq!(report["skipped_sources"].as_array().unwrap().len(), 6);
+    assert_eq!(report["input_schema_checked"], false);
+    assert!(report["skipped_sources"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|entry| entry["reason"] == "analysis_report"));
+    // Selecting the same directory twice must not duplicate skip records.
+    let repeated = run(dir.path(), &[".", "."], 0);
+    assert_eq!(repeated["skipped_sources"], report["skipped_sources"]);
+}
+
+#[test]
+fn explicit_files_override_discovery_skips_in_either_argument_order() {
+    let dir = setup();
+    write_auxiliary_files(dir.path());
+    for args in [
+        vec![".", "validation.json"],
+        vec!["validation.json", "."],
+        vec!["input-schema.yaml"],
+    ] {
+        let report = run(dir.path(), &args, 1);
+        has(&report, "E_NOT_CDL");
+        assert!(!report["skipped_sources"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|entry| entry["source"]
+                .as_str()
+                .unwrap()
+                .ends_with(args.iter().find(|arg| **arg != ".").unwrap())));
+    }
+}
+
+#[test]
+fn unknown_malformed_or_resource_shaped_files_are_never_skipped() {
+    for (text, code) in [
+        ("rule: [", "E_YAML"),
+        ("rulle: {id: typo, name: Typo, when: 'true', score: 1}", "E_UNKNOWN_FIELD"),
+        ("name: broken_service", "E_MISSING_FIELD"),
+        ("features: [{name: f, type: typo}]", "E_INVALID_STRUCTURE"),
+        ("rule: {id: r, name: R, when: 'true', score: 1}\nmetrics: {}\nstatus: complete\nsource_sha256: sample", "E_UNKNOWN_FIELD"),
+    ] {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir(dir.path().join("reports")).unwrap();
+        std::fs::write(dir.path().join("reports/summary.yaml"), text).unwrap();
+        let report = run(dir.path(), &["."], 1);
+        has(&report,code);
+        assert!(report["skipped_sources"].as_array().unwrap().is_empty());
+    }
+}
+
+#[test]
+fn imported_auxiliary_documents_fail_instead_of_disappearing() {
+    let dir = setup();
+    write_auxiliary_files(dir.path());
+    mutate(
+        dir.path(),
+        "registry.yaml",
+        "version: \"0.1\"",
+        "version: \"0.1\"\nimport: {rules: [cases.json]}",
+    );
+    let report = run(dir.path(), &["--root", ".", "registry.yaml"], 1);
+    has(&report, "E_IMPORT_KIND");
+    has(&report, "E_NOT_CDL");
+    assert!(report["skipped_sources"].as_array().unwrap().is_empty());
+}
+
+#[test]
+fn an_auxiliary_only_directory_does_not_claim_validated_cdl() {
+    let dir = tempfile::tempdir().unwrap();
+    write_auxiliary_files(dir.path());
+    let report = run(dir.path(), &["."], 2);
+    has(&report, "E_NO_SOURCES");
+    assert!(report["sources"].as_array().unwrap().is_empty());
+    assert_eq!(report["skipped_sources"].as_array().unwrap().len(), 5);
+}

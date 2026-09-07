@@ -29,6 +29,12 @@ pub struct Options {
 }
 
 #[derive(Serialize)]
+pub struct SkippedSource {
+    pub source: String,
+    pub reason: &'static str,
+}
+
+#[derive(Serialize)]
 pub struct Report {
     pub report_version: &'static str,
     pub profile: &'static str,
@@ -39,6 +45,7 @@ pub struct Report {
     pub input_schema_checked: bool,
     pub unchecked: Vec<&'static str>,
     pub sources: Vec<String>,
+    pub skipped_sources: Vec<SkippedSource>,
     pub diagnostics: Vec<Diagnostic>,
 }
 impl Report {
@@ -58,6 +65,7 @@ impl Report {
                 "runtime_result_availability",
             ],
             sources: vec![],
+            skipped_sources: vec![],
             diagnostics: vec![],
         }
     }
@@ -104,6 +112,10 @@ fn schema() -> &'static jsonschema::JSONSchema {
 /// Select the resource branch before validation so diagnostics identify the field,
 /// rather than merely reporting that the whole document failed `oneOf`.
 fn check_shape(doc: &Document, report: &mut Report) -> bool {
+    if let Some(kind) = sources::auxiliary_kind(&doc.value) {
+        report.error(&doc.source, "", "schema", "E_NOT_CDL", format!("Expected a CDL resource; this file is {kind}. Input Schemas belong in --input-schema, behavior cases in test --cases; reports are not policy resources."));
+        return false;
+    }
     let root: Value = serde_json::from_str(SCHEMA).unwrap();
     let branch = if ["rule", "ruleset", "pipeline", "registry"]
         .iter()

@@ -83,6 +83,15 @@ pub fn run(args: &[OsString]) -> (u8, String) {
             if report.valid { "PASS" } else { "FAIL" },
             report.sources.len()
         );
+        if !report.skipped_sources.is_empty() {
+            text.push_str(&format!(
+                "Skipped {} auxiliary files:\n",
+                report.skipped_sources.len()
+            ));
+            for skipped in &report.skipped_sources {
+                text.push_str(&format!("  {} [{}]\n", skipped.source, skipped.reason));
+            }
+        }
         for diagnostic in &report.diagnostics {
             text.push_str(&format!(
                 "{} {}{} [{}]: {}\n",

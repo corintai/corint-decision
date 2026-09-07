@@ -151,7 +151,12 @@
         "files",
         "recursive_directories",
         "mixed_paths"
-      ]
+      ],
+      "auxiliary_documents": {
+        "directory_discovery": "skip_recognized_shapes_and_report",
+        "explicit_files_and_imports": "reject_as_non_cdl",
+        "unknown_or_malformed_documents": "validate_and_report_errors"
+      }
     },
     "test_cli": {
       "status": "experimental",

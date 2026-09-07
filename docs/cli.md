@@ -48,18 +48,27 @@ commands retain their execution profiles and contracts.
 | Input | Checks |
 |---|---|
 | Explicit files | YAML, closed resource structure, expressions, literal type errors, duplicate loaded IDs, local graph targets/cycles and declared dependency cycles. Missing cross-file resources do not fail this mode. |
-| Directories or mixed paths | Recursively check every `.yaml`, `.yml`, `.json` file in the supplied directories, regardless of directory names or depth; suffix matching is case-insensitive. Explicit files are checked regardless of suffix. Overlapping paths load each file once. |
+| Directories or mixed paths | Recursively inspect every `.yaml`, `.yml`, `.json` file in the supplied directories, regardless of directory names or depth; suffix matching is case-insensitive. Explicit files are checked regardless of suffix. Overlapping paths load each file once. |
 | `--root DIR` with paths | Expand the supplied root-relative files/directories and load transitive imports; require all resource references to resolve in that collection. |
 | `--root DIR` without files | Discover `.yaml`, `.yml`, `.json` recursively in `rules/`, `rulesets/`, `pipelines/`, `features/`, `lists/`, `services/`, plus root `registry.yaml`, `registry.yml`, `registry.json`; check the complete discovered collection. |
 | `--input-schema PATH` | Also check declared event fields and their known expression types. The Schema path is relative to the current working directory, even with `--root`. |
 
-Pass files to validate precisely those files, or directories to check their entire
-YAML/JSON contents. The root-only option retains its existing repository-layout shortcut;
-it is not required for directory validation. Other file suffixes are skipped during
-scanning. Schema, case inputs, backups and reports are not CDL resources: keep them
-outside scanned directories or select only resource files. Save JSON reports outside
-the scanned directories, including shell redirects which create output before scanning.
-An empty selection is an error, not a successful validation. Files must be UTF-8
+Pass files to validate precisely those files, or directories to discover their CDL
+resources. Discovery recognizes auxiliary documents by content: input Schemas
+(`name`/`fields`), behavior suites (`version`/`profile`/`cases`), validation reports
+(`report_version`/`profile`/`diagnostics`), and analysis reports carrying provenance
+with metrics or row/column summaries. These are listed in `skipped_sources`, not
+counted as validated resources. Unknown shapes, YAML parse failures and any document
+declaring CDL resource fields still undergo validation. File/directory names alone
+never cause a document to be skipped. Explicit files and imports are always strict;
+explicit auxiliary files return `E_NOT_CDL` with guidance on the appropriate input.
+
+The root-only option retains its existing repository-layout shortcut; it is not
+required for directory validation. Other file suffixes are skipped during scanning.
+Discovering an input Schema does not enable input checks: supply `--input-schema`
+explicitly. Save redirected reports outside scanned directories because a shell
+creates an empty output file before validation, which is not a recognizable report.
+An empty or auxiliary-only selection is an error, not a successful validation. Files must be UTF-8
 regular files no larger than 4 MiB.
 Imports must stay within the canonical root, with at most 128 levels and 4096 files.
 Discovery rejects symlinks; explicit files/imports are canonicalized and cannot escape
@@ -103,7 +112,8 @@ proven by static validation.
 `--format json` writes one JSON report to stdout on success and failure. It includes
 `report_version`, `profile: "cdl-static-1"`, `scope: "static"`, `valid`, `sources`,
 `references_checked`, `input_schema_checked`, `execution_checked: false`, `unchecked`
-and `diagnostics`. Resource paths are canonical absolute paths; input Schema diagnostics use the supplied
+`skipped_sources` (each entry has `source` and `reason`), and `diagnostics`. Text output
+also lists skipped auxiliary files. Resource paths are canonical absolute paths; input Schema diagnostics use the supplied
 Schema path. Text is the default.
 
 | Exit | Meaning |
@@ -223,5 +233,6 @@ and behavior tests when runtime compatibility or decisions need verification.
 
 | Date | Changes |
 |---|---|
+| 2026-09-07 | Identify auxiliary documents during directory discovery and report skipped files; explicit inputs remain strict. |
 | 2026-09-07 | Accept files, recursive directories and mixed paths; keep imports opt-in with `--root`. |
 | 2026-09-07 | Make full CDL static validation the default; retain explicit Core compilation. |

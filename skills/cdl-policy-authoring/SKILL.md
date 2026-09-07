@@ -23,7 +23,7 @@ description: "根据业务需求创建、修改或修复完整 CDL：Rule、Rule
 - 按资源类型采用当前定义：Rule/Ruleset/Pipeline/Registry、[Feature](../../CDL/feature.md)、[List](../../CDL/list.md)、[Service](../../CDL/service.md)。完整静态示例见[公共 fixture](../../tests/conformance/cdl_authoring/registry.yaml)及同目录的资源文件。
 - 用 `entry`、`next` 和 routes 表达控制流；first-match 分支按业务优先级排列。区分 Rule 评分、Ruleset 信号、Pipeline 最终结果。
 - 外部 Feature/List/Service 需要声明与引用；确认数据源名、窗口、单位、操作和失败行为，不需要为了语法校验启动数据库或调用服务。
-- 传入一个或多个文件时只校验指定文件；传入目录时递归扫描其中全部 YAML/JSON 文件，支持文件和目录混用。若要额外解析 imports 并检查跨文件引用，加 `--root`。Schema、测试、报告和备份放在扫描目录之外。
+- 传入一个或多个文件时只校验指定文件；传入目录时递归扫描其中全部 YAML/JSON 文件，支持文件和目录混用。若要额外解析 imports 并检查跨文件引用，加 `--root`。目录发现会按内容识别并跳过输入 Schema、行为用例和已知报告，查看 `skipped_sources` 确认范围；未知结构和损坏的 CDL 仍报错。显式指定的辅助文件不会跳过。重定向生成的报告放在扫描目录之外，避免先创建的空文件被扫描。
 - 已有输入 Schema 时传给 CLI 增加字段和类型检查。没有 Schema 时仍可完成静态校验，明确字段类型未验证；不得编造或放宽 Schema 来通过。
 - 不为单纯编写/语法校验默认生成行为用例、打包、运行策略或发布产物。保留已有验收用例，不从实际输出反向改写预期。
 
@@ -34,7 +34,7 @@ description: "根据业务需求创建、修改或修复完整 CDL：Rule、Rule
 1. 对编写或修改的文件或目录运行 `validate PATH... --format json`。需要解析 imports 和检查跨文件引用时加 `--root`；需要字段检查时加 `--input-schema`。
 2. 同时检查进程退出码和报告 `valid`，按 `source`、`field_path`、`stage`、`code` 定位错误。解析器提供时还可用 `line`/`column`。
 3. 修复原因后重新运行相同范围的校验。涉及引用或依赖变更时重新验证完整仓库。不得删除合法引用、替换外部资源或改变业务逻辑只为通过。
-4. 记录 `references_checked`、`input_schema_checked` 和 `unchecked`。`execution_checked: false` 是默认静态验证的正常结果。
+4. 记录 `references_checked`、`input_schema_checked`、`skipped_sources` 和 `unchecked`。`execution_checked: false` 是默认静态验证的正常结果。
 
 退出码 `0` 为校验通过，`1` 为 CDL/Schema/引用错误，`2` 为用法或文件读取错误。构建失败另行报告。重复诊断无法定位时保留命令和可复现错误，不进行无依据改写。工具不可用时可交付草稿，但没有实际运行不能宣称验证通过。
 

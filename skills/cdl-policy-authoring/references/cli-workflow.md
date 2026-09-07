@@ -41,7 +41,9 @@ cdl validate "$POLICY_DIR/rules/blocked.yaml" "$POLICY_DIR/features" --format js
 `--root DIR` 不传路径时保留旧的仓库扫描方式，仅扫描标准资源目录和根 Registry。
 有输入 Schema 时额外加 `--input-schema "$POLICY_DIR/input-schema.yaml"`；Schema 路径始终相对当前目录解析，不相对 root。
 
-扫描目录只放 CDL 资源；Schema、用例和报告放在目录外，或显式指定资源文件。JSON 报告也保存到扫描目录之外，避免 shell 重定向先创建文件再被扫描进来。
+目录扫描会识别输入 Schema、行为用例及已知验证/分析报告，并在 `skipped_sources` 列出跳过项；这些文件未作为 CDL 校验。未知文档结构或 YAML 解析失败仍会报错；不能仅靠目录名忽略疑似 CDL。显式指定的辅助文件会报告 `E_NOT_CDL`。扫描到 Schema 不自动开启字段检查，仍需 `--input-schema`。
+
+重定向的 JSON 报告保存到扫描目录之外，避免 shell 先创建的空文件被读到。
 
 读取报告和退出码。`valid: true` 且退出码 `0` 才是通过；`1` 是校验失败，`2` 是用法/文件错误。`--format json` 只控制程序 stdout；Cargo 构建信息可能在 stderr，构建失败另行报告。`--help`/`--version` 成功不是验证证据。
 

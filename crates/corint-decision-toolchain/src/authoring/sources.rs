@@ -1,4 +1,4 @@
-use super::{Document, Options, Report};
+use super::{Document, Options, Report, SkippedSource};
 use serde::Deserialize;
 use serde_json::Value;
 use std::collections::BTreeMap;
@@ -79,7 +79,7 @@ pub(super) fn yaml(text: &str, source: &str, report: &mut Report) -> Option<Valu
     None
 }
 
-fn scan(dir: &Path, files: &mut Vec<PathBuf>, report: &mut Report) {
+fn scan(dir: &Path, files: &mut Vec<(PathBuf, bool)>, report: &mut Report) {
     let entries = match std::fs::read_dir(dir) {
         Ok(entries) => entries,
         Err(error) => {
@@ -127,7 +127,7 @@ fn scan(dir: &Path, files: &mut Vec<PathBuf>, report: &mut Report) {
                     .any(|candidate| ext.eq_ignore_ascii_case(candidate))
             })
         {
-            files.push(path);
+            files.push((path, true));
         }
     }
 }
@@ -168,7 +168,7 @@ pub(super) fn load(options: &Options, report: &mut Report) -> Vec<Document> {
                 scan(&path, &mut files, report);
             }
         } else {
-            files.push(path);
+            files.push((path, false));
         }
     }
     // Keep the existing root-only repository shortcut. Explicit paths always
@@ -191,7 +191,7 @@ pub(super) fn load(options: &Options, report: &mut Report) -> Vec<Document> {
             for file in ["registry.yaml", "registry.yml", "registry.json"] {
                 let path = root.join(file);
                 if path.exists() {
-                    files.push(path);
+                    files.push((path, true));
                 }
             }
         }
@@ -213,8 +213,17 @@ pub(super) fn load(options: &Options, report: &mut Report) -> Vec<Document> {
         visiting: vec![],
         report,
     };
-    for path in files {
-        loader.load(&path, None);
+    for (path, discovered) in files {
+        loader.load(&path, None, discovered);
+    }
+    if loader.report.sources.is_empty() && loader.report.diagnostics.is_empty() {
+        loader.report.error(
+            "",
+            "",
+            "usage",
+            "E_NO_SOURCES",
+            "No CDL resources found; the discovered files are auxiliary documents",
+        );
     }
     loader.documents
 }
@@ -227,7 +236,7 @@ struct Loader<'a> {
     report: &'a mut Report,
 }
 impl Loader<'_> {
-    fn load(&mut self, path: &Path, expected: Option<&str>) {
+    fn load(&mut self, path: &Path, expected: Option<&str>, discovered: bool) {
         let canonical = match std::fs::canonicalize(path) {
             Ok(path) => path,
             Err(error) => {
@@ -266,7 +275,9 @@ impl Loader<'_> {
             );
             return;
         }
-        if self.visiting.len() >= 128 || self.loaded.len() >= 4096 {
+        if self.visiting.len() >= 128
+            || self.loaded.len() + self.report.skipped_sources.len() >= 4096
+        {
             self.report.error(
                 &source,
                 "/import",
@@ -289,6 +300,27 @@ impl Loader<'_> {
         let Some(mut value) = yaml(&text, &source, self.report) else {
             return;
         };
+        if discovered {
+            if let Some(reason) = auxiliary_kind(&value) {
+                self.report.sources.retain(|path| path != &source);
+                if !self
+                    .report
+                    .skipped_sources
+                    .iter()
+                    .any(|entry| entry.source == source)
+                {
+                    self.report
+                        .skipped_sources
+                        .push(SkippedSource { source, reason });
+                }
+                return;
+            }
+        } else {
+            // An explicitly named or imported file must never inherit a discovery skip.
+            self.report
+                .skipped_sources
+                .retain(|entry| entry.source != source);
+        }
         check_kind(&value, expected, &source, self.report);
         self.visiting.push(canonical.clone());
         if let Some(imports) = value.get("import") {
@@ -317,7 +349,7 @@ impl Loader<'_> {
                             if let Some(path) = path.as_str().filter(|p| !p.trim().is_empty()) {
                                 if let Some(root) = &self.root {
                                     let path = root.join(path);
-                                    self.load(&path, Some(kind));
+                                    self.load(&path, Some(kind), false);
                                 }
                                 // Without --root, only validate the import declaration;
                                 // explicit file/directory selection must not load siblings.
@@ -374,4 +406,58 @@ fn check_kind(value: &Value, expected: Option<&str>, source: &str, report: &mut 
             );
         }
     }
+}
+
+/// Recognize auxiliary document families conservatively, after YAML parsing.
+/// Unknown shapes and anything declaring a CDL resource still reach validation.
+/// File names and directory names never exempt a resource from checks.
+pub(super) fn auxiliary_kind(value: &Value) -> Option<&'static str> {
+    let object = value.as_object()?;
+    if [
+        "rule",
+        "ruleset",
+        "pipeline",
+        "registry",
+        "features",
+        "lists",
+        "import",
+        "id",
+        "backend",
+        "datasource",
+        "base_url",
+        "operations",
+    ]
+    .iter()
+    .any(|key| object.contains_key(*key))
+    {
+        return None;
+    }
+    if value["name"].is_string() && value["fields"].is_object() {
+        return Some("input_schema");
+    }
+    if value["cases"].is_array() && value["profile"].is_string() && object.contains_key("version") {
+        return Some("behavior_cases");
+    }
+    if value["diagnostics"].is_array()
+        && value["profile"].is_string()
+        && object.contains_key("report_version")
+    {
+        return Some("validation_report");
+    }
+    if value["rows"].is_number()
+        && (value["columns"].is_array() || value["columns"].is_object())
+        && value["source"].is_string()
+        && value["sha256"].is_string()
+    {
+        return Some("analysis_report");
+    }
+    if (value["metrics"].is_object() || value["metrics"].is_array())
+        && (value["source_sha256"].is_string()
+            || value["dataset"].is_object()
+            || value["dataset"].is_string())
+        && object.contains_key("status")
+    {
+        return Some("analysis_report");
+    }
+    None
 }
