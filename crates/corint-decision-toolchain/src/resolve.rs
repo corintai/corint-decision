@@ -225,6 +225,14 @@ struct Parsed {
     original: CoreSource,
 }
 fn parse(path: &str, yaml: String) -> Result<Parsed, CoreError> {
+    corint_decision_dsl_parser::source_format::validate_rules_format(&yaml).map_err(|e| {
+        let mut error = fail(path, "E_RULES_FORMAT", e.to_string());
+        error.diagnostic.field_path = Some("/ruleset/rules".into());
+        error.diagnostic.stage = Some("parse".into());
+        error.diagnostic.line = Some(e.line);
+        error.diagnostic.column = Some(e.column);
+        error
+    })?;
     let mut docs = Vec::new();
     for doc in serde_yaml::Deserializer::from_str(&yaml) {
         if docs.len() == 2 {

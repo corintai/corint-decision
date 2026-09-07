@@ -592,7 +592,6 @@ version: "0.1"
 ruleset:
   id: auto_detect_ruleset
   name: Auto Detect Ruleset
-  rules: []
   conclusion:
     - default: true
       signal: approve

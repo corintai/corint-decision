@@ -315,13 +315,12 @@ ruleset:
 }
 
 #[test]
-fn test_parse_ruleset_with_empty_rules() {
+fn test_parse_ruleset_with_omitted_rules() {
     let yaml = r#"
 version: "0.1"
 
 ruleset:
   id: empty_ruleset
-  rules: []
   conclusion:
     - default: true
       signal: approve
@@ -367,7 +366,6 @@ version: "0.1"
 
 ruleset:
   id: action_ruleset
-  rules: []
   conclusion:
     - when: score > 300
       signal: decline
@@ -397,7 +395,6 @@ version: "0.1"
 
 ruleset:
   name: Missing ID
-  rules: []
   conclusion: []
 "#;
 
@@ -412,7 +409,6 @@ version: "0.1"
 
 ruleset:
   id: invalid_action_ruleset
-  rules: []
   conclusion:
     - when: score > 100
       signal: invalid_signal
@@ -430,7 +426,6 @@ version: "0.1"
 ruleset:
   id: meta_ruleset
   name: Ruleset with Metadata
-  rules: []
   metadata:
     category: fraud
     version: "1.0.0"

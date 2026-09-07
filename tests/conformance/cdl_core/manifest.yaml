@@ -159,8 +159,8 @@ invalid:
     code: E_INVALID_STRUCTURE
   - id: N05_missing_rule
     document: ruleset.yaml
-    find: 'rules: [large_amount]'
-    replace: 'rules: [invented_rule]'
+    find: "rules:\n    - large_amount"
+    replace: "rules:\n    - invented_rule"
     stage: resolve
     code: E_UNRESOLVED_REF
   - id: N05_cycle

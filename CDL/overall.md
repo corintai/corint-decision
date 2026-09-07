@@ -49,6 +49,8 @@ one `rule`, `ruleset`, `pipeline` or `registry` resource. Unknown fields, duplic
 unsupported versions, missing or null required values and invalid types are rejected.
 Fields are not silently ignored and versions are not automatically downgraded. The
 [resource Schema](schema/core.json) uses Draft 7 JSON Schema to describe decoded YAML objects.
+Before decoding, source validation also requires `ruleset.rules` to use a
+[block sequence](ruleset.md#source-syntax-for-rules), in both full CDL and Core.
 
 A complete Core collection contains exactly one Registry and every referenced resource.
 Rule, Ruleset and Pipeline IDs are unique across that collection and match

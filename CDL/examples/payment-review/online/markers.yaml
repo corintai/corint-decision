@@ -4,7 +4,9 @@ ruleset:
   name: Preparation markers
   metadata:
     owner: payments-team
-  rules: [email_on_blocklist, loyal_customer_marker]
+  rules:
+    - email_on_blocklist
+    - loyal_customer_marker
   conclusion:
     - default: true
       signal: pass

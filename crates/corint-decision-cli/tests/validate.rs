@@ -144,6 +144,18 @@ fn source(dir: &Path, name: &str) -> CoreSource {
 }
 
 #[test]
+fn core_rejects_flow_rule_lists_before_compilation() {
+    let dir = setup(FILES);
+    let yaml =
+        fixture("ruleset.yaml").replace("rules:\n    - large_amount", "rules: [large_amount]");
+    std::fs::write(dir.path().join("ruleset.yaml"), yaml).unwrap();
+    let report = validate(dir.path(), FILES, 1);
+    assert_eq!(report["diagnostics"][0]["code"], "E_RULES_FORMAT");
+    assert_eq!(report["diagnostics"][0]["field_path"], "/ruleset/rules");
+    assert_eq!(report["diagnostics"][0]["line"], 4);
+}
+
+#[test]
 fn unicode_and_malformed_expressions_always_return_json_diagnostics() {
     let dir = setup(FILES);
     for (condition, code) in [

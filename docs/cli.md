@@ -22,10 +22,11 @@ cargo build -p corint-decision-cli --locked
 ./target/debug/corint validate --format json \
   tests/conformance/cdl_authoring/features/payment.yaml
 
-# Multiple files, a directory, or a mixture of both.
+# Multiple files/directories: include all referenced definitions.
 ./target/debug/corint validate --format json \
   tests/conformance/cdl_authoring/rules/blocked.yaml \
-  tests/conformance/cdl_authoring/features
+  tests/conformance/cdl_authoring/features \
+  tests/conformance/cdl_authoring/lists
 
 # A repository: all seven resource kinds, references and optional input types.
 ./target/debug/corint validate --format json \
@@ -47,9 +48,10 @@ commands retain their execution profiles and contracts.
 
 | Input | Checks |
 |---|---|
-| Explicit files | YAML, closed resource structure, expressions, literal type errors, duplicate loaded IDs, local graph targets/cycles and declared dependency cycles. Missing cross-file resources do not fail this mode. |
-| Directories or mixed paths | Recursively inspect every `.yaml`, `.yml`, `.json` file in the supplied directories, regardless of directory names or depth; suffix matching is case-insensitive. Explicit files are checked regardless of suffix. Overlapping paths load each file once. |
-| `--root DIR` with paths | Expand the supplied root-relative files/directories and load transitive imports; require all resource references to resolve in that collection. |
+| One explicit file | Check its YAML, structure, expressions and resource references. Infer a policy root (or use `--root`), load imports and referenced objects by ID, and recursively validate their defining files. Missing references and invalid dependencies fail. |
+| Multiple distinct files | The same static checks plus resource references across the selected files. A missing Rule/Ruleset/Pipeline/Feature/List/Service definition fails with `E_UNRESOLVED_REFERENCE`. |
+| Directories or mixed paths | Recursively inspect every `.yaml`, `.yml`, `.json` file in the supplied directories, regardless of directory names or depth; suffix matching is case-insensitive. Check references across the entire selected collection, even when a directory contains only one resource. Explicit files are checked regardless of suffix. Overlapping paths load each file once. |
+| `--root DIR` with paths | Expand the supplied root-relative files/directories, load transitive imports and referenced resource definitions from that root; require all references to resolve. |
 | `--root DIR` without files | Discover `.yaml`, `.yml`, `.json` recursively in `rules/`, `rulesets/`, `pipelines/`, `features/`, `lists/`, `services/`, plus root `registry.yaml`, `registry.yml`, `registry.json`; check the complete discovered collection. |
 | `--input-schema PATH` | Also check declared event fields and their known expression types. The Schema path is relative to the current working directory, even with `--root`. |
 
@@ -65,6 +67,25 @@ explicit auxiliary files return `E_NOT_CDL` with guidance on the appropriate inp
 
 The root-only option retains its existing repository-layout shortcut; it is not
 required for directory validation. Other file suffixes are skipped during scanning.
+Single-file validation also checks dependencies. Without `--root`, it uses the
+nearest ancestor containing `registry.yaml`, `registry.yml` or `registry.json`,
+stopping the ancestor search at a Git root. If none exists, it uses the source
+file's directory (or the parent of a conventional `rules/`, `rulesets/`,
+`pipelines/`, `features/`, `lists/` or `services/` directory). The report exposes
+this directory as `reference_root`; use `--root` for a different layout.
+
+Within this root, definitions are indexed by resource kind and declared ID, not
+filename. Only the selected sources, their imports and transitively referenced
+files undergo full validation. Unrelated malformed files do not fail a single-file
+check. Duplicate definitions of a referenced ID, missing IDs, invalid dependencies,
+unknown service operations and dependency cycles fail validation. All loaded
+files appear in `sources`. Definitions must be local; no services are contacted.
+Directory/multiple-file selection without `--root` checks references within the
+selected collection. It does not infer extra search roots.
+
+For example, `corint validate repo2/ruleset.yaml` finds the rules under `repo2/rules`
+but rejects `customer_amount_spike_7` when the definition declares
+`customer_amount_spike_7d`. There is no syntax-only exception for single files.
 Discovering an input Schema does not enable input checks: supply `--input-schema`
 explicitly. Save redirected reports outside scanned directories because a shell
 creates an empty output file before validation, which is not a recognizable report.
@@ -76,7 +97,7 @@ the root. Shared imports and repeated source paths are loaded once. Use `--` bef
 filenames beginning with a dash.
 
 Static imports support `rules`, `rulesets`, `pipelines`, `features`, `lists`, `services`
-arrays of root-relative file paths. Without `--root`, import declarations are checked
+arrays of root-relative file paths. Without an explicit or inferred root, import declarations are checked
 for syntax but not followed; only supplied files and directory contents are loaded.
 Use inline `import:` or a version/import header
 followed by `---` and one resource body. Duplicate keys across header and body fail.
@@ -95,9 +116,8 @@ Feature checks reuse the runtime's pure window/filter validation and mathematica
 expression parser. Service checks reuse HTTP configuration and JSON body-template
 validation; operation references are checked when the service definition is loaded.
 Datasource names and SDK-provided bindings are external declarations: this command
-does not test their existence or connectivity. An external custom service without a
-local HTTP definition can be syntax-checked alone; it cannot satisfy repository
-reference checks without a declarative binding.
+does not test their existence or connectivity. An external custom service requires a local declarative binding to satisfy
+resource reference checks, including when validating one file.
 
 The optional input file is the existing model `Schema` serialization, **not JSON
 Schema**. Its [format schema](../CDL/schema/authoring-input.json) supports number,
@@ -111,7 +131,7 @@ proven by static validation.
 
 `--format json` writes one JSON report to stdout on success and failure. It includes
 `report_version`, `profile: "cdl-static-1"`, `scope: "static"`, `valid`, `sources`,
-`references_checked`, `input_schema_checked`, `execution_checked: false`, `unchecked`,
+`references_checked`, `reference_root`, `input_schema_checked`, `execution_checked: false`, `unchecked`,
 `skipped_sources` (each entry has `source` and `reason`), and `diagnostics`. Text output
 lists each passed resource as `[PASS] <path>` when the input includes a directory
 (including the root-only repository shortcut), followed by skipped auxiliary files
@@ -137,8 +157,7 @@ in schema diagnostics.
 
 The default Skill loop is: **write or edit → validate → repair diagnostics → validate
 again**. Read exit status and `valid`, and retain the reported `unchecked` scope.
-Use repository mode when related resources are available; use standalone mode for
-individual resources. Supplying an input Schema adds checks but is not a prerequisite.
+Both single-file and repository validation check referenced resources. Supplying an input Schema adds checks but is not a prerequisite.
 The [authoring Skill](../skills/cdl-policy-authoring/SKILL.md) follows this workflow.
 
 Static success does not prove execution-profile compatibility or expected business

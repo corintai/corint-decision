@@ -86,6 +86,20 @@ fn schema() -> &'static JSONSchema {
 }
 
 fn parse_yaml(source: &CoreSource) -> CoreResult<Json> {
+    corint_decision_dsl_parser::source_format::validate_rules_format(&source.yaml).map_err(
+        |e| {
+            let mut error = diagnostic(
+                &source.path,
+                "/ruleset/rules",
+                "parse",
+                "E_RULES_FORMAT",
+                e.to_string(),
+            );
+            error.diagnostic.line = Some(e.line);
+            error.diagnostic.column = Some(e.column);
+            error
+        },
+    )?;
     // Parsing directly to YAML Value rejects duplicate keys at every depth.
     let yaml: serde_yaml::Value = serde_yaml::from_str(&source.yaml).map_err(|e| {
         let mut err = diagnostic(

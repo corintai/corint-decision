@@ -51,7 +51,8 @@ import:
 ---
 ruleset:
   id: risk
-  rules: [amount]
+  rules:
+    - amount
   conclusion:
     - when: total_score >= 60
       signal: decline

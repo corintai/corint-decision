@@ -349,7 +349,8 @@ pipeline:
 ---
 ruleset:
   id: test_ruleset
-  rules: [test_rule]"#;
+  rules:
+    - test_rule"#;
 
         let provider = Arc::new(MockProvider::with_response(mock_response.to_string()));
         let generator = DecisionFlowGenerator::with_defaults(provider);

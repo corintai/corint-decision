@@ -137,6 +137,9 @@ pub fn run(args: &[OsString]) -> (u8, String) {
             "References checked: {}; input Schema checked: {}; execution checked: false\n",
             report.references_checked, report.input_schema_checked
         ));
+        if let Some(root) = &report.reference_root {
+            text.push_str(&format!("Reference root: {root}\n"));
+        }
         text
     };
     (code, output)

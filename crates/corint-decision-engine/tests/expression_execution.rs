@@ -157,7 +157,7 @@ async fn compatibility_decision_keeps_service_and_variable_outputs() {
 fn source(name: &str, document: Json) -> CoreSource {
     CoreSource {
         path: name.into(),
-        yaml: document.to_string(),
+        yaml: serde_yaml::to_string(&document).unwrap(),
     }
 }
 
@@ -182,7 +182,7 @@ async fn core_total_score_cannot_be_shadowed_by_an_event_field() {
             }}),
         ),
         source(
-            "ruleset.json",
+            "ruleset.yaml",
             json!({"version":"0.1", "ruleset":{
                 "id":"risk", "rules":["score_rule"], "conclusion":[
                     {"when":"total_score == 7 && event.total_score != 7", "signal":"review"},

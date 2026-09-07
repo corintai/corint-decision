@@ -45,6 +45,19 @@ fn setup() -> TempDir {
 fn entries() -> Vec<String> {
     vec!["registry.yaml".into()]
 }
+
+#[test]
+fn imported_flow_rule_lists_are_rejected_before_normalization() {
+    let dir = setup();
+    let path = dir.path().join("rulesets/risk.yaml");
+    let yaml = std::fs::read_to_string(&path)
+        .unwrap()
+        .replace("rules:\n    - large_amount", "rules: [large_amount]");
+    std::fs::write(path, yaml).unwrap();
+    let report = cli(dir.path(), &dir.path().join("resolved.json"), 1);
+    assert_eq!(report["diagnostics"][0]["code"], "E_RULES_FORMAT");
+    assert_eq!(report["diagnostics"][0]["field_path"], "/ruleset/rules");
+}
 fn run(args: &[&str], exit: i32) -> Value {
     let result = Command::new(env!("CARGO_BIN_EXE_corint"))
         .args(args.iter().take(1))

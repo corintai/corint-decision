@@ -806,7 +806,7 @@ async fn compatibility_string_conditions_short_circuit_and_lists_fail_closed() {
             "{condition}"
         );
     }
-    let ruleset = RulesetParser::parse("ruleset:\n  id: risk\n  rules: []\n  conclusion:\n    - when: 'true || false && (1 / 0 > 0)'\n      signal: decline\n    - default: true\n      signal: approve\n").unwrap();
+    let ruleset = RulesetParser::parse("ruleset:\n  id: risk\n  conclusion:\n    - when: 'true || false && (1 / 0 > 0)'\n      signal: decline\n    - default: true\n      signal: approve\n").unwrap();
     let program = Compiler::new().compile_ruleset(&ruleset).unwrap();
     assert_eq!(
         executor

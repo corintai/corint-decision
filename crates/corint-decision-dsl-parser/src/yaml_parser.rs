@@ -12,6 +12,8 @@ pub struct YamlParser;
 impl YamlParser {
     /// Parse YAML string into a YAML value
     pub fn parse(yaml_str: &str) -> Result<YamlValue> {
+        crate::source_format::validate_rules_format(yaml_str)
+            .map_err(|e| ParseError::ParseError(e.to_string()))?;
         serde_yaml::from_str(yaml_str).map_err(|e| ParseError::ParseError(e.to_string()))
     }
 
@@ -27,6 +29,8 @@ impl YamlParser {
 
         // Preprocess: auto-insert --- before rule:/ruleset:/pipeline: at line start
         let preprocessed = Self::preprocess_multi_document(yaml_str);
+        crate::source_format::validate_rules_format(&preprocessed)
+            .map_err(|e| ParseError::ParseError(e.to_string()))?;
 
         let deserializer = serde_yaml::Deserializer::from_str(&preprocessed);
         let mut documents = Vec::new();

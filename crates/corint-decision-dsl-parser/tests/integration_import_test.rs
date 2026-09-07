@@ -405,7 +405,6 @@ rule:
     let ruleset_yaml = r#"
 ruleset:
   id: test_ruleset
-  rules: []
   conclusion:
     - default: true
       signal: approve

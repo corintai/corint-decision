@@ -36,8 +36,10 @@ Usage:
 
 Validate defaults to full CDL static checks (Rule, Ruleset, Pipeline, Registry,
 Feature, List, Service). PATHs may be files or directories; directories recursively
-include all YAML/JSON resources, regardless of layout. --root enables
-root-relative imports and reference checks; without FILEs it discovers resource
+include all YAML/JSON resources, regardless of layout. All inputs check resource
+references. Single-file validation infers the policy root and recursively validates
+referenced files and objects; use --root to select it explicitly. Directories and
+multiple files without --root check the selected collection. With no FILEs, --root discovers resource
 directories and registry.yaml/yml/json. No external resources are contacted.
 An optional input Schema adds event field checks. JSON reports list unchecked scope.
 

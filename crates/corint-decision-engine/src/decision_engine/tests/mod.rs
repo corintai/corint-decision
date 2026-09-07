@@ -46,7 +46,6 @@ pipeline:
 ruleset:
   id: test_execution
   name: Test Execution
-  rules: []
   conclusion:
   - when: amount > 100
     signal: review
@@ -100,7 +99,6 @@ ruleset:
   id: fraud_detection
   name: Fraud Detection Ruleset
   description: Simple fraud detection based on transaction amount
-  rules: []
   conclusion:
   - when: transaction_amount > 10000
     signal: decline
@@ -176,7 +174,6 @@ pipeline:
 ruleset:
   id: simple_ruleset
   name: Simple Ruleset
-  rules: []
   conclusion:
   - default: true
     signal: approve
@@ -229,7 +226,6 @@ pipeline:
 ruleset:
   id: metadata_ruleset
   name: Metadata Ruleset
-  rules: []
   conclusion:
   - default: true
     signal: approve
@@ -291,7 +287,6 @@ pipeline:
 ruleset:
   id: timing_ruleset
   name: Timing Ruleset
-  rules: []
   conclusion:
   - when: value > 100
     signal: review
@@ -341,7 +336,6 @@ pipeline:
 ruleset:
   id: missing_field_ruleset
   name: Missing Field Ruleset
-  rules: []
   conclusion:
   - when: optional_field > 100
     signal: review
@@ -393,7 +387,6 @@ pipeline:
 ruleset:
   id: content_ruleset
   name: Content Ruleset
-  rules: []
   conclusion:
   - when: risk_score > 50
     signal: decline
@@ -439,7 +432,6 @@ pipeline:
 ruleset:
   id: config_test_ruleset
   name: Config Test Ruleset
-  rules: []
   conclusion:
   - default: true
     signal: approve

@@ -61,16 +61,30 @@ impl RulesetParser {
         // Parse optional fields
         let name = YamlParser::get_optional_string(ruleset_obj, "name");
 
-        // Parse rules array
-        let rules =
-            if let Some(rules_array) = ruleset_obj.get("rules").and_then(|v| v.as_sequence()) {
-                rules_array
-                    .iter()
-                    .filter_map(|v| v.as_str().map(|s| s.to_string()))
-                    .collect()
-            } else {
-                Vec::new()
-            };
+        // Source presentation is checked before decoding. Value callers must
+        // still supply a nonempty sequence of IDs when the field is present.
+        let rules = match ruleset_obj.get("rules") {
+            None => Vec::new(),
+            Some(YamlValue::Sequence(values)) if !values.is_empty() => values
+                .iter()
+                .map(|value| {
+                    value
+                        .as_str()
+                        .filter(|id| !id.trim().is_empty())
+                        .map(str::to_owned)
+                        .ok_or_else(|| ParseError::InvalidValue {
+                            field: "ruleset.rules".into(),
+                            message: "Each rule ID must be a nonempty string".into(),
+                        })
+                })
+                .collect::<Result<Vec<_>>>()?,
+            Some(_) => {
+                return Err(ParseError::InvalidValue {
+                    field: "ruleset.rules".into(),
+                    message: "Expected a nonempty block sequence of rule IDs".into(),
+                })
+            }
+        };
 
         // Parse optional extends
         let extends = YamlParser::get_optional_string(ruleset_obj, "extends");
@@ -189,6 +203,26 @@ mod tests {
     use super::*;
 
     #[test]
+    fn source_entry_points_reject_flow_rule_lists() {
+        let source = "ruleset:\n  id: risk\n  rules: [first]\n";
+        assert!(RulesetParser::parse(source)
+            .unwrap_err()
+            .to_string()
+            .contains("block sequence"));
+        assert!(RulesetParser::parse_with_imports(&format!(
+            "import: {{rules: [first.yaml]}}\n---\n{source}"
+        ))
+        .unwrap_err()
+        .to_string()
+        .contains("block sequence"));
+        for rules in ["[]", "[42]", "[null]", "['']", "wrong"] {
+            let value: YamlValue =
+                serde_yaml::from_str(&format!("ruleset:\n  id: risk\n  rules: {rules}")).unwrap();
+            assert!(RulesetParser::parse_from_yaml(&value).is_err());
+        }
+    }
+
+    #[test]
     fn test_parse_simple_ruleset() {
         let yaml = r#"
 ruleset:
@@ -221,7 +255,6 @@ ruleset:
         let yaml = r#"
 ruleset:
   id: test_signals
-  rules: []
   conclusion:
     - when: score > 300
       signal: decline
@@ -272,7 +305,6 @@ ruleset:
         let yaml = r#"
 ruleset:
   id: test_backward_compat
-  rules: []
   conclusion:
     - when: score > 100
       action: decline
@@ -292,7 +324,6 @@ ruleset:
         let yaml = r#"
 ruleset:
   id: test_default
-  rules: []
   conclusion:
     - default: true
       action: approve
@@ -310,7 +341,6 @@ ruleset:
         let yaml = r#"
 ruleset:
   name: Test
-  rules: []
   conclusion: []
 "#;
 
@@ -323,7 +353,6 @@ ruleset:
         let yaml = r#"
 ruleset:
   id: test
-  rules: []
   conclusion:
     - signal: unknown_signal
 "#;
@@ -341,11 +370,11 @@ ruleset:
             "true",
             "42",
         ] {
-            let yaml = format!("ruleset:\n  id: risk\n  rules: []\n  conclusion:\n    - when: {condition}\n      signal: decline\n    - default: true\n      signal: approve\n");
+            let yaml = format!("ruleset:\n  id: risk\n  conclusion:\n    - when: {condition}\n      signal: decline\n    - default: true\n      signal: approve\n");
             let error = RulesetParser::parse(&yaml).unwrap_err().to_string();
             assert!(error.contains("conclusion.when"), "{condition}: {error}");
         }
-        let ruleset = RulesetParser::parse("ruleset:\n  id: risk\n  rules: []\n  conclusion:\n    - when: 'total_score > 0 && triggered_count > 0'\n      signal: decline\n    - default: true\n      signal: approve\n").unwrap();
+        let ruleset = RulesetParser::parse("ruleset:\n  id: risk\n  conclusion:\n    - when: 'total_score > 0 && triggered_count > 0'\n      signal: decline\n    - default: true\n      signal: approve\n").unwrap();
         assert!(ruleset.conclusion[0].condition.is_some());
         assert!(ruleset.conclusion[1].condition.is_none());
     }

@@ -1,7 +1,8 @@
 version: "0.1"
 ruleset:
   id: branch
-  rules: [branch_marker]
+  rules:
+    - branch_marker
   conclusion:
     - when: total_score == 7
       signal: review

@@ -29,6 +29,19 @@ pub(super) fn read(path: &Path, report: &mut Report) -> Option<String> {
 }
 
 pub(super) fn yaml(text: &str, source: &str, report: &mut Report) -> Option<Value> {
+    if let Err(error) = corint_decision_dsl_parser::source_format::validate_rules_format(text) {
+        report.error(
+            source,
+            "/ruleset/rules",
+            "parse",
+            "E_RULES_FORMAT",
+            error.to_string(),
+        );
+        let diag = report.diagnostics.last_mut().unwrap();
+        diag.line = Some(error.line);
+        diag.column = Some(error.column);
+        return None;
+    }
     let mut documents = vec![];
     for document in serde_yaml::Deserializer::from_str(text) {
         match serde_yaml::Value::deserialize(document).and_then(serde_yaml::from_value::<Value>) {
@@ -79,7 +92,7 @@ pub(super) fn yaml(text: &str, source: &str, report: &mut Report) -> Option<Valu
     None
 }
 
-fn scan(dir: &Path, files: &mut Vec<(PathBuf, bool)>, report: &mut Report) {
+pub(super) fn scan(dir: &Path, files: &mut Vec<(PathBuf, bool)>, report: &mut Report) {
     let entries = match std::fs::read_dir(dir) {
         Ok(entries) => entries,
         Err(error) => {

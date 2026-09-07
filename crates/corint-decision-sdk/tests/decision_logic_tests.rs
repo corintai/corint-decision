@@ -570,7 +570,6 @@ async fn test_empty_ruleset_default_action() {
     let ruleset_yaml = r#"
 ruleset:
   id: empty_ruleset
-  rules: []
   conclusion:
     - default: true
       signal: approve

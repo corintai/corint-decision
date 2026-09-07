@@ -1,5 +1,5 @@
 # Rust build artifacts
-/target/
+/target
 **/target/
 
 # Cargo.lock for libraries (keep it for binaries)

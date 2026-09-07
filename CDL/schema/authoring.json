@@ -157,7 +157,8 @@
         },
         "rules": {
           "type": "array",
-          "minItems": 0,
+          "description": "In CDL source text, use a nonempty YAML block sequence with one - rule_id per line. Flow lists, aliases and JSON arrays are rejected by the source parser; JSON Schema alone cannot enforce presentation.",
+          "minItems": 1,
           "uniqueItems": true,
           "items": {
             "$ref": "#/definitions/id"

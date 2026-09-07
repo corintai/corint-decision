@@ -21,13 +21,40 @@ one `ruleset` object. Unknown fields, duplicate keys and invalid types are rejec
 | `id` | Yes | ASCII identifier matching `^[A-Za-z_][A-Za-z0-9_]*$`, unique across resources in the supplied bundle. `end` is reserved. |
 | `name` | No | Human-readable string containing at least one non-whitespace character when supplied. |
 | `description` | No | Descriptive string with no execution semantics. |
-| `rules` | Yes | Nonempty ordered array of unique Rule IDs. Each ID must resolve to a supplied Rule resource. |
+| `rules` | Yes | Nonempty ordered YAML block sequence of unique Rule IDs. Each ID must resolve to a supplied Rule resource. |
 | `conclusion` | Yes | Nonempty ordered array of conclusion entries, with exactly one final default entry. |
 
 `extends` and `metadata` are outside this Core shape and are rejected. The explicit
 [import specification](import.md) describes source dependencies before
 forming a complete Core bundle. This execution profile requires the complete resource
 closure; it does not resolve raw imports or discover Rules by ID.
+
+### Source syntax for `rules`
+
+In both full CDL and strict Core, write `ruleset.rules` as a block sequence,
+with one Rule ID per line:
+
+```yaml
+ruleset:
+  id: transaction_risk
+  rules:
+    - amount_above_220_usd
+    - customer_amount_spike_7d
+  conclusion:
+    - default: true
+      signal: approve
+```
+
+Flow sequences such as `rules: [first, second]` (even split across lines),
+`rules: []`, aliases and JSON arrays are rejected with `E_RULES_FORMAT` by
+source validation. A supplied `rules` field must contain at least one ID.
+Full CDL inheritance may omit `rules` to inherit the parent's rules; Core still
+requires the field. This restriction applies only to `ruleset.rules`.
+
+The source parser enforces this before decoding YAML. JSON Schema describes
+the decoded array and cannot distinguish YAML presentation styles. Likewise,
+AST/value APIs have no source formatting to check. Existing source files using
+flow lists must be migrated to block sequences before validation or loading.
 
 ## 2. Rule evaluation and local scoring
 

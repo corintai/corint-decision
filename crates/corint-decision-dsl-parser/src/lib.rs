@@ -11,6 +11,7 @@ pub mod pipeline_parser;
 pub mod registry_parser;
 pub mod rule_parser;
 pub mod ruleset_parser;
+pub mod source_format;
 pub mod yaml_parser;
 
 // Re-export main parser types

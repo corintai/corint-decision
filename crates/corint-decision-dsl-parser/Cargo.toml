@@ -13,3 +13,4 @@ serde_yaml = { workspace = true }
 thiserror = { workspace = true }
 anyhow = { workspace = true }
 log = { workspace = true }
+yaml-rust2 = "0.8"

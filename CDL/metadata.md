@@ -103,7 +103,8 @@ This example deliberately omits `version`, `author` and `updated` inside metadat
 version: "0.1"
 ruleset:
   id: risk
-  rules: [large_amount]
+  rules:
+    - large_amount
   conclusion:
     - when: total_score >= 60
       signal: decline

@@ -1,7 +1,8 @@
 version: "0.1"
 ruleset:
   id: payment
-  rules: [blocked]
+  rules:
+    - blocked
   conclusion:
     - when: total_score >= 100
       signal: decline

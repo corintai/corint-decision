@@ -66,7 +66,7 @@ pub const RULE_GENERATION_PROMPT: &str = concat!(
 pub const RULESET_GENERATION_PROMPT: &str = concat!(
     "Generate a single Ruleset candidate. Output only YAML beginning with ruleset:. Use this executable shape:\n```yaml\n",
     include_str!("../../../../tests/conformance/generation/ruleset.yaml"),
-    "```\nRules are ordered references. Conclusion is first-match with one final default. Do not invent strategy, default_action, inheritance or parameters. Resolve references and test the complete closure before use.\nUser Description:\n{description}\n"
+    "```\nRules are ordered references. Write ruleset.rules as a nonempty YAML block sequence, one - rule_id per line; never use flow lists or aliases. Conclusion is first-match with one final default. Do not invent strategy, default_action, inheritance or parameters. Resolve references and test the complete closure before use.\nUser Description:\n{description}\n"
 );
 
 pub const PIPELINE_GENERATION_PROMPT: &str = concat!(

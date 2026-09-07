@@ -1,19 +1,10 @@
-{
-  "version": "0.1",
-  "ruleset": {
-    "id": "risk",
-    "rules": [
-      "large_amount"
-    ],
-    "conclusion": [
-      {
-        "when": "total_score > 0",
-        "signal": "decline"
-      },
-      {
-        "default": true,
-        "signal": "pass"
-      }
-    ]
-  }
-}
+version: "0.1"
+ruleset:
+  id: risk
+  rules:
+    - large_amount
+  conclusion:
+    - when: total_score > 0
+      signal: decline
+    - default: true
+      signal: pass

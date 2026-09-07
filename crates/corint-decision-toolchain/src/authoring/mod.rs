@@ -1,4 +1,5 @@
 //! Static CDL authoring checks. No engine, clients, data sources or actions run.
+mod dependencies;
 mod expressions;
 mod sources;
 
@@ -19,11 +20,11 @@ pub const PROFILE: &str = "cdl-static-1";
 pub const SCHEMA: &str = include_str!("../../../../CDL/schema/authoring.json");
 pub const INPUT_SCHEMA: &str = include_str!("../../../../CDL/schema/authoring-input.json");
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct Options {
     /// Explicit files or directories, recursively expanded before validation.
     pub files: Vec<PathBuf>,
-    /// Root-relative imports and repository-wide reference checks are opt-in.
+    /// Optional root for loading root-relative imports and repository discovery.
     pub root: Option<PathBuf>,
     pub input_schema: Option<PathBuf>,
 }
@@ -42,6 +43,7 @@ pub struct Report {
     pub valid: bool,
     pub execution_checked: bool,
     pub references_checked: bool,
+    pub reference_root: Option<String>,
     pub input_schema_checked: bool,
     pub unchecked: Vec<&'static str>,
     pub sources: Vec<String>,
@@ -57,6 +59,7 @@ impl Report {
             valid: false,
             execution_checked: false,
             references_checked: false,
+            reference_root: None,
             input_schema_checked: false,
             unchecked: vec![
                 "business_behavior",
@@ -186,229 +189,246 @@ fn shape_errors(
 }
 
 pub fn validate(options: &Options) -> Report {
+    let options = dependencies::options(options);
     let mut report = Report::empty();
-    let documents = sources::load(options, &mut report);
+    let mut documents = sources::load(&options, &mut report);
+    report.reference_root = options.root.as_ref().map(|root| {
+        std::fs::canonicalize(root)
+            .unwrap_or_else(|_| root.clone())
+            .to_string_lossy()
+            .into_owned()
+    });
+    let mut resolver = dependencies::Resolver::new(options.root.clone());
     let checker = expressions::Checker::new(options.input_schema.as_deref(), &mut report);
-    report.references_checked = options.root.is_some();
-    if options.root.is_none() {
-        report.unchecked.push("cross_file_references");
-    }
+    report.references_checked = true;
     if options.input_schema.is_none() {
         report.unchecked.push("event_field_schema");
     }
     let mut resources = BTreeMap::<(String, String), (String, Value)>::new();
     let mut refs = vec![];
     let mut graph = BTreeMap::<String, Vec<String>>::new();
-    for doc in documents {
-        if !check_shape(&doc, &mut report) {
-            continue;
-        }
-        let yaml = serde_yaml::to_value(&doc.value).unwrap();
-        let parsed = if doc.value.get("rule").is_some() {
-            RuleParser::parse_from_yaml(&yaml).map(|_| ())
-        } else if doc.value.get("ruleset").is_some() {
-            RulesetParser::parse_from_yaml(&yaml).map(|_| ())
-        } else if doc.value.get("pipeline").is_some() {
-            PipelineParser::parse_from_yaml(&yaml).map(|_| ())
-        } else if doc.value.get("registry").is_some() {
-            RegistryParser::parse_from_yaml(&yaml).map(|_| ())
-        } else {
-            Ok(())
-        };
-        if let Err(error) = parsed {
-            let before = report.diagnostics.len();
-            checker.conditions(&doc.value, &doc.source, "", &mut refs, &mut report);
-            if report.diagnostics.len() == before {
-                report.error(&doc.source, "", "parse", "E_INVALID_CDL", error.to_string());
+    loop {
+        for doc in documents {
+            if !check_shape(&doc, &mut report) {
+                continue;
             }
-            continue;
-        }
-        for kind in ["rule", "ruleset", "pipeline"] {
-            if let Some(resource) = doc.value.get(kind) {
-                insert(
-                    &mut resources,
-                    kind,
-                    resource["id"].as_str().unwrap(),
-                    resource,
-                    &doc.source,
-                    &mut report,
-                );
-                checker.conditions(
-                    resource,
-                    &doc.source,
-                    &format!("/{kind}"),
-                    &mut refs,
-                    &mut report,
-                );
-                if kind == "ruleset" {
-                    for (i, rule) in resource["rules"]
-                        .as_array()
-                        .into_iter()
-                        .flatten()
-                        .enumerate()
-                    {
-                        refs.push(Reference::new(
-                            &doc.source,
-                            format!("/ruleset/rules/{i}"),
-                            "rule",
-                            rule.as_str().unwrap(),
-                        ));
-                    }
-                    if let Some(parent) = resource["extends"].as_str() {
-                        refs.push(Reference::new(
-                            &doc.source,
-                            "/ruleset/extends",
-                            "ruleset",
-                            parent,
-                        ));
-                        graph
-                            .entry(format!("ruleset:{}", resource["id"].as_str().unwrap()))
-                            .or_default()
-                            .push(format!("ruleset:{parent}"));
-                    }
+            let yaml = serde_yaml::to_value(&doc.value).unwrap();
+            let parsed = if doc.value.get("rule").is_some() {
+                RuleParser::parse_from_yaml(&yaml).map(|_| ())
+            } else if doc.value.get("ruleset").is_some() {
+                RulesetParser::parse_from_yaml(&yaml).map(|_| ())
+            } else if doc.value.get("pipeline").is_some() {
+                PipelineParser::parse_from_yaml(&yaml).map(|_| ())
+            } else if doc.value.get("registry").is_some() {
+                RegistryParser::parse_from_yaml(&yaml).map(|_| ())
+            } else {
+                Ok(())
+            };
+            if let Err(error) = parsed {
+                let before = report.diagnostics.len();
+                checker.conditions(&doc.value, &doc.source, "", &mut refs, &mut report);
+                if report.diagnostics.len() == before {
+                    report.error(&doc.source, "", "parse", "E_INVALID_CDL", error.to_string());
                 }
-                if kind == "pipeline" {
-                    pipeline(resource, &doc.source, &mut refs, &mut graph, &mut report);
-                }
+                continue;
             }
-        }
-        if let Some(rows) = doc.value["registry"].as_array() {
-            insert(
-                &mut resources,
-                "registry",
-                "registry",
-                &doc.value["registry"],
-                &doc.source,
-                &mut report,
-            );
-            checker.conditions(&doc.value, &doc.source, "", &mut refs, &mut report);
-            for (i, row) in rows.iter().enumerate() {
-                refs.push(Reference::new(
-                    &doc.source,
-                    format!("/registry/{i}/pipeline"),
-                    "pipeline",
-                    row["pipeline"].as_str().unwrap(),
-                ));
-            }
-        }
-        if let Some(features) = doc.value["features"].as_array() {
-            for (i, value) in features.iter().enumerate() {
-                let path = format!("/features/{i}");
-                let name = value["name"].as_str().unwrap();
-                insert(
-                    &mut resources,
-                    "feature",
-                    name,
-                    value,
-                    &doc.source,
-                    &mut report,
-                );
-                let feature: Result<FeatureDefinition, _> =
-                    serde_yaml::from_value(serde_yaml::to_value(value).unwrap());
-                match feature {
-                    Ok(f) => {
-                        if let Err(e) = f.validate() {
-                            report.error(&doc.source, &path, "semantic", "E_INVALID_FEATURE", e);
-                        }
-                    }
-                    Err(e) => report.error(
+            for kind in ["rule", "ruleset", "pipeline"] {
+                if let Some(resource) = doc.value.get(kind) {
+                    insert(
+                        &mut resources,
+                        kind,
+                        resource["id"].as_str().unwrap(),
+                        resource,
                         &doc.source,
-                        &path,
-                        "schema",
-                        "E_INVALID_FEATURE",
-                        e.to_string(),
-                    ),
-                }
-                let mut dependencies: Vec<String> = value["dependencies"]
-                    .as_array()
-                    .into_iter()
-                    .flatten()
-                    .filter_map(Value::as_str)
-                    .map(str::to_owned)
-                    .collect();
-                if let Some(expr) = value["expression"].as_str() {
-                    match corint_decision_runtime::feature::expression_dependencies(expr) {
-                        Ok(names) => dependencies.extend(names),
-                        Err(error) => report.error(
-                            &doc.source,
-                            &format!("{path}/expression"),
-                            "expression",
-                            "E_INVALID_EXPRESSION",
-                            error.to_string(),
-                        ),
-                    }
-                    checker.expression(
-                        expr,
+                        &mut report,
+                    );
+                    checker.conditions(
+                        resource,
                         &doc.source,
-                        &format!("{path}/expression"),
-                        false,
+                        &format!("/{kind}"),
                         &mut refs,
                         &mut report,
                     );
-                }
-                checker.templates(value, &doc.source, &path, &mut refs, &mut report);
-                for dep in dependencies {
-                    refs.push(Reference::new(&doc.source, &path, "feature", &dep));
-                    graph
-                        .entry(format!("feature:{name}"))
-                        .or_default()
-                        .push(format!("feature:{dep}"));
+                    if kind == "ruleset" {
+                        for (i, rule) in resource["rules"]
+                            .as_array()
+                            .into_iter()
+                            .flatten()
+                            .enumerate()
+                        {
+                            refs.push(Reference::new(
+                                &doc.source,
+                                format!("/ruleset/rules/{i}"),
+                                "rule",
+                                rule.as_str().unwrap(),
+                            ));
+                        }
+                        if let Some(parent) = resource["extends"].as_str() {
+                            refs.push(Reference::new(
+                                &doc.source,
+                                "/ruleset/extends",
+                                "ruleset",
+                                parent,
+                            ));
+                            graph
+                                .entry(format!("ruleset:{}", resource["id"].as_str().unwrap()))
+                                .or_default()
+                                .push(format!("ruleset:{parent}"));
+                        }
+                    }
+                    if kind == "pipeline" {
+                        pipeline(resource, &doc.source, &mut refs, &mut graph, &mut report);
+                    }
                 }
             }
-        }
-        if let Some(lists) = doc.value["lists"].as_array() {
-            for list in lists {
+            if let Some(rows) = doc.value["registry"].as_array() {
+                insert(
+                    &mut resources,
+                    "registry",
+                    "registry",
+                    &doc.value["registry"],
+                    &doc.source,
+                    &mut report,
+                );
+                checker.conditions(&doc.value, &doc.source, "", &mut refs, &mut report);
+                for (i, row) in rows.iter().enumerate() {
+                    refs.push(Reference::new(
+                        &doc.source,
+                        format!("/registry/{i}/pipeline"),
+                        "pipeline",
+                        row["pipeline"].as_str().unwrap(),
+                    ));
+                }
+            }
+            if let Some(features) = doc.value["features"].as_array() {
+                for (i, value) in features.iter().enumerate() {
+                    let path = format!("/features/{i}");
+                    let name = value["name"].as_str().unwrap();
+                    insert(
+                        &mut resources,
+                        "feature",
+                        name,
+                        value,
+                        &doc.source,
+                        &mut report,
+                    );
+                    let feature: Result<FeatureDefinition, _> =
+                        serde_yaml::from_value(serde_yaml::to_value(value).unwrap());
+                    match feature {
+                        Ok(f) => {
+                            if let Err(e) = f.validate() {
+                                report.error(
+                                    &doc.source,
+                                    &path,
+                                    "semantic",
+                                    "E_INVALID_FEATURE",
+                                    e,
+                                );
+                            }
+                        }
+                        Err(e) => report.error(
+                            &doc.source,
+                            &path,
+                            "schema",
+                            "E_INVALID_FEATURE",
+                            e.to_string(),
+                        ),
+                    }
+                    let mut dependencies: Vec<String> = value["dependencies"]
+                        .as_array()
+                        .into_iter()
+                        .flatten()
+                        .filter_map(Value::as_str)
+                        .map(str::to_owned)
+                        .collect();
+                    if let Some(expr) = value["expression"].as_str() {
+                        match corint_decision_runtime::feature::expression_dependencies(expr) {
+                            Ok(names) => dependencies.extend(names),
+                            Err(error) => report.error(
+                                &doc.source,
+                                &format!("{path}/expression"),
+                                "expression",
+                                "E_INVALID_EXPRESSION",
+                                error.to_string(),
+                            ),
+                        }
+                        checker.expression(
+                            expr,
+                            &doc.source,
+                            &format!("{path}/expression"),
+                            false,
+                            &mut refs,
+                            &mut report,
+                        );
+                    }
+                    checker.templates(value, &doc.source, &path, &mut refs, &mut report);
+                    for dep in dependencies {
+                        refs.push(Reference::new(&doc.source, &path, "feature", &dep));
+                        graph
+                            .entry(format!("feature:{name}"))
+                            .or_default()
+                            .push(format!("feature:{dep}"));
+                    }
+                }
+            }
+            if let Some(lists) = doc.value["lists"].as_array() {
+                for list in lists {
+                    insert(
+                        &mut resources,
+                        "list",
+                        list["id"].as_str().unwrap(),
+                        list,
+                        &doc.source,
+                        &mut report,
+                    );
+                }
+            } else if let Some(id) = doc.value["id"].as_str() {
                 insert(
                     &mut resources,
                     "list",
-                    list["id"].as_str().unwrap(),
-                    list,
+                    id,
+                    &doc.value,
                     &doc.source,
                     &mut report,
                 );
             }
-        } else if let Some(id) = doc.value["id"].as_str() {
-            insert(
-                &mut resources,
-                "list",
-                id,
-                &doc.value,
-                &doc.source,
-                &mut report,
-            );
-        }
-        if doc.value.get("base_url").is_some() {
-            let config: HttpServiceConfig = match serde_json::from_value(doc.value.clone()) {
-                Ok(config) => config,
-                Err(error) => {
+            if doc.value.get("base_url").is_some() {
+                let config: HttpServiceConfig = match serde_json::from_value(doc.value.clone()) {
+                    Ok(config) => config,
+                    Err(error) => {
+                        report.error(
+                            &doc.source,
+                            "",
+                            "schema",
+                            "E_INVALID_SERVICE",
+                            error.to_string(),
+                        );
+                        continue;
+                    }
+                };
+                if let Err(error) = HttpServiceClient::validate_config(&config) {
                     report.error(
                         &doc.source,
                         "",
-                        "schema",
+                        "semantic",
                         "E_INVALID_SERVICE",
                         error.to_string(),
                     );
-                    continue;
                 }
-            };
-            if let Err(error) = HttpServiceClient::validate_config(&config) {
-                report.error(
+                checker.service(&doc.value, &doc.source, &mut refs, &mut report);
+                insert(
+                    &mut resources,
+                    "service",
+                    &config.name,
+                    &doc.value,
                     &doc.source,
-                    "",
-                    "semantic",
-                    "E_INVALID_SERVICE",
-                    error.to_string(),
+                    &mut report,
                 );
             }
-            checker.service(&doc.value, &doc.source, &mut refs, &mut report);
-            insert(
-                &mut resources,
-                "service",
-                &config.name,
-                &doc.value,
-                &doc.source,
-                &mut report,
-            );
+        }
+        documents = resolver.load(&refs, &mut report);
+        if documents.is_empty() {
+            break;
         }
     }
     for reference in refs {
@@ -425,13 +445,16 @@ pub fn validate(options: &Options) -> Report {
                     );
                 }
             }
-        } else if report.references_checked {
+        } else {
             report.error(
                 &reference.source,
                 &reference.path,
                 "reference",
                 "E_UNRESOLVED_REFERENCE",
-                format!("Unknown {}: {}", reference.kind, reference.id),
+                format!(
+                    "Unknown {}: {} (not defined in the selected sources; include its definition in the validation inputs)",
+                    reference.kind, reference.id
+                ),
             );
         }
     }

@@ -17,6 +17,38 @@ const FILES: &[&str] = &[
 fn fixtures() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/conformance/cdl_authoring")
 }
+
+#[test]
+fn ruleset_rule_lists_require_block_style_in_files_directories_and_imports() {
+    let dir = setup();
+    let path = dir.path().join("rulesets/payment.yaml");
+    let original = std::fs::read_to_string(&path).unwrap();
+    for flow in ["[blocked]", "[\n    blocked\n  ]", "[]", "&ids [blocked]"] {
+        std::fs::write(
+            &path,
+            original.replace("rules:\n    - blocked", &format!("rules: {flow}")),
+        )
+        .unwrap();
+        for args in [
+            vec!["rulesets/payment.yaml"],
+            vec!["rulesets"],
+            vec!["--root", "."],
+        ] {
+            let report = run(dir.path(), &args, 1);
+            has(&report, "E_RULES_FORMAT");
+            let diagnostic = report["diagnostics"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|d| d["code"] == "E_RULES_FORMAT")
+                .unwrap();
+            assert_eq!(diagnostic["field_path"], "/ruleset/rules");
+            assert_eq!(diagnostic["line"], 4);
+        }
+    }
+    std::fs::write(path, original).unwrap();
+    run(dir.path(), &["."], 0);
+}
 fn setup() -> TempDir {
     let dir = tempfile::tempdir().unwrap();
     for name in FILES {
@@ -89,9 +121,151 @@ fn individual_resources_do_not_require_a_registry_or_schema() {
     let dir = setup();
     for file in &FILES[..7] {
         let report = run(dir.path(), &[file], 0);
-        assert_eq!(report["references_checked"], false);
+        assert_eq!(report["references_checked"], true);
         assert_eq!(report["input_schema_checked"], false);
     }
+}
+
+#[test]
+fn selected_collections_reject_misspelled_rule_ids_without_root() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::create_dir(dir.path().join("rules")).unwrap();
+    std::fs::create_dir(dir.path().join("rulesets")).unwrap();
+    // Filenames deliberately differ from IDs: references resolve by rule.id.
+    std::fs::write(dir.path().join("rules/history.yaml"),
+        "version: '0.1'\nrule:\n  id: customer_amount_spike_7d\n  name: History\n  when: 'true'\n  score: 50\n").unwrap();
+    let path = dir.path().join("rulesets/risk.yaml");
+    let correct = "version: '0.1'\nruleset:\n  id: risk\n  rules:\n    - customer_amount_spike_7d\n  conclusion:\n    - default: true\n      signal: pass\n";
+    for args in [
+        vec!["."],
+        vec!["rules", "rulesets"],
+        vec!["rules/history.yaml", "rulesets/risk.yaml"],
+        vec!["rulesets/risk.yaml", "rules/history.yaml"],
+    ] {
+        std::fs::write(&path, correct).unwrap();
+        let good = run(dir.path(), &args, 0);
+        assert_eq!(good["references_checked"], true);
+        assert!(!good["unchecked"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|v| v == "cross_file_references"));
+        std::fs::write(
+            &path,
+            correct.replace("customer_amount_spike_7d", "customer_amount_spike_7"),
+        )
+        .unwrap();
+        let bad = run(dir.path(), &args, 1);
+        let diagnostic = &bad["diagnostics"][0];
+        assert_eq!(diagnostic["code"], "E_UNRESOLVED_REFERENCE");
+        assert_eq!(diagnostic["field_path"], "/ruleset/rules/0");
+        assert!(diagnostic["message"]
+            .as_str()
+            .unwrap()
+            .contains("customer_amount_spike_7"));
+    }
+    let text = text_report(dir.path(), &["."], 1);
+    assert!(text.contains("E_UNRESOLVED_REFERENCE"));
+    assert!(!text.contains("[PASS]"));
+    // A directory containing only the referring ruleset is still a collection.
+    has(&run(dir.path(), &["rulesets"], 1), "E_UNRESOLVED_REFERENCE");
+    // Repeating one file does not supply the missing dependencies.
+    let single = run(dir.path(), &["rulesets/risk.yaml", "rulesets/risk.yaml"], 1);
+    assert_eq!(single["references_checked"], true);
+    let text = text_report(dir.path(), &["rulesets/risk.yaml"], 1);
+    assert!(text.contains("Unknown rule: customer_amount_spike_7"));
+    // Correct IDs load their definitions automatically, even without a registry.
+    std::fs::write(&path, correct).unwrap();
+    let single = run(dir.path(), &["rulesets/risk.yaml"], 0);
+    assert_eq!(single["sources"].as_array().unwrap().len(), 2);
+}
+
+#[test]
+fn single_file_validates_transitive_dependencies_without_unrelated_files() {
+    let dir = setup();
+    std::fs::write(dir.path().join("unrelated.yaml"), "rule: [").unwrap();
+    let report = run(dir.path(), &["pipelines/payment.yaml"], 0);
+    assert_eq!(report["references_checked"], true);
+    assert_eq!(report["sources"].as_array().unwrap().len(), 6);
+    assert!(report["reference_root"]
+        .as_str()
+        .unwrap()
+        .ends_with(dir.path().file_name().unwrap().to_str().unwrap()));
+    assert!(!report["sources"].as_array().unwrap().iter().any(|p| {
+        let p = p.as_str().unwrap();
+        p.ends_with("unrelated.yaml") || p.ends_with("registry.yaml")
+    }));
+    for (file, from, to, code) in [
+        (
+            "rules/blocked.yaml",
+            "score: 100",
+            "score: invalid",
+            "E_INVALID_STRUCTURE",
+        ),
+        (
+            "rulesets/payment.yaml",
+            "rules:\n    - blocked",
+            "rules: [blocked]",
+            "E_RULES_FORMAT",
+        ),
+        (
+            "services/risk.yaml",
+            "assess:",
+            "other:",
+            "E_UNKNOWN_OPERATION",
+        ),
+        (
+            "features/payment.yaml",
+            "features.count_1h +",
+            "features.typo +",
+            "E_UNRESOLVED_REFERENCE",
+        ),
+        (
+            "lists/blocked.yaml",
+            "id: blocked_customers",
+            "id: typo",
+            "E_UNRESOLVED_REFERENCE",
+        ),
+    ] {
+        let source = std::fs::read_to_string(dir.path().join(file)).unwrap();
+        mutate(dir.path(), file, from, to);
+        has(&run(dir.path(), &["pipelines/payment.yaml"], 1), code);
+        std::fs::write(dir.path().join(file), source).unwrap();
+    }
+    std::fs::copy(
+        dir.path().join("rules/blocked.yaml"),
+        dir.path().join("duplicate.yaml"),
+    )
+    .unwrap();
+    has(
+        &run(dir.path(), &["pipelines/payment.yaml"], 1),
+        "E_DUPLICATE_ID",
+    );
+}
+
+#[test]
+fn single_file_loads_declared_imports_and_checks_cycles() {
+    let dir = setup();
+    mutate(
+        dir.path(),
+        "rules/blocked.yaml",
+        "version: \"0.1\"",
+        "version: \"0.1\"\nimport: {rules: [broken.yaml]}",
+    );
+    std::fs::write(dir.path().join("broken.yaml"), "rule: [").unwrap();
+    has(&run(dir.path(), &["rules/blocked.yaml"], 1), "E_YAML");
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(
+        dir.path().join("a.yaml"),
+        "version: '0.1'\nruleset:\n  id: a\n  extends: b\n",
+    )
+    .unwrap();
+    std::fs::write(
+        dir.path().join("b.yaml"),
+        "version: '0.1'\nruleset:\n  id: b\n  extends: a\n",
+    )
+    .unwrap();
+    has(&run(dir.path(), &["a.yaml"], 1), "E_CYCLE");
 }
 #[test]
 fn static_success_does_not_admit_extensions_to_core() {
@@ -249,8 +423,8 @@ fn missing_references_duplicate_ids_and_graph_cycles_fail() {
     for (file, from, to, code) in [
         (
             "rulesets/payment.yaml",
-            "rules: [blocked]",
-            "rules: [missing]",
+            "rules:\n    - blocked",
+            "rules:\n    - missing",
             "E_UNRESOLVED_REFERENCE",
         ),
         (
@@ -338,8 +512,8 @@ fn imports_resolve_all_resource_kinds_and_support_header_documents() {
     let report = run(dir.path(), &["--root", ".", "registry.yaml"], 0);
     assert_eq!(report["sources"].as_array().unwrap().len(), 7);
     let single = run(dir.path(), &["registry.yaml"], 0);
-    assert_eq!(single["sources"].as_array().unwrap().len(), 1);
-    assert_eq!(single["references_checked"], false);
+    assert_eq!(single["sources"].as_array().unwrap().len(), 7);
+    assert_eq!(single["references_checked"], true);
     mutate(
         dir.path(),
         "registry.yaml",
@@ -404,18 +578,29 @@ fn service_checks_do_not_contact_the_declared_endpoint() {
     );
 }
 #[test]
-fn documented_online_examples_pass_the_static_language_gate() {
+fn documented_online_examples_require_their_host_list_bindings() {
     let root =
         Path::new(env!("CARGO_MANIFEST_DIR")).join("../../CDL/examples/payment-review/online");
-    for file in [
+    let dir = tempfile::tempdir().unwrap();
+    let files = [
         "features.yaml",
         "prepare.yaml",
         "markers.yaml",
         "customer-risk.yaml",
         "blocked-email.yaml",
         "loyal-customer.yaml",
-    ] {
-        run(&root, &[file], 0);
+    ];
+    for file in files {
+        std::fs::copy(root.join(file), dir.path().join(file)).unwrap();
+    }
+    // SDK-provided objects still need declarative bindings for static resolution.
+    has(
+        &run(dir.path(), &["prepare.yaml"], 1),
+        "E_UNRESOLVED_REFERENCE",
+    );
+    std::fs::write(dir.path().join("lists.yaml"), "lists:\n  - id: blocked_emails\n    backend: memory\n  - id: trusted_customers\n    backend: memory\n").unwrap();
+    for file in files {
+        run(dir.path(), &[file], 0);
     }
 }
 #[test]
@@ -437,7 +622,7 @@ fn usage_and_io_errors_always_return_json_and_exit_two() {
 #[test]
 fn inheritance_and_conclusion_annotations_are_full_cdl_syntax() {
     let dir = setup();
-    std::fs::write(dir.path().join("rulesets/base.yaml"), "version: '0.1'\nruleset:\n  id: base\n  rules: [blocked]\n  conclusion:\n    - default: true\n      signal: pass\n      reason: Base policy\n      actions: [notify]\n").unwrap();
+    std::fs::write(dir.path().join("rulesets/base.yaml"), "version: '0.1'\nruleset:\n  id: base\n  rules:\n    - blocked\n  conclusion:\n    - default: true\n      signal: pass\n      reason: Base policy\n      actions: [notify]\n").unwrap();
     std::fs::write(
         dir.path().join("rulesets/payment.yaml"),
         "version: '0.1'\nruleset:\n  id: payment\n  extends: base\n",
@@ -447,8 +632,8 @@ fn inheritance_and_conclusion_annotations_are_full_cdl_syntax() {
     mutate(
         dir.path(),
         "rulesets/base.yaml",
-        "rules: [blocked]",
-        "extends: payment\n  rules: [blocked]",
+        "rules:\n    - blocked",
+        "extends: payment\n  rules:\n    - blocked",
     );
     has(&run(dir.path(), &["--root", "."], 1), "E_CYCLE");
 }
@@ -487,7 +672,7 @@ fn positional_directories_recurse_through_arbitrary_layouts() {
     .unwrap();
     let report = run(dir.path(), &["policies", "other"], 0);
     assert_eq!(report["sources"].as_array().unwrap().len(), 3);
-    assert_eq!(report["references_checked"], false);
+    assert_eq!(report["references_checked"], true);
     // Overlapping directories and explicit files load the same resource once.
     let mixed = run(
         dir.path(),
@@ -512,8 +697,14 @@ fn explicit_files_do_not_discover_neighbors_or_follow_imports() {
         "version: \"0.1\"",
         "version: \"0.1\"\nimport: {rules: [bad.yaml]}",
     );
-    let report = run(dir.path(), &["rules/blocked.yaml", "services/risk.yaml"], 0);
+    let report = run(dir.path(), &["rules/blocked.yaml", "services/risk.yaml"], 1);
     assert_eq!(report["sources"].as_array().unwrap().len(), 2);
+    has(&report, "E_UNRESOLVED_REFERENCE");
+    assert!(!report["diagnostics"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|d| d["code"] == "E_READ"));
     // The declaration itself must still have valid syntax.
     mutate(dir.path(), "rules/blocked.yaml", "[bad.yaml]", "123");
     has(
@@ -763,8 +954,8 @@ fn global_errors_do_not_print_misleading_file_passes() {
     mutate(
         dir.path(),
         "rulesets/payment.yaml",
-        "rules: [blocked]",
-        "rules: [missing]",
+        "rules:\n    - blocked",
+        "rules:\n    - missing",
     );
     let text = text_report(dir.path(), &["--root", "."], 1);
     assert!(!text.contains("[PASS]"));
