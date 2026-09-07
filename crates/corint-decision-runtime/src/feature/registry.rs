@@ -96,7 +96,7 @@ impl FeatureRegistry {
             let name = feature.name.clone();
             feature_names.push(name.clone());
 
-            super::dependency::infer_dependencies(&mut feature);
+            super::dependency::infer_dependencies(&mut feature)?;
             feature.validate().map_err(anyhow::Error::msg)?;
 
             // Index by type

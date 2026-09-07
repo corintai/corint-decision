@@ -663,6 +663,7 @@ dependencies = [
  "async-trait",
  "bigdecimal",
  "chrono",
+ "corint-decision-dsl-parser",
  "corint-decision-model",
  "futures",
  "redis",

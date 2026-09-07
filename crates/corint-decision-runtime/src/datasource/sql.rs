@@ -196,9 +196,9 @@ impl SQLClient {
                     let seconds = rel.to_seconds();
                     match self.config.provider {
                         SQLProvider::SQLite => {
-                            // SQLite uses datetime() function
+                            // Compare instants, not text (RFC3339 uses T; SQLite uses a space).
                             sql.push_str(&format!(
-                                "{} >= datetime('now', '-{} seconds')",
+                                "julianday({}) >= julianday('now', '-{} seconds')",
                                 time_window.time_field, seconds
                             ));
                         }
@@ -216,7 +216,7 @@ impl SQLClient {
                         SQLProvider::SQLite => {
                             // SQLite uses datetime() function with unix timestamp
                             sql.push_str(&format!(
-                                "{} >= datetime({}, 'unixepoch') AND {} < datetime({}, 'unixepoch')",
+                                "julianday({}) >= julianday({}, 'unixepoch') AND julianday({}) < julianday({}, 'unixepoch')",
                                 time_window.time_field, start, time_window.time_field, end
                             ));
                         }
@@ -816,5 +816,85 @@ impl SQLClient {
                 "SQLite queries require 'sqlx' feature to be enabled".to_string(),
             ))
         }
+    }
+}
+
+#[cfg(all(test, feature = "sqlx"))]
+mod time_window_tests {
+    use super::*;
+    use crate::datasource::query::{QueryType, RelativeWindow, TimeUnit, TimeWindow};
+
+    #[tokio::test]
+    async fn sqlite_windows_compare_instants_across_timestamp_formats() {
+        let directory = tempfile::tempdir().unwrap();
+        std::fs::File::create(directory.path().join("window.db")).unwrap();
+        let client = SQLClient::new(
+            SQLConfig {
+                provider: SQLProvider::SQLite,
+                connection_string: format!(
+                    "sqlite://{}",
+                    directory.path().join("window.db").display()
+                ),
+                database: "test".into(),
+                events_table: "events".into(),
+                options: Default::default(),
+            },
+            1,
+        )
+        .await
+        .unwrap();
+        let pool = client.sqlite_pool.as_ref().unwrap();
+        sqlx::query("CREATE TABLE events (timestamp TEXT)")
+            .execute(pool)
+            .await
+            .unwrap();
+        // Equivalent RFC3339 / SQLite timestamps, one included instant in each format.
+        for stamp in [
+            "2026-01-01T12:00:00Z",
+            "2026-01-01 12:00:00",
+            "2026-01-01T20:00:00+08:00",
+            "2026-01-01T11:59:59Z",
+            "2026-01-01T13:00:00Z",
+        ] {
+            sqlx::query("INSERT INTO events VALUES (?)")
+                .bind(stamp)
+                .execute(pool)
+                .await
+                .unwrap();
+        }
+        let mut query = Query {
+            query_type: QueryType::Count,
+            entity: "events".into(),
+            filters: vec![],
+            time_window: Some(TimeWindow {
+                time_field: "timestamp".into(),
+                window_type: TimeWindowType::Absolute {
+                    start: 1767268800,
+                    end: 1767272400,
+                },
+            }),
+            aggregations: vec![Aggregation {
+                agg_type: AggregationType::Count,
+                field: None,
+                output_name: "count".into(),
+            }],
+            group_by: vec![],
+            limit: None,
+        };
+        let result = client.execute(query.clone()).await.unwrap();
+        assert_eq!(result.rows[0]["count"], Value::Number(3.0));
+        sqlx::query("DELETE FROM events")
+            .execute(pool)
+            .await
+            .unwrap();
+        sqlx::query("INSERT INTO events VALUES (strftime('%Y-%m-%dT%H:%M:%SZ', 'now', '-10 minutes')), (datetime('now', '-10 minutes')), (strftime('%Y-%m-%dT%H:%M:%SZ', 'now', '-2 hours'))")
+            .execute(pool).await.unwrap();
+        query.time_window.as_mut().unwrap().window_type =
+            TimeWindowType::Relative(RelativeWindow {
+                value: 1,
+                unit: TimeUnit::Hours,
+            });
+        let result = client.execute(query.clone()).await.unwrap();
+        assert_eq!(result.rows[0]["count"], Value::Number(2.0));
     }
 }

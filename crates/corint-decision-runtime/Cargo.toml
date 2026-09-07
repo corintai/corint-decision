@@ -6,6 +6,7 @@ license.workspace = true
 description = "Runtime execution engine for CORINT Decision Engine"
 
 [dependencies]
+corint-decision-dsl-parser = { path = "../corint-decision-dsl-parser" }
 corint-decision-model = { path = "../corint-decision-model" }
 thiserror = { workspace = true }
 anyhow = { workspace = true }

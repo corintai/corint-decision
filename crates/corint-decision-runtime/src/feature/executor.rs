@@ -92,7 +92,7 @@ impl FeatureExecutor {
     ) -> Result<()> {
         let mut staged = self.features.clone();
         for mut feature in features {
-            super::dependency::infer_dependencies(&mut feature);
+            super::dependency::infer_dependencies(&mut feature)?;
             feature.validate().map_err(anyhow::Error::msg)?;
             if let Some(config) = &feature.aggregation {
                 if let Some(datasource) = self.datasources.get(&config.datasource) {
@@ -915,18 +915,18 @@ impl FeatureExecutor {
         ))
     }
 
-    /// Execute expression feature - computes from other features
+    /// Execute numeric expressions from feature dependencies and request fields
     async fn execute_expression(
         &self,
         feature: &FeatureDefinition,
-        _context: &HashMap<String, Value>,
+        context: &HashMap<String, Value>,
         dependencies: &HashMap<String, Value>,
     ) -> Result<Value> {
         let config = feature.expression.as_ref().ok_or_else(|| {
             anyhow::anyhow!("Missing expression config for feature '{}'", feature.name)
         })?;
 
-        // Expression features only consume results from other features
+        // Expression features consume computed dependencies and request fields
         // They do NOT access datasources directly
 
         if let Some(expr_str) = &config.expression {
@@ -942,7 +942,7 @@ impl FeatureExecutor {
             );
 
             // Evaluate the expression with the dependency values
-            ExpressionEvaluator::evaluate_expression(expr_str, dependencies)
+            ExpressionEvaluator::evaluate_with_context(expr_str, dependencies, context)
         } else if config.model.is_some() {
             // ML model scoring (not yet implemented)
             Err(anyhow::anyhow!(

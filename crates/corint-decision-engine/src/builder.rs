@@ -326,7 +326,9 @@ impl DecisionEngineBuilder {
         #[cfg(feature = "sqlx")]
         {
             if self.result_writer.is_none() {
-                if let Some(ref db_url) = self.database_url {
+                if let Some(db_url) = self.database_url.as_ref().filter(|url| {
+                    url.starts_with("postgresql://") || url.starts_with("postgres://")
+                }) {
                     match sqlx::postgres::PgPoolOptions::new()
                         .max_connections(5)
                         .connect(db_url)

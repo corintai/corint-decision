@@ -552,7 +552,7 @@ rule:
 
 **Scope:** Unverified compatibility reference; model integration remains planned.
 
-> **⚠️ Architecture Constraint:** Expression methods **only consume results from other features**. They do not access raw data sources or define time windows.
+> **⚠️ Architecture Constraint:** Expression methods consume computed feature values and numeric request fields (`event.amount`, including nested paths). They do not query raw data sources or define time windows.
 
 **expression** - Custom expressions
 
@@ -568,6 +568,21 @@ rule:
   expression: "failed_login_count_1h / login_count_1h"
   # Dependencies are automatically extracted from the expression
 ```
+
+---
+
+Compatibility arithmetic uses the shared expression parser: `+`, `-`, `*`, `/`,
+`%`, unary minus, parentheses, and decimal/scientific numeric literals. Multiplication,
+division and remainder precede addition/subtraction; equal-precedence operators
+associate left to right. Supported functions are `min(a,b)`, `max(a,b)`, `abs(x)`,
+`sqrt(x)`, `ceil(x)`, `floor(x)` and `round(x)`.
+
+Bare feature names and `features.name` create dependencies; `event.nested.field`
+reads the request and does not create a feature dependency. Invalid syntax, paths,
+operators and function arity are rejected during registration. Values must be finite
+numbers or null: null propagates; division/remainder by zero returns null. Missing
+inputs, wrong types and nonfinite results are errors, not implicit zero values.
+This compatibility behavior does not extend the strict Core expression profile.
 
 ---
 

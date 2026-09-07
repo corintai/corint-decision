@@ -279,10 +279,14 @@ run_error_test_case "Unknown Event Type" '{
     }
 }' "default_fallback"
 
-# Test 18: Missing optional fields - should approve (graceful handling)
+# Test 18: Omit optional currency/country/IP/email/timestamp.
+# Keep amount and aggregation dimension keys, which are required by this policy.
 run_test_case "Missing Fields" '{
     "event": {
-        "type": "transaction"
+        "type": "transaction",
+        "user_id": "user_0001",
+        "amount": 50,
+        "device_id": "device_00001"
     }
 }' "approve"
 
@@ -322,8 +326,8 @@ run_test_case "Low Weekly Activity - Review" '{
     }
 }' "review"
 
-# Test 21: High total spending - should review (high cumulative spending with large transaction)
-run_test_case "High Total Spending - Review" '{
+# Test 21: High total spending adds 40 points, below the review threshold (high cumulative spending with large transaction)
+run_test_case "High Total Spending - Approve" '{
     "event": {
         "type": "transaction",
         "user_id": "user_high_total_spending",
@@ -334,7 +338,7 @@ run_test_case "High Total Spending - Review" '{
         "ip_address": "192.168.1.41",
         "timestamp": "'"$CURRENT_TIME"'"
     }
-}' "review"
+}' "approve" "unusual_total_spending"
 
 # Test 22: Large vs average - should review
 run_test_case "Large vs Average - Review" '{
@@ -364,8 +368,8 @@ run_test_case "Exceeds Max History - Review" '{
     }
 }' "review"
 
-# Test 24: Micro transaction pattern - should review (jump from micro to large transactions)
-run_test_case "Micro Transaction Pattern - Review" '{
+# Test 24: Micro transaction pattern adds 35 points, below the review threshold (jump from micro to large transactions)
+run_test_case "Micro Transaction Pattern - Approve" '{
     "event": {
         "type": "transaction",
         "user_id": "user_micro_pattern",
@@ -376,7 +380,7 @@ run_test_case "Micro Transaction Pattern - Review" '{
         "ip_address": "192.168.1.44",
         "timestamp": "'"$CURRENT_TIME"'"
     }
-}' "review"
+}' "approve" "micro_transaction_pattern"
 
 # Test 25: Recent spending spike - should review
 run_test_case "Recent Spending Spike - Review" '{
@@ -390,10 +394,10 @@ run_test_case "Recent Spending Spike - Review" '{
         "ip_address": "192.168.1.45",
         "timestamp": "'"$CURRENT_TIME"'"
     }
-}' "review"
+}' "review" "recent_spending_spike"
 
-# Test 26: Wide amount range - should review (large variance in transaction amounts)
-run_test_case "Wide Amount Range - Review" '{
+# Test 26: Wide amount range adds 35 points, below the review threshold
+run_test_case "Wide Amount Range - Approve" '{
     "event": {
         "type": "transaction",
         "user_id": "user_wide_range",
@@ -404,7 +408,7 @@ run_test_case "Wide Amount Range - Review" '{
         "ip_address": "192.168.1.46",
         "timestamp": "'"$CURRENT_TIME"'"
     }
-}' "review"
+}' "approve" "wide_amount_range"
 
 # Test 27: Spending acceleration - should review
 run_test_case "Spending Acceleration - Review" '{
@@ -418,7 +422,7 @@ run_test_case "Spending Acceleration - Review" '{
         "ip_address": "192.168.1.47",
         "timestamp": "'"$CURRENT_TIME"'"
     }
-}' "review"
+}' "review" "spending_acceleration"
 
 # Test 28: Multi-device 24h - should review
 run_test_case "Multi Device 24h - Review" '{
@@ -592,3 +596,11 @@ run_test_case "Shared Device - Review" '{
 echo ""
 log_info "Test cases completed!"
 echo ""
+
+# These cases must exercise datasource-backed lists, including expiration.
+log_info "Running Database List Tests..."
+run_test_case "Database Blocked User - Decline" '{"event":{"type":"db_list_test","user_id":"sus_0001","ip_address":"192.168.1.1","country":"US"}}' "decline" "user_in_db_blocklist"
+run_test_case "Database Blocked IP - Decline" '{"event":{"type":"db_list_test","user_id":"user_0001","ip_address":"45.142.212.61","country":"US"}}' "decline" "ip_in_db_blocklist"
+run_test_case "Database High Risk Country - Review" '{"event":{"type":"db_list_test","user_id":"user_0001","ip_address":"192.168.1.1","country":"RU"}}' "review" "country_in_db_high_risk"
+run_test_case "Database Expired Block - Approve" '{"event":{"type":"db_list_test","user_id":"user_expired_block","ip_address":"192.168.1.1","country":"US"}}' "approve"
+run_test_case "Database Active Block - Decline" '{"event":{"type":"db_list_test","user_id":"user_active_block","ip_address":"192.168.1.1","country":"US"}}' "decline" "user_in_db_blocklist_expiration"

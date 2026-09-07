@@ -11,134 +11,118 @@ features:
   - name: user_risk_score
     description: "Pre-computed user risk score (90-day window)"
     type: lookup
-    lookup:
-      datasource: redis_e2e
-      key: event.user_id
-      fallback: 50
+    datasource: redis_e2e
+    key: event.user_id
+    fallback: 50
 
   - name: user_fraud_score
     description: "Pre-computed user fraud probability score"
     type: lookup
-    lookup:
-      datasource: redis_e2e
-      key: event.user_id
-      fallback: 0
+    datasource: redis_e2e
+    key: event.user_id
+    fallback: 0
 
   # Device reputation
   - name: device_reputation
     description: "Device reputation score from feature store"
     type: lookup
-    lookup:
-      datasource: redis_e2e
-      key: event.device_id
-      fallback: 50
+    datasource: redis_e2e
+    key: event.device_id
+    fallback: 50
 
   - name: device_fraud_count
     description: "Number of fraud events associated with device (30 days)"
     type: lookup
-    lookup:
-      datasource: redis_e2e
-      key: event.device_id
-      fallback: 0
+    datasource: redis_e2e
+    key: event.device_id
+    fallback: 0
 
   # IP reputation
   - name: ip_reputation
     description: "IP address reputation score"
     type: lookup
-    lookup:
-      datasource: redis_e2e
-      key: event.ip_address
-      fallback: 50
+    datasource: redis_e2e
+    key: event.ip_address
+    fallback: 50
 
   - name: ip_fraud_rate
     description: "Fraud rate for IP address (7 days)"
     type: lookup
-    lookup:
-      datasource: redis_e2e
-      key: event.ip_address
-      fallback: 0.0
+    datasource: redis_e2e
+    key: event.ip_address
+    fallback: 0.0
 
   # User behavioral features
   - name: user_avg_txn_amt
     description: "Pre-computed average transaction amount (30 days)"
     type: lookup
-    lookup:
-      datasource: redis_e2e
-      key: event.user_id
-      fallback: 0
+    datasource: redis_e2e
+    key: event.user_id
+    fallback: 0
 
   - name: user_txn_count_7d
     description: "Pre-computed transaction count (7 days)"
     type: lookup
-    lookup:
-      datasource: redis_e2e
-      key: event.user_id
-      fallback: 0
+    datasource: redis_e2e
+    key: event.user_id
+    fallback: 0
 
   - name: user_unique_devices
     description: "Number of unique devices used by user (30 days)"
     type: lookup
-    lookup:
-      datasource: redis_e2e
-      key: event.user_id
-      fallback: 1
+    datasource: redis_e2e
+    key: event.user_id
+    fallback: 1
 
   - name: user_unique_countries
     description: "Number of unique countries for user (30 days)"
     type: lookup
-    lookup:
-      datasource: redis_e2e
-      key: event.user_id
-      fallback: 1
+    datasource: redis_e2e
+    key: event.user_id
+    fallback: 1
 
   # Account age and history
   - name: user_account_age
     description: "Account age in days"
     type: lookup
-    lookup:
-      datasource: redis_e2e
-      key: event.user_id
-      fallback: 0
+    datasource: redis_e2e
+    key: event.user_id
+    fallback: 0
 
   - name: user_total_txns
     description: "Total lifetime transaction count"
     type: lookup
-    lookup:
-      datasource: redis_e2e
-      key: event.user_id
-      fallback: 0
+    datasource: redis_e2e
+    key: event.user_id
+    fallback: 0
 
   # Payment method features
   - name: payment_fraud_rate
     description: "Fraud rate for payment method"
     type: lookup
-    lookup:
-      datasource: redis_e2e
-      key: event.payment_method
-      fallback: 0.0
+    datasource: redis_e2e
+    key: event.payment_method
+    fallback: 0.0
 
   # Merchant features
   - name: merchant_risk
     description: "Merchant risk score"
     type: lookup
-    lookup:
-      datasource: redis_e2e
-      key: event.merchant_id
-      fallback: 50
+    datasource: redis_e2e
+    key: event.merchant_id
+    fallback: 50
 
   # Velocity features (pre-computed)
   - name: user_login_1h
     description: "Pre-computed login count (1 hour)"
     type: lookup
-    lookup:
-      datasource: redis_e2e
-      key: event.user_id
-      fallback: 0
+    datasource: redis_e2e
+    key: event.user_id
+    fallback: 0
 
   - name: user_failed_login_24h
     description: "Pre-computed failed login count (24 hours)"
     type: lookup
-    lookup:
-      datasource: redis_e2e
-      key: event.user_id
-      fallback: 0
+    datasource: redis_e2e
+    key: event.user_id
+    fallback: 0

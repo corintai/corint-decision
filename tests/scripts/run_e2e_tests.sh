@@ -1,1117 +1,277 @@
-#!/bin/bash
+#!/usr/bin/env bash
+# Original datasource E2E suite: real fixtures -> server -> authenticated HTTP decisions.
+# Run from any directory. Generated files and services belong to this run only.
+# External POSTGRES_URL/CLICKHOUSE_URL/REDIS_URL must point to disposable test databases.
+set -eo pipefail
+REPO_ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
+for tool in python3 cargo curl jq sqlite3; do
+    command -v "$tool" >/dev/null || { echo "Missing prerequisite: $tool" >&2; exit 2; }
+done
+python3 -c 'import yaml' || { echo 'Install tests/scripts/requirements-e2e.txt' >&2; exit 2; }
+case "${1:-}" in
+    --sqlite|--postgres|--clickhouse|--redis|--all) DATASOURCE=${1#--} ;;
+    "")
+        if [ -t 0 ]; then
+            read -r -p 'Datasource (sqlite/postgres/clickhouse/redis/all) [sqlite]: ' DATASOURCE
+            DATASOURCE=${DATASOURCE:-sqlite}
+        else DATASOURCE=sqlite; fi ;;
+    *) echo "Usage: $0 [--sqlite|--postgres|--clickhouse|--redis|--all]" >&2; exit 2 ;;
+esac
+case "$DATASOURCE" in sqlite|postgres|clickhouse|redis|all) ;; *) exit 2 ;; esac
+RESULTS_DIR=${CORINT_E2E_RESULTS_DIR:-$(mktemp -d "$REPO_ROOT/tests/results.XXXXXX")}
+mkdir -p "$RESULTS_DIR"
+RESULTS_DIR=$(cd "$RESULTS_DIR" && pwd)
+export CARGO_INCREMENTAL=${CARGO_INCREMENTAL:-0}
+export CORINT_E2E_SEED=${CORINT_E2E_SEED:-20260907}
+log_info() { echo "[INFO] $*"; }
+log_success() { echo "[PASS] $*"; }
+log_error() { echo "[FAIL] $*" >&2; }
 
-# ============================================================================
-# CORINT Decision Engine - E2E Test Runner
-# ============================================================================
-#
-# This script runs end-to-end tests for the CORINT Decision Engine:
-# 1. Selects data source (SQLite, PostgreSQL, ClickHouse, Redis, or All)
-# 2. Generates test data with relative timestamps
-# 3. Builds and starts the server with test configuration
-# 4. Runs test cases covering all feature types
-# 5. Collects results and generates report
-# 6. Cleans up server process
-#
-# Usage:
-#   cd tests
-#   ./scripts/run_e2e_tests.sh              # Interactive mode
-#   ./scripts/run_e2e_tests.sh --sqlite     # SQLite only
-#   ./scripts/run_e2e_tests.sh --postgres   # PostgreSQL only
-#   ./scripts/run_e2e_tests.sh --clickhouse # ClickHouse only
-#   ./scripts/run_e2e_tests.sh --all        # All datasources
-#
-# ============================================================================
-
-set -e  # Exit on error
-
-# Determine project root directory
-# If we're in the tests directory, move to parent
-if [ -d "../crates" ] && [ -f "../Cargo.toml" ]; then
-    cd ..
+if [ "$DATASOURCE" = all ]; then
+    : > "$RESULTS_DIR/datasources.jsonl"
+    failed=0
+    for ds in sqlite postgres clickhouse redis; do
+        reason=""
+        case "$ds" in
+            postgres) [ -n "${POSTGRES_URL:-}" ] || reason='POSTGRES_URL not configured' ;;
+            clickhouse) [ -n "${CLICKHOUSE_URL:-}" ] || reason='CLICKHOUSE_URL not configured' ;;
+            redis) if ! command -v redis-server >/dev/null && [ -z "${REDIS_URL:-}" ]; then reason='redis-server and REDIS_URL unavailable'; fi ;;
+        esac
+        if [ -n "$reason" ]; then
+            status=skipped
+            log_info "$ds: SKIPPED ($reason)"
+        elif CORINT_E2E_RESULTS_DIR="$RESULTS_DIR/$ds" bash "$REPO_ROOT/tests/scripts/run_e2e_tests.sh" "--$ds"; then
+            status=passed
+        else status=failed; failed=1; fi
+        jq -nc --arg datasource "$ds" --arg status "$status" --arg reason "$reason" \
+            '{datasource:$datasource,status:$status,reason:$reason}' >> "$RESULTS_DIR/datasources.jsonl"
+    done
+    jq -s '.' "$RESULTS_DIR/datasources.jsonl" > "$RESULTS_DIR/summary.json"
+    log_info "Reports: $RESULTS_DIR"
+    exit "$failed"
 fi
 
-# Verify we're in the project root
-if [ ! -d "crates" ] || [ ! -f "Cargo.toml" ]; then
-    echo "Error: Must run from project root or tests directory"
+RUN_DIR=$(mktemp -d "${TMPDIR:-/tmp}/corint-e2e.XXXXXX")
+rm -f "$RESULTS_DIR/$DATASOURCE-report.json"
+SERVER_PID=""
+REDIS_PID=""
+cleanup() {
+    for pid in "$SERVER_PID" "$REDIS_PID"; do
+        if [ -n "$pid" ]; then kill "$pid" 2>/dev/null || true; wait "$pid" 2>/dev/null || true; fi
+    done
+    rm -rf "$RUN_DIR"
+}
+finish() {
+    local code=$?
+    trap - EXIT
+    if [ ! -f "$RESULTS_DIR/$DATASOURCE-report.json" ]; then
+        jq -nc --arg datasource "$DATASOURCE" --argjson exit_code "$code" \
+            '{datasource:$datasource,status:"setup_failed",exit_code:$exit_code,total:0,passed:0,failed:0}' > "$RESULTS_DIR/$DATASOURCE-report.json"
+    fi
+    cleanup
+    log_info "Reports: $RESULTS_DIR"
+    exit "$code"
+}
+trap finish EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+python3 - "$REPO_ROOT" "$RUN_DIR" <<'PY_COPY'
+import pathlib, shutil, sys
+repo, run = map(pathlib.Path, sys.argv[1:])
+shutil.copytree(repo / "tests", run / "tests", ignore=shutil.ignore_patterns("results", "results.*", "__pycache__"))
+(run / "config").mkdir()
+(run / "docs/schema").mkdir(parents=True)
+shutil.copy2(repo / "docs/schema/postgres-schema.sql", run / "docs/schema/postgres-schema.sql")
+for path in ["tests/data", "tests/e2e_repo/features", "tests/e2e_repo/pipelines"]:
+    (run / path).mkdir(parents=True, exist_ok=True)
+PY_COPY
+cd "$RUN_DIR"
+read -r SERVER_PORT GRPC_PORT REDIS_PORT < <(python3 - <<'PY_PORT'
+import socket
+sockets = [socket.socket() for _ in range(3)]
+try:
+    for sock in sockets: sock.bind(("127.0.0.1", 0))
+    print(*(sock.getsockname()[1] for sock in sockets))
+finally:
+    for sock in sockets: sock.close()
+PY_PORT
+)
+# Do not inherit caller routing, credentials, or persistence configuration.
+for variable in $(env | cut -d= -f1); do
+    case "$variable" in CORINT_*) case "$variable" in CORINT_E2E_*) ;; *) unset "$variable" ;; esac ;; esac
+done
+unset DATABASE_URL
+export CORINT_DECISION_TOKEN=$(python3 -c 'import secrets; print(secrets.token_hex(32))')
+export CORINT_PUBLISHER_TOKEN=$(python3 -c 'import secrets; print(secrets.token_hex(32))')
+export CORINT_TENANT_ID=e2e_local
+export NO_PROXY=127.0.0.1,localhost no_proxy=127.0.0.1,localhost
+API_URL="http://127.0.0.1:$SERVER_PORT"
+CURRENT_DATASOURCE=$DATASOURCE
+TOTAL_TESTS=0 PASSED_TESTS=0 FAILED_TESTS=0
+declare -a PASSED_TEST_NAMES=() FAILED_TEST_NAMES=() FAILED_TEST_DETAILS=()
+: > "$RESULTS_DIR/$DATASOURCE-cases.jsonl"
+
+log_info "Generating deterministic fixtures (seed=$CORINT_E2E_SEED)..."
+# SQLite also supplies database lists for the ClickHouse variant.
+python3 tests/scripts/generate_test_data.py
+sqlite3 tests/data/e2e_test.db < tests/data/test_data.sql
+case "$DATASOURCE" in
+    sqlite) export DATABASE_URL="sqlite://$RUN_DIR/tests/data/e2e_test.db" ;;
+    postgres)
+        : "${POSTGRES_URL:?Set POSTGRES_URL to a disposable PostgreSQL test database}"
+        command -v psql >/dev/null
+        python3 tests/scripts/generate_postgres_data.py
+        psql -X -q -v ON_ERROR_STOP=1 "$POSTGRES_URL" -f tests/data/postgres_test_data.sql
+        export DATABASE_URL="$POSTGRES_URL" ;;
+    clickhouse)
+        : "${CLICKHOUSE_URL:?Set CLICKHOUSE_URL to a disposable ClickHouse test endpoint}"
+        curl -fsS --connect-timeout 2 --max-time 10 "$CLICKHOUSE_URL" --data 'SELECT 1' >/dev/null
+        python3 tests/scripts/generate_clickhouse_data.py
+        python3 tests/scripts/load_clickhouse_data.py tests/data/clickhouse_test_data.sql "$CLICKHOUSE_URL"
+        export DATABASE_URL="sqlite://$RUN_DIR/tests/data/e2e_test.db" ;;
+    redis)
+        python3 -c 'import redis' || { echo 'Install tests/scripts/requirements-e2e.txt' >&2; exit 2; }
+        command -v redis-cli >/dev/null
+        if [ -z "${REDIS_URL:-}" ]; then
+            command -v redis-server >/dev/null
+            redis-server --bind 127.0.0.1 --port "$REDIS_PORT" --save '' --appendonly no \
+                --dir "$RUN_DIR" > "$RESULTS_DIR/redis.log" 2>&1 &
+            REDIS_PID=$!
+            export REDIS_URL="redis://127.0.0.1:$REDIS_PORT/0"
+        fi
+        ready=false
+        for attempt in {1..30}; do
+            if redis-cli -u "$REDIS_URL" ping >/dev/null 2>&1; then ready=true; break; fi
+            sleep 0.2
+        done
+        [ "$ready" = true ] || { log_error 'Redis failed to start'; exit 1; }
+        python3 tests/scripts/generate_redis_data.py ;;
+esac
+
+# Generate actual connection values, not unevaluated shell placeholders in YAML.
+python3 - "$DATASOURCE" "$SERVER_PORT" "$GRPC_PORT" <<'PY_CONFIG'
+import os, pathlib, shutil, sys, yaml
+kind, http, grpc = sys.argv[1:]
+repo = pathlib.Path('tests/e2e_repo')
+for directory in ['features', 'pipelines', 'configs/datasources']:
+    for path in (repo / directory).glob('*.yaml'): path.unlink()
+shutil.copy2(repo / f'templates/features/e2e_features_{kind}.yaml', repo / 'features/e2e_features.yaml')
+for name in (['redis_test'] if kind == 'redis' else ['transaction_test', 'payment_test', 'login_test', 'db_list_test']):
+    shutil.copy2(repo / f'templates/pipelines/{name}.yaml', repo / f'pipelines/{name}.yaml')
+shutil.copy2(repo / ('templates/registry/registry_redis.yaml' if kind == 'redis' else 'templates/registry/registry_default.yaml'), repo / 'registry.yaml')
+name = kind + '_e2e'
+source = {'type': 'sql', 'provider': kind, 'database': 'corint_e2e', 'connection_string': os.environ.get('DATABASE_URL', ''), 'options': {'max_connections': '3'}}
+if kind == 'postgres': source['provider'] = 'postgresql'
+if kind == 'clickhouse': source.update(type='olap', provider='clickhouse', connection_string=os.environ['CLICKHOUSE_URL'], database='default', events_table='events')
+if kind == 'redis': source.update(type='feature_store', provider='redis', connection_string=os.environ['REDIS_URL'], options={'namespace': 'e2e_features', 'max_connections': '3'})
+sources = {name: source}
+# List backends support SQL; ClickHouse uses a documented SQLite sidecar.
+if kind == 'clickhouse': sources['sqlite_e2e'] = {'type': 'sql', 'provider': 'sqlite', 'database': 'corint_e2e', 'connection_string': os.environ['DATABASE_URL']}
+if kind == 'redis': (repo / 'lists/db_lists.yaml').unlink()
+elif kind == 'postgres':
+    path = repo / 'lists/db_lists.yaml'
+    path.write_text(path.read_text().replace('sqlite_e2e', 'postgres_e2e'))
+for ds_name, ds in sources.items():
+    runtime = dict(ds, name=ds_name)
+    if ds['type'] == 'feature_store': runtime['namespace'] = 'e2e_features'
+    (repo / f'configs/datasources/{ds_name}.yaml').write_text(yaml.safe_dump(runtime))
+config = {'host': '127.0.0.1', 'port': int(http), 'grpc_port': int(grpc), 'enable_tracing': False,
+          'repository': {'type': 'filesystem', 'path': str(repo)}, 'datasource': sources}
+pathlib.Path('config/server.yaml').write_text(yaml.safe_dump(config))
+PY_CONFIG
+
+log_info 'Building server from the current checkout...'
+SERVER_BINARY=$(cd "$REPO_ROOT" && cargo build -p corint-decision-server --bin corint-decision-server \
+    --features corint-decision-engine/redis --locked --message-format=json | python3 -c '
+import json, sys
+paths = []
+for line in sys.stdin:
+    value = json.loads(line)
+    if value.get("reason") == "compiler-message": sys.stderr.write(value["message"].get("rendered") or "")
+    if value.get("reason") == "compiler-artifact" and value.get("target", {}).get("name") == "corint-decision-server" and value.get("executable"): paths.append(value["executable"])
+if len(paths) != 1: sys.exit("Expected one freshly built server executable")
+print(paths[0])
+')
+RUST_LOG=${CORINT_E2E_LOG_LEVEL:-info} "$SERVER_BINARY" > "$RESULTS_DIR/server_$DATASOURCE.log" 2>&1 &
+SERVER_PID=$!
+ready=false
+for attempt in {1..30}; do
+    kill -0 "$SERVER_PID" 2>/dev/null || break
+    if curl --noproxy '*' --connect-timeout 1 --max-time 2 -fsS "$API_URL/health" >/dev/null 2>&1; then ready=true; break; fi
+    sleep 1
+done
+if [ "$ready" != true ]; then
+    log_error 'Server failed to become ready'
+    cat "$RESULTS_DIR/server_$DATASOURCE.log" >&2
     exit 1
 fi
 
-# Colors for output
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-CYAN='\033[0;36m'
-NC='\033[0m' # No Color
-
-# Test configuration
-API_URL="http://localhost:8080"
-SERVER_PORT=8080
-TEST_REPO="tests/e2e_repo"
-RESULTS_DIR="tests/results"
-SERVER_PID_FILE="/tmp/corint_e2e_server.pid"
-
-# Database files
-SQLITE_DB="tests/data/e2e_test.db"
-SQLITE_SQL="tests/data/test_data.sql"
-POSTGRES_SQL="tests/data/postgres_test_data.sql"
-CLICKHOUSE_SQL="tests/data/clickhouse_test_data.sql"
-
-# Configuration file paths
-CONFIG_DIR="config"
-CONFIG_FILE="$CONFIG_DIR/server.yaml"
-CONFIG_BACKUP="$CONFIG_DIR/server.yaml.backup"
-TEST_CONFIG_FILE="tests/e2e_server.yaml"
-
-# Feature files
-FEATURES_DIR="$TEST_REPO/features"
-FEATURES_TEMPLATES="$TEST_REPO/templates/features"
-ACTIVE_FEATURES="$FEATURES_DIR/e2e_features.yaml"
-
-# Pipeline files
-PIPELINES_DIR="$TEST_REPO/pipelines"
-PIPELINES_TEMPLATES="$TEST_REPO/templates/pipelines"
-
-# Registry files
-REGISTRY_FILE="$TEST_REPO/registry.yaml"
-REGISTRY_TEMPLATES="$TEST_REPO/templates/registry"
-
-# Datasource selection
-DATASOURCE=""
-
-# Counters
-TOTAL_TESTS=0
-PASSED_TESTS=0
-FAILED_TESTS=0
-
-# Arrays to track test results
-declare -a PASSED_TEST_NAMES=()
-declare -a FAILED_TEST_NAMES=()
-declare -a FAILED_TEST_DETAILS=()
-
-# ============================================================================
-# Helper Functions
-# ============================================================================
-
-log_info() {
-    echo -e "${BLUE}[INFO]${NC} $1"
+request_decision() {
+    local payload="$1"
+    printf '%s\n' "$payload" > "$RESULTS_DIR/${CURRENT_DATASOURCE}-request-${TOTAL_TESTS}.json"
+    RESPONSE_FILE="$RESULTS_DIR/${CURRENT_DATASOURCE}-case-${TOTAL_TESTS}.json"
+    HTTP_STATUS=$(curl --noproxy '*' --connect-timeout 2 --max-time 30 -sS \
+        -X POST "$API_URL/v1/decide" \
+        -H "Content-Type: application/json" \
+        -H "Authorization: Bearer $CORINT_DECISION_TOKEN" \
+        -d "$payload" -o "$RESPONSE_FILE" -w '%{http_code}') || HTTP_STATUS=000
 }
 
-log_success() {
-    echo -e "${GREEN}[✓]${NC} $1"
-}
-
-log_error() {
-    echo -e "${RED}[✗]${NC} $1"
-}
-
-log_warning() {
-    echo -e "${YELLOW}[!]${NC} $1"
-}
-
-log_header() {
-    echo -e "${CYAN}$1${NC}"
-}
-
-show_menu() {
-    echo ""
-    log_header "============================================================================"
-    log_header "CORINT Decision Engine - E2E Test Suite"
-    log_header "============================================================================"
-    echo ""
-    echo "Select data source for testing:"
-    echo ""
-    echo "  1) SQLite      (default, in-memory)"
-    echo "  2) PostgreSQL  (requires running PostgreSQL server)"
-    echo "  3) ClickHouse  (requires running ClickHouse server)"
-    echo "  4) Redis       (requires running Redis server - coming soon)"
-    echo "  5) All         (run tests on all available datasources)"
-    echo ""
-    echo "  q) Quit"
-    echo ""
-}
-
-select_datasource() {
-    # Check command line arguments first
-    case "$1" in
-        --sqlite)
-            DATASOURCE="sqlite"
-            return
-            ;;
-        --postgres|--postgresql)
-            DATASOURCE="postgres"
-            return
-            ;;
-        --clickhouse|--ch)
-            DATASOURCE="clickhouse"
-            return
-            ;;
-        --redis)
-            DATASOURCE="redis"
-            return
-            ;;
-        --all)
-            DATASOURCE="all"
-            return
-            ;;
-        "")
-            # Interactive mode
-            ;;
-        *)
-            echo "Unknown option: $1"
-            echo "Usage: $0 [--sqlite|--postgres|--clickhouse|--redis|--all]"
-            exit 1
-            ;;
-    esac
-
-    # Interactive selection
-    show_menu
-    read -p "Enter choice [1-5, q]: " choice
-
-    case $choice in
-        1|"")
-            DATASOURCE="sqlite"
-            ;;
-        2)
-            DATASOURCE="postgres"
-            ;;
-        3)
-            DATASOURCE="clickhouse"
-            ;;
-        4)
-            DATASOURCE="redis"
-            ;;
-        5)
-            DATASOURCE="all"
-            ;;
-        q|Q)
-            echo "Exiting."
-            exit 0
-            ;;
-        *)
-            echo "Invalid choice. Using SQLite (default)."
-            DATASOURCE="sqlite"
-            ;;
-    esac
-}
-
-backup_config() {
-    # Check if current config is actually the test config (from a previous incomplete run)
-    if [ -f "$CONFIG_FILE" ] && grep -q "E2E Tests" "$CONFIG_FILE" 2>/dev/null; then
-        log_warning "Current config appears to be test config from previous run"
-        if [ -f "$CONFIG_BACKUP" ]; then
-            log_info "Found backup from previous run, restoring it first"
-            restore_config
-        else
-            log_warning "No backup found, current test config will be overwritten"
-            rm -f "$CONFIG_FILE"
-        fi
-    fi
-
-    if [ -f "$CONFIG_BACKUP" ]; then
-        if grep -q "E2E Tests" "$CONFIG_BACKUP" 2>/dev/null; then
-            log_warning "Backup appears to be test config, removing it"
-            rm -f "$CONFIG_BACKUP"
-        else
-            log_warning "Old backup exists: $CONFIG_BACKUP (keeping it)"
-        fi
-    fi
-
-    if [ -f "$CONFIG_FILE" ]; then
-        log_info "Backing up existing config: $CONFIG_FILE -> $CONFIG_BACKUP"
-        cp "$CONFIG_FILE" "$CONFIG_BACKUP"
-        log_success "Config backed up"
-        return 0
+record_case() {
+    local name="$1" expected="$2" passed="$3" detail="$4"
+    jq -nc --arg name "$name" --arg expected "$expected" --argjson passed "$passed" \
+        --arg status "$HTTP_STATUS" --arg detail "$detail" --arg response "$RESPONSE_FILE" \
+        '{name:$name,expected:$expected,passed:$passed,http_status:$status,detail:$detail,response:$response}' \
+        >> "$RESULTS_DIR/${CURRENT_DATASOURCE}-cases.jsonl"
+    if [ "$passed" = true ]; then
+        PASSED_TESTS=$((PASSED_TESTS + 1)); PASSED_TEST_NAMES+=("$name")
+        log_success "$name: PASSED ($detail)"
     else
-        log_warning "No existing config file to backup"
-        return 0
+        FAILED_TESTS=$((FAILED_TESTS + 1)); FAILED_TEST_NAMES+=("$name")
+        FAILED_TEST_DETAILS+=("$name|FAILED|$detail")
+        log_error "$name: FAILED ($detail)"
     fi
-}
-
-restore_config() {
-    if [ -f "$CONFIG_BACKUP" ]; then
-        if grep -q "E2E Tests" "$CONFIG_BACKUP" 2>/dev/null; then
-            log_error "Backup file appears to be test config, not restoring"
-            log_warning "Please manually restore from config/server-example.yaml"
-            rm -f "$CONFIG_BACKUP"
-            return 1
-        fi
-
-        log_info "Restoring original config: $CONFIG_BACKUP -> $CONFIG_FILE"
-        if [ -f "$CONFIG_FILE" ]; then
-            rm -f "$CONFIG_FILE"
-        fi
-        mv "$CONFIG_BACKUP" "$CONFIG_FILE"
-        log_success "Config restored successfully"
-    else
-        if [ -f "$CONFIG_FILE" ] && grep -q "E2E Tests" "$CONFIG_FILE" 2>/dev/null; then
-            log_warning "No backup config found, but test config is still in place"
-            log_warning "Restoring from server-example.yaml"
-            cp "$CONFIG_DIR/server-example.yaml" "$CONFIG_FILE"
-            log_success "Config restored from example"
-        else
-            log_info "No backup to restore (config may already be restored)"
-        fi
-    fi
-}
-
-setup_test_config() {
-    local datasource=$1
-
-    if [ ! -f "$TEST_CONFIG_FILE" ]; then
-        log_error "Test config file not found: $TEST_CONFIG_FILE"
-        exit 1
-    fi
-
-    log_info "Setting up test config for datasource: $datasource"
-
-    # Ensure config directory exists
-    mkdir -p "$CONFIG_DIR"
-
-    # Create config based on datasource
-    case $datasource in
-        sqlite)
-            cp "$TEST_CONFIG_FILE" "$CONFIG_FILE"
-            ;;
-        postgres)
-            create_postgres_config
-            ;;
-        clickhouse)
-            create_clickhouse_config
-            ;;
-        redis)
-            create_redis_config
-            ;;
-    esac
-
-    log_success "Test config installed for $datasource"
-}
-
-create_postgres_config() {
-    cat > "$CONFIG_FILE" << 'EOF'
-# CORINT Decision Engine Server Configuration for E2E Tests (PostgreSQL)
-host: "127.0.0.1"
-port: 8080
-grpc_port: 50051
-
-repository:
-  type: filesystem
-  path: "tests/e2e_repo"
-
-datasources:
-  postgres_e2e:
-    type: sql
-    provider: postgresql
-    connection_string: "${POSTGRES_URL:-postgresql://postgres:postgres@localhost:5432/corint_test}"
-    database: "corint_test"
-    options:
-      max_connections: "5"
-
-enable_metrics: true
-enable_tracing: false
-log_level: "error"
-
-llm:
-  default_provider: openai
-  enable_cache: false
-  enable_thinking: false
-  openai:
-    api_key: "${OPENAI_API_KEY:-dummy-key-for-testing}"
-    default_model: "gpt-4o-mini"
-    max_tokens: 100
-    temperature: 0.0
-EOF
-}
-
-create_clickhouse_config() {
-    cat > "$CONFIG_FILE" << 'EOF'
-# CORINT Decision Engine Server Configuration for E2E Tests (ClickHouse)
-host: "127.0.0.1"
-port: 8080
-grpc_port: 50051
-
-repository:
-  type: filesystem
-  path: "tests/e2e_repo"
-
-datasources:
-  clickhouse_e2e:
-    type: olap
-    provider: clickhouse
-    connection_string: "${CLICKHOUSE_URL:-http://localhost:8123}"
-    database: "default"
-    options:
-      max_connections: "5"
-
-enable_metrics: true
-enable_tracing: false
-log_level: "error"
-
-llm:
-  default_provider: openai
-  enable_cache: false
-  enable_thinking: false
-  openai:
-    api_key: "${OPENAI_API_KEY:-dummy-key-for-testing}"
-    default_model: "gpt-4o-mini"
-    max_tokens: 100
-    temperature: 0.0
-EOF
-}
-
-create_redis_config() {
-    cat > "$CONFIG_FILE" << 'EOF'
-# CORINT Decision Engine Server Configuration for E2E Tests (Redis)
-host: "127.0.0.1"
-port: 8080
-grpc_port: 50051
-
-repository:
-  type: filesystem
-  path: "tests/e2e_repo"
-
-datasources:
-  redis_e2e:
-    type: feature_store
-    provider: redis
-    connection_string: "${REDIS_URL:-redis://localhost:6379/1}"
-    namespace: "e2e_features"
-    default_ttl: 3600
-    pool_size: 10
-    timeout_ms: 5000
-    pooling_enabled: true
-    options:
-      max_connections: "20"
-      min_idle: "2"
-      connection_timeout: "10"
-
-enable_metrics: true
-enable_tracing: false
-log_level: "error"
-
-llm:
-  default_provider: openai
-  enable_cache: false
-  enable_thinking: false
-  openai:
-    api_key: "${OPENAI_API_KEY:-dummy-key-for-testing}"
-    default_model: "gpt-4o-mini"
-    max_tokens: 100
-    temperature: 0.0
-EOF
-}
-
-setup_features() {
-    local datasource=$1
-    local template_file="$FEATURES_TEMPLATES/e2e_features_${datasource}.yaml"
-
-    log_info "Setting up features for datasource: $datasource"
-
-    if [ -f "$template_file" ]; then
-        cp "$template_file" "$ACTIVE_FEATURES"
-        log_success "$datasource features installed"
-    else
-        log_error "Features template not found: $template_file"
-        exit 1
-    fi
-}
-
-setup_pipelines() {
-    local datasource=$1
-
-    log_info "Setting up pipelines for datasource: $datasource"
-
-    # Create pipelines directory if it doesn't exist
-    mkdir -p "$PIPELINES_DIR"
-
-    # Clear existing pipelines
-    rm -f "$PIPELINES_DIR"/*.yaml
-
-    # Copy pipelines based on datasource
-    case $datasource in
-        redis)
-            # Redis only uses redis_test pipeline
-            cp "$PIPELINES_TEMPLATES/redis_test.yaml" "$PIPELINES_DIR/"
-            log_success "Redis pipeline installed"
-            ;;
-        *)
-            # Other datasources use transaction, payment, login, and db_list pipelines
-            cp "$PIPELINES_TEMPLATES/transaction_test.yaml" "$PIPELINES_DIR/"
-            cp "$PIPELINES_TEMPLATES/payment_test.yaml" "$PIPELINES_DIR/"
-            cp "$PIPELINES_TEMPLATES/login_test.yaml" "$PIPELINES_DIR/"
-            cp "$PIPELINES_TEMPLATES/db_list_test.yaml" "$PIPELINES_DIR/"
-            log_success "$datasource pipelines installed"
-            ;;
-    esac
-}
-
-setup_registry() {
-    local datasource=$1
-
-    log_info "Setting up registry for datasource: $datasource"
-
-    # Copy registry based on datasource
-    case $datasource in
-        redis)
-            cp "$REGISTRY_TEMPLATES/registry_redis.yaml" "$REGISTRY_FILE"
-            log_success "Redis registry installed"
-            ;;
-        *)
-            cp "$REGISTRY_TEMPLATES/registry_default.yaml" "$REGISTRY_FILE"
-            log_success "Default registry installed"
-            ;;
-    esac
-}
-
-cleanup_features() {
-    # Remove the copied features file
-    if [ -f "$ACTIVE_FEATURES" ]; then
-        rm -f "$ACTIVE_FEATURES"
-        log_info "Features file removed"
-    fi
-}
-
-cleanup_pipelines() {
-    # Remove copied pipeline files
-    if [ -d "$PIPELINES_DIR" ]; then
-        rm -f "$PIPELINES_DIR"/*.yaml
-        log_info "Pipeline files removed"
-    fi
-}
-
-cleanup_registry() {
-    # Remove copied registry file
-    if [ -f "$REGISTRY_FILE" ]; then
-        rm -f "$REGISTRY_FILE"
-        log_info "Registry file removed"
-    fi
-}
-
-setup_database() {
-    local datasource=$1
-
-    log_info "Setting up database for: $datasource"
-
-    case $datasource in
-        sqlite)
-            setup_sqlite_database
-            ;;
-        postgres)
-            setup_postgres_database
-            ;;
-        clickhouse)
-            setup_clickhouse_database
-            ;;
-        redis)
-            setup_redis_database
-            ;;
-    esac
-}
-
-setup_sqlite_database() {
-    # Always regenerate SQL statements with fresh timestamps
-    log_info "Generating fresh SQLite test data with current timestamps..."
-    python3 tests/scripts/generate_test_data.py
-    if [ $? -ne 0 ]; then
-        log_error "Failed to generate SQL data"
-        exit 1
-    fi
-
-    # Remove old database
-    rm -f "$SQLITE_DB"
-
-    # Execute SQL file
-    sqlite3 "$SQLITE_DB" < "$SQLITE_SQL"
-    if [ $? -ne 0 ]; then
-        log_error "Failed to create SQLite database"
-        exit 1
-    fi
-
-    # Verify data insertion
-    EVENT_COUNT=$(sqlite3 "$SQLITE_DB" "SELECT COUNT(*) FROM events;")
-    LIST_COUNT=$(sqlite3 "$SQLITE_DB" "SELECT COUNT(*) FROM list_entries;")
-    log_success "SQLite database created with $EVENT_COUNT events and $LIST_COUNT list entries"
-
-    # Set environment variable
-    export DATABASE_URL="sqlite://$(pwd)/$SQLITE_DB"
-}
-
-setup_postgres_database() {
-    # Check PostgreSQL connection
-    POSTGRES_URL="${POSTGRES_URL:-postgresql://postgres:postgres@localhost:5432/corint_test}"
-
-    log_info "Checking PostgreSQL connection..."
-    if ! psql "$POSTGRES_URL" -c "SELECT 1;" > /dev/null 2>&1; then
-        log_error "Cannot connect to PostgreSQL at: $POSTGRES_URL"
-        log_warning "Please ensure PostgreSQL is running and accessible"
-        log_warning "Set POSTGRES_URL environment variable if using non-default connection"
-        exit 1
-    fi
-
-    # First, regenerate SQLite test data (PostgreSQL generation depends on it)
-    log_info "Generating fresh test data with current timestamps..."
-    python3 tests/scripts/generate_test_data.py
-    if [ $? -ne 0 ]; then
-        log_error "Failed to generate test data"
-        exit 1
-    fi
-
-    # Then convert to PostgreSQL format
-    log_info "Converting to PostgreSQL format..."
-    python3 tests/scripts/generate_postgres_data.py
-    if [ $? -ne 0 ]; then
-        log_error "Failed to convert to PostgreSQL format"
-        exit 1
-    fi
-
-    # Execute SQL file
-    log_info "Loading test data into PostgreSQL..."
-    psql "$POSTGRES_URL" < "$POSTGRES_SQL" > /dev/null 2>&1
-    if [ $? -ne 0 ]; then
-        log_error "Failed to load PostgreSQL data"
-        exit 1
-    fi
-
-    # Verify data insertion
-    EVENT_COUNT=$(psql "$POSTGRES_URL" -t -c "SELECT COUNT(*) FROM events;" | tr -d ' ')
-    LIST_COUNT=$(psql "$POSTGRES_URL" -t -c "SELECT COUNT(*) FROM list_entries;" | tr -d ' ')
-    log_success "PostgreSQL loaded with $EVENT_COUNT events and $LIST_COUNT list entries"
-
-    export DATABASE_URL="$POSTGRES_URL"
-}
-
-setup_clickhouse_database() {
-    # Check ClickHouse connection
-    CLICKHOUSE_URL="${CLICKHOUSE_URL:-http://localhost:8123}"
-
-    log_info "Checking ClickHouse connection..."
-    if ! curl -s "$CLICKHOUSE_URL/?query=SELECT%201" > /dev/null 2>&1; then
-        log_warning "ClickHouse not running at: $CLICKHOUSE_URL"
-
-        # Check if clickhouse binary exists in common locations
-        CLICKHOUSE_CMD=""
-        if command -v clickhouse &> /dev/null; then
-            CLICKHOUSE_CMD="clickhouse"
-        elif [ -f "$HOME/clickhouse" ]; then
-            CLICKHOUSE_CMD="$HOME/clickhouse"
-        elif [ -f "./clickhouse" ]; then
-            CLICKHOUSE_CMD="./clickhouse"
-        fi
-
-        if [ -z "$CLICKHOUSE_CMD" ]; then
-            log_info "ClickHouse not found. Downloading to home directory..."
-            (cd "$HOME" && curl https://clickhouse.com/ | sh)
-            if [ $? -ne 0 ]; then
-                log_error "Failed to download ClickHouse"
-                exit 1
-            fi
-            log_success "ClickHouse downloaded successfully"
-            CLICKHOUSE_CMD="$HOME/clickhouse"
-        else
-            log_info "Found ClickHouse at: $CLICKHOUSE_CMD"
-        fi
-
-        # Start ClickHouse server in background
-        log_info "Starting ClickHouse server..."
-        $CLICKHOUSE_CMD server --daemon 2>/dev/null || $CLICKHOUSE_CMD server &
-        CLICKHOUSE_SERVER_PID=$!
-
-        # Wait for server to start
-        local max_attempts=30
-        local attempt=0
-        while [ $attempt -lt $max_attempts ]; do
-            if curl -s "$CLICKHOUSE_URL/?query=SELECT%201" > /dev/null 2>&1; then
-                log_success "ClickHouse server started!"
-                break
-            fi
-            attempt=$((attempt + 1))
-            sleep 1
-        done
-
-        if [ $attempt -eq $max_attempts ]; then
-            log_error "ClickHouse server failed to start"
-            exit 1
-        fi
-    fi
-
-    # First, regenerate SQLite test data (ClickHouse generation depends on it)
-    log_info "Generating fresh test data with current timestamps..."
-    python3 tests/scripts/generate_test_data.py
-    if [ $? -ne 0 ]; then
-        log_error "Failed to generate test data"
-        exit 1
-    fi
-
-    # Then convert SQLite format to ClickHouse format
-    log_info "Converting to ClickHouse format..."
-    python3 tests/scripts/generate_clickhouse_data.py
-    if [ $? -ne 0 ]; then
-        log_error "Failed to convert to ClickHouse format"
-        exit 1
-    fi
-
-    # Clean up old data before loading new test data
-    log_info "Cleaning up old data from ClickHouse..."
-    curl -s "$CLICKHOUSE_URL" --data "TRUNCATE TABLE IF EXISTS events" > /dev/null 2>&1 || true
-    curl -s "$CLICKHOUSE_URL" --data "TRUNCATE TABLE IF EXISTS list_entries" > /dev/null 2>&1 || true
-    log_success "Old data cleaned"
-
-    # Execute SQL file efficiently (use optimized batch method)
-    log_info "Loading test data into ClickHouse..."
-
-    # Try using clickhouse-client if available (fastest method)
-    CLICKHOUSE_CLIENT=""
-    if command -v clickhouse-client &> /dev/null; then
-        CLICKHOUSE_CLIENT="clickhouse-client"
-    elif [ -n "$CLICKHOUSE_CMD" ] && [ -f "${CLICKHOUSE_CMD}-client" ]; then
-        CLICKHOUSE_CLIENT="${CLICKHOUSE_CMD}-client"
-    fi
-
-    if [ -n "$CLICKHOUSE_CLIENT" ]; then
-        log_info "Using clickhouse-client for faster data loading..."
-        if $CLICKHOUSE_CLIENT --host localhost --port 9000 < "$CLICKHOUSE_SQL" > /dev/null 2>&1; then
-            log_success "Data loaded via clickhouse-client"
-        else
-            log_warning "clickhouse-client failed, using HTTP API with batch optimization"
-            # Fall through to HTTP method with batch optimization
-            CLICKHOUSE_CLIENT=""
-        fi
-    fi
-
-    # If clickhouse-client not available or failed, use optimized HTTP API method
-    if [ -z "$CLICKHOUSE_CLIENT" ]; then
-        log_info "Using HTTP API with batch optimization (reduces HTTP requests from ~850 to ~10)..."
-        
-        # Use Python script to batch INSERT statements for better performance
-        # This reduces the number of HTTP requests from ~850 to ~10 (100 statements per batch)
-        python3 tests/scripts/load_clickhouse_data.py "$CLICKHOUSE_SQL" "$CLICKHOUSE_URL" 2>&1
-        
-        if [ $? -eq 0 ]; then
-            log_success "Data loaded via HTTP API (batch optimization)"
-        else
-            log_error "Failed to load data via HTTP API"
-            exit 1
-        fi
-    fi
-
-    # Verify data insertion
-    EVENT_COUNT=$(curl -s "$CLICKHOUSE_URL/?query=SELECT%20count()%20FROM%20events" | tr -d '\n')
-    LIST_COUNT=$(curl -s "$CLICKHOUSE_URL/?query=SELECT%20count()%20FROM%20list_entries" | tr -d '\n')
-    log_success "ClickHouse loaded with $EVENT_COUNT events and $LIST_COUNT list entries"
-
-    export CLICKHOUSE_URL="$CLICKHOUSE_URL"
-}
-
-setup_redis_database() {
-    # Check Redis connection
-    REDIS_URL="${REDIS_URL:-redis://localhost:6379/1}"
-
-    log_info "Checking Redis connection..."
-    if ! redis-cli -u "$REDIS_URL" ping > /dev/null 2>&1; then
-        log_warning "Redis not running at: $REDIS_URL"
-
-        # Check if Redis is installed
-        if ! command -v redis-server &> /dev/null; then
-            log_error "Redis not found. Please install Redis:"
-            log_warning "  macOS: brew install redis"
-            log_warning "  Ubuntu: sudo apt-get install redis-server"
-            log_warning "  Docker: docker run -d -p 6379:6379 redis:latest"
-            exit 1
-        fi
-
-        # Start Redis server in background
-        log_info "Starting Redis server..."
-        redis-server --daemonize yes --port 6379 --dir /tmp
-
-        # Wait for Redis to start
-        local max_attempts=10
-        local attempt=0
-        while [ $attempt -lt $max_attempts ]; do
-            if redis-cli -u "$REDIS_URL" ping > /dev/null 2>&1; then
-                log_success "Redis server started!"
-                break
-            fi
-            attempt=$((attempt + 1))
-            sleep 1
-        done
-
-        if [ $attempt -eq $max_attempts ]; then
-            log_error "Redis server failed to start"
-            exit 1
-        fi
-    fi
-
-    # Generate and load test data into Redis
-    log_info "Generating and loading Redis test data..."
-    REDIS_URL="$REDIS_URL" python3 tests/scripts/generate_redis_data.py
-    if [ $? -ne 0 ]; then
-        log_error "Failed to load Redis test data"
-        exit 1
-    fi
-
-    log_success "Redis loaded with test features"
-
-    export REDIS_URL="$REDIS_URL"
-}
-
-cleanup() {
-    log_info "Cleaning up..."
-
-    # Stop server if running
-    if [ -f "$SERVER_PID_FILE" ]; then
-        PID=$(cat "$SERVER_PID_FILE")
-        if ps -p $PID > /dev/null 2>&1; then
-            log_info "Stopping server (PID: $PID)..."
-            kill $PID 2>/dev/null || true
-            sleep 2
-            if ps -p $PID > /dev/null 2>&1; then
-                kill -9 $PID 2>/dev/null || true
-            fi
-        fi
-        rm -f "$SERVER_PID_FILE"
-    fi
-
-    # Also try pkill as fallback
-    pkill -f "corint-decision-server" 2>/dev/null || true
-
-    # Restore original config
-    restore_config
-
-    # Remove copied features file
-    cleanup_features
-
-    # Remove copied pipeline files
-    cleanup_pipelines
-
-    # Remove copied registry file
-    cleanup_registry
-}
-
-# Trap to ensure cleanup on exit
-trap cleanup EXIT INT TERM
-
-wait_for_server() {
-    log_info "Waiting for server to start..."
-    local max_attempts=30
-    local attempt=0
-
-    while [ $attempt -lt $max_attempts ]; do
-        if curl -s "$API_URL/health" > /dev/null 2>&1; then
-            log_success "Server is ready!"
-            return 0
-        fi
-        attempt=$((attempt + 1))
-        sleep 1
-    done
-
-    log_error "Server failed to start within timeout"
-    return 1
+    # Record every failure, then continue executing the remaining cases.
+    return 0
 }
 
 run_test_case() {
-    local test_name="$1"
-    local test_data="$2"
-    local expected_decision="$3"
-
+    local name="$1" payload="$2" expected="$3" required_rule="${4:-}" actual
     TOTAL_TESTS=$((TOTAL_TESTS + 1))
-
-    local response=$(curl -s -X POST "$API_URL/v1/decide" \
-        -H "Content-Type: application/json" \
-        -d "$test_data")
-
-    local actual_decision=$(echo "$response" | jq -r '.decision.result // "UNKNOWN"' | tr '[:upper:]' '[:lower:]')
-    local error=$(echo "$response" | jq -r '.error // empty')
-
-    if [ -n "$error" ]; then
-        log_error "$test_name: API ERROR - $error"
-        FAILED_TESTS=$((FAILED_TESTS + 1))
-        FAILED_TEST_NAMES+=("$test_name")
-        FAILED_TEST_DETAILS+=("$test_name|API_ERROR|Expected: $expected_decision, Got: API error - $error")
-        return 1
-    elif [ "$actual_decision" = "$expected_decision" ]; then
-        log_success "$test_name: PASSED (decision: $actual_decision)"
-        PASSED_TESTS=$((PASSED_TESTS + 1))
-        PASSED_TEST_NAMES+=("$test_name")
-        return 0
+    request_decision "$payload"
+    actual=$(jq -er '.decision.result | ascii_downcase' "$RESPONSE_FILE" 2>/dev/null) || actual=INVALID_RESPONSE
+    if [ "$HTTP_STATUS" = 200 ] && [ "$actual" = "$expected" ] &&
+       { [ -z "$required_rule" ] || jq -e --arg rule "$required_rule" ' .decision.evidence.triggered_rules | index($rule) != null' "$RESPONSE_FILE" >/dev/null 2>&1; }; then
+        record_case "$name" "$expected" true "$actual"
     else
-        log_error "$test_name: FAILED (expected: $expected_decision, got: $actual_decision)"
-        FAILED_TESTS=$((FAILED_TESTS + 1))
-        FAILED_TEST_NAMES+=("$test_name")
-        FAILED_TEST_DETAILS+=("$test_name|WRONG_DECISION|Expected: $expected_decision, Got: $actual_decision")
-        return 1
+        record_case "$name" "$expected" false "HTTP $HTTP_STATUS; expected $expected, got $actual; required rule: ${required_rule:-none}"
     fi
 }
 
 run_error_test_case() {
-    local test_name="$1"
-    local test_data="$2"
-    local expected_pattern="$3"
-
+    local name="$1" payload="$2" expected="$3" passed=false
     TOTAL_TESTS=$((TOTAL_TESTS + 1))
-
-    local response=$(curl -s -X POST "$API_URL/v1/decide" \
-        -H "Content-Type: application/json" \
-        -d "$test_data")
-
-    local has_error=$(echo "$response" | jq -r '.error // empty')
-    local decision=$(echo "$response" | jq -r '.decision.result // empty' | tr '[:upper:]' '[:lower:]')
-    local reason=$(echo "$response" | jq -r '.decision.reason // empty')
-
-    case "$expected_pattern" in
-        "no_pipeline")
-            if [[ -n "$has_error" ]] || [[ "$decision" == "approve" && "$reason" == *"no matching"* ]]; then
-                log_success "$test_name: PASSED (no pipeline matched)"
-                PASSED_TESTS=$((PASSED_TESTS + 1))
-                PASSED_TEST_NAMES+=("$test_name")
-                return 0
-            fi
-            ;;
-        "error")
-            if [ -n "$has_error" ]; then
-                log_success "$test_name: PASSED (error returned: $has_error)"
-                PASSED_TESTS=$((PASSED_TESTS + 1))
-                PASSED_TEST_NAMES+=("$test_name")
-                return 0
-            fi
-            ;;
-        "default_fallback")
-            local pipeline_id=$(echo "$response" | jq -r '.pipeline_id // empty')
-            if [[ "$pipeline_id" == "default" ]] && [[ "$decision" == "pass" ]]; then
-                log_success "$test_name: PASSED (default pipeline fallback)"
-                PASSED_TESTS=$((PASSED_TESTS + 1))
-                PASSED_TEST_NAMES+=("$test_name")
-                return 0
-            fi
-            ;;
+    request_decision "$payload"
+    case "$expected" in
+        default_fallback)
+            if [ "$HTTP_STATUS" = 200 ] && jq -e '.pipeline_id == "default" and .decision.result == "pass"' "$RESPONSE_FILE" >/dev/null 2>&1; then passed=true; fi ;;
+        no_pipeline)
+            if [ "$HTTP_STATUS" != 200 ] && jq -e '.error.code == "E_NO_PIPELINE_MATCH"' "$RESPONSE_FILE" >/dev/null 2>&1; then passed=true; fi ;;
+        error)
+            if [[ "$HTTP_STATUS" == 4?? ]] && jq -e '.error.code | type == "string"' "$RESPONSE_FILE" >/dev/null 2>&1; then passed=true; fi ;;
     esac
-
-    log_error "$test_name: FAILED (expected: $expected_pattern, response: $response)"
-    FAILED_TESTS=$((FAILED_TESTS + 1))
-    FAILED_TEST_NAMES+=("$test_name")
-    FAILED_TEST_DETAILS+=("$test_name|UNEXPECTED_RESPONSE|Expected: $expected_pattern")
-    return 1
+    record_case "$name" "$expected" "$passed" "HTTP $HTTP_STATUS; expected $expected"
 }
 
-run_tests_for_datasource() {
-    local datasource=$1
 
-    echo ""
-    log_header "============================================================================"
-    log_header "Running E2E Tests for: $datasource"
-    log_header "============================================================================"
-    echo ""
-
-    # Reset counters for this datasource
-    TOTAL_TESTS=0
-    PASSED_TESTS=0
-    FAILED_TESTS=0
-    PASSED_TEST_NAMES=()
-    FAILED_TEST_NAMES=()
-    FAILED_TEST_DETAILS=()
-
-    # Step 1: Backup config
-    log_info "Step 1: Setting up configuration..."
-    backup_config
-    setup_test_config "$datasource"
-    setup_features "$datasource"
-    setup_pipelines "$datasource"
-    setup_registry "$datasource"
-    log_success "Configuration ready"
-    echo ""
-
-    # Step 2: Setup database
-    log_info "Step 2: Setting up database..."
-    setup_database "$datasource"
-    echo ""
-
-    # Step 3: Build server
-    log_info "Step 3: Building server..."
-    cargo build --bin corint-decision-server --features redis --quiet
-    if [ $? -ne 0 ]; then
-        log_error "Failed to build server"
-        return 1
-    fi
-    log_success "Server built successfully"
-    echo ""
-
-    # Step 4: Start server
-    log_info "Step 4: Starting test server..."
-    # Enable detailed logging for Redis tests to debug issues
-    if [ "$datasource" = "redis" ]; then
-        RUST_LOG=info target/debug/corint-decision-server > "$RESULTS_DIR/server_${datasource}.log" 2>&1 &
-    else
-        # Enable detailed performance logging for feature execution and datasource queries
-        RUST_LOG=error,corint_decision_runtime::feature::executor=debug,corint_decision_runtime::datasource=debug target/debug/corint-decision-server > "$RESULTS_DIR/server_${datasource}.log" 2>&1 &
-    fi
-    SERVER_PID=$!
-    echo $SERVER_PID > "$SERVER_PID_FILE"
-    log_info "Server started (PID: $SERVER_PID)"
-
-    if ! wait_for_server; then
-        log_error "Server startup failed. Check logs at $RESULTS_DIR/server_${datasource}.log"
-        return 1
-    fi
-    echo ""
-
-    # Step 5: Run test cases
-    log_info "Step 5: Running test cases..."
-    echo "============================================================================"
-    echo ""
-
-    set +e
-
-    CURRENT_TIME=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-
-    # Include the test cases based on datasource
-    case $datasource in
-        redis)
-            source tests/scripts/e2e_test_cases_redis.sh
-            ;;
-        *)
-            source tests/scripts/e2e_test_cases.sh
-            ;;
-    esac
-
-    set -e
-
-    # Step 6: Print report
-    print_test_report "$datasource"
-
-    # Stop server
-    if [ -f "$SERVER_PID_FILE" ]; then
-        PID=$(cat "$SERVER_PID_FILE")
-        kill $PID 2>/dev/null || true
-        rm -f "$SERVER_PID_FILE"
-    fi
-
-    return $FAILED_TESTS
-}
-
-print_test_report() {
-    local datasource=$1
-
-    echo ""
-    log_header "============================================================================"
-    log_header "Test Report for: $datasource"
-    log_header "============================================================================"
-    echo ""
-
-    echo -e "${BLUE}Test Summary:${NC}"
-    echo "  Total Tests:  $TOTAL_TESTS"
-    echo -e "  ${GREEN}Passed:       $PASSED_TESTS${NC}"
-    echo -e "  ${RED}Failed:       $FAILED_TESTS${NC}"
-    echo ""
-
-    if [ $PASSED_TESTS -gt 0 ]; then
-        echo -e "${GREEN}✓ Passed Tests ($PASSED_TESTS):${NC}"
-        for test_name in "${PASSED_TEST_NAMES[@]}"; do
-            echo -e "  ${GREEN}✓${NC} $test_name"
-        done
-        echo ""
-    fi
-
-    if [ $FAILED_TESTS -gt 0 ]; then
-        echo -e "${RED}✗ Failed Tests ($FAILED_TESTS):${NC}"
-        for detail in "${FAILED_TEST_DETAILS[@]}"; do
-            IFS='|' read -r name error_type message <<< "$detail"
-            echo -e "  ${RED}✗${NC} $name"
-            echo -e "    ${YELLOW}→${NC} $message"
-        done
-        echo ""
-    fi
-
-    echo "============================================================================"
-
-    if [ $FAILED_TESTS -eq 0 ]; then
-        log_success "All tests passed for $datasource! 🎉"
-    else
-        log_error "$FAILED_TESTS test(s) failed for $datasource"
-    fi
-    echo ""
-}
-
-# ============================================================================
-# Main
-# ============================================================================
-
-main() {
-    # Select datasource
-    select_datasource "$1"
-
-    # Create results directory
-    mkdir -p "$RESULTS_DIR"
-
-    # Track overall results
-    declare -a DATASOURCE_RESULTS=()
-    TOTAL_FAILED=0
-
-    case $DATASOURCE in
-        sqlite)
-            run_tests_for_datasource "sqlite"
-            TOTAL_FAILED=$?
-            ;;
-        postgres)
-            run_tests_for_datasource "postgres"
-            TOTAL_FAILED=$?
-            ;;
-        clickhouse)
-            run_tests_for_datasource "clickhouse"
-            TOTAL_FAILED=$?
-            ;;
-        redis)
-            run_tests_for_datasource "redis"
-            TOTAL_FAILED=$?
-            ;;
-        all)
-            echo ""
-            log_header "Running tests on all available datasources..."
-            echo ""
-
-            # SQLite
-            run_tests_for_datasource "sqlite"
-            DATASOURCE_RESULTS+=("sqlite:$FAILED_TESTS")
-
-            # PostgreSQL (if available)
-            if psql "${POSTGRES_URL:-postgresql://postgres:postgres@localhost:5432/corint_test}" -c "SELECT 1;" > /dev/null 2>&1; then
-                run_tests_for_datasource "postgres"
-                DATASOURCE_RESULTS+=("postgres:$FAILED_TESTS")
-            else
-                log_warning "PostgreSQL not available, skipping"
-            fi
-
-            # ClickHouse (auto-install and start if needed)
-            run_tests_for_datasource "clickhouse"
-            DATASOURCE_RESULTS+=("clickhouse:$FAILED_TESTS")
-
-            # Redis (if available)
-            if redis-cli ping > /dev/null 2>&1 || command -v redis-server &> /dev/null; then
-                run_tests_for_datasource "redis"
-                DATASOURCE_RESULTS+=("redis:$FAILED_TESTS")
-            else
-                log_warning "Redis not available, skipping"
-            fi
-
-            # Print overall summary
-            echo ""
-            log_header "============================================================================"
-            log_header "Overall Summary"
-            log_header "============================================================================"
-            for result in "${DATASOURCE_RESULTS[@]}"; do
-                ds=$(echo "$result" | cut -d: -f1)
-                failures=$(echo "$result" | cut -d: -f2)
-                if [ "$failures" -eq 0 ]; then
-                    echo -e "  ${GREEN}✓${NC} $ds: All tests passed"
-                else
-                    echo -e "  ${RED}✗${NC} $ds: $failures test(s) failed"
-                    TOTAL_FAILED=$((TOTAL_FAILED + failures))
-                fi
-            done
-            echo ""
-            ;;
-    esac
-
-    exit $TOTAL_FAILED
-}
-
-# Run main function
-main "$@"
+CURRENT_TIME=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+if [ "$DATASOURCE" = redis ]; then
+    source tests/scripts/e2e_test_cases_redis.sh
+else
+    source tests/scripts/e2e_test_cases.sh
+fi
+jq -s --arg datasource "$DATASOURCE" --arg seed "$CORINT_E2E_SEED" \
+    '{datasource:$datasource,seed:$seed,total:length,passed:map(select(.passed))|length,failed:map(select(.passed|not))|length,cases:.}' \
+    "$RESULTS_DIR/$DATASOURCE-cases.jsonl" > "$RESULTS_DIR/$DATASOURCE-report.json"
+log_info "$DATASOURCE: $PASSED_TESTS/$TOTAL_TESTS passed; $FAILED_TESTS failed"
+[ "$FAILED_TESTS" -eq 0 ]

@@ -2,24 +2,23 @@
 # This configuration is optimized for automated testing
 
 # Server configuration
-server:
-  # Server host (127.0.0.1 for localhost only)
-  host: "127.0.0.1"
+# Server host (127.0.0.1 for localhost only)
+host: "127.0.0.1"
 
-  # Server port
-  port: 8080
+# Server port
+port: 8080
 
-  # gRPC Server port (optional, if not set, gRPC server will not start)
-  grpc_port: 50051
+# gRPC Server port (optional, if not set, gRPC server will not start)
+grpc_port: 50051
 
-  # Enable metrics collection for testing
-  enable_metrics: true
+# Enable metrics collection for testing
+enable_metrics: true
 
-  # Disable tracing for faster test execution
-  enable_tracing: false
+# Disable tracing for faster test execution
+enable_tracing: false
 
-  # Error log level for cleaner test output
-  log_level: "error"
+# Error log level for cleaner test output
+log_level: "error"
 
 # Repository configuration - points to E2E test repository
 repository:

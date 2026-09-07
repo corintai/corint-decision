@@ -127,7 +127,7 @@ CREATE TABLE risk_decisions (
     pipeline_id VARCHAR(100) NOT NULL,           -- Pipeline ID that processed this decision
 
     -- ========== Risk Scores ==========
-    risk_score NUMERIC(5, 2) NOT NULL,           -- Overall risk score (0-100)
+    risk_score INTEGER NOT NULL,           -- Raw aggregate rule score (may exceed 100)
 
     -- ========== Decision Result ==========
     decision VARCHAR(20) NOT NULL,               -- approve, deny, review, monitor
@@ -268,7 +268,7 @@ CREATE TABLE rule_executions (
 
     -- Execution result
     triggered BOOLEAN NOT NULL,
-    score NUMERIC(5, 2),
+    score INTEGER,
     execution_time_ms INT,
 
     -- Rule context

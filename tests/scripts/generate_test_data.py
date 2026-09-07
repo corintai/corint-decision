@@ -7,11 +7,14 @@ to avoid time window expiration issues.
 """
 
 import random
+import os
 import json
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 # SQL output file path
+random.seed(int(os.environ.get("CORINT_E2E_SEED", "20260907")))
+
 SQL_OUTPUT = Path(__file__).parent.parent / "data" / "test_data.sql"
 
 # User pools
@@ -194,7 +197,7 @@ def generate_normal_transactions(count=100):
     Excludes test-specific users to prevent cross-contamination.
     """
     events = []
-    now = datetime.now()
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
 
     # Filter out test-specific users from random generation
     available_users = [u for u in (NORMAL_USERS + VIP_USERS) if u not in TEST_SPECIFIC_USERS]
@@ -282,7 +285,7 @@ def generate_velocity_abuse(count=30):
 
     # Pick a few users for velocity abuse
     for user in random.sample(available_users, min(3, len(available_users))):
-        base_time = datetime.now()
+        base_time = datetime.now(timezone.utc).replace(tzinfo=None)
 
         # Generate 10 transactions within 1 hour
         for i in range(10):
@@ -815,24 +818,12 @@ def generate_low_weekly_activity_history():
 
 
 def generate_high_total_spending_history():
-    """Generate high total spending history for Test 35 (tests user_total_amount)
+    """Generate 50,500 of history for the cumulative-spending rule.
 
-    Rules to avoid:
-    - unusual_total_spending: user_total_amount > 50000 AND amount > 5000 → score 80
-    - low_weekly_activity: txn_count_7d < 3 AND amount > 2000 → score 60
-    - exceeds_max_history: amount > max * 1.5 → score 70
-
-    Feature: user_total_amount = SUM(amount) WHERE days <= 90
-
-    Design:
-    - Total spending in 90-day window: 24 * 2000 = 48000 (< 50000, avoids unusual_total_spending)
-    - Add 3 older transactions (95-100 days ago) outside 90d window
-    - Place 4 transactions in last 7 days (>= 3, avoids low_weekly_activity)
-    - One high-value transaction at 4000 to set max high enough
-    - Test amount: 6000
-    - Max check: 6000 > 4000 * 1.5 (6000) → FALSE (just at boundary, doesn't trigger)
-
-    Expected: No rules trigger → approve
+    The 24 transactions inside 90 days total 4*2000 + 4500 + 19*2000.
+    Older events stay outside the window. Four recent transactions avoid the
+    low-weekly-activity rule, and 6000 is below 1.5*4500. Only the cumulative
+    spending rule should fire (40 points, below the review threshold of 50).
     """
     events = []
     user_id = "user_high_total_spending"
@@ -875,12 +866,12 @@ def generate_high_total_spending_history():
             None
         ))
 
-    # Add 1 high-value transaction to set max to 4000
+    # Add 1 high-value transaction to set max to 4500
     events.append((
         "transaction",
         user_id,
         generate_timestamp(days_ago=10),
-        4000.0,
+        4500.0,
         "USD",
         f"merchant_020",
         f"device_high_spending",  # Dedicated device
@@ -1129,7 +1120,8 @@ def generate_recent_spike_history():
     - 30-day baseline: 20 transactions @ 50 each, days 8-27 → avg_30d ≈ 200
     - 7-day spike: 7 transactions @ 500 each, days 1-7 → avg_7d = 500 (> 400)
     - Test event: 600
-    Expected: score = 65 → review
+    Expected: spike/acceleration rules match; score stays below 230 → review.
+    Two recent events keep max/sum <= 0.5, avoiding amount_concentration.
     """
     events = []
     user_id = "user_recent_spike"
@@ -1155,7 +1147,7 @@ def generate_recent_spike_history():
 
     # 7-day spike: 7 transactions @ 500 each
     for i in range(7):
-        days_ago = i + 1  # Days 1-7 (within 7-day window)
+        days_ago = [0.25, 0.5, 2, 3, 4, 5, 6][i]  # Two events safely inside 24h
         events.append((
             "transaction",
             user_id,
@@ -1314,14 +1306,15 @@ def generate_spending_acceleration_history():
     - 7-day spike: 7 transactions @ 600 each, days 1-7 → avg_7d = 600
     - Acceleration: 600 / ~170 > 3.5 > 2.5
     - Test event: 700
-    Expected: score = 70 → review
+    Expected: acceleration rule matches; score stays below 230 → review.
+    Two recent events keep max/sum <= 0.5, avoiding amount_concentration.
     """
     events = []
     user_id = "user_acceleration"
 
     # 30-day baseline: 23 transactions @ 50 each (stay within 30d window)
     for i in range(23):
-        days_ago = 8 + i  # Days 8-30
+        days_ago = 8 + i * 0.9  # Avoid the exact 30-day boundary
         events.append((
             "transaction",
             user_id,
@@ -1340,7 +1333,7 @@ def generate_spending_acceleration_history():
 
     # 7-day spike: 7 transactions @ 600 each
     for i in range(7):
-        days_ago = i + 1  # Days 1-7
+        days_ago = [0.25, 0.5, 2, 3, 4, 5, 6][i]  # Two events safely inside 24h
         events.append((
             "transaction",
             user_id,
@@ -1971,7 +1964,7 @@ def generate_list_data():
     blocked_users = SUSPICIOUS_USERS[:5]  # Use first 5 suspicious users
     for user_id in blocked_users:
         list_entries.append({
-            'list_id': 'blocked_users',
+            'list_id': 'blocked_users_db',
             'value': user_id,
             'expires_at': None,  # Never expires
             'metadata': json.dumps({'reason': 'suspicious_activity', 'blocked_date': now.isoformat()})
@@ -1980,7 +1973,7 @@ def generate_list_data():
     # Blocked IPs list
     for ip in SUSPICIOUS_IPS:
         list_entries.append({
-            'list_id': 'blocked_ips',
+            'list_id': 'blocked_ips_db',
             'value': ip,
             'expires_at': None,  # Never expires
             'metadata': json.dumps({'reason': 'malicious_traffic', 'threat_level': 'high'})
@@ -1989,7 +1982,7 @@ def generate_list_data():
     # High risk countries list
     for country in SUSPICIOUS_COUNTRIES:
         list_entries.append({
-            'list_id': 'high_risk_countries',
+            'list_id': 'high_risk_countries_db',
             'value': country,
             'expires_at': None,  # Never expires
             'metadata': json.dumps({'risk_level': 'high', 'category': 'fraud_hotspot'})
@@ -2119,7 +2112,7 @@ def main():
     with open(SQL_OUTPUT, 'w') as f:
         # Write schema
         f.write("-- CORINT E2E Test Data\n")
-        f.write(f"-- Generated at: {datetime.now().isoformat()}\n")
+        f.write(f"-- Generated at: {datetime.now(timezone.utc).replace(tzinfo=None).isoformat()}\n")
         f.write(f"-- Total events: {total_events}\n")
         f.write(f"-- Total list entries: {len(list_entries)}\n\n")
 

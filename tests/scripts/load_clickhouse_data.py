@@ -46,7 +46,7 @@ def batch_load_clickhouse(sql_file: str, clickhouse_url: str, batch_size: int = 
             if insert_batch and table_name:
                 batch_sql = f'INSERT INTO {table_name} VALUES {", ".join(insert_batch)};'
                 result = subprocess.run(
-                    ['curl', '-s', '-X', 'POST', clickhouse_url + '/', '--data-binary', batch_sql],
+                    ['curl', '--fail-with-body', '-sS', '--connect-timeout', '2', '--max-time', '30', '-X', 'POST', clickhouse_url, '--data-binary', batch_sql],
                     capture_output=True,
                     text=True
                 )
@@ -57,7 +57,7 @@ def batch_load_clickhouse(sql_file: str, clickhouse_url: str, batch_size: int = 
             
             # Execute non-INSERT statement
             result = subprocess.run(
-                ['curl', '-s', '-X', 'POST', clickhouse_url + '/', '--data-binary', stmt],
+                ['curl', '--fail-with-body', '-sS', '--connect-timeout', '2', '--max-time', '30', '-X', 'POST', clickhouse_url, '--data-binary', stmt],
                 capture_output=True,
                 text=True
             )
@@ -77,7 +77,7 @@ def batch_load_clickhouse(sql_file: str, clickhouse_url: str, batch_size: int = 
                     if insert_batch:
                         batch_sql = f'INSERT INTO {table_name} VALUES {", ".join(insert_batch)};'
                         result = subprocess.run(
-                            ['curl', '-s', '-X', 'POST', clickhouse_url + '/', '--data-binary', batch_sql],
+                            ['curl', '--fail-with-body', '-sS', '--connect-timeout', '2', '--max-time', '30', '-X', 'POST', clickhouse_url, '--data-binary', batch_sql],
                             capture_output=True,
                             text=True
                         )
@@ -92,7 +92,7 @@ def batch_load_clickhouse(sql_file: str, clickhouse_url: str, batch_size: int = 
                 if len(insert_batch) >= batch_size:
                     batch_sql = f'INSERT INTO {table_name} VALUES {", ".join(insert_batch)};'
                     result = subprocess.run(
-                        ['curl', '-s', '-X', 'POST', clickhouse_url + '/', '--data-binary', batch_sql],
+                        ['curl', '--fail-with-body', '-sS', '--connect-timeout', '2', '--max-time', '30', '-X', 'POST', clickhouse_url, '--data-binary', batch_sql],
                         capture_output=True,
                         text=True
                     )
@@ -102,7 +102,7 @@ def batch_load_clickhouse(sql_file: str, clickhouse_url: str, batch_size: int = 
             else:
                 # Couldn't parse, execute as-is
                 result = subprocess.run(
-                    ['curl', '-s', '-X', 'POST', clickhouse_url + '/', '--data-binary', stmt],
+                    ['curl', '--fail-with-body', '-sS', '--connect-timeout', '2', '--max-time', '30', '-X', 'POST', clickhouse_url, '--data-binary', stmt],
                     capture_output=True,
                     text=True
                 )
@@ -113,7 +113,7 @@ def batch_load_clickhouse(sql_file: str, clickhouse_url: str, batch_size: int = 
     if insert_batch and table_name:
         batch_sql = f'INSERT INTO {table_name} VALUES {", ".join(insert_batch)};'
         result = subprocess.run(
-            ['curl', '-s', '-X', 'POST', clickhouse_url + '/', '--data-binary', batch_sql],
+            ['curl', '--fail-with-body', '-sS', '--connect-timeout', '2', '--max-time', '30', '-X', 'POST', clickhouse_url, '--data-binary', batch_sql],
             capture_output=True,
             text=True
         )

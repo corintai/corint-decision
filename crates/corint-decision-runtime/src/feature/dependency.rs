@@ -83,7 +83,7 @@ fn walk(
     Ok(result)
 }
 
-pub(super) fn infer_dependencies(feature: &mut FeatureDefinition) {
+pub(super) fn infer_dependencies(feature: &mut FeatureDefinition) -> Result<()> {
     if let Some(expression) = feature
         .expression
         .as_ref()
@@ -91,8 +91,9 @@ pub(super) fn infer_dependencies(feature: &mut FeatureDefinition) {
     {
         feature
             .dependencies
-            .extend(super::expression::ExpressionEvaluator::extract_dependencies(expression));
+            .extend(super::expression::ExpressionEvaluator::extract_dependencies(expression)?);
         feature.dependencies.sort();
         feature.dependencies.dedup();
     }
+    Ok(())
 }

@@ -1060,10 +1060,10 @@ impl FeatureCollection {
             .iter()
             .cloned()
             .map(|mut feature| {
-                super::dependency::infer_dependencies(&mut feature);
-                (feature.name.clone(), feature)
+                super::dependency::infer_dependencies(&mut feature).map_err(|e| e.to_string())?;
+                Ok((feature.name.clone(), feature))
             })
-            .collect::<HashMap<_, _>>();
+            .collect::<Result<HashMap<_, _>, String>>()?;
         super::dependency::order(
             &features,
             &features.keys().cloned().collect::<Vec<_>>(),

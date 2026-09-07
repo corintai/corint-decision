@@ -356,13 +356,21 @@ IDs and input schema field names remain subject to their respective schema rules
 <term> ::= <factor>
          | <term> "*" <factor>
          | <term> "/" <factor>
+         | <term> "%" <factor>
 
 <factor> ::= <number>
            | <feature-name>
+           | "features." <feature-name>
+           | "event." <field-path>
+           | "-" <factor>
+           | <math-function-call>
            | "(" <arithmetic-expr> ")"
 
 <feature-name> ::= <identifier>
 ```
+
+Function names, arities, null and error behavior are specified in
+[Feature arithmetic](feature.md#6-expression-unverified-compatibility-reference).
 
 ### Syntax Examples
 

@@ -79,6 +79,17 @@ def convert_sqlite_to_postgres(sqlite_sql: str) -> str:
     output_lines.append("CREATE INDEX IF NOT EXISTS idx_list_entries_expires ON list_entries(expires_at);")
     output_lines.append("")
 
+    # PostgreSQL decisions acknowledge persistence; create its real schema too.
+    with open(os.path.join(PROJECT_ROOT, "docs/schema/postgres-schema.sql")) as schema_file:
+        schema = schema_file.read()
+    for table in ("risk_decisions", "rule_executions"):
+        match = re.search(r"CREATE TABLE " + table + r" \(.*?\n\);", schema, re.S)
+        if match is None:
+            raise ValueError(f"Missing persistence schema for {table}")
+        output_lines.append(match.group(0).replace("CREATE TABLE ", "CREATE TABLE IF NOT EXISTS ", 1))
+    output_lines.append("CREATE UNIQUE INDEX IF NOT EXISTS idx_risk_decisions_request_id ON risk_decisions (request_id);")
+    output_lines.append("TRUNCATE TABLE rule_executions, risk_decisions RESTART IDENTITY;")
+
     # Truncate tables
     output_lines.append("-- Clear existing data")
     output_lines.append("TRUNCATE TABLE events RESTART IDENTITY CASCADE;")
@@ -159,7 +170,7 @@ def convert_list_insert_pg(line: str) -> str:
     # Convert timestamp format
     converted = re.sub(r"'(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2}:\d{2})", r"'\1 \2", values_str)
 
-    return f"INSERT INTO list_entries (list_id, value, created_at, expires_at, metadata) VALUES ({converted});"
+    return re.sub(r"VALUES \(.+\);?$", lambda _: f"VALUES ({converted});", line)
 
 
 def main():

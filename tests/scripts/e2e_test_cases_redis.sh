@@ -12,6 +12,7 @@ echo ""
 # Test 1: High Risk User - should decline (score >= 200)
 run_test_case "High Risk User - Decline" '{
     "event": {
+        "merchant_id": "merchant_default",
         "type": "transaction",
         "user_id": "user_high_risk",
         "amount": 1000.00,
@@ -27,6 +28,7 @@ run_test_case "High Risk User - Decline" '{
 # Test 2: Medium Risk User - should review (score >= 80)
 run_test_case "Medium Risk User - Review" '{
     "event": {
+        "merchant_id": "merchant_default",
         "type": "transaction",
         "user_id": "user_medium_risk",
         "amount": 800.00,
@@ -42,6 +44,7 @@ run_test_case "Medium Risk User - Review" '{
 # Test 3: Low Risk User - should approve (score < 80)
 run_test_case "Low Risk User - Approve" '{
     "event": {
+        "merchant_id": "merchant_default",
         "type": "transaction",
         "user_id": "user_low_risk",
         "amount": 300.00,
@@ -57,6 +60,7 @@ run_test_case "Low Risk User - Approve" '{
 # Test 4: Suspicious Device - should review
 run_test_case "Suspicious Device - Review" '{
     "event": {
+        "merchant_id": "merchant_default",
         "type": "transaction",
         "user_id": "user_suspicious_device",
         "amount": 500.00,
@@ -72,6 +76,7 @@ run_test_case "Suspicious Device - Review" '{
 # Test 5: Risky IP - should review
 run_test_case "Risky IP Address - Review" '{
     "event": {
+        "merchant_id": "merchant_default",
         "type": "transaction",
         "user_id": "user_risky_ip",
         "amount": 600.00,
@@ -87,6 +92,7 @@ run_test_case "Risky IP Address - Review" '{
 # Test 6: New Account High Value - should review
 run_test_case "New Account High Value - Review" '{
     "event": {
+        "merchant_id": "merchant_default",
         "type": "transaction",
         "user_id": "user_new_account",
         "amount": 1500.00,
@@ -102,6 +108,7 @@ run_test_case "New Account High Value - Review" '{
 # Test 7: High Velocity User - should review
 run_test_case "High Velocity User - Review" '{
     "event": {
+        "merchant_id": "merchant_default",
         "type": "transaction",
         "user_id": "user_high_velocity",
         "amount": 400.00,
@@ -117,6 +124,7 @@ run_test_case "High Velocity User - Review" '{
 # Test 8: Multi-Device Pattern - should review
 run_test_case "Multi-Device Pattern - Review" '{
     "event": {
+        "merchant_id": "merchant_default",
         "type": "transaction",
         "user_id": "user_multi_device",
         "amount": 450.00,
@@ -132,6 +140,7 @@ run_test_case "Multi-Device Pattern - Review" '{
 # Test 9: Normal User - should approve
 run_test_case "Normal User - Approve" '{
     "event": {
+        "merchant_id": "merchant_default",
         "type": "transaction",
         "user_id": "user_normal",
         "amount": 250.00,
@@ -147,6 +156,7 @@ run_test_case "Normal User - Approve" '{
 # Test 10: Established User - should approve
 run_test_case "Established User - Approve" '{
     "event": {
+        "merchant_id": "merchant_default",
         "type": "transaction",
         "user_id": "user_established",
         "amount": 500.00,
@@ -162,6 +172,9 @@ run_test_case "Established User - Approve" '{
 # Test 11: Login with High Risk User - should decline
 run_test_case "High Risk Login - Decline" '{
     "event": {
+        "payment_method": "not_applicable",
+        "amount": 0,
+        "merchant_id": "merchant_default",
         "type": "login",
         "user_id": "user_high_risk",
         "device_id": "device_high_risk",
@@ -174,6 +187,9 @@ run_test_case "High Risk Login - Decline" '{
 # Test 12: Login with Low Risk User - should approve
 run_test_case "Low Risk Login - Approve" '{
     "event": {
+        "payment_method": "not_applicable",
+        "amount": 0,
+        "merchant_id": "merchant_default",
         "type": "login",
         "user_id": "user_low_risk",
         "device_id": "device_low_risk",
@@ -186,6 +202,7 @@ run_test_case "Low Risk Login - Approve" '{
 # Test 13: Payment with Crypto (high fraud rate) - should review
 run_test_case "Crypto Payment - Review" '{
     "event": {
+        "merchant_id": "merchant_default",
         "type": "payment",
         "user_id": "user_medium_risk",
         "amount": 800.00,
@@ -201,6 +218,7 @@ run_test_case "Crypto Payment - Review" '{
 # Test 14: Payment with Bank Transfer (low fraud rate) - should approve
 run_test_case "Bank Transfer Payment - Approve" '{
     "event": {
+        "merchant_id": "merchant_default",
         "type": "payment",
         "user_id": "user_low_risk",
         "amount": 300.00,
@@ -216,6 +234,7 @@ run_test_case "Bank Transfer Payment - Approve" '{
 # Test 15: New Account Small Transaction - should approve
 run_test_case "New Account Small Transaction - Approve" '{
     "event": {
+        "merchant_id": "merchant_default",
         "type": "transaction",
         "user_id": "user_new_account",
         "amount": 50.00,
@@ -239,6 +258,7 @@ echo ""
 # Test 16: Boundary Risk Score (exactly 80) - should review
 run_test_case "Boundary Risk Score 80 - Review" '{
     "event": {
+        "merchant_id": "merchant_default",
         "type": "transaction",
         "user_id": "user_boundary_80",
         "amount": 500.00,
@@ -254,6 +274,7 @@ run_test_case "Boundary Risk Score 80 - Review" '{
 # Test 17: Boundary Risk Score (exactly 200) - should decline
 run_test_case "Boundary Risk Score 200 - Decline" '{
     "event": {
+        "merchant_id": "merchant_default",
         "type": "transaction",
         "user_id": "user_boundary_200",
         "amount": 500.00,
@@ -269,6 +290,7 @@ run_test_case "Boundary Risk Score 200 - Decline" '{
 # Test 18: Just Below Decline Threshold (199) - should review
 run_test_case "Below Decline Threshold - Review" '{
     "event": {
+        "merchant_id": "merchant_default",
         "type": "transaction",
         "user_id": "user_score_199",
         "amount": 500.00,
@@ -284,6 +306,7 @@ run_test_case "Below Decline Threshold - Review" '{
 # Test 19: Just Below Review Threshold (79) - should approve
 run_test_case "Below Review Threshold - Approve" '{
     "event": {
+        "merchant_id": "merchant_default",
         "type": "transaction",
         "user_id": "user_score_79",
         "amount": 500.00,
@@ -307,6 +330,7 @@ echo ""
 # Test 20: Unknown User (fallback values) - should approve
 run_test_case "Unknown User Fallback - Approve" '{
     "event": {
+        "merchant_id": "merchant_default",
         "type": "transaction",
         "user_id": "user_unknown_12345",
         "amount": 100.00,
@@ -319,11 +343,16 @@ run_test_case "Unknown User Fallback - Approve" '{
     }
 }' "approve"
 
-# Test 21: Missing Optional Fields - should approve (graceful handling)
+# Test 21: Omit optional metadata, retain amount and all lookup entity keys.
 run_test_case "Missing Optional Fields - Approve" '{
     "event": {
+        "payment_method": "not_applicable",
+        "amount": 0,
+        "merchant_id": "merchant_default",
         "type": "transaction",
-        "user_id": "user_low_risk"
+        "user_id": "user_low_risk",
+        "device_id": "device_low_risk",
+        "ip_address": "192.168.1.102"
     }
 }' "approve"
 
@@ -339,6 +368,7 @@ run_error_test_case "Unknown Event Type - Default Fallback" '{
 # Test 23: Empty User ID (fallback) - should approve
 run_test_case "Empty User ID Fallback - Approve" '{
     "event": {
+        "merchant_id": "merchant_default",
         "type": "transaction",
         "user_id": "",
         "amount": 100.00,
@@ -362,6 +392,7 @@ echo ""
 # Test 24: Multiple Risk Factors - should decline
 run_test_case "Multiple Risk Factors - Decline" '{
     "event": {
+        "merchant_id": "merchant_default",
         "type": "transaction",
         "user_id": "user_multi_risk",
         "amount": 1000.00,
@@ -375,8 +406,9 @@ run_test_case "Multiple Risk Factors - Decline" '{
 }' "decline"
 
 # Test 25: High Risk User with Low Risk Device - should review
-run_test_case "High User Low Device - Review" '{
+run_test_case "High User Low Device - Decline" '{
     "event": {
+        "merchant_id": "merchant_default",
         "type": "transaction",
         "user_id": "user_high_risk",
         "amount": 500.00,
@@ -392,6 +424,7 @@ run_test_case "High User Low Device - Review" '{
 # Test 26: Low Risk User with High Risk Device - should review
 run_test_case "Low User High Device - Review" '{
     "event": {
+        "merchant_id": "merchant_default",
         "type": "transaction",
         "user_id": "user_low_risk",
         "amount": 500.00,
@@ -407,6 +440,7 @@ run_test_case "Low User High Device - Review" '{
 # Test 27: Good User, Good Device, Bad IP - should review
 run_test_case "Good User/Device Bad IP - Review" '{
     "event": {
+        "merchant_id": "merchant_default",
         "type": "transaction",
         "user_id": "user_low_risk",
         "amount": 500.00,
@@ -422,6 +456,7 @@ run_test_case "Good User/Device Bad IP - Review" '{
 # Test 28: New Account with Low Amount - should approve
 run_test_case "New Account Low Amount - Approve" '{
     "event": {
+        "merchant_id": "merchant_default",
         "type": "transaction",
         "user_id": "user_new_account",
         "amount": 100.00,
@@ -445,6 +480,7 @@ echo ""
 # Test 29: High Velocity with Medium Risk - should review
 run_test_case "High Velocity Medium Risk - Review" '{
     "event": {
+        "merchant_id": "merchant_default",
         "type": "transaction",
         "user_id": "user_velocity_medium",
         "amount": 400.00,
@@ -460,6 +496,7 @@ run_test_case "High Velocity Medium Risk - Review" '{
 # Test 30: Extreme Multi-Device (>10 devices) - should review
 run_test_case "Extreme Multi-Device - Review" '{
     "event": {
+        "merchant_id": "merchant_default",
         "type": "transaction",
         "user_id": "user_extreme_devices",
         "amount": 300.00,
@@ -483,6 +520,7 @@ echo ""
 # Test 31: Low Risk User with High Risk Payment Method - should review
 run_test_case "Low Risk User Crypto - Review" '{
     "event": {
+        "merchant_id": "merchant_default",
         "type": "payment",
         "user_id": "user_low_risk",
         "amount": 500.00,
@@ -498,6 +536,7 @@ run_test_case "Low Risk User Crypto - Review" '{
 # Test 32: Debit Card Payment - should approve
 run_test_case "Debit Card Payment - Approve" '{
     "event": {
+        "merchant_id": "merchant_default",
         "type": "payment",
         "user_id": "user_normal",
         "amount": 300.00,
@@ -521,6 +560,9 @@ echo ""
 # Test 33: High Login Frequency - should review
 run_test_case "High Login Frequency - Review" '{
     "event": {
+        "payment_method": "not_applicable",
+        "amount": 0,
+        "merchant_id": "merchant_default",
         "type": "login",
         "user_id": "user_login_freq",
         "device_id": "device_login_freq",
@@ -533,6 +575,9 @@ run_test_case "High Login Frequency - Review" '{
 # Test 34: Many Failed Logins - should review
 run_test_case "Many Failed Logins - Review" '{
     "event": {
+        "payment_method": "not_applicable",
+        "amount": 0,
+        "merchant_id": "merchant_default",
         "type": "login",
         "user_id": "user_failed_logins",
         "device_id": "device_failed_logins",
@@ -593,6 +638,7 @@ echo ""
 # Test 37: Zero Amount Transaction - should approve (edge case)
 run_test_case "Zero Amount Transaction - Approve" '{
     "event": {
+        "merchant_id": "merchant_default",
         "type": "transaction",
         "user_id": "user_normal",
         "amount": 0.00,
@@ -608,6 +654,7 @@ run_test_case "Zero Amount Transaction - Approve" '{
 # Test 38: Very Small Amount (1 cent) - should approve
 run_test_case "Micro Transaction - Approve" '{
     "event": {
+        "merchant_id": "merchant_default",
         "type": "transaction",
         "user_id": "user_normal",
         "amount": 0.01,

@@ -37,7 +37,7 @@ def convert_sqlite_to_clickhouse(sqlite_sql: str) -> str:
     id UInt64,
     event_type String,
     user_id String,
-    timestamp DateTime64(3),
+    timestamp DateTime64(3, 'UTC'),
     status Nullable(String),
     amount Nullable(Float64),
     currency Nullable(String),
@@ -60,8 +60,8 @@ PARTITION BY toYYYYMM(timestamp);
     id UInt64,
     list_id String,
     value String,
-    created_at DateTime64(3) DEFAULT now64(3),
-    expires_at Nullable(DateTime64(3)),
+    created_at DateTime64(3, 'UTC') DEFAULT now64(3),
+    expires_at Nullable(DateTime64(3, 'UTC')),
     metadata Nullable(String)
 ) ENGINE = MergeTree()
 ORDER BY (list_id, value);
@@ -216,84 +216,16 @@ def parse_sql_values(values_str: str) -> list:
 
 
 def convert_timestamp(ts_str: str) -> str:
-    """Convert SQLite timestamp string to ClickHouse DateTime64 format.
-
-    Adjusts timestamps to be relative to current time to ensure they fall within
-    time windows used by features (e.g., 90 days, 30 days, 7 days, 24 hours).
-    Preserves the relative time differences between events.
-    """
-
+    """Preserve the generated UTC instant, including future list expirations."""
     if ts_str == 'NULL' or not ts_str:
         return 'NULL'
-
-    # Remove quotes
-    ts = ts_str.strip("'\"")
-
-    # Handle ISO format: 2025-12-13T05:00:17.019788
-    if 'T' in ts:
-        # Convert to ClickHouse format: 2025-12-13 05:00:17.019
-        ts = ts.replace('T', ' ')
-        # Truncate microseconds to milliseconds
-        if '.' in ts:
-            parts = ts.split('.')
-            if len(parts[1]) > 3:
-                ts = parts[0] + '.' + parts[1][:3]
-
-    # Parse the timestamp to calculate offset from now
-    try:
-        # Parse the timestamp (SQLite timestamps are in UTC)
-        if '.' in ts:
-            ts_dt = datetime.strptime(ts, '%Y-%m-%d %H:%M:%S.%f')
-        else:
-            ts_dt = datetime.strptime(ts, '%Y-%m-%d %H:%M:%S')
-
-        # Calculate how long ago this timestamp should be from now
-        # IMPORTANT: Use UTC time to match SQLite data generation which uses UTC
-        from datetime import timezone
-        now = datetime.now(timezone.utc).replace(tzinfo=None)
-        time_diff = now - ts_dt
-
-        # Convert to total seconds
-        total_seconds = int(time_diff.total_seconds())
-
-        # If the timestamp is in the future or very recent (within 1 minute), place it in the recent past
-        if total_seconds < 60:
-            # Put it 10 minutes to 1 hour ago, preserving relative ordering
-            # Use microseconds to maintain ordering
-            microseconds = ts_dt.microsecond
-            return f"now64(3) - INTERVAL 600 SECOND - INTERVAL {microseconds} MICROSECOND"
-
-        # For timestamps in the past, preserve the exact time difference
-        # Break down into days, hours, minutes, seconds, milliseconds
-        days = total_seconds // 86400
-        remaining = total_seconds % 86400
-        hours = remaining // 3600
-        remaining = remaining % 3600
-        minutes = remaining // 60
-        seconds = remaining % 60
-        milliseconds = ts_dt.microsecond // 1000
-
-        # Build the interval expression
-        intervals = []
-        if days > 0:
-            intervals.append(f"INTERVAL {days} DAY")
-        if hours > 0:
-            intervals.append(f"INTERVAL {hours} HOUR")
-        if minutes > 0:
-            intervals.append(f"INTERVAL {minutes} MINUTE")
-        if seconds > 0:
-            intervals.append(f"INTERVAL {seconds} SECOND")
-        if milliseconds > 0:
-            intervals.append(f"INTERVAL {milliseconds} MILLISECOND")
-
-        if intervals:
-            return "now64(3) - " + " - ".join(intervals)
-        else:
-            return "now64(3)"
-
-    except Exception as e:
-        # Fallback to original behavior if parsing fails
-        return f"parseDateTimeBestEffort('{ts}')"
+    from datetime import timezone
+    value = datetime.fromisoformat(ts_str.strip("'\"").replace('Z', '+00:00'))
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=timezone.utc)
+    value = value.astimezone(timezone.utc)
+    stamp = value.strftime('%Y-%m-%d %H:%M:%S.') + f'{value.microsecond // 1000:03d}'
+    return f"toDateTime64('{stamp}', 3, 'UTC')"
 
 
 def escape_json(json_str: str) -> str:

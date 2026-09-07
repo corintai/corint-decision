@@ -44,3 +44,6 @@ temp
 clickhouse
 # Python check scripts
 __pycache__/
+
+# Isolated datasource E2E reports
+/tests/results.*/

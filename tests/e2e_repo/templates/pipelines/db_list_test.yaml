@@ -44,14 +44,14 @@ pipeline:
 # Rules for Database List Testing
 # ========================================
 
-# Rule: User in Database Blocklist (checks both memory and db-backed lists)
+# Rule: User in Database Blocklist (database backend)
 rule:
   id: user_in_db_blocklist
   name: User in DB Blocklist
-  description: User is in blocked list (memory-backed for basic tests)
+  description: User is in blocked list (database backend)
   when:
     all:
-      - event.user_id in list.blocked_users
+      - event.user_id in list.blocked_users_db
   score: 1000
 
 ---
@@ -75,7 +75,7 @@ rule:
   description: IP address is in blocked list
   when:
     all:
-      - event.ip_address in list.blocked_ips
+      - event.ip_address in list.blocked_ips_db
   score: 1000
 
 ---
@@ -87,7 +87,7 @@ rule:
   description: Country is in high risk list
   when:
     all:
-      - event.country in list.high_risk_countries
+      - event.country in list.high_risk_countries_db
   score: 500
 
 ---
@@ -109,7 +109,7 @@ ruleset:
 
   # Conclusion produces signals
   conclusion:
-    # Critical risk - blocked user (memory list)
+    # Critical risk - blocked user (database list)
     - when: triggered_rules contains "user_in_db_blocklist"
       signal: decline
       reason: "User is in blocklist"
