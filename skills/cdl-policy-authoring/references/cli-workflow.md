@@ -1,6 +1,6 @@
 # CLI 操作流程
 
-以下命令使用已确认的 CDL 仓库和用户选择的输出目录。先替换示例绝对路径；不要改写仓库中的公共 fixture。
+以下命令使用已确认的 CDL 仓库和用户选择的策略目录。先替换示例绝对路径；不要改写仓库中的公共 fixture。命令直接在终端执行，不另建 `verify.sh` 等脚本；默认只交付必要的 CDL 资源文件。
 命令使用当前检出的源码构建 CLI，避免 PATH 中旧版 `corint` 与新规范不一致。不要求全局安装或运行服务。
 
 ## 准备资源与命令
@@ -39,37 +39,36 @@ cdl validate "$POLICY_DIR/rules/blocked.yaml" "$POLICY_DIR/features" --format js
 
 默认只校验选择范围，import 声明只检查语法，不跟随加载。需要额外解析 imports 并验证引用时使用 `--root DIR PATH...`；路径相对 root，集合需要包含所有引用。
 `--root DIR` 不传路径时保留旧的仓库扫描方式，仅扫描标准资源目录和根 Registry。
-有输入 Schema 时额外加 `--input-schema "$POLICY_DIR/input-schema.yaml"`；Schema 路径始终相对当前目录解析，不相对 root。
+已有输入 Schema 时额外加 `--input-schema /absolute/path/to/existing-input-schema.yaml`；Schema 路径始终相对当前目录解析，不相对 root。没有时省略该参数，不为完成默认校验新建 Schema。
 
 目录扫描会识别输入 Schema、行为用例及已知验证/分析报告，并在 `skipped_sources` 列出跳过项；这些文件未作为 CDL 校验。未知文档结构或 YAML 解析失败仍会报错；不能仅靠目录名忽略疑似 CDL。显式指定的辅助文件会报告 `E_NOT_CDL`。扫描到 Schema 不自动开启字段检查，仍需 `--input-schema`。
 
-重定向的 JSON 报告保存到扫描目录之外，避免 shell 先创建的空文件被读到。
+默认直接读取 stdout，不保存 JSON 报告或日志。只有用户明确要求保存报告时才写入指定位置，并使其位于扫描目录之外，避免 shell 先创建的空文件被读到。
 
 读取报告和退出码。`valid: true` 且退出码 `0` 才是通过；`1` 是校验失败，`2` 是用法/文件错误。`--format json` 只控制程序 stdout；Cargo 构建信息可能在 stderr，构建失败另行报告。`--help`/`--version` 成功不是验证证据。
 
-按诊断的 `source`、`field_path`、`stage`、`code` 修复，再次执行。记录 `references_checked`、`input_schema_checked` 与 `unchecked`，不把 `execution_checked: false` 当作静态校验失败。
+按诊断的 `source`、`field_path`、`stage`、`code` 修复，再次执行。在回复中说明 `references_checked`、`input_schema_checked` 与 `unchecked`，不另建说明文件，不把 `execution_checked: false` 当作静态校验失败。
 完整命令契约见[CLI 文档](../../../docs/cli.md)。
 
 ## 按需执行 Core 编译和行为测试
 
-用户要求验证 Core 可执行性或预期行为时，准备完整 Core 闭包与输入 Schema，行为测试另需独立预期用例。这里的文件列表必须符合严格 Core，不能包含 Feature/List/Service。
+本节只适用于用户明确要求或此前已明确授权的额外验证，不因编写或修改策略而自动执行。Core 编译需要完整 Core 闭包与输入 Schema，行为测试另需独立预期用例。下面的 `INPUT_SCHEMA` 和 `CASES_FILE` 指向用户提供或另行明确要求编写的文件；不默认在策略目录新建 Schema、用例或报告。资源列表必须符合严格 Core，不能包含 Feature/List/Service。
 
 ```sh
 set -- "$POLICY_DIR/rule.yaml" "$POLICY_DIR/ruleset.yaml" \
   "$POLICY_DIR/pipeline.yaml" "$POLICY_DIR/registry.yaml"
 
 cdl validate --profile cdl-core-risk-draft-1 \
-  --input-schema "$POLICY_DIR/input-schema.yaml" --format json "$@"
+  --input-schema "$INPUT_SCHEMA" --format json "$@"
 
-cdl test --input-schema "$POLICY_DIR/input-schema.yaml" \
-  --cases "$POLICY_DIR/behavior.yaml" --format json "$@" \
-  > "$POLICY_DIR/behavior-report.json"
+cdl test --input-schema "$INPUT_SCHEMA" \
+  --cases "$CASES_FILE" --format json "$@"
 ```
 
 仅在 Core 编译通过后执行行为测试。行为报告要求 `valid: true`、`execution_checked: true`、`test_results.executed == total`、`passed == total`、`failed == 0`，并检查各用例 `passed` 和 `trace_parity`。
 预期运行错误可能出现在通过的用例中，不能仅按诊断是否为空判断行为失败。
 
-## 编写用例时的区别
+## 明确要求编写用例时的区别
 
 以仓库 [testing.md](../../../docs/testing.md) 和 [test-suite.json](../../../docs/contracts/schema/test-suite.json) 为准：
 
@@ -83,9 +82,9 @@ cdl test --input-schema "$POLICY_DIR/input-schema.yaml" \
 
 ## 可选的交付方式
 
-只在用户需要相应产物时采用：
+只在用户明确要求或此前已明确授权相应产物时采用：
 
-- **绑定证据的源码包**：读取[包契约](../../../docs/packages.md)，使用 `cdl build --input-schema "$POLICY_DIR/input-schema.yaml" --cases "$POLICY_DIR/behavior.yaml" --output "$POLICY_DIR/policy.core-package.json" --format json "$@"`。输出路径必须不存在；`build` 会重新测试，`verify --package ... --cases ...` 检查绑定并重新执行用例。
+- **绑定证据的源码包**：读取[包契约](../../../docs/packages.md)，使用 `cdl build --input-schema "$INPUT_SCHEMA" --cases "$CASES_FILE" --output "$PACKAGE_OUTPUT" --format json "$@"`。`PACKAGE_OUTPUT` 为这项额外交付选定的位置，输出路径必须不存在；`build` 会重新测试，`verify --package ... --cases ...` 检查绑定并重新执行用例。
 - **模块化创作目录**：读取[解析契约](../../../docs/resolution.md)。`resolve` 只解析、冻结并编译；随后 `import --bundle ... --cases ... --output ...` 重新测试并生成源码包。冻结 bundle 是 JSON 容器，不能把它当作 CDL 资源文件传给 `validate`。
 - **声明的目标兼容性**：读取[公共契约](../../../docs/contracts/README.md)，使用 `check-target --input-schema ... --context ... --target ... --format json FILE...`。context 和 target 必须来自明确的业务/部署声明，不能编造 capability、revision 或身份来通过检查；该命令不连接目标，也不替代行为测试。
 - **发布或服务激活**：这是独立工作流，读取[Core 服务契约](../../../docs/contracts/core-server.md)并遵守已有授权。编写任务不自动启动服务或操作部署。

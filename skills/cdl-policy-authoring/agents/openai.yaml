@@ -1,4 +1,4 @@
 interface:
   display_name: "CDL 策略编写"
-  short_description: "编写和修改完整 CDL 资源，调用 CLI 静态校验并修复诊断"
-  default_prompt: "使用 $cdl-policy-authoring，根据我的业务需求编写或修改 CDL 文件，最后调用 CLI 静态校验并修复错误。"
+  short_description: "仅生成必要的 CDL 策略资源文件，调用 CLI 静态校验并直接反馈结果"
+  default_prompt: "使用 $cdl-policy-authoring，根据我的业务需求仅生成或修改必要的 CDL 策略资源文件，调用 CLI 静态校验并修复错误，在回复中说明结果；除非我明确要求，不生成分析、测试、脚本、文档或报告文件。"
