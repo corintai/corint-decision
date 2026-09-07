@@ -68,6 +68,14 @@ pub fn run(args: &[OsString]) -> (u8, String) {
             _ => options.files.push(arg.into()),
         }
     }
+    let directory_input = (options.root.is_some() && options.files.is_empty())
+        || options.files.iter().any(|path| {
+            options
+                .root
+                .as_ref()
+                .map_or_else(|| path.clone(), |root| root.join(path))
+                .is_dir()
+        });
     if report.diagnostics.is_empty() {
         report = authoring::validate(&options);
     }
@@ -83,6 +91,26 @@ pub fn run(args: &[OsString]) -> (u8, String) {
             if report.valid { "PASS" } else { "FAIL" },
             report.sources.len()
         );
+        // A file-local failure does not hide independent successes. Collection
+        // reference errors or invalid global inputs cannot establish per-file passes.
+        let file_local_results = report.diagnostics.iter().all(|diagnostic| {
+            diagnostic.stage.as_deref() != Some("reference")
+                && report
+                    .sources
+                    .iter()
+                    .any(|source| Some(source.as_str()) == diagnostic.source.as_deref())
+        });
+        if directory_input && file_local_results {
+            for source in &report.sources {
+                if !report
+                    .diagnostics
+                    .iter()
+                    .any(|diagnostic| diagnostic.source.as_deref() == Some(source.as_str()))
+                {
+                    text.push_str(&format!("  [PASS] {source}\n"));
+                }
+            }
+        }
         if !report.skipped_sources.is_empty() {
             text.push_str(&format!(
                 "Skipped {} auxiliary files:\n",

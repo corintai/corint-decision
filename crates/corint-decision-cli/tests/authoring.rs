@@ -693,3 +693,80 @@ fn an_auxiliary_only_directory_does_not_claim_validated_cdl() {
     assert!(report["sources"].as_array().unwrap().is_empty());
     assert_eq!(report["skipped_sources"].as_array().unwrap().len(), 5);
 }
+
+fn text_report(dir: &Path, args: &[&str], code: i32) -> String {
+    let output = Command::new(env!("CARGO_BIN_EXE_corint"))
+        .current_dir(dir)
+        .arg("validate")
+        .args(args)
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(code), "{output:?}");
+    assert!(output.stderr.is_empty(), "{output:?}");
+    String::from_utf8(output.stdout).unwrap()
+}
+
+#[test]
+fn directory_text_lists_every_passed_resource_once() {
+    let dir = setup();
+    for args in [vec!["."], vec![".", "rules"], vec!["--root", "."]] {
+        let text = text_report(dir.path(), &args, 0);
+        let passed: Vec<_> = text
+            .lines()
+            .filter_map(|line| line.strip_prefix("  [PASS] "))
+            .collect();
+        let report = run(dir.path(), &args, 0);
+        let expected: Vec<_> = report["sources"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|value| value.as_str().unwrap())
+            .collect();
+        assert_eq!(passed, expected);
+        assert_eq!(passed.len(), 7);
+        assert!(!passed
+            .iter()
+            .any(|path| path.ends_with("input-schema.yaml")));
+    }
+}
+
+#[test]
+fn directory_text_lists_good_files_alongside_file_local_failures() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("good.yaml"), "id: good\nbackend: memory").unwrap();
+    std::fs::write(dir.path().join("bad.yaml"), "rule: [").unwrap();
+    let text = text_report(dir.path(), &["."], 1);
+    let passed: Vec<_> = text
+        .lines()
+        .filter(|line| line.starts_with("  [PASS] "))
+        .collect();
+    assert_eq!(passed.len(), 1);
+    assert!(passed[0].ends_with("good.yaml"));
+    assert!(text.contains("E_YAML"));
+    assert!(text.contains("FAIL (2 files)"));
+}
+
+#[test]
+fn global_errors_do_not_print_misleading_file_passes() {
+    let dir = setup();
+    std::fs::write(
+        dir.path().join("input-schema.yaml"),
+        "name: event\nfields: typo",
+    )
+    .unwrap();
+    let text = text_report(
+        dir.path(),
+        &["rules", "--input-schema", "input-schema.yaml"],
+        1,
+    );
+    assert!(!text.contains("[PASS]"));
+    mutate(
+        dir.path(),
+        "rulesets/payment.yaml",
+        "rules: [blocked]",
+        "rules: [missing]",
+    );
+    let text = text_report(dir.path(), &["--root", "."], 1);
+    assert!(!text.contains("[PASS]"));
+    assert!(text.contains("E_UNRESOLVED_REFERENCE"));
+}

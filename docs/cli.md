@@ -111,9 +111,14 @@ proven by static validation.
 
 `--format json` writes one JSON report to stdout on success and failure. It includes
 `report_version`, `profile: "cdl-static-1"`, `scope: "static"`, `valid`, `sources`,
-`references_checked`, `input_schema_checked`, `execution_checked: false`, `unchecked`
+`references_checked`, `input_schema_checked`, `execution_checked: false`, `unchecked`,
 `skipped_sources` (each entry has `source` and `reason`), and `diagnostics`. Text output
-also lists skipped auxiliary files. Resource paths are canonical absolute paths; input Schema diagnostics use the supplied
+lists each passed resource as `[PASS] <path>` when the input includes a directory
+(including the root-only repository shortcut), followed by skipped auxiliary files
+and failure diagnostics. File-local failures still allow other files to be listed
+as passed. Collection reference failures or invalid global inputs withhold per-file
+pass claims. JSON output retains its existing `sources` and `diagnostics` fields.
+Resource paths are canonical absolute paths; input Schema diagnostics use the supplied
 Schema path. Text is the default.
 
 | Exit | Meaning |
@@ -233,6 +238,7 @@ and behavior tests when runtime compatibility or decisions need verification.
 
 | Date | Changes |
 |---|---|
+| 2026-09-07 | List passed resource paths in directory text output alongside skip reasons and errors. |
 | 2026-09-07 | Identify auxiliary documents during directory discovery and report skipped files; explicit inputs remain strict. |
 | 2026-09-07 | Accept files, recursive directories and mixed paths; keep imports opt-in with `--root`. |
 | 2026-09-07 | Make full CDL static validation the default; retain explicit Core compilation. |
