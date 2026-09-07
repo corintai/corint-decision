@@ -1,0 +1,22 @@
+name: CDL capacity measurements
+on:
+  workflow_dispatch:
+jobs:
+  benchmark:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install server build prerequisite
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
+      - name: Cache dependencies for offline benchmark scripts
+        run: cargo fetch --locked
+      - name: Measure release Core across size, concurrency and Trace modes
+        run: python3 tests/scripts/run_core_benchmark.py --samples 1000 --output target/core-benchmark.json
+      - name: Measure release HTTP with durable journal and concurrent reload
+        run: python3 tests/scripts/run_core_http_benchmark.py --samples 200 --output target/core-http-benchmark.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cdl-capacity-measurements
+          path: target/*benchmark.json

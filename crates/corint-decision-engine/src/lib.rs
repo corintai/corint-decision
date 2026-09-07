@@ -9,6 +9,7 @@ pub mod builder;
 pub mod config;
 pub mod decision_engine;
 pub mod error;
+pub mod feature_pipeline;
 pub mod score;
 pub mod snapshot;
 pub mod validator;

@@ -19,6 +19,10 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - name: Run Core behavior, trace, fixture mappings and compatibility claim checks
         run: cargo test -p corint-decision-engine --test cdl_core_conformance --locked
+      - name: Run generated semantics and historical example admission
+        run: cargo test -p corint-decision-engine --test semantic_properties --test document_assets --locked
+      - name: Run executable generator assets
+        run: cargo test -p corint-decision-llm --features core-generation --test prompt_assets --locked
       - name: Run offline CLI validation, behavior, packages, import resolution and target contract checks
         run: cargo test -p corint-decision-cli --locked
       - name: Run shared toolchain and phase-0 W04/W07/W08 contract checks
@@ -32,6 +36,28 @@ jobs:
       - name: Run Core process e2e (fixed model, real CLI and loopback HTTP)
         timeout-minutes: 15
         run: bash tests/scripts/run_core_e2e_tests.sh
+
+  feature-postgres:
+    name: Real PostgreSQL Feature to Core
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: corint_test
+          POSTGRES_PASSWORD: isolated_ci_test_password
+          POSTGRES_DB: corint_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U corint_test"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Verify real backend, binding, cutoff and Core execution
+        env:
+          CORINT_TEST_POSTGRES_URL: postgresql://corint_test:isolated_ci_test_password@127.0.0.1:5432/corint_test
+        run: cargo test -p corint-decision-engine --features sqlx --test feature_pipeline --locked -- --ignored --exact postgres_feature_to_core_matches_offline_oracle
 
   test:
     name: Test

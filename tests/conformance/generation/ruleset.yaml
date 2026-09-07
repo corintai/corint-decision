@@ -1,0 +1,11 @@
+ruleset:
+  id: risk
+  rules: [large_amount]
+  conclusion:
+    - when: total_score >= 60
+      signal: decline
+    - when: total_score > 50
+      signal: review
+    - default: true
+      signal: approve
+version: "0.1"

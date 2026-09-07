@@ -16,6 +16,8 @@ writing `version: "0.1"` does not opt a legacy entry point into this contract.
 
 The [Runtime extensions](runtime-extensions.md) add synchronous Rule/sub-Pipeline calls, guards, optional closed objects, `exists`, checked arithmetic and structured execution errors.
 
+Stability, version compatibility and scoped support follow the [stability contract](stability.md).
+
 ## 1. Public artifacts and entry points
 
 - [Resource schema](schema/core.json): Draft 7 JSON Schema for decoded YAML objects;
@@ -109,7 +111,7 @@ Strings accept single or double quotes, Unicode text, and escapes `\\`, `\"`,
 Quote the entire expression at the YAML level when its syntax requires it; YAML
 escaping and expression escaping are separate layers. Operators inside strings are
 literal text. Malformed quotes, escapes or tokens return `E_INVALID_EXPRESSION`.
-Expression parsing is bounded to 128 recursive levels, counting grouping, unary
+Expressions are bounded to 4096 tokens and 128 actual AST levels. Parser recursion is also bounded to 128 levels, counting grouping, unary
 operators and precedence descent. Trace does not evaluate skipped operands.
 The VM fault-injection test for short-circuiting intentionally bypasses input
 validation; this does not make malformed inputs valid at the public engine entry.

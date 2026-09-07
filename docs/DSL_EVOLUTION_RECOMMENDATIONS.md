@@ -617,7 +617,7 @@ Decision Worker 应尽量无状态：规则包和版本来自受控分发，持�
 - **可执行核心**：规范、独立工具链、真实行为测试与严格发布校验。
 - **跨产品公共契约**：业务上下文、目标能力、Feature / Model 资源、策略包、验证/评估报告及反馈事件的 schema 与契约测试。
 
-先固定接口并验证最小交互，不要求同时完成真实数据连接、模型训练服务和完整 Work 产品。首批已新增实验性 `cdl-core-risk-draft-1`：公开结构 schema、显式严格 Rust 入口、闭包校验、同步规则集调用和真实引擎 runner。现已增加 [离线 CLI](cdl/cli.md)：`corint validate` 校验编译；[`corint test`](cdl/testing.md) 用真实引擎核对声明样例、路径与 Trace 一致性；[`corint build / verify`](cdl/packages.md) 构建源码快照、绑定内容指纹并重新核验测试证据。[严格生成/修改 API](cdl/generation.md) 已复用 `corint-decision-toolchain` 完成同一闭环；源码 export/import 已支持可编辑源码交换与新证据重建。本轮增加 [BusinessContext / TargetCapabilities 和 check-target](contracts/README.md)，并接入严格生成器的可选目标入口。固定模型响应测试覆盖失败拒绝和最小往返。上述工具均不宣称真实业务效果已验证，也不授予发布权限；生成测试通过不等于真实模型或 Work 产品接入完成。新增的 [严格 import 创作入口](cdl/resolution.md) 已将文件依赖解析为冻结闭包，覆盖 C08 的有界本地文件场景。生产产物分发/激活、真实生成客户端/发布接入、跨宿主可信证据与完整跨产品公共契约仍待实现；完整交付计划如下。
+先固定接口并验证最小交互，不要求同时完成真实数据连接、模型训练服务和完整 Work 产品。首批已新增实验性 `cdl-core-risk-draft-1`：公开结构 schema、显式严格 Rust 入口、闭包校验、同步规则集调用和真实引擎 runner。现已增加 [离线 CLI](cdl/cli.md)：`corint validate` 校验编译；[`corint test`](cdl/testing.md) 用真实引擎核对声明样例、路径与 Trace 一致性；[`corint build / verify`](cdl/packages.md) 构建源码快照、绑定内容指纹并重新核验测试证据。[严格生成/修改 API](cdl/generation.md) 已复用 `corint-decision-toolchain` 完成同一闭环；源码 export/import 已支持可编辑源码交换与新证据重建。本轮增加 [BusinessContext / TargetCapabilities 和 check-target](contracts/README.md)，并接入严格生成器的可选目标入口。固定模型响应测试覆盖失败拒绝和最小往返。上述工具均不宣称真实业务效果已验证，也不授予发布权限；生成测试通过不等于真实模型或 Work 产品接入完成。新增的 [严格 import 创作入口](cdl/resolution.md) 已将文件依赖解析为冻结闭包，覆盖 C08 的有界本地文件场景。单实例 repo 发布/激活已实现；多节点分发、真实 Work 接入、跨宿主可信证据与完整跨产品公共契约仍待实现；完整交付计划如下。
 
 #### 11.1 首期候选支持范围
 
@@ -646,7 +646,7 @@ Feature / Model 的资源描述和就绪性契约在首期设计，不代表首�
 |---|---|---|---|
 | 规范性文本 | **首批 Core 已完成** | `docs/cdl/cdl-core.md` | 给出字段、默认、类型、引用、求值、错误和兼容性规则；每条要求有用例 ID |
 | 机器可读契约 | **首批 Core 已完成** | `docs/cdl/schema/` | 资源 schema 与版本化能力清单可供编辑器、Agent、验证器共用；表达式类型检查仍由编译器完成 |
-| 独立工具链 | **离线首批已完成；产品集成待办** | 现有 parser / compiler / engine 公共库、`crates/corint-decision-toolchain`、`crates/corint-decision-cli` 及严格生成适配层 | CLI 与生成器已复用严格编译、真实引擎样例测试、源码包构建/指纹核验、源码导出/导入和新证据重建；生产分发/激活、跨宿主可信历史证据及完整公共契约待完成 |
+| 独立工具链 | **离线首批已完成；产品集成待办** | 现有 parser / compiler / engine 公共库、`crates/corint-decision-toolchain`、`crates/corint-decision-cli` 及严格生成适配层 | CLI 与生成器已复用严格编译、真实引擎样例测试、源码包构建/指纹核验、源码导出/导入和新证据重建；单实例发布/激活已实现；多节点分发、跨宿主可信历史证据及完整公共契约待完成 |
 | 跨产品公共契约 | **已完成本轮契约；完整交付待办** | `docs/contracts/` | 已实现 Core BusinessContext / TargetCapabilities v1、声明兼容性报告、CLI/严格生成共享检查及旧绑定拒绝；已补充 [W04/W07/W08 v1 契约](contracts/phase0.md) 的资源描述与绑定、评估/审批证据、决策/标签/动作回执 schema 和离线消费者；完整 PolicyPackage、可信基础设施及真实产品集成仍待实现 |
 | 严格校验入口 | **严格 Core 已完成；兼容收敛待办** | 现有 parser / compiler / repository 装配链 | 拒绝未知版本、字段、类型、引用和不支持能力，输出结构化诊断；已有宽松入口不能绕过发布门禁 |
 | 用例与真实示例 | **首批 fixture 已完成；历史示例待办** | `tests/conformance/cdl_core/` | 每例包含完整依赖、输入、预期输出或预期错误；不依赖在线服务或本机私有仓库 |
@@ -776,7 +776,7 @@ runs:
 
 严格 Core 服务端新增 W05/W09 的局部证据：操作者批准绑定精确策略/上下文/目标/样例，拒绝越权角色与客户端伪造字段；启动失败不回退，过期 revision 和并发竞争不能覆盖新快照。该证据局限于本地单目标信任域，不等于多租户治理、可信远端证明或真实 Work 发布流程通过。
 
-新增 [阶段 0 W04/W07/W08 契约证据](contracts/phase0.md)：8 份版本化 schema 和离线消费者已覆盖精确资源绑定、固定样例口径/历史可用时间、精确评估审批信任绑定，以及反馈关联、去重、更正和历史标签查询。W05/W06/W09 增加旧证据、合成数据业务声明和越权审批的反例。该证据不启用 Core 在线资源，不接入真实 Work、评估后端或生产反馈；现有发布入口也尚未消费这些新契约。
+新增 [阶段 0 W04/W07/W08 契约证据](contracts/phase0.md)：8 份版本化 schema 和离线消费者已覆盖精确资源绑定、固定样例口径/历史可用时间、精确评估审批信任绑定，以及反馈关联、去重、更正和历史标签查询。W05/W06/W09 增加旧证据、合成数据业务声明和越权审批的反例。该证据不启用 Core 在线资源，不接入真实 Work、评估后端或生产反馈；单实例 Core 发布与决策入口已消费评估/审批及反馈契约；真实 Work 与外部评估后端仍待接入。
 
 下列要求尚未整体验收。W01 已有离线工具链证据；W02 已有源码导出/导入、编辑往返及新证据重建测试；W03 已有 Core 字段和契约版本/能力检查；W05 已覆盖策略/上下文/目标/检查程序变化使旧绑定失效；W06 已区分样例通过与业务评估并拒绝自述审批字段。这些只是局部证据，不能将 W01–W10 全部标为完成。阶段 0 验证公共 schema、接口约束、独立工具链和最小往返；涉及真实 Work 客户端、在线资源或生产反馈的用例，在对应集成阶段完成后才能声明产品能力。契约 mock 的通过不等于真实产品集成通过。
 

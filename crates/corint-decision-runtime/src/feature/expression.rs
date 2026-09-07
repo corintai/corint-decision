@@ -171,61 +171,92 @@ impl ExpressionEvaluator {
         template: &str,
         context: &HashMap<String, Value>,
     ) -> Result<String> {
-        // Check for string interpolation: contains "${...}"
-        if template.contains("${") {
-            let mut result = template.to_string();
-
-            // Extract all ${xxx} patterns
-            if let Some(start) = result.find("${") {
-                if let Some(end) = result[start..].find('}') {
-                    let end = start + end;
-                    let var_path = &result[start + 2..end];
-
-                    // Parse path like "event.user_id" -> ["event", "user_id"]
-                    let parts: Vec<&str> = var_path.split('.').collect();
-
-                    // For now, just use the last part as the key
-                    if let Some(key) = parts.last() {
-                        if let Some(value) = context.get(*key) {
-                            let value_str = match value {
-                                Value::String(s) => s.clone(),
-                                Value::Number(n) => n.to_string(),
-                                Value::Bool(b) => b.to_string(),
-                                _ => {
-                                    return Err(anyhow::anyhow!("Unsupported template value type"))
-                                }
-                            };
-                            result = result.replace(&result[start..=end], &value_str);
-                        } else {
-                            return Err(anyhow::anyhow!(
-                                "Template variable '{}' not found in context. Available keys: {:?}",
-                                key,
-                                context.keys().collect::<Vec<_>>()
-                            ));
-                        }
-                    }
-                }
+        fn resolve(path: &str, context: &HashMap<String, Value>) -> Result<String> {
+            let path = path.strip_prefix("event.").unwrap_or(path);
+            let mut segments = path.split('.');
+            let first = segments
+                .next()
+                .filter(|s| !s.is_empty())
+                .ok_or_else(|| anyhow::anyhow!("Empty template path"))?;
+            let mut value = context
+                .get(first)
+                .ok_or_else(|| anyhow::anyhow!("Template variable not found: {path}"))?;
+            for segment in segments {
+                value = match value {
+                    Value::Object(fields) => fields
+                        .get(segment)
+                        .ok_or_else(|| anyhow::anyhow!("Template variable not found: {path}"))?,
+                    _ => return Err(anyhow::anyhow!("Template path is not an object: {path}")),
+                };
             }
-
+            match value {
+                Value::String(s) => Ok(s.clone()),
+                Value::Number(n) if n.is_finite() => Ok(n.to_string()),
+                Value::Bool(b) => Ok(b.to_string()),
+                _ => Err(anyhow::anyhow!("Unsupported template value type: {path}")),
+            }
+        }
+        if template.contains("${") {
+            let mut result = String::new();
+            let mut rest = template;
+            while let Some(start) = rest.find("${") {
+                result.push_str(&rest[..start]);
+                let variable = &rest[start + 2..];
+                let end = variable
+                    .find('}')
+                    .ok_or_else(|| anyhow::anyhow!("Unclosed template variable"))?;
+                result.push_str(&resolve(&variable[..end], context)?);
+                rest = &variable[end + 1..];
+            }
+            result.push_str(rest);
             return Ok(result);
         }
-
-        // Direct reference: "event.user_id" -> lookup context["user_id"]
-        // Parse path like "event.user_id" -> ["event", "user_id"]
-        let parts: Vec<&str> = template.split('.').collect();
-        if let Some(key) = parts.last() {
-            if let Some(value) = context.get(*key) {
-                let value_str = match value {
-                    Value::String(s) => s.clone(),
-                    Value::Number(n) => n.to_string(),
-                    Value::Bool(b) => b.to_string(),
-                    _ => return Err(anyhow::anyhow!("Unsupported template value type")),
-                };
-                return Ok(value_str);
-            }
+        if template.starts_with("event.") || context.contains_key(template) {
+            return resolve(template, context);
         }
-
-        // Return as-is if not a template
+        if template.contains("{event.") {
+            return Err(anyhow::anyhow!(
+                "Dimension templates require $ followed by braces"
+            ));
+        }
         Ok(template.to_string())
+    }
+}
+
+#[cfg(test)]
+mod template_tests {
+    use super::*;
+    #[test]
+    fn nested_multiple_and_missing_templates_keep_full_paths() {
+        let context = HashMap::from([
+            (
+                "user".into(),
+                Value::Object(HashMap::from([(
+                    "id".into(),
+                    Value::String("nested".into()),
+                )])),
+            ),
+            ("id".into(), Value::String("flat".into())),
+        ]);
+        assert_eq!(
+            ExpressionEvaluator::substitute_template("${event.user.id}:${event.id}", &context)
+                .unwrap(),
+            "nested:flat"
+        );
+        assert_eq!(
+            ExpressionEvaluator::substitute_template("event.user.id", &context).unwrap(),
+            "nested"
+        );
+        for value in [
+            "event.missing.id",
+            "${event.missing.id}",
+            "${event.id",
+            "{event.user.id}",
+        ] {
+            assert!(
+                ExpressionEvaluator::substitute_template(value, &context).is_err(),
+                "{value}"
+            );
+        }
     }
 }

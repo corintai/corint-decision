@@ -202,7 +202,15 @@ impl PipelineExecutor {
         let start_time = Instant::now();
         self.metrics.counter("executions_total").inc();
 
-        let mut ctx = ExecutionContext::with_result(context_input.clone(), existing_result)?;
+        let mut ctx = if program.metadata.custom.contains_key("core_source") {
+            // Core cannot read legacy vars namespaces. Keep its growing execution
+            // journal in one owned result instead of cloning all prior records.
+            let mut context = ExecutionContext::new(context_input.clone())?;
+            context.result = existing_result;
+            context
+        } else {
+            ExecutionContext::with_result(context_input.clone(), existing_result)?
+        };
         if program.decision_instructions.is_some() && self.ruleset_programs.is_some() {
             ctx.store_variable("__executed_steps__".into(), Value::Array(Vec::new()));
             ctx.store_variable("__core_pipeline_entered__".into(), Value::Bool(false));

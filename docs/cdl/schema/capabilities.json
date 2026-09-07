@@ -37,7 +37,8 @@
       "publication_approval": "not_granted",
       "activates_policy": false,
       "evidence": "../../../crates/corint-decision-cli/tests/candidate.rs",
-      "process_evidence": "../../../crates/corint-decision-cli/tests/core_process_e2e.rs"
+      "process_evidence": "../../../crates/corint-decision-cli/tests/core_process_e2e.rs",
+      "implementation_status": "implemented_in_declared_scope"
     },
     "core_process_e2e": {
       "status": "experimental",
@@ -49,7 +50,8 @@
       "transport": "loopback_tcp_http",
       "live_work_integration": false,
       "business_evaluation": "not_performed",
-      "evidence": "../../../crates/corint-decision-cli/tests/core_process_e2e.rs"
+      "evidence": "../../../crates/corint-decision-cli/tests/core_process_e2e.rs",
+      "implementation_status": "implemented_in_declared_scope"
     },
     "resolve_cli": {
       "status": "experimental",
@@ -64,7 +66,8 @@
       "execution_checked": false,
       "runtime_filesystem_access": false,
       "publication_approval": "not_granted",
-      "evidence": "../../../crates/corint-decision-cli/tests/resolve.rs"
+      "evidence": "../../../crates/corint-decision-cli/tests/resolve.rs",
+      "implementation_status": "implemented_in_declared_scope"
     },
     "core_server": {
       "status": "experimental",
@@ -93,7 +96,8 @@
       "loopback_only": true,
       "publication_history_owner": "repository",
       "business_evaluation": "not_performed",
-      "evidence": "../../../crates/corint-decision-server/tests/core_activation.rs"
+      "evidence": "../../../crates/corint-decision-server/tests/core_activation.rs",
+      "implementation_status": "implemented_in_declared_scope"
     },
     "target_check": {
       "status": "experimental",
@@ -104,7 +108,8 @@
       "live_target_verified": false,
       "business_semantics_checked": false,
       "publication_approval": "not_granted",
-      "evidence": "../../../crates/corint-decision-cli/tests/contracts.rs"
+      "evidence": "../../../crates/corint-decision-cli/tests/contracts.rs",
+      "implementation_status": "implemented_in_declared_scope"
     },
     "source_exchange_cli": {
       "status": "experimental",
@@ -118,7 +123,8 @@
       "filesystem_extraction": false,
       "business_evaluation": "not_performed",
       "publication_approval": "not_granted",
-      "evidence": "../../../crates/corint-decision-cli/tests/transfer.rs"
+      "evidence": "../../../crates/corint-decision-cli/tests/transfer.rs",
+      "implementation_status": "implemented_in_declared_scope"
     },
     "validate_cli": {
       "status": "experimental",
@@ -127,7 +133,8 @@
       "scope": "compile_only",
       "execution_checked": false,
       "business_evaluation": "not_performed",
-      "evidence": "../../../crates/corint-decision-cli/tests/validate.rs"
+      "evidence": "../../../crates/corint-decision-cli/tests/validate.rs",
+      "implementation_status": "implemented_in_declared_scope"
     },
     "test_cli": {
       "status": "experimental",
@@ -139,7 +146,8 @@
         true
       ],
       "business_evaluation": "not_performed",
-      "evidence": "../../../crates/corint-decision-cli/tests/behavior.rs"
+      "evidence": "../../../crates/corint-decision-cli/tests/behavior.rs",
+      "implementation_status": "implemented_in_declared_scope"
     },
     "core_generator": {
       "status": "experimental",
@@ -158,7 +166,8 @@
       "automatic_retries": 0,
       "business_evaluation": "not_performed",
       "publication_approval": "not_granted",
-      "evidence": "../../../crates/corint-decision-llm/tests/core_generation.rs"
+      "evidence": "../../../crates/corint-decision-llm/tests/core_generation.rs",
+      "implementation_status": "implemented_in_declared_scope"
     },
     "source_package_cli": {
       "status": "experimental",
@@ -171,10 +180,43 @@
       "authenticity": "unsigned",
       "publication_approval": "not_granted",
       "business_evaluation": "not_performed",
-      "evidence": "../../../crates/corint-decision-cli/tests/package.rs"
+      "evidence": "../../../crates/corint-decision-cli/tests/package.rs",
+      "implementation_status": "implemented_in_declared_scope"
+    },
+    "decision_replay": {
+      "status": "experimental",
+      "implementation_status": "implemented_in_declared_scope",
+      "entry_point": "corint-decision-toolchain::replay",
+      "scope": "same_executable_offline_core_replay",
+      "commands": [
+        "corint record",
+        "corint replay"
+      ],
+      "schema": "replay-record.json",
+      "evidence": "../../../crates/corint-decision-toolchain/tests/replay.rs"
+    },
+    "feature_input_binding": {
+      "status": "experimental",
+      "implementation_status": "implemented_in_declared_scope",
+      "entry_point": "corint_decision_engine::feature_pipeline::FeaturePipeline",
+      "scope": "sdk_fixed_cutoff_aggregation_expression_before_core",
+      "evidence": "../../../crates/corint-decision-engine/tests/feature_pipeline.rs",
+      "http_enabled": false,
+      "live_work_integration": false
+    },
+    "capacity_benchmark": {
+      "status": "experimental",
+      "implementation_status": "implemented_in_declared_scope",
+      "entry_point": "core_benchmark",
+      "scope": "synthetic_engine_and_loopback_http_measurements",
+      "evidence": "../../../crates/corint-decision-engine/examples/core_benchmark.rs",
+      "commands": [
+        "python3 tests/scripts/run_core_benchmark.py",
+        "python3 tests/scripts/run_core_http_benchmark.py"
+      ]
     }
   },
-  "evidence_scope": "Only the named increment-1 fixtures and tests; not full phase-0 certification",
+  "evidence_scope": "Named executable profiles and evidence only; maturity is independent of scoped implementation status",
   "capabilities": [
     {
       "id": "rule.score",
@@ -313,9 +355,9 @@
   "pending": [
     "import_dependency_version_ranges",
     "full_operand_trace",
-    "production_package_distribution_and_activation",
+    "multi_node_package_distribution_and_activation",
     "live_provider_and_Work_generator_integration",
-    "publication_gate",
+    "enterprise_identity_and_cross_host_publication_trust",
     "complete_cross_product_contracts",
     "full_W01_W10"
   ],
@@ -328,5 +370,15 @@
     ],
     "order": "completion",
     "actions": "local_intents_not_executed"
+  },
+  "contract_revision": "2026-09-06",
+  "stability_policy": "../stability.md",
+  "limits": {
+    "expression_tokens": 4096,
+    "expression_ast_depth": 128,
+    "pipeline_call_depth": 16,
+    "expanded_call_nodes": 4096,
+    "input_object_depth": 16,
+    "input_fields": 1024
   }
 }

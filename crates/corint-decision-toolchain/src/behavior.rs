@@ -176,7 +176,7 @@ fn snapshot(response: DecisionResponse, traced: bool) -> Result<Json, CoreError>
     }))
 }
 
-fn outcome(
+pub(crate) fn outcome(
     result: Result<DecisionResponse, EngineError>,
     traced: bool,
 ) -> (Json, Option<Diagnostic>) {

@@ -1,0 +1,77 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Unsigned local Core decision record v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "format_version",
+    "profile",
+    "policy_sha256",
+    "engine_sha256",
+    "input_sha256",
+    "record_sha256",
+    "replay_input",
+    "observed_input",
+    "outcome",
+    "diagnostic",
+    "condition_trace",
+    "call_trace"
+  ],
+  "properties": {
+    "format_version": {
+      "const": "1"
+    },
+    "profile": {
+      "const": "cdl-core-risk-draft-1"
+    },
+    "policy_sha256": {
+      "$ref": "#/definitions/digest"
+    },
+    "engine_sha256": {
+      "$ref": "#/definitions/digest"
+    },
+    "input_sha256": {
+      "$ref": "#/definitions/digest"
+    },
+    "record_sha256": {
+      "$ref": "#/definitions/digest"
+    },
+    "replay_input": {
+      "type": [
+        "object",
+        "null"
+      ]
+    },
+    "observed_input": {
+      "type": "object"
+    },
+    "outcome": {
+      "type": "object",
+      "minProperties": 1
+    },
+    "diagnostic": {
+      "type": [
+        "object",
+        "null"
+      ]
+    },
+    "condition_trace": {
+      "type": [
+        "array",
+        "null"
+      ]
+    },
+    "call_trace": {
+      "type": [
+        "array",
+        "null"
+      ]
+    }
+  },
+  "definitions": {
+    "digest": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    }
+  }
+}

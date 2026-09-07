@@ -1,0 +1,142 @@
+{
+  "format_version": "1",
+  "scope": "synthetic_loopback_http_v3_journal",
+  "build_mode": "debug",
+  "host": "macOS-26.6.2-arm64-arm-64bit-Mach-O",
+  "measurements": [
+    {
+      "trace": false,
+      "concurrency": 1,
+      "samples": 100,
+      "initial_journal_records": 0,
+      "during_reload": false,
+      "reload_ms": null,
+      "p95_ms": 65.47887506894767,
+      "p99_ms": 68.64866695832461,
+      "requests_per_second": 26.790349674536532
+    },
+    {
+      "trace": false,
+      "concurrency": 1,
+      "samples": 100,
+      "initial_journal_records": 0,
+      "during_reload": true,
+      "reload_ms": 22.880042088218033,
+      "p95_ms": 66.39262498356402,
+      "p99_ms": 68.7941670184955,
+      "requests_per_second": 26.388663852220855
+    },
+    {
+      "trace": false,
+      "concurrency": 4,
+      "samples": 100,
+      "initial_journal_records": 0,
+      "during_reload": false,
+      "reload_ms": null,
+      "p95_ms": 240.78145809471607,
+      "p99_ms": 249.7588749974966,
+      "requests_per_second": 30.52742693701946
+    },
+    {
+      "trace": false,
+      "concurrency": 4,
+      "samples": 100,
+      "initial_journal_records": 0,
+      "during_reload": true,
+      "reload_ms": 24.397167027927935,
+      "p95_ms": 240.54291599895805,
+      "p99_ms": 250.48116594552994,
+      "requests_per_second": 30.18521193275594
+    },
+    {
+      "trace": false,
+      "concurrency": 16,
+      "samples": 100,
+      "initial_journal_records": 0,
+      "during_reload": false,
+      "reload_ms": null,
+      "p95_ms": 898.4613749198616,
+      "p99_ms": 939.2877499340102,
+      "requests_per_second": 30.541402861548548
+    },
+    {
+      "trace": false,
+      "concurrency": 16,
+      "samples": 100,
+      "initial_journal_records": 0,
+      "during_reload": true,
+      "reload_ms": 70.42774988804013,
+      "p95_ms": 906.0222910484299,
+      "p99_ms": 945.8530829288065,
+      "requests_per_second": 30.03177511968263
+    },
+    {
+      "trace": true,
+      "concurrency": 1,
+      "samples": 100,
+      "initial_journal_records": 0,
+      "during_reload": false,
+      "reload_ms": null,
+      "p95_ms": 66.73079205211252,
+      "p99_ms": 69.12991695571691,
+      "requests_per_second": 26.34706534726763
+    },
+    {
+      "trace": true,
+      "concurrency": 1,
+      "samples": 100,
+      "initial_journal_records": 0,
+      "during_reload": true,
+      "reload_ms": 22.803207975812256,
+      "p95_ms": 66.77649996709079,
+      "p99_ms": 69.5430840132758,
+      "requests_per_second": 26.3743608008929
+    },
+    {
+      "trace": true,
+      "concurrency": 4,
+      "samples": 100,
+      "initial_journal_records": 0,
+      "during_reload": false,
+      "reload_ms": null,
+      "p95_ms": 242.30020807590336,
+      "p99_ms": 252.198375063017,
+      "requests_per_second": 29.95109510644588
+    },
+    {
+      "trace": true,
+      "concurrency": 4,
+      "samples": 100,
+      "initial_journal_records": 0,
+      "during_reload": true,
+      "reload_ms": 54.11199992522597,
+      "p95_ms": 242.24191601388156,
+      "p99_ms": 252.38037493545562,
+      "requests_per_second": 29.932071779494937
+    },
+    {
+      "trace": true,
+      "concurrency": 16,
+      "samples": 100,
+      "initial_journal_records": 0,
+      "during_reload": false,
+      "reload_ms": null,
+      "p95_ms": 902.838125010021,
+      "p99_ms": 943.2948339963332,
+      "requests_per_second": 30.36298378110248
+    },
+    {
+      "trace": true,
+      "concurrency": 16,
+      "samples": 100,
+      "initial_journal_records": 0,
+      "during_reload": true,
+      "reload_ms": 27.432375005446374,
+      "p95_ms": 904.2073329910636,
+      "p99_ms": 945.7669159164652,
+      "requests_per_second": 30.288079005902116
+    }
+  ],
+  "live_work_integration": false,
+  "multi_node": false
+}

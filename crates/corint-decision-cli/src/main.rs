@@ -1,5 +1,6 @@
 //! Thin, offline adapter over the shared Core compiler, never a second validator.
 mod candidate;
+mod replay;
 
 use corint_decision_toolchain::{behavior, contracts, package, resolve, transfer};
 
@@ -26,6 +27,8 @@ Usage:
   corint check-target --input-schema PATH --context PATH --target PATH [--expected-binding SHA256] [--format text|json] FILE...
   corint resolve --source-profile cdl-core-import-draft-1 --root DIR --input-schema LABEL --output PATH [--format text|json] ENTRY...
   corint prepare-repository --root DIR --input-schema LABEL --cases PATH --context PATH --target PATH --revision REV --output NEW_DIR [--format text|json] ENTRY...
+  corint record --bundle PATH --event PATH --output NEW_PATH [--visible-fields a,b] [--retain-input] [--trace]
+  corint replay --bundle PATH --record PATH
   corint --help
   corint --version
 
@@ -471,6 +474,12 @@ fn render(report: &Report, json: bool) -> String {
 }
 
 fn run(args: Vec<OsString>) -> (u8, String) {
+    if args
+        .first()
+        .is_some_and(|arg| arg == "record" || arg == "replay")
+    {
+        return replay::run(&args);
+    }
     if args.first().is_some_and(|arg| arg == "prepare-repository") {
         return candidate::run(&args[1..]);
     }

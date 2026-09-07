@@ -45,4 +45,4 @@ server.yaml 的数据源配置通过 `options.query_cache_ttl_secs: "60"` 传递
 
 回归证据见 [Feature 安全与 SQLite 测试](../../crates/corint-decision-runtime/tests/feature_safety.rs)。
 运行：`cargo test -p corint-decision-runtime --all-features --test feature_safety --locked`。
-这些测试不代替外部 Redis、PostgreSQL 或 OLAP 的集成验收。
+固定截止点的 PostgreSQL/SQLite 聚合输入绑定另有真实后端验收，见 [FeaturePipeline](feature-pipeline.md)。其余 PostgreSQL 方法、Redis 与 OLAP 能力仍需分别验收。

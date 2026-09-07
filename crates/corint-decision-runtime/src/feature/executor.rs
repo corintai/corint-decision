@@ -34,6 +34,8 @@ pub struct FeatureExecutor {
 
     /// Feature definitions registry
     features: HashMap<String, FeatureDefinition>,
+    /// Request-owned cutoff, never populated from an untrusted context field.
+    as_of: Option<i64>,
 }
 
 impl FeatureExecutor {
@@ -43,6 +45,7 @@ impl FeatureExecutor {
             cache_manager: CacheManager::new(),
             datasources: HashMap::new(),
             features: HashMap::new(),
+            as_of: None,
         }
     }
 
@@ -321,6 +324,54 @@ impl FeatureExecutor {
         self.execute_features(&feature_names, context).await
     }
 
+    /// Fixed-cutoff aggregation/expression execution. Fresh reads only; callers
+    /// retain the resulting values for historical replay (late data can change SQL).
+    pub async fn execute_features_at(
+        &self,
+        names: &[String],
+        context: &ExecutionContext,
+        as_of: i64,
+    ) -> Result<HashMap<String, Value>> {
+        use super::definition::FeatureType;
+        if chrono::DateTime::from_timestamp(as_of, 0).is_none() {
+            anyhow::bail!("E_FEATURE_TIME: invalid cutoff");
+        }
+        for name in self.sort_by_dependencies(names)? {
+            let feature = &self.features[&name];
+            if !feature.enabled
+                || !matches!(
+                    feature.feature_type,
+                    FeatureType::Aggregation | FeatureType::Expression
+                )
+            {
+                anyhow::bail!("E_FEATURE_CAPABILITY: fixed-cutoff feature '{name}' must be an enabled aggregation or expression");
+            }
+            if let Some(config) = &feature.aggregation {
+                if config.window.is_none() {
+                    anyhow::bail!(
+                        "E_FEATURE_TIME: fixed-cutoff aggregation '{name}' needs a window"
+                    );
+                }
+                let datasource = self
+                    .datasources
+                    .get(&config.datasource)
+                    .with_context(|| format!("Data source '{}' not found", config.datasource))?;
+                if datasource.query_cache_ttl_secs() != 0 {
+                    anyhow::bail!(
+                        "E_FEATURE_FRESHNESS: fixed-cutoff execution requires query cache TTL 0"
+                    );
+                }
+            }
+        }
+        let request = Self {
+            cache_manager: CacheManager::new(),
+            datasources: self.datasources.clone(),
+            features: self.features.clone(),
+            as_of: Some(as_of),
+        };
+        request.execute_features(names, context).await
+    }
+
     /// Compute a feature value (no caching)
     async fn compute_feature(
         &self,
@@ -442,7 +493,18 @@ impl FeatureExecutor {
                     )
                 })?;
                 Ok::<_, anyhow::Error>(TimeWindow {
-                    window_type: TimeWindowType::Relative(relative),
+                    window_type: if let Some(end) = self.as_of {
+                        let seconds = i64::try_from(relative.to_seconds())?;
+                        let start = end
+                            .checked_sub(seconds)
+                            .ok_or_else(|| anyhow::anyhow!("E_FEATURE_TIME: cutoff underflow"))?;
+                        if chrono::DateTime::from_timestamp(start, 0).is_none() {
+                            anyhow::bail!("E_FEATURE_TIME: invalid window start");
+                        }
+                        TimeWindowType::Absolute { start, end }
+                    } else {
+                        TimeWindowType::Relative(relative)
+                    },
                     time_field: config
                         .timestamp_field
                         .clone()

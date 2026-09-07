@@ -1,0 +1,6 @@
+rule:
+  id: large_amount
+  name: Large amount
+  when: event.amount > 1000
+  score: 60
+version: "0.1"

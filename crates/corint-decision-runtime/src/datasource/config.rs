@@ -19,7 +19,7 @@ pub struct DataSourceConfig {
     #[serde(default = "default_pool_size")]
     pub pool_size: u32,
 
-    /// Connection timeout in milliseconds
+    /// Query deadline in milliseconds (connection setup is provider-specific)
     #[serde(default = "default_timeout")]
     pub timeout_ms: u64,
 

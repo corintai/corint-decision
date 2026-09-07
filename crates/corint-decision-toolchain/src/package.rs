@@ -55,7 +55,7 @@ struct Policy {
     input_schema: Document,
     sources: Vec<Document>,
 }
-#[derive(Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 struct Tool {
     version: String,
@@ -153,6 +153,13 @@ pub(crate) fn json_hash(domain: &str, value: Value) -> String {
 }
 
 fn tool() -> Result<Tool, CoreError> {
+    // The running executable is immutable for this process. Reopening and hashing
+    // it for every decision/replay is expensive and can misidentify a process if
+    // its executable pathname is replaced by a later deployment.
+    static IDENTITY: std::sync::OnceLock<Tool> = std::sync::OnceLock::new();
+    if let Some(tool) = IDENTITY.get() {
+        return Ok(tool.clone());
+    }
     let io_error = |e: std::io::Error| failure("<tool>", "load", "E_IO", e.to_string());
     let executable = std::env::current_exe().map_err(io_error)?;
     let mut file = std::fs::File::open(executable).map_err(io_error)?;
@@ -165,10 +172,12 @@ fn tool() -> Result<Tool, CoreError> {
         }
         hasher.update(&buffer[..count]);
     }
-    Ok(Tool {
+    let tool = Tool {
         version: env!("CARGO_PKG_VERSION").into(),
         executable_sha256: format!("{hasher:x}", hasher = hasher.finalize()),
-    })
+    };
+    let _ = IDENTITY.set(tool.clone());
+    Ok(tool)
 }
 
 fn canonical_sources(sources: &[CoreSource]) -> Result<Vec<Document>, CoreError> {

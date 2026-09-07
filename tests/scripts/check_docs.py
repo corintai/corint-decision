@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Check every docs page's declared scope, local links and executable example bindings."""
 import json
+import hashlib
 import re
 from pathlib import Path
 from urllib.parse import unquote, urlsplit
@@ -11,6 +12,39 @@ inventory = json.loads((DOCS / "inventory.json").read_text())
 pages = {page["path"]: page for page in inventory["pages"]}
 actual = {str(path.relative_to(DOCS)) for path in DOCS.rglob("*.md")}
 errors = []
+capabilities = json.loads((DOCS / "cdl/schema/capabilities.json").read_text())
+if not (DOCS / "cdl/schema" / capabilities["stability_policy"]).is_file():
+    errors.append("Missing version and stability contract")
+for name, tool in capabilities["tools"].items():
+    if not tool.get("scope") or tool.get("implementation_status") != "implemented_in_declared_scope":
+        errors.append(f"Tool {name}: declare implementation scope separately from maturity")
+    evidence = tool.get("evidence")
+    if not evidence or not (DOCS / "cdl/schema" / evidence).is_file():
+        errors.append(f"Tool {name}: missing evidence")
+snippet_manifest = json.loads((DOCS / "cdl/snippets.json").read_text())
+snippet_ids = set()
+for page_name in json.loads((DOCS / "cdl/examples.json").read_text())["compatibility_pages"]:
+    page_text = (DOCS / "cdl" / page_name).read_text()
+    blocks = re.findall(r"^```([^\n]*)\n(.*?)^```\s*$", page_text, re.M | re.S)
+    bindings = [s for s in snippet_manifest["snippets"] if s["page"] == page_name]
+    if len(bindings) != len(blocks):
+        errors.append(f"{page_name}: every historical block must have an explicit classification")
+    for index, (language, code) in enumerate(blocks, 1):
+        matches = [s for s in bindings if s["block"] == index]
+        if len(matches) != 1:
+            errors.append(f"{page_name} block {index}: missing/duplicate binding")
+            continue
+        binding = matches[0]
+        if binding["id"] in snippet_ids:
+            errors.append(f"Duplicate snippet ID {binding['id']}")
+        snippet_ids.add(binding["id"])
+        if binding["sha256"] != hashlib.sha256(code.encode()).hexdigest() or binding["language"] != language:
+            errors.append(f"{page_name} block {index}: content changed; reclassify and run snippet admission tests")
+        expected = "core-negative" if language in {"yaml", "json"} else "syntax-reference"
+        if binding["kind"] != expected and not (binding["kind"] == "core-fragment" and binding.get("wrapper")):
+            errors.append(f"{page_name} block {index}: promote supported examples into executable fixtures")
+if snippet_ids != {s["id"] for s in snippet_manifest["snippets"]}:
+    errors.append("Stale snippet bindings")
 if len(pages) != len(inventory["pages"]) or actual != set(pages):
     errors.append(f"Document inventory mismatch: missing={actual-set(pages)}, stale={set(pages)-actual}")
 for name in sorted(actual):

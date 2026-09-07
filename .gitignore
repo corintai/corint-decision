@@ -42,3 +42,5 @@ corint.db
 
 temp
 clickhouse
+# Python check scripts
+__pycache__/

@@ -25,6 +25,9 @@ pub struct DataSourceClient {
 }
 
 impl DataSourceClient {
+    pub fn query_cache_ttl_secs(&self) -> u64 {
+        self.config.query_cache_ttl_secs
+    }
     /// Create a new data source client
     pub async fn new(config: DataSourceConfig) -> Result<Self> {
         let client: Box<dyn DataSourceImpl> = match &config.source_type {
@@ -62,7 +65,14 @@ impl DataSourceClient {
             }
         }
         let start = Instant::now();
-        let mut result = self.client.execute(query).await?;
+        let mut result = tokio::time::timeout(
+            Duration::from_millis(self.config.timeout_ms),
+            self.client.execute(query),
+        )
+        .await
+        .map_err(|_| {
+            RuntimeError::InvalidOperation("E_DATASOURCE_TIMEOUT: query deadline exceeded".into())
+        })??;
         result.execution_time_ms = start.elapsed().as_millis() as u64;
         result.source = self.config.name.clone();
         result.from_cache = false;

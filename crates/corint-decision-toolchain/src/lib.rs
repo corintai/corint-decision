@@ -6,6 +6,7 @@ pub mod candidate;
 pub mod contracts;
 pub mod package;
 pub mod phase0;
+pub mod replay;
 pub mod repository;
 pub mod resolve;
 pub mod transfer;

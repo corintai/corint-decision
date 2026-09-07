@@ -181,6 +181,22 @@
     {
       "path": "schema/README.md",
       "scope": "navigation"
+    },
+    {
+      "path": "cdl/stability.md",
+      "scope": "contract"
+    },
+    {
+      "path": "cdl/replay.md",
+      "scope": "contract"
+    },
+    {
+      "path": "contracts/feature-pipeline.md",
+      "scope": "contract"
+    },
+    {
+      "path": "cdl/stabilization.md",
+      "scope": "contract"
     }
   ],
   "executable_examples": [
