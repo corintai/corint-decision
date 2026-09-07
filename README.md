@@ -532,6 +532,16 @@ cargo build
 - ✅ Show request/response for each test case
 - ✅ Validate expected vs actual decisions
 
+The demo generates temporary bearer credentials (or uses exported
+`CORINT_DECISION_TOKEN`, `CORINT_PUBLISHER_TOKEN`, and `CORINT_TENANT_ID`) and
+sends authenticated requests. Occupied ports are left running; the demo selects
+available ports and prints the endpoints. It prepares a repository under `temp/`
+containing the transaction and login scenarios, so SQLite mode does not require
+Redis or the PostgreSQL list examples. Unless Redis is selected, profile lookups
+are disabled (their feature values are `null`); event history features still query
+the selected database. HTTP errors are displayed with their status and original
+response body. Auto-run exits with a nonzero status if any scenario fails.
+
 ### Option 2: Manual Setup
 
 For manual control and custom configuration:

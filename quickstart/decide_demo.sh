@@ -20,7 +20,6 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 CONFIG_FILE="${PROJECT_ROOT}/config/server.yaml"
-CONFIG_EXAMPLE="${PROJECT_ROOT}/config/server-example.yaml"
 TEMP_DIR="${PROJECT_ROOT}/temp"
 
 # Ensure temp directory exists
@@ -70,6 +69,7 @@ GRPC_HOST=""
 PROTOCOL=""
 DATASOURCE=""
 SERVER_PID=""
+TEST_FAILURES=0
 
 # ============================================================================
 # Helper Functions
@@ -632,47 +632,98 @@ initialize_data() {
 # Server Management
 # ============================================================================
 
+# Keep the demo self-contained without stopping unrelated local services.
+configure_demo_server() {
+    local tool
+    for tool in jq curl lsof; do
+        if ! command -v "$tool" >/dev/null 2>&1; then
+            print_error "$tool is required for the interactive demo"
+            exit 1
+        fi
+    done
+
+    local port original_port
+    for port in HTTP_PORT GRPC_PORT; do
+        original_port="${!port}"
+        while lsof -nP -iTCP:"${!port}" -sTCP:LISTEN >/dev/null 2>&1 ||
+            { [ "$port" = "GRPC_PORT" ] && [ "$GRPC_PORT" = "$HTTP_PORT" ]; }; do
+            printf -v "$port" '%d' "$((${!port} + 1))"
+            if [ "${!port}" -gt 65535 ]; then
+                print_error "No available port at or above ${original_port}"
+                exit 1
+            fi
+        done
+        if [ "${!port}" != "$original_port" ]; then
+            print_warn "Port ${original_port} is occupied; using ${!port} for ${port}"
+        fi
+    done
+
+    # Only load the pipelines/features exercised by this demo. The main repository
+    # also contains backend examples that require external services.
+    local demo_repository
+    demo_repository=$(mktemp -d "${TEMP_DIR}/demo_repository_XXXXXX")
+    mkdir -p "$demo_repository/pipelines" "$demo_repository/features"
+    cp -R "${PROJECT_ROOT}/repository/rules" "${PROJECT_ROOT}/repository/rulesets" "$demo_repository/"
+    cp "${PROJECT_ROOT}/repository/pipelines/fraud_detection.yaml" \
+        "${PROJECT_ROOT}/repository/pipelines/login_risk_pipeline.yaml" "$demo_repository/pipelines/"
+    local feature_file
+    for feature_file in user_features device_features ip_features statistical_features; do
+        if [ "$DATASOURCE" = "redis" ]; then
+            cp "${PROJECT_ROOT}/repository/features/${feature_file}.yaml" "$demo_repository/features/"
+        else
+            # Profile lookups are unavailable in event-database-only demos.
+            # Disabled features return null; event history still computes normally.
+            awk '{ print } /^[[:space:]]+type: lookup/ { print "    enabled: false" }' \
+                "${PROJECT_ROOT}/repository/features/${feature_file}.yaml" \
+                > "$demo_repository/features/${feature_file}.yaml"
+        fi
+    done
+    cat > "$demo_repository/registry.yaml" <<'EOF'
+version: "0.1"
+registry:
+  - pipeline: fraud_detection_pipeline
+    when: event.type == "transaction"
+  - pipeline: login_risk_pipeline
+    when: event.type == "login"
+EOF
+
+    local updated_config
+    updated_config=$(mktemp "${TEMP_DIR}/server_config_XXXXXX")
+    awk -v http="$HTTP_PORT" -v grpc="$GRPC_PORT" -v repo="$demo_repository" -v ds="$DATASOURCE" '
+        /^[^[:space:]#]/ { in_server=0; in_repo=0; in_datasource=0 }
+        /^server:/ { in_server=1; print; next }
+        /^repository:/ { in_repo=1; print; next }
+        /^datasource:/ { in_datasource=1; keep=0; print; next }
+        in_datasource && /^  [^[:space:]#][^:]*:/ {
+            keep=($1 == "events_datasource:" || (ds == "redis" && $1 == "lookup_datasource:"))
+        }
+        in_datasource && !keep { next }
+        in_repo && /^[[:space:]]+path:/ { print "  path: \"" repo "\""; next }
+        in_server && /^[[:space:]]+port:/ { print "  port: " http; next }
+        in_server && /^[[:space:]]+grpc_port:/ { print "  grpc_port: " grpc; next }
+        { print }
+    ' "$CONFIG_FILE" > "$updated_config"
+    mv "$updated_config" "$CONFIG_FILE"
+    read_config
+
+    # Generate separate ephemeral roles when the caller has not supplied them.
+    if [ -z "${CORINT_DECISION_TOKEN:-}" ]; then
+        CORINT_DECISION_TOKEN=$(od -An -N32 -tx1 /dev/urandom | tr -d ' \n')
+    fi
+    if [ -z "${CORINT_PUBLISHER_TOKEN:-}" ]; then
+        CORINT_PUBLISHER_TOKEN=$(od -An -N32 -tx1 /dev/urandom | tr -d ' \n')
+    fi
+    CORINT_TENANT_ID="${CORINT_TENANT_ID:-quickstart}"
+    export CORINT_DECISION_TOKEN CORINT_PUBLISHER_TOKEN CORINT_TENANT_ID
+}
+
 start_server() {
     print_section "Starting CORINT Server"
 
-    # Check and kill processes occupying HTTP port
-    local http_port_pid=""
-    http_port_pid=$(lsof -t -i ":${HTTP_PORT}" 2>/dev/null || true)
-    if [ -n "$http_port_pid" ]; then
-        print_warn "Port ${HTTP_PORT} is occupied by process: $http_port_pid"
-        print_info "Killing process $http_port_pid..."
-        kill "$http_port_pid" 2>/dev/null || true
-        sleep 1
-        # Force kill if still running
-        if kill -0 "$http_port_pid" 2>/dev/null; then
-            kill -9 "$http_port_pid" 2>/dev/null || true
-            sleep 1
-        fi
-        print_success "Process on port ${HTTP_PORT} killed"
-    fi
-
-    # Check and kill processes occupying gRPC port (if configured)
-    if [ -n "${GRPC_PORT:-}" ]; then
-        local grpc_port_pid=""
-        grpc_port_pid=$(lsof -t -i ":${GRPC_PORT}" 2>/dev/null || true)
-        if [ -n "$grpc_port_pid" ]; then
-            print_warn "Port ${GRPC_PORT} is occupied by process: $grpc_port_pid"
-            print_info "Killing process $grpc_port_pid..."
-            kill "$grpc_port_pid" 2>/dev/null || true
-            sleep 1
-            # Force kill if still running
-            if kill -0 "$grpc_port_pid" 2>/dev/null; then
-                kill -9 "$grpc_port_pid" 2>/dev/null || true
-                sleep 1
-            fi
-            print_success "Process on port ${GRPC_PORT} killed"
-        fi
-    fi
-
-    # Build the server
+    # Build failures must not be hidden by tail's successful exit status.
     print_info "Building server (release mode)..."
     cd "$PROJECT_ROOT"
-    if ! cargo build --release -p corint-decision-server 2>&1 | tail -10; then
+    if ! (set -o pipefail; cargo build --release -p corint-decision-server 2>&1 | tail -10); then
         print_error "Failed to build server"
         exit 1
     fi
@@ -692,33 +743,27 @@ start_server() {
     local max_wait=60
     local waited=0
 
-    # Disable set -e temporarily for health check loop
-    set +e
     while true; do
-        if curl -s "http://${HTTP_HOST}/health" &>/dev/null; then
-            break
-        fi
-
-        # Check if process is still running
+        # Check our child before probing: another service may answer on this port.
         if ! kill -0 "$SERVER_PID" 2>/dev/null; then
             print_error "Server process exited unexpectedly"
-            echo ""
-            echo -e "${YELLOW}Last 20 lines of server log:${NC}"
-            tail -20 "${log_file}" 2>/dev/null || echo "(no log available)"
+            tail -20 "${log_file}" 2>/dev/null || true
             exit 1
+        fi
+
+        if http_health_check 2>/dev/null | jq -e '.status == "healthy"' >/dev/null 2>&1 &&
+            lsof -nP -a -p "$SERVER_PID" -iTCP:"${HTTP_PORT}" -sTCP:LISTEN >/dev/null 2>&1; then
+            break
         fi
 
         sleep 1
         waited=$((waited + 1))
         if [ $waited -ge $max_wait ]; then
             print_error "Server failed to start within ${max_wait} seconds"
-            echo ""
-            echo -e "${YELLOW}Last 20 lines of server log:${NC}"
-            tail -20 "${log_file}" 2>/dev/null || echo "(no log available)"
+            tail -20 "${log_file}" 2>/dev/null || true
             exit 1
         fi
     done
-    set -e
 
     print_success "Server started successfully (PID: $SERVER_PID)"
 }
@@ -726,6 +771,29 @@ start_server() {
 # ============================================================================
 # HTTP Test Functions
 # ============================================================================
+
+# Return successful bodies unchanged; retain the real HTTP error for the user.
+http_post_decision() {
+    local result status body
+    if ! result=$(curl -sS --connect-timeout 5 --max-time 60 \
+        -w '\n%{http_code}' -X POST "http://${HTTP_HOST}/v1/decide" \
+        -H "Content-Type: application/json" \
+        -H "Authorization: Bearer ${CORINT_DECISION_TOKEN}" \
+        -d "$1"); then
+        print_error "Decision request failed: http://${HTTP_HOST}/v1/decide" >&2
+        return 1
+    fi
+    status="${result##*$'\n'}"
+    body="${result%$'\n'*}"
+    case "$status" in
+        2??) printf '%s\n' "$body" ;;
+        *)
+            print_error "Decision API returned HTTP ${status}" >&2
+            printf '%s\n' "$body" >&2
+            return 1
+            ;;
+    esac
+}
 
 http_decide() {
     local user_id="$1"
@@ -759,13 +827,11 @@ http_decide() {
 EOF
 )
 
-    curl -s -X POST "http://${HTTP_HOST}/v1/decide" \
-        -H "Content-Type: application/json" \
-        -d "$payload"
+    http_post_decision "$payload"
 }
 
 http_health_check() {
-    curl -s -X GET "http://${HTTP_HOST}/health"
+    curl -fsS --connect-timeout 1 --max-time 2 -X GET "http://${HTTP_HOST}/health"
 }
 
 # ============================================================================
@@ -779,7 +845,7 @@ grpc_decide() {
     local device_id="${4:-device_001}"
     local ip_address="${5:-192.168.1.1}"
 
-    grpcurl -plaintext -d "{
+    grpcurl -plaintext -H "authorization: Bearer ${CORINT_DECISION_TOKEN}" -d "{
         \"event\": {
             \"user_id\": {\"string_value\": \"${user_id}\"},
             \"type\": {\"string_value\": \"${event_type}\"},
@@ -816,6 +882,7 @@ run_test() {
 
     local response=""
     local request=""
+    local actual_decision expected_decision upper_actual upper_expected
     if [ "$PROTOCOL" = "http" ]; then
         request=$(cat <<EOF
 {
@@ -841,9 +908,11 @@ EOF
         echo "$request" | jq . 2>/dev/null || echo "$request"
         echo ""
 
-        response=$(curl -s -X POST "http://${HTTP_HOST}/v1/decide" \
-            -H "Content-Type: application/json" \
-            -d "$request")
+        if ! response=$(http_post_decision "$request"); then
+            print_error "RESULT: ERROR - ${name} (request failed)"
+            TEST_FAILURES=$((TEST_FAILURES + 1))
+            return 0
+        fi
     else
         request="{
   \"event\": {
@@ -858,22 +927,31 @@ EOF
         echo "$request" | jq . 2>/dev/null || echo "$request"
         echo ""
 
-        response=$(grpc_decide "$user_id" "$event_type" "$amount" "$device_id" "$ip_address")
+        if ! response=$(grpc_decide "$user_id" "$event_type" "$amount" "$device_id" "$ip_address"); then
+            print_error "RESULT: ERROR - ${name} (gRPC request failed)"
+            TEST_FAILURES=$((TEST_FAILURES + 1))
+            return 0
+        fi
     fi
 
     echo -e "${CYAN}Response:${NC}"
     if command -v jq &> /dev/null; then
-        # Show simplified response
+        if ! echo "$response" | jq -e '
+            type == "object" and (.decision.result | type == "string" and length > 0)
+        ' >/dev/null 2>&1; then
+            echo "$response" | jq . 2>/dev/null || echo "$response"
+            print_error "RESULT: ERROR - Response has no decision.result"
+            TEST_FAILURES=$((TEST_FAILURES + 1))
+            return 0
+        fi
         echo "$response" | jq '{
-            request_id: .request_id,
-            pipeline_id: .pipeline_id,
+            request_id: (.request_id // .requestId),
+            pipeline_id: (.pipeline_id // .pipelineId),
             status: .status,
             decision: .decision,
-            process_time_ms: .process_time_ms
-        }' 2>/dev/null || echo "$response"
-        
-        # Extract the actual decision from response - get the result field from the decision object
-        actual_decision=$(echo "$response" | jq -r '.decision.result // .decision // empty' 2>/dev/null)
+            process_time_ms: (.process_time_ms // .processTimeMs // 0)
+        }'
+        actual_decision=$(echo "$response" | jq -r '.decision.result')
     else
         # Simple extraction without jq - try to get the result field from decision object
         actual_decision=$(echo "$response" | sed -n 's/.*"result"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)
@@ -895,9 +973,11 @@ EOF
             echo -e "${GREEN}RESULT: PASS - Expected '${expected_decision}', got '${actual_decision}'${NC}"
         else
             echo -e "${RED}RESULT: FAIL - Expected '${expected_decision}', got '${actual_decision}'${NC}"
+            TEST_FAILURES=$((TEST_FAILURES + 1))
         fi
     else
         echo -e "${YELLOW}WARNING: Could not compare decisions (expected: '$expected', actual: '$actual_decision')${NC}"
+        TEST_FAILURES=$((TEST_FAILURES + 1))
     fi
     
     echo ""
@@ -1108,12 +1188,10 @@ run_review_scenarios() {
 main() {
     print_header "CORINT Decision Engine - Interactive Test"
 
-    # Read configuration from config/server.yaml
-    read_config
-    print_info "Config: HTTP=${HTTP_HOST}, gRPC=${GRPC_HOST}"
-
-    # Step 1: Select data source
+    # Step 1: Select data source, then copy and read its configuration
     select_datasource
+    configure_demo_server
+    print_info "Config: HTTP=${HTTP_HOST}, gRPC=${GRPC_HOST}"
 
     # Step 1.5: Check database availability (if not SQLite)
     check_database_availability
@@ -1131,7 +1209,7 @@ main() {
     print_section "Health Check"
     local health
     health=$(http_health_check) || true
-    if echo "$health" | grep -q "healthy\|ok"; then
+    if echo "$health" | jq -e '.status == "healthy"' >/dev/null 2>&1; then
         print_success "Server is healthy"
         echo "$health" | jq . 2>/dev/null || echo "$health"
     else
@@ -1156,7 +1234,11 @@ main() {
         run_all_scenarios
 
         print_section "Auto-Run Complete"
-        print_success "All test scenarios completed!"
+        if [ "$TEST_FAILURES" -gt 0 ]; then
+            print_error "${TEST_FAILURES} test scenario(s) failed"
+            return 1
+        fi
+        print_success "All test scenarios passed!"
 
         # Keep server running if requested
         if [ "${KEEP_SERVER_RUNNING:-}" = "true" ]; then
@@ -1239,5 +1321,7 @@ main() {
     echo ""
 }
 
-# Run main
-main
+# Run main only when executed, so regression checks can source the helpers.
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+    main
+fi

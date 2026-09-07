@@ -278,7 +278,7 @@ fn default_log_level() -> String {
 #[derive(Clone, Serialize, Deserialize, Default)]
 pub struct ServerConfig {
     /// Server settings (host, port, metrics, tracing, logging)
-    #[serde(default, flatten)]
+    #[serde(default, flatten, deserialize_with = "deserialize_server_settings")]
     pub server: ServerSettings,
 
     /// Repository configuration for loading rules
@@ -298,6 +298,22 @@ pub struct ServerConfig {
     /// If not set, decision results will not be persisted to database
     #[serde(default)]
     pub database_url: Option<String>,
+}
+
+// Accept the documented `server:` section as well as legacy top-level settings.
+// Nested settings take precedence when both forms are present.
+fn deserialize_server_settings<'de, D>(deserializer: D) -> Result<ServerSettings, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    #[derive(Deserialize)]
+    struct Settings {
+        server: Option<ServerSettings>,
+        #[serde(flatten)]
+        legacy: ServerSettings,
+    }
+    let settings = Settings::deserialize(deserializer)?;
+    Ok(settings.server.unwrap_or(settings.legacy))
 }
 
 impl Default for ServerSettings {
@@ -364,6 +380,48 @@ impl std::fmt::Debug for ServerConfig {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_nested_server_settings() {
+        let config: ServerConfig = serde_yaml::from_str(
+            "server:\n  host: 127.0.0.2\n  port: 18081\n  grpc_port: 15052\n  enable_metrics: false\n  enable_tracing: false\n  log_level: debug\nrepository:\n  type: filesystem\n  path: demo\n",
+        ).unwrap();
+        assert_eq!(config.server.host, "127.0.0.2");
+        assert_eq!(config.server.port, 18081);
+        assert_eq!(config.server.grpc_port, Some(15052));
+        assert!(!config.server.enable_metrics);
+        assert!(!config.server.enable_tracing);
+        assert_eq!(config.server.log_level, "debug");
+        assert!(
+            matches!(config.repository, RepositoryType::FileSystem { path } if path == PathBuf::from("demo"))
+        );
+    }
+
+    #[test]
+    fn test_legacy_server_settings_and_nested_precedence() {
+        let legacy: ServerConfig =
+            serde_yaml::from_str("host: 127.0.0.2\nport: 18081\ngrpc_port: 15052\n").unwrap();
+        assert_eq!(legacy.server.host, "127.0.0.2");
+        assert_eq!(legacy.server.port, 18081);
+        assert_eq!(legacy.server.grpc_port, Some(15052));
+
+        let nested: ServerConfig =
+            serde_yaml::from_str("port: 8080\nserver:\n  port: 18081\n").unwrap();
+        assert_eq!(nested.server.port, 18081);
+        assert_eq!(nested.server.host, "127.0.0.1");
+    }
+
+    #[test]
+    fn test_quickstart_server_templates_enable_grpc() {
+        for template in [
+            include_str!("../../../quickstart/config/server-sqlite.yaml"),
+            include_str!("../../../quickstart/config/server-postgresql.yaml"),
+            include_str!("../../../quickstart/config/server-clickhouse.yaml"),
+        ] {
+            let config: ServerConfig = serde_yaml::from_str(template).unwrap();
+            assert_eq!(config.server.grpc_port, Some(50051));
+        }
+    }
 
     #[test]
     fn test_server_config_default() {
