@@ -7,7 +7,6 @@ import:
   rulesets:
     - rulesets/payment_base.yaml
 
----
 
 ruleset:
   id: payment_standard_v2

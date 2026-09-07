@@ -136,7 +136,6 @@ import:
   pipelines:
     - library/pipelines/high_value_verification.yaml
 
----
 
 pipeline:
   id: comprehensive_fraud_pipeline

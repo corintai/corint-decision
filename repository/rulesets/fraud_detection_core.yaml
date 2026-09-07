@@ -13,7 +13,6 @@ import:
     - rules/fraud/new_user_fraud.yaml
     - rules/fraud/login_velocity.yaml
 
----
 
 ruleset:
   id: fraud_detection_core

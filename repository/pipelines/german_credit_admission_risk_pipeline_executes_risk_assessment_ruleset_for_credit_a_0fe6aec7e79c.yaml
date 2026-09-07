@@ -2,7 +2,7 @@ version: '0.1'
 import:
   rulesets:
   - rulesets/german_credit_admission_risk_ruleset_comprehensive_risk_assessment_for_credit_admis_534c9dc19a3d.yaml
----
+
 pipeline:
   id: german_credit_admission_risk_pipeline_executes_risk_assessment_ruleset_for_credit_a_0fe6aec7e79c
   name: German Credit Admission Risk Pipeline - executes risk assessment ruleset for credit admission decisions

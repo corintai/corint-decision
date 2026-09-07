@@ -15,7 +15,6 @@ import:
     - rules/fraud/account_takeover.yaml
     - rules/fraud/login_velocity.yaml
 
----
 
 ruleset:
   id: login_risk

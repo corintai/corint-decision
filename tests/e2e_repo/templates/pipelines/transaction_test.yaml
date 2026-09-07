@@ -4,7 +4,6 @@ version: "0.1"
 # E2E Test Pipeline - Transaction Flow
 # ========================================
 
----
 
 pipeline:
   id: transaction_test_pipeline
@@ -38,7 +37,6 @@ pipeline:
       result: approve
       reason: "Transaction approved"
 
----
 
 # ========================================
 # Rules
@@ -54,7 +52,6 @@ rule:
       - event.user_id in list.blocked_users
   score: 1000
 
----
 
 # Rule: High Value New User
 rule:
@@ -67,7 +64,6 @@ rule:
       - features.user_total_transactions < 5
   score: 80
 
----
 
 # Rule: Amount Spike
 rule:
@@ -79,7 +75,6 @@ rule:
       - features.ratio_txn_to_avg > 3.0
   score: 60
 
----
 
 # Rule: High Frequency 1h
 rule:
@@ -91,7 +86,6 @@ rule:
       - features.txn_count_1h >= 5
   score: 70
 
----
 
 # Rule: High Frequency 24h
 rule:
@@ -103,7 +97,6 @@ rule:
       - features.txn_count_24h >= 15
   score: 50
 
----
 
 # Rule: High Risk Country
 rule:
@@ -115,7 +108,6 @@ rule:
       - event.country in list.high_risk_countries
   score: 90
 
----
 
 # Rule: Multiple Countries
 rule:
@@ -127,7 +119,6 @@ rule:
       - features.unique_countries_30d >= 3
   score: 30
 
----
 
 # Rule: Email Blocked (File Backend List Test)
 rule:
@@ -139,7 +130,6 @@ rule:
       - event.email in list.blocked_emails
   score: 1000
 
----
 
 # Rule: Low Weekly Activity
 rule:
@@ -152,7 +142,6 @@ rule:
       - event.amount > 2000
   score: 60
 
----
 
 # Rule: Unusual Total Spending
 rule:
@@ -165,7 +154,6 @@ rule:
       - event.amount > 5000
   score: 40
 
----
 
 # Rule: Large Transaction vs Average
 rule:
@@ -178,7 +166,6 @@ rule:
       - event.amount > features.avg_transaction_amount * 5
   score: 60
 
----
 
 # Rule: Exceeds Max History
 rule:
@@ -191,7 +178,6 @@ rule:
       - event.amount > features.max_transaction_amount * 1.5
   score: 65
 
----
 
 # Rule: Micro Transaction Pattern
 rule:
@@ -204,7 +190,6 @@ rule:
       - event.amount > 3000
   score: 35
 
----
 
 # Rule: Recent Spending Spike
 rule:
@@ -217,7 +202,6 @@ rule:
       - features.avg_transaction_amount_7d > features.avg_transaction_amount * 2
   score: 55
 
----
 
 # Rule: Velocity Spike
 rule:
@@ -229,7 +213,6 @@ rule:
       - features.txn_velocity_1h_to_24h > 10
   score: 70
 
----
 
 # Rule: Amount Concentration
 rule:
@@ -241,7 +224,6 @@ rule:
       - features.amount_concentration_24h > 0.8
   score: 110
 
----
 
 # Rule: Wide Amount Range
 rule:
@@ -253,7 +235,6 @@ rule:
       - features.txn_amount_range_30d > 5000
   score: 35
 
----
 
 # Rule: Spending Acceleration
 rule:
@@ -265,7 +246,6 @@ rule:
       - features.avg_amount_acceleration > 2.5
   score: 55
 
----
 
 # Rule: Multiple Devices 24h
 rule:
@@ -277,7 +257,6 @@ rule:
       - features.unique_devices_24h >= 3
   score: 80
 
----
 
 # Rule: High Device Activity
 rule:
@@ -289,7 +268,6 @@ rule:
       - features.txn_count_by_device_24h >= 10
   score: 80
 
----
 
 # ========================================
 # Ruleset

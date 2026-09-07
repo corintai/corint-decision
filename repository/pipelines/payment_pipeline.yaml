@@ -8,7 +8,6 @@ import:
     - rulesets/payment_high_value.yaml
     - rulesets/payment_standard.yaml
 
----
 
 pipeline:
   id: payment_risk_pipeline

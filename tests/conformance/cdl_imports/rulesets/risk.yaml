@@ -1,7 +1,7 @@
 version: "0.1"
 import:
   rules: [rules/amount.yaml]
----
+
 ruleset:
   id: risk
   rules: [large_amount]

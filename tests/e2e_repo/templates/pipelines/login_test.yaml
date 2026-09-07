@@ -4,7 +4,6 @@ version: "0.1"
 # E2E Test Pipeline - Login Flow
 # ========================================
 
----
 
 pipeline:
   id: login_test_pipeline
@@ -38,7 +37,6 @@ pipeline:
       result: approve
       reason: "Login approved"
 
----
 
 # ========================================
 # Rules
@@ -54,7 +52,6 @@ rule:
       - event.ip_address in list.blocked_ips
   score: 1000
 
----
 
 # Rule: Excessive Failed Logins
 rule:
@@ -66,7 +63,6 @@ rule:
       - features.failed_login_count_24h >= 5
   score: 200
 
----
 
 # Rule: Multiple Failed Logins
 rule:
@@ -78,7 +74,6 @@ rule:
       - features.failed_login_count_24h >= 3
   score: 100
 
----
 
 # Rule: New Device High Risk Country
 rule:
@@ -91,7 +86,6 @@ rule:
       - event.country in list.high_risk_countries
   score: 90
 
----
 
 # Rule: Unusual Device Count
 rule:
@@ -103,7 +97,6 @@ rule:
       - features.unique_devices_7d >= 5
   score: 60
 
----
 
 # Rule: Location Hopping
 rule:
@@ -115,7 +108,6 @@ rule:
       - features.unique_countries_30d >= 4
   score: 50
 
----
 
 # Rule: Low Login History
 rule:
@@ -128,7 +120,6 @@ rule:
       - event.country in list.high_risk_countries
   score: 80
 
----
 
 # Rule: Multiple IPs 24h
 rule:
@@ -140,7 +131,6 @@ rule:
       - features.unique_ips_24h >= 5
   score: 50
 
----
 
 # Rule: High Failure Rate
 rule:
@@ -152,7 +142,6 @@ rule:
       - features.rate_failed_login > 0.5
   score: 65
 
----
 
 # Rule: Device Velocity Anomaly
 rule:
@@ -165,7 +154,6 @@ rule:
       - features.device_velocity_ratio > 0.7
   score: 80
 
----
 
 # Rule: Shared Device
 rule:
@@ -177,7 +165,6 @@ rule:
       - features.unique_users_by_device_7d >= 5
   score: 90
 
----
 
 # ========================================
 # Ruleset

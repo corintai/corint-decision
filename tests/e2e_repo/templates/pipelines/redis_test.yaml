@@ -4,7 +4,6 @@ version: "0.1"
 # E2E Test Pipeline - Redis Feature Store
 # ========================================
 
----
 
 pipeline:
   id: redis_test_pipeline
@@ -44,7 +43,6 @@ pipeline:
       result: approve
       reason: "Low risk - approved"
 
----
 
 # ========================================
 # Ruleset
@@ -99,7 +97,6 @@ ruleset:
       signal: approve
       reason: "Low risk score (score: {total_score})"
 
----
 
 # ========================================
 # Rules
@@ -115,7 +112,6 @@ rule:
       - features.user_risk_score > 80
   score: 100
 
----
 
 # Rule: High Fraud Score
 rule:
@@ -127,7 +123,6 @@ rule:
       - features.user_fraud_score > 70
   score: 120
 
----
 
 # Rule: Suspicious Device
 rule:
@@ -140,7 +135,6 @@ rule:
       - features.device_fraud_count > 5
   score: 80
 
----
 
 # Rule: Risky IP
 rule:
@@ -153,7 +147,6 @@ rule:
       - features.ip_fraud_rate > 0.3
   score: 80
 
----
 
 # Rule: New Account High Value
 rule:
@@ -168,7 +161,6 @@ rule:
       - features.user_total_txns < 5
   score: 90
 
----
 
 # Rule: High Velocity User
 rule:
@@ -181,7 +173,6 @@ rule:
       - features.user_unique_devices > 3
   score: 60
 
----
 
 # Rule: Multi-Device Pattern
 rule:
@@ -193,7 +184,6 @@ rule:
       - features.user_unique_devices > 7
   score: 50
 
----
 
 # Rule: Medium Risk User
 rule:
@@ -206,7 +196,6 @@ rule:
       - features.user_risk_score <= 80
   score: 60
 
----
 
 # Rule: Risky Payment Method
 rule:
@@ -218,7 +207,6 @@ rule:
       - features.payment_fraud_rate > 0.2
   score: 80
 
----
 
 # Rule: High Risk Merchant
 rule:
@@ -230,7 +218,6 @@ rule:
       - features.merchant_risk > 70
   score: 80
 
----
 
 # Rule: High Login Frequency
 rule:
@@ -242,7 +229,6 @@ rule:
       - features.user_login_1h > 10
   score: 60
 
----
 
 # Rule: High Failed Logins
 rule:

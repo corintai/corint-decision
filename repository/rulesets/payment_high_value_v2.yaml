@@ -9,7 +9,6 @@ import:
   rules:
     - rules/fraud/amount_outlier.yaml  # Add extra rule on top of base
 
----
 
 ruleset:
   id: payment_high_value_v2

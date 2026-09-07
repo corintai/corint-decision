@@ -7,7 +7,6 @@ import:
   rulesets:
     - rulesets/fraud_detection_core.yaml
 
----
 
 pipeline:
   id: fraud_detection_pipeline

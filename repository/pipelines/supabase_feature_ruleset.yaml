@@ -56,7 +56,6 @@ pipeline:
       result: approve
       reason: "Transaction approved"
 
----
 
 # ========================================
 # STAGE 1: RISK DETECTION RULES
@@ -77,7 +76,6 @@ rule:
   
   score: 50
 
----
 
 # Rule 2: High-Value Transaction Pattern
 rule:
@@ -91,7 +89,6 @@ rule:
 
   score: 35
 
----
 
 # Rule 3: Rapid Transaction Frequency
 rule:
@@ -105,7 +102,6 @@ rule:
 
   score: 45
 
----
 
 # Rule 4: Suspicious Device Pattern
 rule:
@@ -120,7 +116,6 @@ rule:
 
   score: 60
 
----
 
 # ========================================
 # STAGE 2: SIGNAL PRODUCTION RULESET

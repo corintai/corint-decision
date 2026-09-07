@@ -7,7 +7,6 @@ import:
   rulesets:
     - rulesets/login_risk.yaml
 
----
 
 pipeline:
   id: login_risk_pipeline

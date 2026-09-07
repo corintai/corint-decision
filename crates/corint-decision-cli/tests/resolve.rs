@@ -328,10 +328,12 @@ fn malformed_headers_versions_extra_documents_and_duplicate_keys_are_rejected() 
         ),
     ] {
         let mut files = repo();
+        mutate(&mut files, "registry.yaml", "registry:", "---\nregistry:");
         mutate(&mut files, "registry.yaml", from, to);
         code(memory(&files), expected);
     }
     let mut files = repo();
+    mutate(&mut files, "registry.yaml", "registry:", "---\nregistry:");
     files[1].yaml.push_str("\n---\nrule: {}\n");
     code(memory(&files), "E_INVALID_IMPORT");
     let mut files = repo();

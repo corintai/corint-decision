@@ -4,7 +4,6 @@ version: "0.1"
 # E2E Test Pipeline - Database List Test
 # ========================================
 
----
 
 pipeline:
   id: db_list_test_pipeline
@@ -38,7 +37,6 @@ pipeline:
       result: approve
       reason: "No lists matched"
 
----
 
 # ========================================
 # Rules for Database List Testing
@@ -54,7 +52,6 @@ rule:
       - event.user_id in list.blocked_users_db
   score: 1000
 
----
 
 # Rule: User in DB Blocklist with Expiration
 rule:
@@ -66,7 +63,6 @@ rule:
       - event.user_id in list.blocked_users_db
   score: 1000
 
----
 
 # Rule: IP in Database Blocklist
 rule:
@@ -78,7 +74,6 @@ rule:
       - event.ip_address in list.blocked_ips_db
   score: 1000
 
----
 
 # Rule: Country in High Risk List
 rule:
@@ -90,7 +85,6 @@ rule:
       - event.country in list.high_risk_countries_db
   score: 500
 
----
 
 # ========================================
 # Ruleset
