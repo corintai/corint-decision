@@ -129,7 +129,7 @@
     "validate_cli": {
       "status": "experimental",
       "profile": "cdl-static-1",
-      "command": "corint validate [--root DIR] [--input-schema PATH] --format json [FILE...]",
+      "command": "corint validate [--root DIR] [--input-schema PATH] --format json [PATH...]",
       "entry_point": "corint_decision_toolchain::authoring::validate",
       "scope": "static",
       "resource_kinds": [
@@ -146,7 +146,12 @@
       "execution_checked": false,
       "business_evaluation": "not_performed",
       "evidence": "../../../crates/corint-decision-cli/tests/authoring.rs",
-      "implementation_status": "implemented_in_declared_scope"
+      "implementation_status": "implemented_in_declared_scope",
+      "path_inputs": [
+        "files",
+        "recursive_directories",
+        "mixed_paths"
+      ]
     },
     "test_cli": {
       "status": "experimental",

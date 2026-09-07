@@ -21,6 +21,7 @@ pub const INPUT_SCHEMA: &str = include_str!("../../../../CDL/schema/authoring-in
 
 #[derive(Default)]
 pub struct Options {
+    /// Explicit files or directories, recursively expanded before validation.
     pub files: Vec<PathBuf>,
     /// Root-relative imports and repository-wide reference checks are opt-in.
     pub root: Option<PathBuf>,

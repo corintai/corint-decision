@@ -27,20 +27,21 @@ cdl --version
 单独修改一个资源时，不要求 Registry、输入 Schema 或行为用例：
 
 ```sh
-cdl validate --format json "$POLICY_DIR/features/payment.yaml" \
-  > "$POLICY_DIR/validation.json"
+cdl validate --format json "$POLICY_DIR/features/payment.yaml"
 ```
 
-仓库采用 `rules/`、`rulesets/`、`pipelines/`、`features/`、`lists/`、`services/` 和根目录 Registry 时，扫描资源目录并检查引用：
+可以直接传入多个文件、目录，或混合路径。目录会递归扫描所有层级的 `.yaml`、`.yml`、`.json` 文件，不要求特定目录布局；重复路径只加载一次：
 
 ```sh
-cdl validate --root "$POLICY_DIR" --format json \
-  > "$POLICY_DIR/validation.json"
+cdl validate "$POLICY_DIR" --format json
+cdl validate "$POLICY_DIR/rules/blocked.yaml" "$POLICY_DIR/features" --format json
 ```
 
-有输入 Schema 时额外加 `--input-schema "$POLICY_DIR/input-schema.yaml"`。Schema 路径始终相对当前目录解析，不相对 `--root`。
-`--root DIR FILE...` 则仅加载指定的根相对文件及其传递 imports；要求这一集合包含所有引用。其他目录布局显式列出资源文件，不使用 `*.yaml` 混入 Schema、用例或备份。
-静态 imports 支持 rules/rulesets/pipelines/features/lists/services，路径相对 root；单文件含 import 时也必须给出 root。
+默认只校验选择范围，import 声明只检查语法，不跟随加载。需要额外解析 imports 并验证引用时使用 `--root DIR PATH...`；路径相对 root，集合需要包含所有引用。
+`--root DIR` 不传路径时保留旧的仓库扫描方式，仅扫描标准资源目录和根 Registry。
+有输入 Schema 时额外加 `--input-schema "$POLICY_DIR/input-schema.yaml"`；Schema 路径始终相对当前目录解析，不相对 root。
+
+扫描目录只放 CDL 资源；Schema、用例和报告放在目录外，或显式指定资源文件。JSON 报告也保存到扫描目录之外，避免 shell 重定向先创建文件再被扫描进来。
 
 读取报告和退出码。`valid: true` 且退出码 `0` 才是通过；`1` 是校验失败，`2` 是用法/文件错误。`--format json` 只控制程序 stdout；Cargo 构建信息可能在 stderr，构建失败另行报告。`--help`/`--version` 成功不是验证证据。
 

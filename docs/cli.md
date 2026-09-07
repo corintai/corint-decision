@@ -22,6 +22,11 @@ cargo build -p corint-decision-cli --locked
 ./target/debug/corint validate --format json \
   tests/conformance/cdl_authoring/features/payment.yaml
 
+# Multiple files, a directory, or a mixture of both.
+./target/debug/corint validate --format json \
+  tests/conformance/cdl_authoring/rules/blocked.yaml \
+  tests/conformance/cdl_authoring/features
+
 # A repository: all seven resource kinds, references and optional input types.
 ./target/debug/corint validate --format json \
   --root tests/conformance/cdl_authoring \
@@ -38,25 +43,33 @@ commands retain their execution profiles and contracts.
 
 ### Static inputs and scope
 
-`corint validate [--profile cdl-static-1] [--root DIR] [--input-schema PATH] [--format text|json] [FILE...]`
+`corint validate [--profile cdl-static-1] [--root DIR] [--input-schema PATH] [--format text|json] [PATH...]`
 
 | Input | Checks |
 |---|---|
 | Explicit files | YAML, closed resource structure, expressions, literal type errors, duplicate loaded IDs, local graph targets/cycles and declared dependency cycles. Missing cross-file resources do not fail this mode. |
-| `--root DIR` with files | Load those root-relative files and transitive imports; require all resource references to resolve in the loaded collection. |
+| Directories or mixed paths | Recursively check every `.yaml`, `.yml`, `.json` file in the supplied directories, regardless of directory names or depth; suffix matching is case-insensitive. Explicit files are checked regardless of suffix. Overlapping paths load each file once. |
+| `--root DIR` with paths | Expand the supplied root-relative files/directories and load transitive imports; require all resource references to resolve in that collection. |
 | `--root DIR` without files | Discover `.yaml`, `.yml`, `.json` recursively in `rules/`, `rulesets/`, `pipelines/`, `features/`, `lists/`, `services/`, plus root `registry.yaml`, `registry.yml`, `registry.json`; check the complete discovered collection. |
 | `--input-schema PATH` | Also check declared event fields and their known expression types. The Schema path is relative to the current working directory, even with `--root`. |
 
-Only resource files belong in resource directories. Schema, case inputs, backups and
-reports are not resources and should be stored elsewhere. Supply explicit files for
-other directory layouts. Files must be UTF-8 regular files no larger than 4 MiB.
+Pass files to validate precisely those files, or directories to check their entire
+YAML/JSON contents. The root-only option retains its existing repository-layout shortcut;
+it is not required for directory validation. Other file suffixes are skipped during
+scanning. Schema, case inputs, backups and reports are not CDL resources: keep them
+outside scanned directories or select only resource files. Save JSON reports outside
+the scanned directories, including shell redirects which create output before scanning.
+An empty selection is an error, not a successful validation. Files must be UTF-8
+regular files no larger than 4 MiB.
 Imports must stay within the canonical root, with at most 128 levels and 4096 files.
 Discovery rejects symlinks; explicit files/imports are canonicalized and cannot escape
 the root. Shared imports and repeated source paths are loaded once. Use `--` before
 filenames beginning with a dash.
 
 Static imports support `rules`, `rulesets`, `pipelines`, `features`, `lists`, `services`
-arrays of root-relative file paths. Use inline `import:` or a version/import header
+arrays of root-relative file paths. Without `--root`, import declarations are checked
+for syntax but not followed; only supplied files and directory contents are loaded.
+Use inline `import:` or a version/import header
 followed by `---` and one resource body. Duplicate keys across header and body fail.
 This is authoring composition; it does not extend the runtime or the separate
 [Core import profile](resolution.md).
@@ -210,4 +223,5 @@ and behavior tests when runtime compatibility or decisions need verification.
 
 | Date | Changes |
 |---|---|
+| 2026-09-07 | Accept files, recursive directories and mixed paths; keep imports opt-in with `--root`. |
 | 2026-09-07 | Make full CDL static validation the default; retain explicit Core compilation. |

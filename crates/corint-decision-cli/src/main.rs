@@ -19,7 +19,7 @@ use std::process::ExitCode;
 const HELP: &str = "corint — offline CDL authoring validator and Core toolchain
 
 Usage:
-  corint validate [--root DIR] [--input-schema PATH] [--format text|json] [FILE...]
+  corint validate [--root DIR] [--input-schema PATH] [--format text|json] [PATH...]
   corint validate --profile cdl-core-risk-draft-1 --input-schema PATH [--format text|json] FILE...
   corint test --input-schema PATH --cases PATH [--format text|json] FILE...
   corint build --input-schema PATH --cases PATH --output PATH [--format text|json] FILE...
@@ -35,7 +35,8 @@ Usage:
   corint --version
 
 Validate defaults to full CDL static checks (Rule, Ruleset, Pipeline, Registry,
-Feature, List, Service). FILEs can be checked independently. --root enables
+Feature, List, Service). PATHs may be files or directories; directories recursively
+include all YAML/JSON resources, regardless of layout. --root enables
 root-relative imports and reference checks; without FILEs it discovers resource
 directories and registry.yaml/yml/json. No external resources are contacted.
 An optional input Schema adds event field checks. JSON reports list unchecked scope.

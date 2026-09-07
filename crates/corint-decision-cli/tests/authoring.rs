@@ -337,7 +337,9 @@ fn imports_resolve_all_resource_kinds_and_support_header_documents() {
     .unwrap();
     let report = run(dir.path(), &["--root", ".", "registry.yaml"], 0);
     assert_eq!(report["sources"].as_array().unwrap().len(), 7);
-    has(&run(dir.path(), &["registry.yaml"], 2), "E_ROOT_REQUIRED");
+    let single = run(dir.path(), &["registry.yaml"], 0);
+    assert_eq!(single["sources"].as_array().unwrap().len(), 1);
+    assert_eq!(single["references_checked"], false);
     mutate(
         dir.path(),
         "registry.yaml",
@@ -463,4 +465,121 @@ fn expression_diagnostics_identify_the_exact_condition() {
     let report = run(dir.path(), &["rules/blocked.yaml"], 1);
     assert_eq!(report["diagnostics"][0]["code"], "E_INVALID_EXPRESSION");
     assert_eq!(report["diagnostics"][0]["field_path"], "/rule/when/any/1");
+}
+
+#[test]
+fn positional_directories_recurse_through_arbitrary_layouts() {
+    let dir = tempfile::tempdir().unwrap();
+    for relative in [
+        "policies/a.yaml",
+        "policies/custom/deep/b.YML",
+        "other/c.json",
+    ] {
+        let path = dir.path().join(relative);
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        let id = path.file_stem().unwrap().to_str().unwrap();
+        std::fs::write(&path, format!(r#"{{"id":"{id}","backend":"memory"}}"#)).unwrap();
+    }
+    std::fs::write(
+        dir.path().join("policies/README.md"),
+        "Documentation, not CDL",
+    )
+    .unwrap();
+    let report = run(dir.path(), &["policies", "other"], 0);
+    assert_eq!(report["sources"].as_array().unwrap().len(), 3);
+    assert_eq!(report["references_checked"], false);
+    // Overlapping directories and explicit files load the same resource once.
+    let mixed = run(
+        dir.path(),
+        &[
+            "policies",
+            "policies/custom",
+            "policies/a.yaml",
+            "other/c.json",
+        ],
+        0,
+    );
+    assert_eq!(mixed["sources"], report["sources"]);
+}
+
+#[test]
+fn explicit_files_do_not_discover_neighbors_or_follow_imports() {
+    let dir = setup();
+    std::fs::write(dir.path().join("bad.yaml"), "rule: [").unwrap();
+    mutate(
+        dir.path(),
+        "rules/blocked.yaml",
+        "version: \"0.1\"",
+        "version: \"0.1\"\nimport: {rules: [bad.yaml]}",
+    );
+    let report = run(dir.path(), &["rules/blocked.yaml", "services/risk.yaml"], 0);
+    assert_eq!(report["sources"].as_array().unwrap().len(), 2);
+    // The declaration itself must still have valid syntax.
+    mutate(dir.path(), "rules/blocked.yaml", "[bad.yaml]", "123");
+    has(
+        &run(dir.path(), &["rules/blocked.yaml"], 1),
+        "E_INVALID_STRUCTURE",
+    );
+}
+
+#[test]
+fn directories_report_invalid_files_at_any_depth_and_io_errors() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(dir.path().join("custom/deep")).unwrap();
+    std::fs::write(
+        dir.path().join("custom/good.yaml"),
+        "id: good\nbackend: memory",
+    )
+    .unwrap();
+    std::fs::write(dir.path().join("custom/deep/bad.yaml"), "rule: [").unwrap();
+    let report = run(dir.path(), &["custom"], 1);
+    has(&report, "E_YAML");
+    assert_eq!(report["sources"].as_array().unwrap().len(), 2);
+    has(
+        &run(dir.path(), &["custom/good.yaml", "missing"], 2),
+        "E_READ",
+    );
+    std::fs::create_dir(dir.path().join("empty")).unwrap();
+    has(&run(dir.path(), &["empty"], 2), "E_NO_SOURCES");
+    // An explicitly selected empty directory must not fall back to --root discovery.
+    has(
+        &run(dir.path(), &["--root", ".", "empty"], 2),
+        "E_NO_SOURCES",
+    );
+}
+
+#[test]
+fn directory_selection_can_opt_into_reference_checks_with_root() {
+    let dir = setup();
+    let report = run(
+        dir.path(),
+        &[
+            "--root",
+            ".",
+            "rules",
+            "rulesets",
+            "pipelines",
+            "features",
+            "lists",
+            "services",
+            "registry.yaml",
+        ],
+        0,
+    );
+    assert_eq!(report["sources"].as_array().unwrap().len(), 7);
+    assert_eq!(report["references_checked"], true);
+}
+
+#[cfg(unix)]
+#[test]
+fn directory_symlink_cycles_do_not_recurse() {
+    use std::os::unix::fs::symlink;
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::create_dir(dir.path().join("policies")).unwrap();
+    symlink(
+        dir.path().join("policies"),
+        dir.path().join("policies/loop"),
+    )
+    .unwrap();
+    has(&run(dir.path(), &["policies"], 2), "E_PATH");
 }

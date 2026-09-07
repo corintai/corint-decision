@@ -114,14 +114,19 @@ fn scan(dir: &Path, files: &mut Vec<PathBuf>, report: &mut Report) {
                 "",
                 "load",
                 "E_PATH",
-                "Repository discovery does not follow symlinks",
+                "Directory discovery does not follow symlinks",
             );
         } else if path.is_dir() {
             scan(&path, files, report);
-        } else if matches!(
-            path.extension().and_then(|s| s.to_str()),
-            Some("yaml" | "yml" | "json")
-        ) {
+        } else if path
+            .extension()
+            .and_then(|s| s.to_str())
+            .is_some_and(|ext| {
+                ["yaml", "yml", "json"]
+                    .iter()
+                    .any(|candidate| ext.eq_ignore_ascii_case(candidate))
+            })
+        {
             files.push(path);
         }
     }
@@ -145,15 +150,30 @@ pub(super) fn load(options: &Options, report: &mut Report) -> Vec<Document> {
     } else {
         None
     };
-    let mut files: Vec<_> = options
-        .files
-        .iter()
-        .map(|path| {
-            root.as_ref()
-                .map_or_else(|| path.clone(), |root| root.join(path))
-        })
-        .collect();
-    if files.is_empty() {
+    let mut files = Vec::new();
+    for input in &options.files {
+        let path = root
+            .as_ref()
+            .map_or_else(|| input.clone(), |root| root.join(input));
+        if path.is_dir() {
+            if path.is_symlink() {
+                report.error(
+                    &path.to_string_lossy(),
+                    "",
+                    "load",
+                    "E_PATH",
+                    "Directory discovery does not follow symlinks",
+                );
+            } else {
+                scan(&path, &mut files, report);
+            }
+        } else {
+            files.push(path);
+        }
+    }
+    // Keep the existing root-only repository shortcut. Explicit paths always
+    // select their own scope, including directories with arbitrary layouts.
+    if options.files.is_empty() {
         if let Some(root) = &root {
             for dir in [
                 "rules",
@@ -182,7 +202,7 @@ pub(super) fn load(options: &Options, report: &mut Report) -> Vec<Document> {
             "",
             "usage",
             "E_NO_SOURCES",
-            "Supply CDL files or --root with resource directories/registry",
+            "Supply CDL files or directories containing YAML/JSON resources",
         );
         return vec![];
     }
@@ -298,15 +318,9 @@ impl Loader<'_> {
                                 if let Some(root) = &self.root {
                                     let path = root.join(path);
                                     self.load(&path, Some(kind));
-                                } else {
-                                    self.report.error(
-                                        &source,
-                                        "/import",
-                                        "usage",
-                                        "E_ROOT_REQUIRED",
-                                        "Use --root to resolve root-relative imports",
-                                    );
                                 }
+                                // Without --root, only validate the import declaration;
+                                // explicit file/directory selection must not load siblings.
                             } else {
                                 self.report.error(
                                     &source,
