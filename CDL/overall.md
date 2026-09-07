@@ -18,6 +18,14 @@ I/O. The [import profile](import.md) adds source composition before Core validat
 [Service](service.md), [Feature](feature.md) and [List](list.md) define separately scoped
 online extensions. Historical syntax and examples do not enable an undeclared capability.
 
+## Static authoring validation
+
+The offline `corint validate` CLI defaults to `cdl-static-1` and validates all seven
+resource kinds using the [authoring schema](schema/authoring.json). A single resource
+needs no Registry or input Schema. Repository mode additionally resolves references;
+an optional [input Schema](schema/authoring-input.json) adds event field checks.
+This authoring gate does not execute resources or change their execution profiles.
+
 ## 1. Resource roles
 
 The four Core resource kinds have different responsibilities:

@@ -21,7 +21,7 @@ cargo build -p corint-decision-cli --locked --offline
 
 The [example suite](../tests/conformance/cdl_core/behavior.yaml) has three
 threshold cases and two expected input failures. It is synthetic, not a real-data
-evaluation. The [validation CLI](cli.md) documents the same explicit file loading,
+evaluation. The [explicit Core validation CLI](cli.md#explicit-core-compilation) documents the same explicit file loading,
 input schema, path handling, complete resource closure and strict Core rules.
 `--cases` is required exactly once for `test` and is rejected by `validate`.
 
@@ -36,7 +36,7 @@ Compatibility engine constructors retain their existing behavior.
 
 The [Rule](../CDL/rule.md) and [Ruleset](../CDL/ruleset.md) examples share the payment
 bundle and commands above. A lone Rule is not a complete CLI bundle: supply its
-Pipeline, dependencies and exactly one Registry. `validate` checks compilation;
+Pipeline, dependencies and exactly one Registry. `validate --profile cdl-core-risk-draft-1` checks compilation;
 `test` checks the declared behavior.
 
 For policy changes, cover threshold equality, negative/zero scores, overlapping
@@ -116,7 +116,7 @@ compared or included in the projection. Error parity compares stage/code.
 This does not claim full operand-level tracing or production audit replay.
 
 All valid cases run, even after an assertion fails. Results use the same JSON
-envelope as `validate`, with `scope: "behavior"`, `cases_file`, and `test_results`:
+envelope as explicit Core `validate`, with `scope: "behavior"`, `cases_file`, and `test_results`:
 
 - `total`, `executed`, `passed`, `failed` count cases, **not** engine invocations.
   `executed` means both engine-entry calls were attempted; expected input failures
@@ -150,7 +150,7 @@ approval or deployment binding and are not publication authorization.
 
 ## Agent workflow and verification
 
-After each policy edit: run `corint validate`, then `corint test` with independent
+After each policy edit: run `corint validate --profile cdl-core-risk-draft-1`, then `corint test` with independent
 expected results derived from the user's requirements. Inspect failed assertions
 before changing either policy or expectations; never rewrite expectations merely
 to make the test green. A passing suite establishes only those examples, not
@@ -188,3 +188,9 @@ protocol server. It does not contact the example provider URL or require a live 
 Redis instance or model. It checks documented decisions, Core input failures, metadata/profile
 boundaries, import composition, score/action isolation and Trace parity. The test-only toolchain
 dependency ensures imports use the production resolver.
+
+## Revision History
+
+| Date | Changes |
+|---|---|
+| 2026-09-07 | Clarify that behavior workflows use explicit Core compilation. |

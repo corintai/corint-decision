@@ -1,0 +1,146 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "CDL static authoring input Schema",
+  "description": "Optional model Schema for static event field checks; external response types are not inferred.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "name",
+    "fields"
+  ],
+  "properties": {
+    "name": {
+      "type": "string"
+    },
+    "description": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "fields": {
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/definitions/field"
+      }
+    }
+  },
+  "definitions": {
+    "field": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "field_type"
+      ],
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "field_type": {
+          "$ref": "#/definitions/fieldType"
+        },
+        "required": {
+          "type": "boolean"
+        },
+        "description": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "default": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "schema": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "fields"
+      ],
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "description": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "fields": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/definitions/field"
+          }
+        }
+      }
+    },
+    "fieldType": {
+      "oneOf": [
+        {
+          "enum": [
+            "null",
+            "any",
+            "number",
+            "string",
+            "boolean"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "array": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "item_type": {
+                  "$ref": "#/definitions/fieldType"
+                }
+              },
+              "required": [
+                "item_type"
+              ]
+            }
+          },
+          "required": [
+            "array"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "object": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/definitions/schema"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": []
+            }
+          },
+          "required": [
+            "object"
+          ]
+        }
+      ]
+    }
+  }
+}

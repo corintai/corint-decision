@@ -22,36 +22,49 @@ cdl --version
 如依赖已经缓存，可在 `cargo run` 参数中加 `--offline`；依赖未缓存时不要把构建失败当作 CDL 校验失败。
 同一工作区的 Cargo 命令串行运行。仓库或目标明确提供了经过版本确认的 CLI 时，也可直接使用该程序。
 
-典型输出是 `rule.yaml`、`ruleset.yaml`、`pipeline.yaml`、`registry.yaml`、`input-schema.yaml` 和 `behavior.yaml`；多资源策略可使用多个明确命名的文件。
-先从 `tests/conformance/generation/` 读取四种资源模板，以及 `tests/conformance/cdl_core/` 的输入 Schema 与 `tests/conformance/cdl_core/behavior.yaml` 的行为 fixture，再写入策略目录。
-这些名称是示例，不要求重命名用户已有文件。
+## 默认静态校验
 
-## 编译和行为执行
+单独修改一个资源时，不要求 Registry、输入 Schema 或行为用例：
 
-下面以四个资源文件为例。将参数列表扩展为实际完整资源闭包，不使用 `*.yaml` 混入 Schema、用例、备份或其他 Registry。
-先确认 `POLICY_DIR` 存在，报告选择本次运行的文件名；保留需要审查的旧报告。
+```sh
+cdl validate --format json "$POLICY_DIR/features/payment.yaml" \
+  > "$POLICY_DIR/validation.json"
+```
+
+仓库采用 `rules/`、`rulesets/`、`pipelines/`、`features/`、`lists/`、`services/` 和根目录 Registry 时，扫描资源目录并检查引用：
+
+```sh
+cdl validate --root "$POLICY_DIR" --format json \
+  > "$POLICY_DIR/validation.json"
+```
+
+有输入 Schema 时额外加 `--input-schema "$POLICY_DIR/input-schema.yaml"`。Schema 路径始终相对当前目录解析，不相对 `--root`。
+`--root DIR FILE...` 则仅加载指定的根相对文件及其传递 imports；要求这一集合包含所有引用。其他目录布局显式列出资源文件，不使用 `*.yaml` 混入 Schema、用例或备份。
+静态 imports 支持 rules/rulesets/pipelines/features/lists/services，路径相对 root；单文件含 import 时也必须给出 root。
+
+读取报告和退出码。`valid: true` 且退出码 `0` 才是通过；`1` 是校验失败，`2` 是用法/文件错误。`--format json` 只控制程序 stdout；Cargo 构建信息可能在 stderr，构建失败另行报告。`--help`/`--version` 成功不是验证证据。
+
+按诊断的 `source`、`field_path`、`stage`、`code` 修复，再次执行。记录 `references_checked`、`input_schema_checked` 与 `unchecked`，不把 `execution_checked: false` 当作静态校验失败。
+完整命令契约见[CLI 文档](../../../docs/cli.md)。
+
+## 按需执行 Core 编译和行为测试
+
+用户要求验证 Core 可执行性或预期行为时，准备完整 Core 闭包与输入 Schema，行为测试另需独立预期用例。这里的文件列表必须符合严格 Core，不能包含 Feature/List/Service。
 
 ```sh
 set -- "$POLICY_DIR/rule.yaml" "$POLICY_DIR/ruleset.yaml" \
   "$POLICY_DIR/pipeline.yaml" "$POLICY_DIR/registry.yaml"
 
-cdl validate --input-schema "$POLICY_DIR/input-schema.yaml" \
-  --format json "$@" > "$POLICY_DIR/validation.json"
-```
+cdl validate --profile cdl-core-risk-draft-1 \
+  --input-schema "$POLICY_DIR/input-schema.yaml" --format json "$@"
 
-记录退出码并读取 `validation.json`。仅在编译通过后执行：
-
-```sh
 cdl test --input-schema "$POLICY_DIR/input-schema.yaml" \
   --cases "$POLICY_DIR/behavior.yaml" --format json "$@" \
   > "$POLICY_DIR/behavior-report.json"
 ```
 
-`--format json` 仅控制 stdout，构建信息在 stderr。不要用 stderr 是否为空来判断策略是否通过。
-退出码 `0` 表示命令通过，`1` 表示校验或行为失败，`2` 表示用法/读写错误；Cargo 自身构建失败另行报告。`--help` 和 `--version` 的成功不是验证证据。
-
-验证报告要求 `valid: true`；行为报告还要求 `execution_checked: true`，`test_results.executed == total`、`passed == total`、`failed == 0`，并核对各用例 `passed` 和 `trace_parity`。
-预期输入/执行错误的诊断可能出现在通过的用例中，不能只按诊断是否非空判断失败。
+仅在 Core 编译通过后执行行为测试。行为报告要求 `valid: true`、`execution_checked: true`、`test_results.executed == total`、`passed == total`、`failed == 0`，并检查各用例 `passed` 和 `trace_parity`。
+预期运行错误可能出现在通过的用例中，不能仅按诊断是否为空判断行为失败。
 
 ## 编写用例时的区别
 

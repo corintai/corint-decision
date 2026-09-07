@@ -1,6 +1,7 @@
-//! Thin, offline adapter over the shared Core compiler, never a second validator.
+//! Offline adapters over shared CDL static validation and the strict Core toolchain.
 mod candidate;
 mod replay;
+mod validate;
 
 use corint_decision_toolchain::{behavior, contracts, package, resolve, transfer};
 
@@ -15,10 +16,11 @@ use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
-const HELP: &str = "corint — offline strict CDL Core validator
+const HELP: &str = "corint — offline CDL authoring validator and Core toolchain
 
 Usage:
-  corint validate --input-schema PATH [--format text|json] FILE...
+  corint validate [--root DIR] [--input-schema PATH] [--format text|json] [FILE...]
+  corint validate --profile cdl-core-risk-draft-1 --input-schema PATH [--format text|json] FILE...
   corint test --input-schema PATH --cases PATH [--format text|json] FILE...
   corint build --input-schema PATH --cases PATH --output PATH [--format text|json] FILE...
   corint verify --package PATH --cases PATH [--format text|json]
@@ -32,6 +34,13 @@ Usage:
   corint --help
   corint --version
 
+Validate defaults to full CDL static checks (Rule, Ruleset, Pipeline, Registry,
+Feature, List, Service). FILEs can be checked independently. --root enables
+root-relative imports and reference checks; without FILEs it discovers resource
+directories and registry.yaml/yml/json. No external resources are contacted.
+An optional input Schema adds event field checks. JSON reports list unchecked scope.
+
+The following applies to the explicit Core profile and Core execution commands:
 Supply the complete resource closure, including exactly one Registry.
 PATH is the strict model Schema in YAML or JSON; FILEs are CDL YAML resources.
 Paths are relative to the current directory. Use -- before dash-prefixed FILEs.
@@ -473,7 +482,24 @@ fn render(report: &Report, json: bool) -> String {
     output
 }
 
-fn run(args: Vec<OsString>) -> (u8, String) {
+fn run(mut args: Vec<OsString>) -> (u8, String) {
+    // Preserve strict compilation behind an explicit profile, without broadening
+    // any engine, test, package or deployment admission boundary.
+    let mut core_validate = false;
+    if args.first().is_some_and(|arg| arg == "validate") {
+        let option_count = args.iter().take_while(|arg| *arg != "--").count();
+        if let Some(index) = args[..option_count]
+            .windows(2)
+            .position(|pair| pair[0] == "--profile" && pair[1] == PROFILE)
+        {
+            args.drain(index..index + 2);
+            core_validate = true;
+        }
+        if !core_validate && args != [OsString::from("validate"), OsString::from("--help")] {
+            return validate::run(&args[1..]);
+        }
+    }
+
     if args
         .first()
         .is_some_and(|arg| arg == "record" || arg == "replay")
@@ -499,7 +525,10 @@ fn run(args: Vec<OsString>) -> (u8, String) {
     if args == [OsString::from("--version")] {
         return (
             0,
-            format!("corint {} ({PROFILE})\n", env!("CARGO_PKG_VERSION")),
+            format!(
+                "corint {} (cdl-static-1; Core: {PROFILE})\n",
+                env!("CARGO_PKG_VERSION")
+            ),
         );
     }
     // Honor an explicit JSON request even when another argument is invalid.

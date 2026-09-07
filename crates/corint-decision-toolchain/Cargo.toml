@@ -3,9 +3,12 @@ name = "corint-decision-toolchain"
 version = "0.1.0"
 edition.workspace = true
 license.workspace = true
-description = "Shared offline CDL Core testing and source-package tooling"
+description = "Shared CDL static validation, Core testing and source-package tooling"
 
 [dependencies]
+corint-decision-model = { path = "../corint-decision-model" }
+corint-decision-dsl-parser = { path = "../corint-decision-dsl-parser" }
+corint-decision-runtime = { path = "../corint-decision-runtime", default-features = false }
 corint-decision-compiler = { path = "../corint-decision-compiler" }
 corint-decision-engine = { path = "../corint-decision-engine", default-features = false }
 serde = { workspace = true }

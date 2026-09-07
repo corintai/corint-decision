@@ -25,3 +25,9 @@ pub use operator::{
     WindowUnit,
 };
 pub use registry::FeatureRegistry;
+
+/// Check the shared Feature expression grammar and return inferred dependencies.
+/// Does not compute a feature or access any data source.
+pub fn expression_dependencies(expression: &str) -> anyhow::Result<Vec<String>> {
+    expression::ExpressionEvaluator::extract_dependencies(expression)
+}

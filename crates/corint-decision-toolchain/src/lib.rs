@@ -1,6 +1,7 @@
-//! Shared, offline CDL Core behavior tests and experimental source packages.
+//! Shared, offline CDL static checks, Core behavior tests and source packages.
 //! Synchronous entry points create a runtime; async callers must use a blocking
 //! worker. No Work dependency, LLM call, deployment or business evaluation.
+pub mod authoring;
 pub mod behavior;
 pub mod candidate;
 pub mod contracts;

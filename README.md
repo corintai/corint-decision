@@ -25,7 +25,8 @@ Service invocations use a unified `service + operation` node. See the
 
 ## 🚀 Overview
 
-For the experimental strict CDL Core, use the [offline validation CLI](docs/cli.md),
+For Agent/Skill authoring across all seven CDL resource kinds, use the
+[offline static validation CLI](docs/cli.md). Experimental strict CDL Core also provides the
 [behavior testing CLI](docs/testing.md), [source packages and exchange](docs/packages.md),
 [strict generation API](docs/generation.md)
 and [language references](CDL/overall.md). Compile-time validation is

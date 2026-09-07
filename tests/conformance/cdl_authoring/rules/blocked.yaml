@@ -1,0 +1,11 @@
+version: "0.1"
+rule:
+  id: blocked
+  name: Blocked customer
+  metadata:
+    owner: payments
+  when:
+    any:
+      - event.customer_id in list.blocked_customers
+      - features.adjusted_count > 100
+  score: 100

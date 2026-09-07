@@ -1,0 +1,1464 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "CDL static authoring document",
+  "type": "object",
+  "definitions": {
+    "id": {
+      "type": "string",
+      "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
+      "not": {
+        "const": "end"
+      }
+    },
+    "text": {
+      "type": "string",
+      "pattern": "\\S"
+    },
+    "target": {
+      "type": "string",
+      "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+    },
+    "signal": {
+      "enum": [
+        "approve",
+        "decline",
+        "review",
+        "hold",
+        "pass"
+      ]
+    },
+    "condition": {
+      "oneOf": [
+        {
+          "$ref": "#/definitions/text"
+        },
+        {
+          "type": "object",
+          "minProperties": 1,
+          "maxProperties": 1,
+          "additionalProperties": false,
+          "properties": {
+            "all": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "$ref": "#/definitions/condition"
+              }
+            },
+            "any": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "$ref": "#/definitions/condition"
+              }
+            },
+            "not": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 1,
+              "items": {
+                "$ref": "#/definitions/condition"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "rule": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "name",
+        "when",
+        "score"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/definitions/id"
+        },
+        "name": {
+          "$ref": "#/definitions/text"
+        },
+        "description": {
+          "type": "string"
+        },
+        "when": {
+          "$ref": "#/definitions/when"
+        },
+        "score": {
+          "type": "integer",
+          "minimum": -2147483648,
+          "maximum": 2147483647
+        },
+        "metadata": {
+          "type": "object"
+        },
+        "params": {
+          "type": "object"
+        }
+      }
+    },
+    "conclusion": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "signal"
+      ],
+      "properties": {
+        "when": {
+          "$ref": "#/definitions/text"
+        },
+        "default": {
+          "const": true
+        },
+        "signal": {
+          "$ref": "#/definitions/signal"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "actions": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/definitions/text"
+          }
+        }
+      },
+      "oneOf": [
+        {
+          "required": [
+            "when"
+          ]
+        },
+        {
+          "required": [
+            "default"
+          ]
+        }
+      ]
+    },
+    "ruleset": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/definitions/id"
+        },
+        "name": {
+          "$ref": "#/definitions/text"
+        },
+        "description": {
+          "type": "string"
+        },
+        "rules": {
+          "type": "array",
+          "minItems": 0,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/definitions/id"
+          }
+        },
+        "conclusion": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/definitions/conclusion"
+          }
+        },
+        "metadata": {
+          "type": "object"
+        },
+        "extends": {
+          "$ref": "#/definitions/text"
+        }
+      },
+      "anyOf": [
+        {
+          "required": [
+            "extends"
+          ]
+        },
+        {
+          "required": [
+            "rules",
+            "conclusion"
+          ]
+        }
+      ],
+      "allOf": [
+        {
+          "if": {
+            "not": {
+              "required": [
+                "extends"
+              ]
+            }
+          },
+          "then": {
+            "properties": {
+              "rules": {
+                "minItems": 1
+              }
+            }
+          }
+        }
+      ]
+    },
+    "route": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "when",
+        "next"
+      ],
+      "properties": {
+        "when": {
+          "$ref": "#/definitions/when"
+        },
+        "next": {
+          "$ref": "#/definitions/target"
+        }
+      }
+    },
+    "step": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "name",
+        "type"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/definitions/id"
+        },
+        "name": {
+          "$ref": "#/definitions/text"
+        },
+        "type": {
+          "enum": [
+            "ruleset",
+            "router",
+            "rule",
+            "pipeline",
+            "service"
+          ]
+        },
+        "ruleset": {
+          "$ref": "#/definitions/id"
+        },
+        "next": {
+          "$ref": "#/definitions/target"
+        },
+        "default": {
+          "$ref": "#/definitions/target"
+        },
+        "routes": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/definitions/route"
+          }
+        },
+        "rule": {
+          "$ref": "#/definitions/id"
+        },
+        "pipeline": {
+          "$ref": "#/definitions/id"
+        },
+        "when": {
+          "$ref": "#/definitions/when"
+        },
+        "service": {
+          "$ref": "#/definitions/text"
+        },
+        "operation": {
+          "$ref": "#/definitions/text"
+        },
+        "params": {
+          "type": "object",
+          "propertyNames": {
+            "$ref": "#/definitions/text"
+          }
+        },
+        "output": {
+          "type": "string",
+          "pattern": "^(service|vars)\\.[A-Za-z_][A-Za-z0-9_]*(\\.[A-Za-z_][A-Za-z0-9_]*)*$"
+        },
+        "timeout_ms": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 18446744073709551615
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "rule"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "rule"
+            ],
+            "not": {
+              "anyOf": [
+                {
+                  "required": [
+                    "ruleset"
+                  ]
+                },
+                {
+                  "required": [
+                    "pipeline"
+                  ]
+                },
+                {
+                  "required": [
+                    "routes"
+                  ]
+                },
+                {
+                  "required": [
+                    "default"
+                  ]
+                },
+                {
+                  "required": [
+                    "service"
+                  ]
+                },
+                {
+                  "required": [
+                    "operation"
+                  ]
+                },
+                {
+                  "required": [
+                    "params"
+                  ]
+                },
+                {
+                  "required": [
+                    "output"
+                  ]
+                },
+                {
+                  "required": [
+                    "timeout_ms"
+                  ]
+                }
+              ]
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "ruleset"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "ruleset"
+            ],
+            "not": {
+              "anyOf": [
+                {
+                  "required": [
+                    "rule"
+                  ]
+                },
+                {
+                  "required": [
+                    "pipeline"
+                  ]
+                },
+                {
+                  "required": [
+                    "routes"
+                  ]
+                },
+                {
+                  "required": [
+                    "default"
+                  ]
+                },
+                {
+                  "required": [
+                    "service"
+                  ]
+                },
+                {
+                  "required": [
+                    "operation"
+                  ]
+                },
+                {
+                  "required": [
+                    "params"
+                  ]
+                },
+                {
+                  "required": [
+                    "output"
+                  ]
+                },
+                {
+                  "required": [
+                    "timeout_ms"
+                  ]
+                }
+              ]
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "pipeline"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "pipeline"
+            ],
+            "not": {
+              "anyOf": [
+                {
+                  "required": [
+                    "rule"
+                  ]
+                },
+                {
+                  "required": [
+                    "ruleset"
+                  ]
+                },
+                {
+                  "required": [
+                    "routes"
+                  ]
+                },
+                {
+                  "required": [
+                    "default"
+                  ]
+                },
+                {
+                  "required": [
+                    "service"
+                  ]
+                },
+                {
+                  "required": [
+                    "operation"
+                  ]
+                },
+                {
+                  "required": [
+                    "params"
+                  ]
+                },
+                {
+                  "required": [
+                    "output"
+                  ]
+                },
+                {
+                  "required": [
+                    "timeout_ms"
+                  ]
+                }
+              ]
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "router"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "routes",
+              "default"
+            ],
+            "not": {
+              "anyOf": [
+                {
+                  "required": [
+                    "rule"
+                  ]
+                },
+                {
+                  "required": [
+                    "ruleset"
+                  ]
+                },
+                {
+                  "required": [
+                    "pipeline"
+                  ]
+                },
+                {
+                  "required": [
+                    "next"
+                  ]
+                },
+                {
+                  "required": [
+                    "service"
+                  ]
+                },
+                {
+                  "required": [
+                    "operation"
+                  ]
+                },
+                {
+                  "required": [
+                    "params"
+                  ]
+                },
+                {
+                  "required": [
+                    "output"
+                  ]
+                },
+                {
+                  "required": [
+                    "timeout_ms"
+                  ]
+                }
+              ]
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "service"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "service",
+              "operation"
+            ],
+            "not": {
+              "anyOf": [
+                {
+                  "required": [
+                    "rule"
+                  ]
+                },
+                {
+                  "required": [
+                    "ruleset"
+                  ]
+                },
+                {
+                  "required": [
+                    "pipeline"
+                  ]
+                },
+                {
+                  "required": [
+                    "routes"
+                  ]
+                },
+                {
+                  "required": [
+                    "default"
+                  ]
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "decision": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "result"
+      ],
+      "properties": {
+        "when": {
+          "$ref": "#/definitions/when"
+        },
+        "default": {
+          "const": true
+        },
+        "result": {
+          "$ref": "#/definitions/signal"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "actions": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/definitions/text"
+          }
+        }
+      },
+      "oneOf": [
+        {
+          "required": [
+            "when"
+          ]
+        },
+        {
+          "required": [
+            "default"
+          ]
+        }
+      ]
+    },
+    "pipeline": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "name",
+        "entry",
+        "steps"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/definitions/id"
+        },
+        "name": {
+          "$ref": "#/definitions/text"
+        },
+        "description": {
+          "type": "string"
+        },
+        "entry": {
+          "$ref": "#/definitions/id"
+        },
+        "steps": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "step"
+            ],
+            "properties": {
+              "step": {
+                "$ref": "#/definitions/step"
+              }
+            }
+          }
+        },
+        "decision": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/definitions/decision"
+          }
+        },
+        "when": {
+          "$ref": "#/definitions/when"
+        },
+        "metadata": {
+          "type": "object"
+        }
+      }
+    },
+    "registryEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "pipeline",
+        "when"
+      ],
+      "properties": {
+        "pipeline": {
+          "$ref": "#/definitions/id"
+        },
+        "when": {
+          "$ref": "#/definitions/when"
+        },
+        "description": {
+          "type": "string"
+        }
+      }
+    },
+    "when": {
+      "oneOf": [
+        {
+          "$ref": "#/definitions/text"
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "all": {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/condition"
+              },
+              "minItems": 1
+            },
+            "any": {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/condition"
+              },
+              "minItems": 1
+            },
+            "not": {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/condition"
+              },
+              "minItems": 1
+            },
+            "conditions": {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/condition"
+              },
+              "minItems": 1
+            },
+            "event.type": {
+              "$ref": "#/definitions/text"
+            },
+            "event_type": {
+              "$ref": "#/definitions/text"
+            },
+            "event": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "type": {
+                  "$ref": "#/definitions/text"
+                }
+              },
+              "required": [
+                "type"
+              ]
+            }
+          },
+          "required": []
+        }
+      ]
+    },
+    "imports": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "rules": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/text"
+          },
+          "minItems": 0
+        },
+        "rulesets": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/text"
+          },
+          "minItems": 0
+        },
+        "pipelines": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/text"
+          },
+          "minItems": 0
+        },
+        "features": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/text"
+          },
+          "minItems": 0
+        },
+        "lists": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/text"
+          },
+          "minItems": 0
+        },
+        "services": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/text"
+          },
+          "minItems": 0
+        }
+      },
+      "required": []
+    },
+    "feature": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "enum": [
+            "aggregation",
+            "state",
+            "expression",
+            "lookup"
+          ]
+        }
+      },
+      "required": [
+        "type"
+      ],
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "aggregation"
+              }
+            }
+          },
+          "then": {
+            "$ref": "#/definitions/aggregationFeature"
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "state"
+              }
+            }
+          },
+          "then": {
+            "$ref": "#/definitions/stateFeature"
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "expression"
+              }
+            }
+          },
+          "then": {
+            "$ref": "#/definitions/expressionFeature"
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "lookup"
+              }
+            }
+          },
+          "then": {
+            "$ref": "#/definitions/lookupFeature"
+          }
+        }
+      ]
+    },
+    "aggregationFeature": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "$ref": "#/definitions/text"
+        },
+        "description": {
+          "type": "string"
+        },
+        "dependencies": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/text"
+          },
+          "minItems": 0
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "tags": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/text"
+          },
+          "minItems": 0
+        },
+        "version": {
+          "type": "string"
+        },
+        "type": {
+          "const": "aggregation"
+        },
+        "datasource": {
+          "$ref": "#/definitions/text"
+        },
+        "entity": {
+          "$ref": "#/definitions/text"
+        },
+        "dimension": {
+          "$ref": "#/definitions/text"
+        },
+        "dimension_value": {
+          "$ref": "#/definitions/text"
+        },
+        "timestamp_field": {
+          "$ref": "#/definitions/text"
+        },
+        "when": {},
+        "method": {
+          "enum": [
+            "count",
+            "sum",
+            "avg",
+            "min",
+            "max",
+            "distinct",
+            "stddev",
+            "median",
+            "percentile"
+          ]
+        },
+        "field": {
+          "$ref": "#/definitions/text"
+        },
+        "window": {
+          "$ref": "#/definitions/text"
+        },
+        "percentile": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 100
+        }
+      },
+      "required": [
+        "name",
+        "type",
+        "method",
+        "datasource",
+        "entity",
+        "dimension",
+        "dimension_value"
+      ]
+    },
+    "stateFeature": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "$ref": "#/definitions/text"
+        },
+        "description": {
+          "type": "string"
+        },
+        "dependencies": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/text"
+          },
+          "minItems": 0
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "tags": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/text"
+          },
+          "minItems": 0
+        },
+        "version": {
+          "type": "string"
+        },
+        "type": {
+          "const": "state"
+        },
+        "datasource": {
+          "$ref": "#/definitions/text"
+        },
+        "entity": {
+          "$ref": "#/definitions/text"
+        },
+        "dimension": {
+          "$ref": "#/definitions/text"
+        },
+        "dimension_value": {
+          "$ref": "#/definitions/text"
+        },
+        "timestamp_field": {
+          "$ref": "#/definitions/text"
+        },
+        "when": {},
+        "method": {
+          "const": "time_since"
+        },
+        "unit": {
+          "enum": [
+            "minutes",
+            "hours",
+            "days"
+          ]
+        },
+        "fallback": {}
+      },
+      "required": [
+        "name",
+        "type",
+        "method",
+        "datasource",
+        "entity",
+        "dimension",
+        "dimension_value",
+        "unit"
+      ]
+    },
+    "expressionFeature": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "$ref": "#/definitions/text"
+        },
+        "description": {
+          "type": "string"
+        },
+        "dependencies": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/text"
+          },
+          "minItems": 0
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "tags": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/text"
+          },
+          "minItems": 0
+        },
+        "version": {
+          "type": "string"
+        },
+        "type": {
+          "const": "expression"
+        },
+        "expression": {
+          "$ref": "#/definitions/text"
+        },
+        "method": {
+          "const": "expression"
+        }
+      },
+      "required": [
+        "name",
+        "type",
+        "expression"
+      ]
+    },
+    "lookupFeature": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "$ref": "#/definitions/text"
+        },
+        "description": {
+          "type": "string"
+        },
+        "dependencies": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/text"
+          },
+          "minItems": 0
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "tags": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/text"
+          },
+          "minItems": 0
+        },
+        "version": {
+          "type": "string"
+        },
+        "type": {
+          "const": "lookup"
+        },
+        "datasource": {
+          "$ref": "#/definitions/text"
+        },
+        "key": {
+          "$ref": "#/definitions/text"
+        },
+        "fallback": {}
+      },
+      "required": [
+        "name",
+        "type",
+        "datasource",
+        "key"
+      ]
+    },
+    "list": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "$ref": "#/definitions/text"
+        },
+        "description": {
+          "type": "string"
+        },
+        "datasource": {
+          "$ref": "#/definitions/text"
+        },
+        "backend": {
+          "enum": [
+            "memory",
+            "postgresql",
+            "sqlite",
+            "file",
+            "redis",
+            "api"
+          ]
+        },
+        "initial_values": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 0
+        },
+        "cache_ttl": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 18446744073709551615
+        },
+        "table": {
+          "$ref": "#/definitions/text"
+        },
+        "value_column": {
+          "$ref": "#/definitions/text"
+        },
+        "expiration_column": {
+          "$ref": "#/definitions/text"
+        },
+        "db_path": {
+          "$ref": "#/definitions/text"
+        },
+        "redis_key": {
+          "$ref": "#/definitions/text"
+        },
+        "redis_url": {
+          "$ref": "#/definitions/text"
+        },
+        "path": {
+          "$ref": "#/definitions/text"
+        },
+        "match_type": {
+          "enum": [
+            "exact",
+            "prefix",
+            "regex"
+          ]
+        },
+        "reload_interval": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 18446744073709551615
+        },
+        "format": {
+          "enum": [
+            "txt",
+            "csv",
+            "json"
+          ]
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "anyOf": [
+        {
+          "required": [
+            "backend"
+          ]
+        },
+        {
+          "required": [
+            "datasource"
+          ]
+        }
+      ],
+      "allOf": [
+        {
+          "if": {
+            "required": [
+              "backend"
+            ],
+            "properties": {
+              "backend": {
+                "const": "file"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "path"
+            ]
+          }
+        }
+      ]
+    },
+    "operation": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "method": {
+          "type": "string",
+          "pattern": "^([Gg][Ee][Tt]|[Pp][Oo][Ss][Tt]|[Pp][Uu][Tt]|[Pp][Aa][Tt][Cc][Hh]|[Dd][Ee][Ll][Ee][Tt][Ee])$"
+        },
+        "path": {
+          "$ref": "#/definitions/text"
+        },
+        "timeout_ms": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 18446744073709551615
+        },
+        "params": {
+          "type": "object",
+          "additionalProperties": {
+            "type": [
+              "string",
+              "number",
+              "boolean",
+              "null"
+            ]
+          }
+        },
+        "query_params": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/text"
+          },
+          "minItems": 0
+        },
+        "request_body": {
+          "type": "string"
+        },
+        "response": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "mapping": {
+              "type": "object",
+              "additionalProperties": {
+                "$ref": "#/definitions/text"
+              }
+            },
+            "fallback": {}
+          },
+          "required": []
+        }
+      },
+      "required": [
+        "method",
+        "path"
+      ]
+    },
+    "service": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "$ref": "#/definitions/text"
+        },
+        "base_url": {
+          "$ref": "#/definitions/text"
+        },
+        "auth": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "type": {
+              "const": "header"
+            },
+            "name": {
+              "$ref": "#/definitions/text"
+            },
+            "value": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "name",
+            "value"
+          ]
+        },
+        "timeout_ms": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 18446744073709551615
+        },
+        "operations": {
+          "type": "object",
+          "minProperties": 1,
+          "propertyNames": {
+            "$ref": "#/definitions/text"
+          },
+          "additionalProperties": {
+            "$ref": "#/definitions/operation"
+          }
+        }
+      },
+      "required": [
+        "name",
+        "base_url",
+        "operations"
+      ]
+    }
+  },
+  "description": "Full resource syntax. Static validation does not select an execution profile or establish external connectivity.",
+  "oneOf": [
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "version": {
+          "const": "0.1"
+        },
+        "import": {
+          "$ref": "#/definitions/imports"
+        },
+        "rule": {
+          "$ref": "#/definitions/rule"
+        },
+        "ruleset": {
+          "$ref": "#/definitions/ruleset"
+        },
+        "pipeline": {
+          "$ref": "#/definitions/pipeline"
+        },
+        "registry": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/registryEntry"
+          },
+          "minItems": 1
+        }
+      },
+      "required": [],
+      "oneOf": [
+        {
+          "required": [
+            "rule"
+          ]
+        },
+        {
+          "required": [
+            "ruleset"
+          ]
+        },
+        {
+          "required": [
+            "pipeline"
+          ]
+        },
+        {
+          "required": [
+            "registry"
+          ]
+        }
+      ]
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "features": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/feature"
+          },
+          "minItems": 1
+        },
+        "version": {
+          "type": "string"
+        },
+        "metadata": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "import": {
+          "$ref": "#/definitions/imports"
+        }
+      },
+      "required": [
+        "features"
+      ]
+    },
+    {
+      "$ref": "#/definitions/list"
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "lists": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/list"
+          },
+          "minItems": 1
+        },
+        "import": {
+          "$ref": "#/definitions/imports"
+        }
+      },
+      "required": [
+        "lists"
+      ]
+    },
+    {
+      "$ref": "#/definitions/service"
+    }
+  ]
+}

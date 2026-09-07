@@ -52,7 +52,7 @@ fn cli_capability_and_input_artifacts_are_in_sync() {
         capabilities["input_schema"],
         "../../../CDL/schema/input.json"
     );
-    let tool = &capabilities["tools"]["validate_cli"];
+    let tool = &capabilities["tools"]["core_validate_cli"];
     assert_eq!(tool["entry_point"], "compile_core");
     assert_eq!(tool["scope"], "compile_only");
     assert_eq!(tool["execution_checked"], false);
@@ -95,6 +95,10 @@ fn setup(files: &[&str]) -> TempDir {
 }
 
 fn run(dir: &Path, args: &[&str]) -> Output {
+    let mut args = args.to_vec();
+    if args.first() == Some(&"validate") {
+        args.splice(1..1, ["--profile", "cdl-core-risk-draft-1"]);
+    }
     Command::new(env!("CARGO_BIN_EXE_corint"))
         .current_dir(dir)
         .args(args)

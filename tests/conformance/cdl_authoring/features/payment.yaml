@@ -1,0 +1,31 @@
+version: "0.2"
+features:
+  - name: count_1h
+    type: aggregation
+    method: count
+    datasource: payment_history
+    entity: payments
+    dimension: customer_id
+    dimension_value: "${event.customer_id}"
+    window: 1h
+    when:
+      all:
+        - status == "settled"
+  - name: adjusted_count
+    type: expression
+    expression: features.count_1h + max(event.amount, 1)
+  - name: account_age
+    type: state
+    method: time_since
+    datasource: payment_history
+    entity: customers
+    dimension: id
+    dimension_value: "${event.customer_id}"
+    timestamp_field: created_at
+    unit: days
+    fallback: 0
+  - name: trust_score
+    type: lookup
+    datasource: customer_profiles
+    key: "customer:${event.customer_id}"
+    fallback: 0

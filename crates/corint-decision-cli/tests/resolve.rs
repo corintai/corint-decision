@@ -47,7 +47,13 @@ fn entries() -> Vec<String> {
 }
 fn run(args: &[&str], exit: i32) -> Value {
     let result = Command::new(env!("CARGO_BIN_EXE_corint"))
-        .args(args)
+        .args(args.iter().take(1))
+        .args(if args.first() == Some(&"validate") {
+            vec!["--profile", "cdl-core-risk-draft-1"]
+        } else {
+            vec![]
+        })
+        .args(args.iter().skip(1))
         .args(["--format", "json"])
         .output()
         .unwrap();

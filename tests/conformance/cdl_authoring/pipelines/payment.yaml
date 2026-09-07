@@ -1,0 +1,29 @@
+version: "0.1"
+pipeline:
+  id: payment_pipeline
+  name: Payment screening
+  entry: assess
+  steps:
+    - step:
+        id: assess
+        name: Get customer facts
+        type: service
+        service: customer_risk
+        operation: assess
+        params:
+          customer_id: event.customer_id
+          amount: '${event.amount + 1}'
+          tags: [payment, synthetic]
+        output: vars.customer_risk
+        next: check
+    - step:
+        id: check
+        name: Check policy
+        type: ruleset
+        ruleset: payment
+        next: end
+  decision:
+    - when: total_score >= 100
+      result: decline
+    - default: true
+      result: approve

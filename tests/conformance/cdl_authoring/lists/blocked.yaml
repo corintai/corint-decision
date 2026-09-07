@@ -1,0 +1,3 @@
+id: blocked_customers
+backend: memory
+initial_values: [customer_001]

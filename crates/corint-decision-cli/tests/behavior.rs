@@ -35,7 +35,13 @@ fn save(dir: &Path, suite: &Value) {
 fn command(dir: &Path, args: &[&str]) -> Output {
     Command::new(env!("CARGO_BIN_EXE_corint"))
         .current_dir(dir)
-        .args(args)
+        .args(args.iter().take(1))
+        .args(if args.first() == Some(&"validate") {
+            vec!["--profile", "cdl-core-risk-draft-1"]
+        } else {
+            vec![]
+        })
+        .args(args.iter().skip(1))
         .output()
         .unwrap()
 }

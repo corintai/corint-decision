@@ -68,7 +68,13 @@ fn bind_context(dir: &Path) {
 fn report(dir: &Path, args: &[&str], exit: i32) -> Value {
     let output = Command::new(env!("CARGO_BIN_EXE_corint"))
         .current_dir(dir)
-        .args(args)
+        .args(args.iter().take(1))
+        .args(if args.first() == Some(&"validate") {
+            vec!["--profile", "cdl-core-risk-draft-1"]
+        } else {
+            vec![]
+        })
+        .args(args.iter().skip(1))
         .args(["--format", "json"])
         .output()
         .unwrap();

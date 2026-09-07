@@ -733,7 +733,10 @@ name = "corint-decision-toolchain"
 version = "0.1.0"
 dependencies = [
  "corint-decision-compiler",
+ "corint-decision-dsl-parser",
  "corint-decision-engine",
+ "corint-decision-model",
+ "corint-decision-runtime",
  "jsonschema",
  "libc",
  "serde",

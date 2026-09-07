@@ -1,45 +1,126 @@
 # Offline CDL CLI: validation
 
-Status: experimental; uses profile `cdl-core-risk-draft-1` and the
-[shared Core compiler](core-development.md#compiler-and-engine-apis). This page covers compile-time `corint validate`.
-For real-engine example execution, see [`corint test`](testing.md); for source
-packages and evidence binding, see [`corint build` / `corint verify`](packages.md).
-These tools do not evaluate business effectiveness or authorize publication.
+## Audience
 
-For a repository using file `import:` declarations, first use the explicit
-[`corint resolve` authoring profile](resolution.md) to produce a frozen closure.
-This does not broaden the accepted syntax of `validate` or the execution profile.
+For Agents, Skill authors and developers writing or modifying CDL files.
 
-For opt-in declared-environment compatibility, see
-[`corint check-target`](contracts/README.md). It reuses this input model and
-compiler; `validate` alone does not check a BusinessContext or target declaration.
+## Feature Overview
 
-## Build and run
+`corint validate` is the static syntax checker for Agent/Skill authoring. Its default
+profile is `cdl-static-1`, covering **Rule, Ruleset, Pipeline, Registry, Feature,
+List and Service**. It checks files without starting the decision engine, connecting
+to a database, reading list data, making HTTP requests or executing actions.
+The [authoring resource schema](../CDL/schema/authoring.json) defines accepted shapes.
+Strict Core compilation remains available through an explicit profile below.
 
-From the repository root, with a Rust toolchain and cached dependencies:
+## Steps
 
 ```sh
-cargo build -p corint-decision-cli --locked --offline
+cargo build -p corint-decision-cli --locked
+
+# A single resource; no Registry or input Schema is required.
 ./target/debug/corint validate --format json \
-  --input-schema tests/conformance/cdl_core/input-schema.yaml \
-  tests/conformance/cdl_core/rule.yaml \
-  tests/conformance/cdl_core/ruleset.yaml \
-  tests/conformance/cdl_core/pipeline.yaml \
-  tests/conformance/cdl_core/registry.yaml
+  tests/conformance/cdl_authoring/features/payment.yaml
+
+# A repository: all seven resource kinds, references and optional input types.
+./target/debug/corint validate --format json \
+  --root tests/conformance/cdl_authoring \
+  --input-schema tests/conformance/cdl_authoring/input-schema.yaml
 ```
 
-If dependencies are not cached, omit `--offline` for the build. The resulting
-binary itself does not need network access, a server, Work, a database or an LLM.
-Alternatively, `cargo run -p corint-decision-cli --locked -- validate ...` uses
-the same binary. Obtain help with `corint --help` and the tool/profile versions
-with `corint --version` (both produce text, not validation reports).
+With cached dependencies, add `--offline` to the build. To install the executable,
+use `cargo install --path crates/corint-decision-cli --locked`. The command is named
+`corint`. `corint --help` describes all commands; help/version output is not a
+validation report. Existing `test`, `build`, `verify`, `resolve`, package and replay
+commands retain their execution profiles and contracts.
 
-An optional local installation is `cargo install --path crates/corint-decision-cli --locked`.
-The executable is named `corint`. No prebuilt release/distribution is claimed here.
+## Inputs and Outputs
 
-## Inputs and strictness
+### Static inputs and scope
 
-`corint validate --input-schema PATH [--format text|json] FILE...`
+`corint validate [--profile cdl-static-1] [--root DIR] [--input-schema PATH] [--format text|json] [FILE...]`
+
+| Input | Checks |
+|---|---|
+| Explicit files | YAML, closed resource structure, expressions, literal type errors, duplicate loaded IDs, local graph targets/cycles and declared dependency cycles. Missing cross-file resources do not fail this mode. |
+| `--root DIR` with files | Load those root-relative files and transitive imports; require all resource references to resolve in the loaded collection. |
+| `--root DIR` without files | Discover `.yaml`, `.yml`, `.json` recursively in `rules/`, `rulesets/`, `pipelines/`, `features/`, `lists/`, `services/`, plus root `registry.yaml`, `registry.yml`, `registry.json`; check the complete discovered collection. |
+| `--input-schema PATH` | Also check declared event fields and their known expression types. The Schema path is relative to the current working directory, even with `--root`. |
+
+Only resource files belong in resource directories. Schema, case inputs, backups and
+reports are not resources and should be stored elsewhere. Supply explicit files for
+other directory layouts. Files must be UTF-8 regular files no larger than 4 MiB.
+Imports must stay within the canonical root, with at most 128 levels and 4096 files.
+Discovery rejects symlinks; explicit files/imports are canonicalized and cannot escape
+the root. Shared imports and repeated source paths are loaded once. Use `--` before
+filenames beginning with a dash.
+
+Static imports support `rules`, `rulesets`, `pipelines`, `features`, `lists`, `services`
+arrays of root-relative file paths. Use inline `import:` or a version/import header
+followed by `---` and one resource body. Duplicate keys across header and body fail.
+This is authoring composition; it does not extend the runtime or the separate
+[Core import profile](resolution.md).
+
+The static schema includes compatibility annotations, Rule parameters, Ruleset
+inheritance, condition aliases and Service steps alongside the Core resource shapes.
+Feature collections support aggregation, state (`time_since`), expression and lookup
+as specified in [Feature](../CDL/feature.md). Lists use a flat binding or `lists`
+collection; HTTP services use the flat [Service](../CDL/service.md) configuration.
+Legacy, unimplemented operators such as Feature graph/sequence are not enabled by
+this checker. Unknown fields, invalid versions and malformed structures fail.
+
+Feature checks reuse the runtime's pure window/filter validation and mathematical
+expression parser. Service checks reuse HTTP configuration and JSON body-template
+validation; operation references are checked when the service definition is loaded.
+Datasource names and SDK-provided bindings are external declarations: this command
+does not test their existence or connectivity. An external custom service without a
+local HTTP definition can be syntax-checked alone; it cannot satisfy repository
+reference checks without a declarative binding.
+
+The optional input file is the existing model `Schema` serialization, **not JSON
+Schema**. Its [format schema](../CDL/schema/authoring-input.json) supports number,
+string, boolean, null, any, arrays and objects. Map keys omit the `event.` prefix.
+See the [runnable input fixture](../tests/conformance/cdl_authoring/input-schema.yaml).
+No input Schema is inferred from example values or invented to make validation pass.
+External Feature/Service response types and runtime result availability are not
+proven by static validation.
+
+### Static output and Agent workflow
+
+`--format json` writes one JSON report to stdout on success and failure. It includes
+`report_version`, `profile: "cdl-static-1"`, `scope: "static"`, `valid`, `sources`,
+`references_checked`, `input_schema_checked`, `execution_checked: false`, `unchecked`
+and `diagnostics`. Resource paths are canonical absolute paths; input Schema diagnostics use the supplied
+Schema path. Text is the default.
+
+| Exit | Meaning |
+|---|---|
+| `0` | The requested static checks passed. |
+| `1` | CDL syntax, structure, expression, type or reference errors. |
+| `2` | Invalid arguments or file-loading errors. |
+
+Diagnostics contain `source`, `field_path` (JSON pointer), `stage`, `code`, severity
+and message. YAML parse errors include line/column when available; semantic locations
+are reported as field paths, without invented line numbers. Independent files are
+checked in one run; shape diagnostics are capped at 32 per file. Invalid structures
+are not fed into semantic checks. Message wording is explanatory; branch on codes
+and paths, not English text. Service objects and credential values are not echoed
+in schema diagnostics.
+
+The default Skill loop is: **write or edit → validate → repair diagnostics → validate
+again**. Read exit status and `valid`, and retain the reported `unchecked` scope.
+Use repository mode when related resources are available; use standalone mode for
+individual resources. Supplying an input Schema adds checks but is not a prerequisite.
+The [authoring Skill](../skills/cdl-policy-authoring/SKILL.md) follows this workflow.
+
+Static success does not prove execution-profile compatibility or expected business
+behavior. When requested, use explicit Core compilation and
+[`corint test`](testing.md) for supported Core resources and declared expectations.
+Validation does not publish, activate or authorize a policy.
+
+## Explicit Core compilation
+
+`corint validate --profile cdl-core-risk-draft-1 --input-schema PATH [--format text|json] FILE...`
 
 - Supply **all** resource files explicitly, including exactly one Registry.
   A lone syntactically valid Rule is not a valid complete bundle.
@@ -74,7 +155,7 @@ unsupported types are rejected rather than silently ignored.
 embedded public schema, deserializes the existing model and applies the same
 semantic input constraints as `compile_core`. Legacy model deserialization is unchanged.
 
-## Output and exit codes
+### Core output and exit codes
 
 `--format json` emits exactly one JSON object to stdout, including on usage or
 file errors. No logs or banners are mixed in. Default text output also goes to
@@ -110,34 +191,23 @@ authorization: it has no artifact hash, evaluation evidence, approval or busines
 data lineage. Do not reuse it as proof for a changed file or a different target.
 Those cross-product contracts remain planned work.
 
-## Agent workflow and evidence
 
-Give an Agent the relevant [CDL topic references](../CDL/overall.md), [capability inventory](contracts/schema/capabilities.json),
-resource/input schemas, explicit business requirements and a caller-supplied field schema.
-After each YAML edit, run `corint validate --format json ...`, inspect the exit code
-and diagnostics, correct the relevant file, then validate the **complete** bundle again.
-Unknown fields should trigger clarification of the business context, not invented data.
+## Evidence
 
-Passing compilation is one gate. Behavior tests must still exercise representative
-inputs and expected decisions in the real engine. Threshold quality, business
-impact, publication approval and production safety require separate evidence.
-Use [`corint test`](testing.md) for declared behavioral expectations and
-[`corint build` / `corint verify`](packages.md) for the experimental source-package
-workflow. Strict generator integration is documented in [generation](generation.md). The
-Core server independently enforces its local operator approvals and acceptance
-cases; full production publication governance remains outside this increment.
+[Static CLI tests](../crates/corint-decision-cli/tests/authoring.rs) cover all resource
+kinds, public online examples, imports, diagnostics, type/reference failures and
+absence of HTTP calls. [Core CLI tests](../crates/corint-decision-cli/tests/validate.rs)
+continue to enforce compiler diagnostic parity under the explicit Core profile.
 
-The [CLI process tests](../crates/corint-decision-cli/tests/validate.rs) reuse both
-positive bundles and every negative mutation from the real-engine fixture manifest.
-They check library diagnostic parity, strict input files, stable input-error paths,
-exit codes, clean JSON output, explicit path handling and unchanged source files
-from isolated temporary working directories. CI runs these alongside the
-[real-engine conformance tests](../crates/corint-decision-engine/tests/cdl_core_conformance.rs):
+## FAQ
 
-```sh
-cargo test -p corint-decision-cli --locked --offline
-cargo test -p corint-decision-engine --test cdl_core_conformance --locked --offline
-```
+An individual resource can pass without its dependencies; inspect
+`references_checked` before treating it as a checked collection. A static success
+with `execution_checked: false` is expected. Use an explicit execution profile
+and behavior tests when runtime compatibility or decisions need verification.
 
-All fixtures are synthetic. Real Work interoperability, real-data evaluation,
-full cross-product acceptance and production readiness require separate evidence.
+## Revision History
+
+| Date | Changes |
+|---|---|
+| 2026-09-07 | Make full CDL static validation the default; retain explicit Core compilation. |

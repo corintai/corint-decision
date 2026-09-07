@@ -107,6 +107,19 @@ impl HttpServiceClient {
     /// Register an HTTP service configuration
     /// Register a named HTTP service. Reject ambiguous bindings.
     pub fn register_service(&mut self, config: HttpServiceConfig) -> Result<()> {
+        Self::validate_config(&config)?;
+        if self.configs.contains_key(&config.name) {
+            return Err(RuntimeError::InvalidOperation(format!(
+                "Duplicate service binding: {}",
+                config.name
+            )));
+        }
+        self.configs.insert(config.name.clone(), config);
+        Ok(())
+    }
+
+    /// Validate a declaration without constructing a client or executing a request.
+    pub fn validate_config(config: &HttpServiceConfig) -> Result<()> {
         if config.name.trim().is_empty() || config.operations.is_empty() || config.timeout_ms == 0 {
             return Err(RuntimeError::InvalidOperation(
                 "Service name, operations and positive timeout are required".into(),
@@ -125,12 +138,6 @@ impl HttpServiceClient {
             return Err(RuntimeError::InvalidOperation(
                 "Service base_url requires HTTP or HTTPS, a host and no fragment".into(),
             ));
-        }
-        if self.configs.contains_key(&config.name) {
-            return Err(RuntimeError::InvalidOperation(format!(
-                "Duplicate service binding: {}",
-                config.name
-            )));
         }
         for (name, operation) in &config.operations {
             if name.trim().is_empty()
@@ -164,7 +171,6 @@ impl HttpServiceClient {
                 "Only header service authentication is supported".into(),
             ));
         }
-        self.configs.insert(config.name.clone(), config);
         Ok(())
     }
 
@@ -500,6 +506,22 @@ impl HttpServiceClient {
         ctx: &ExecutionContext,
     ) -> Result<String> {
         let resolved_params = self.resolve_params(endpoint_params, pipeline_params, ctx)?;
+        Self::render_body_template(template, |name| {
+            let value = resolved_params.get(name).ok_or_else(|| {
+                RuntimeError::ServiceCallFailed(format!("Missing service body parameter: {name}"))
+            })?;
+            serde_json::to_string(value).map_err(|error| {
+                RuntimeError::ServiceCallFailed(format!("Cannot encode service parameter: {error}"))
+            })
+        })
+    }
+
+    /// Check JSON template syntax with placeholder values, without executing a request.
+    pub fn validate_body_template(template: &str) -> Result<()> {
+        Self::render_body_template(template, |_| Ok("null".into())).map(|_| ())
+    }
+
+    fn render_body_template(template: &str, resolve: impl Fn(&str) -> Result<String>) -> Result<String> {
         let invalid = |message: &str| RuntimeError::ServiceCallFailed(message.into());
         let replace = |placeholder: &str, head: &str, tail: &str| -> Result<String> {
             let name = placeholder
@@ -523,12 +545,7 @@ impl HttpServiceClient {
                     "Service body placeholders must occupy a complete JSON value",
                 ));
             }
-            let value = resolved_params.get(name).ok_or_else(|| {
-                RuntimeError::ServiceCallFailed(format!("Missing service body parameter: {name}"))
-            })?;
-            serde_json::to_string(value).map_err(|error| {
-                RuntimeError::ServiceCallFailed(format!("Cannot encode service parameter: {error}"))
-            })
+            resolve(name)
         };
 
         // Scan only the original template. Inserted values are never interpreted

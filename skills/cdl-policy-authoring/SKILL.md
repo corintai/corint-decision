@@ -1,68 +1,52 @@
 ---
 name: cdl-policy-authoring
-description: "根据业务需求创建、修改或修复 CDL 规则策略文件，补齐输入 Schema、资源引用和行为测试，并使用 Corint 严格 Core 工具链验证。适用于通用 Agent 编写 Rule、Ruleset、Pipeline、Registry；不默认执行策略发布或激活。"
+description: "根据业务需求创建、修改或修复完整 CDL：Rule、Ruleset、Pipeline、Registry、Feature、List、Service；编写后调用 Corint CLI 静态校验并修复诊断。默认不执行策略或连接外部资源；按需增加输入 Schema 检查、行为测试和目标兼容性检查。"
 ---
 
 # CDL 策略编写
 
-将业务需求转为可审查的 CDL 文件与可重复执行的验证结果。直接使用本地文件和公开 CLI；不依赖 Work、模型 SDK 或特定 Agent 工具。
+将业务需求转为可审查的 CDL 文件，最后通过公开 CLI 静态校验。默认工作流为：编写或修改 → 校验 → 按诊断修复 → 再次校验。使用本地文件，不依赖 Work 或特定 Agent 工具。
 
 ## 定位规范与工具
 
-本 Skill 随 `corint-decision` 仓库分发。默认仓库根目录为本文件所在目录的 `../..`；先确认其中存在 `docs/contracts/schema/capabilities.json`、`tests/conformance/generation/` 和 `crates/corint-decision-cli/Cargo.toml`。
-若 Skill 被复制到其他位置，从用户指定的 CDL 仓库或当前工作区定位这三个入口；仍无法定位时询问仓库路径，不把 Skill 的安装目录当作源码仓库，也不自动下载另一版本。
-下列仓库链接按原始目录布局给出；迁移后按已确认的仓库根目录解析同一相对路径。
+本 Skill 随 `corint-decision` 分发。先检查本文件所在目录的 `../..` 是否包含 `CDL/schema/authoring.json`、`docs/contracts/schema/capabilities.json` 和 `crates/corint-decision-cli/Cargo.toml`。
+若安装在其他位置，从当前工作区或用户指定位置定位源码仓库。仍无法定位才询问路径，不把 Skill 安装目录误当作源码仓库，也不自动下载另一版本。下列链接按原始仓库布局给出，迁移后按已确认的仓库根目录解析。
 
-开始编写前读取：
+编写前读取[能力清单](../../docs/contracts/schema/capabilities.json)、[语言概览](../../CDL/overall.md)及[静态资源 Schema](../../CDL/schema/authoring.json)，再按涉及的资源读取专题文档。
+默认校验 Profile 是 `cdl-static-1`，覆盖七类资源；Core 专题中的限制描述严格执行入口，不能据此把完整 CDL 缩减为 Core，也不能把静态通过解释为 Core 可执行。
+不要生成当前语言尚未实现的 Feature graph/sequence 等操作符。语言版本、静态检查 Profile、执行 Profile 分别确认，不通过改版本号绕过诊断。
 
-- [能力清单](../../docs/contracts/schema/capabilities.json)：确认目标 Profile、语言版本、支持状态、限制和入口；这是能力声明的权威来源。
-- [CDL 语言概览与通用约束](../../CDL/overall.md)以及[资源 Schema](../../CDL/schema/core.json)、[输入 Schema 格式](../../CDL/schema/input.json)：按当前检出的版本生成，具体字段和语义查阅概览链接的资源专题。
+## 确定语义并修改文件
 
-默认生成严格 Core 的完整资源闭包。用户指定其他入口时，先确认该入口的能力和验收方式；不能静默改用兼容解析器使文件通过。
-不要把旧兼容文档或孤立代码片段当成严格 Core 模板。也不要把 `version` 字段本身当作严格入口的选择开关。
+从需求和现有策略提取输入字段、单位、阈值、优先级、评分、最终结果和动作意图。保留用户的 ID、Schema、预期行为和无关文件。金额单位、关键阈值、默认行为或字段来源不明时询问会影响语义的问题，继续处理独立部分，未确认内容标为草稿。
 
-## 确定业务语义
+- 按资源类型采用当前定义：Rule/Ruleset/Pipeline/Registry、[Feature](../../CDL/feature.md)、[List](../../CDL/list.md)、[Service](../../CDL/service.md)。完整静态示例见[公共 fixture](../../tests/conformance/cdl_authoring/registry.yaml)及同目录的资源文件。
+- 用 `entry`、`next` 和 routes 表达控制流；first-match 分支按业务优先级排列。区分 Rule 评分、Ruleset 信号、Pipeline 最终结果。
+- 外部 Feature/List/Service 需要声明与引用；确认数据源名、窗口、单位、操作和失败行为，不需要为了语法校验启动数据库或调用服务。
+- 单文件编辑可单独校验；若相关资源已在本地，用仓库模式同时检查引用与依赖图。Schema、测试、报告和备份不要放进资源扫描目录。
+- 已有输入 Schema 时传给 CLI 增加字段和类型检查。没有 Schema 时仍可完成静态校验，明确字段类型未验证；不得编造或放宽 Schema 来通过。
+- 不为单纯编写/语法校验默认生成行为用例、打包、运行策略或发布产物。保留已有验收用例，不从实际输出反向改写预期。
 
-从用户需求和现有策略提取输入字段、类型、单位、必填性、阈值边界、优先级、评分贡献、最终结果与动作意图。
-保留用户提供的字段 Schema、已有 ID 和验收预期，除非需求明确要求变更。
-金额等精度敏感字段先确认单位；Core 数值不是十进制定点金额。不要自行假设币种、舍入方式或缺失值等于零。
+## 校验与修复
 
-先写出代表性输入及期望结果，再实现规则。若关键阈值、默认决策、冲突优先级或字段来源不明确，集中询问影响行为的问题；继续准备不依赖这些答案的文件，未确认部分明确标为草稿。
-已有验收用例作为约束保留，不能从引擎实际输出反向生成期望值来掩盖错误。Agent 自行补充的合成用例应与用户确认的业务验收区分说明。
+读取[CLI 操作流程](references/cli-workflow.md)，使用当前源码构建的 CLI 或已确认版本的 `corint`。不要另写 YAML/表达式校验器替代 CLI。
 
-## 生成与修改
+1. 对编写或修改的资源运行 `validate --format json`。存在完整仓库时加 `--root`；需要字段检查时加 `--input-schema`。
+2. 同时检查进程退出码和报告 `valid`，按 `source`、`field_path`、`stage`、`code` 定位错误。解析器提供时还可用 `line`/`column`。
+3. 修复原因后重新运行相同范围的校验。涉及引用或依赖变更时重新验证完整仓库。不得删除合法引用、替换外部资源或改变业务逻辑只为通过。
+4. 记录 `references_checked`、`input_schema_checked` 和 `unchecked`。`execution_checked: false` 是默认静态验证的正常结果。
 
-从[公共生成模板](../../tests/conformance/generation/rule.yaml)及同目录的 `ruleset.yaml`、`pipeline.yaml`、`registry.yaml` 起步；输入格式参照[输入 fixture](../../tests/conformance/cdl_core/input-schema.yaml)。按需求改写示例 ID、阈值和业务含义，不把示例默认决策带入新业务。
+退出码 `0` 为校验通过，`1` 为 CDL/Schema/引用错误，`2` 为用法或文件读取错误。构建失败另行报告。重复诊断无法定位时保留命令和可复现错误，不进行无依据改写。工具不可用时可交付草稿，但没有实际运行不能宣称验证通过。
 
-- 每个 Core 文件只含一个资源文档；使用当前规范要求的显式版本。完整闭包包含恰好一个 Registry，以及所有被引用的资源。
-- 规则匹配、局部评分、Ruleset 信号和 Pipeline 最终决策分别建模。局部信号不会自动覆盖最终决策，零分也不等于未匹配。
-- 按业务优先级安排 first-match 分支和默认分支。图的 `entry`、路由和 `next` 决定执行顺序，文件排列顺序不能代替控制流。
-- 可选输入先用 `exists` 保护读取；读取受 guard 控制的调用结果前检查其状态。涉及子 Pipeline、结果可用性或复杂分支时，读取 [Pipeline](../../CDL/pipeline.md) 和[执行上下文](../../CDL/context.md#strict-core-input-and-results)。
-- 成员匹配和字符串运算按 Core 规范当前定义使用；字面量数组成员匹配不等于外部 List 服务，也不意味着事件输入支持数组。
+## 按需增加验证
 
-编辑现有策略时，将新旧需求差异映射到受影响的资源与用例，保留无关策略。即使只改一条 Rule，也要用完整闭包验证其对路由与最终决策的影响。
+仅在用户要求或任务本身包含行为变更验证时增加相应检查：
 
-## 验证与修复
-
-读取[CLI 操作流程](references/cli-workflow.md)，通过当前仓库构建的公开 CLI 执行验证，不另写表达式解释器或手工校验器。
-
-1. 运行 `validate` 检查完整闭包、输入类型和控制流。
-2. 按[行为测试契约](../../docs/testing.md)和[测试 Schema](../../docs/contracts/schema/test-suite.json)编写用例，参照[行为 fixture](../../tests/conformance/cdl_core/behavior.yaml)。覆盖相关阈值的下方/等于/上方、重叠条件的优先级、默认路径和输入错误；有可选字段、guards、子调用时补相应未执行路径。不要为不涉及的能力机械增加用例。
-3. 运行 `test`；它会执行 Trace 关闭/开启两种模式。检查退出码、顶层状态、用例计数和各用例结果。
-4. 根据诊断中的 `stage`、`code`、`source`、`field_path` 修复原因。资源、输入 Schema 或用例改变后重新执行相关完整闭包的 `validate` 与 `test`。
-
-编译失败不能作为行为用例的预期运行错误吞掉。测试失败时先核对业务预期，不能删除失败用例、放宽 Schema 或改默认决策只为通过。
-重复诊断无法定位时保留可复现命令与问题，不进行无依据的循环改写。
-工具缺失、构建失败或无执行权限时仍可交付草稿，但明确标记“未验证”及阻碍；没有实际执行不能宣称验证通过。
-
-## 按需扩展
-
-- **历史聚合或外部数据**：先读取 [Feature 输入绑定契约](../../docs/contracts/feature-pipeline.md)。区分上游提供的声明字段与 SDK `FeaturePipeline` 计算的绑定字段；确认单位、窗口、截止点、revision 和失败行为。Core 测试中的合成特征值仅验证消费逻辑，不证明特征计算或数据源已接通。不要将 `features.*`、SQL、Connector 或 Model 调用直接塞入严格 Core。
-- **创作期 import**：仅在需要模块化引用时读取[解析契约](../../docs/resolution.md)，使用独立创作 Profile 和 `resolve`，再对冻结闭包测试；不能将未解析 import 直接交给 `validate`。
-- **目标兼容性、打包或回放**：按需要读取 [CLI 操作流程](references/cli-workflow.md)的对应段落，不默认生成额外部署产物。
+- **Core 编译与行为测试**：读取[Core Schema](../../CDL/schema/core.json)、[测试契约](../../docs/testing.md)，先运行 `validate --profile cdl-core-risk-draft-1`，再运行 `test`。这一路径要求完整 Core 闭包、输入 Schema 和独立预期用例，不能直接承接外部扩展资源。`test` 会运行 Trace 开关两种模式。
+- **在线集成**：依据 Feature/List/Service 契约和用户提供的运行环境设计集成测试；静态通过不证明数据源、名单内容或 HTTP 服务可用。
+- **Core 导入、目标检查、打包或回放**：读取[CLI 流程](references/cli-workflow.md)对应入口。静态 `--root` 导入不等于 Core `resolve`，也不改变执行能力。
 
 ## 交付
 
-交付资源文件、输入 Schema、行为用例和实际运行的验证报告，并简述关键业务假设、目标 Profile、执行命令、通过/失败数量和未验证范围。
-单个资源片段要注明缺少的上下文，不能宣称完整策略已验证。报告仅对应本次验证的文件版本。
-用例通过表示所列示例符合预期，不代表真实业务效果。动作是意图字符串；本 Skill 的编写授权不包含执行动作、发布或激活策略，已有明确授权的后续交付按相应流程处理。
+交付修改的文件和实际执行的校验结果，简述业务假设、命令、通过/失败和未验证范围。单文件通过要标明未做跨文件引用检查；报告仅对应本次文件版本。
+语法通过不能证明业务效果。编写与校验不会执行动作、发布或激活策略；已有明确授权的后续工作按相应流程处理。

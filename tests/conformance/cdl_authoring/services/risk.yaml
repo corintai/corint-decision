@@ -1,0 +1,14 @@
+name: customer_risk
+base_url: https://risk.example.invalid/v1
+operations:
+  assess:
+    method: POST
+    path: /customers/{customer_id}/assess
+    params:
+      channel: web
+    request_body: '{"amount": ${amount}, "channel": "${channel}"}'
+    response:
+      mapping:
+        score: assessment.score
+      fallback:
+        score: 0

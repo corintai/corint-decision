@@ -1,0 +1,19 @@
+name: payment_event
+fields:
+  type:
+    name: type
+    field_type: string
+    required: true
+  customer_id:
+    name: customer_id
+    field_type: string
+    required: true
+  amount:
+    name: amount
+    field_type: number
+    required: true
+  tags:
+    name: tags
+    field_type:
+      array:
+        item_type: string

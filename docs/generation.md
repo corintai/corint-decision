@@ -42,7 +42,7 @@ See the [provider implementations](../crates/corint-decision-llm/src/provider/) 
 
 The opt-in Rust `CoreGenerator` creates or revises a **complete** CDL Core
 closure, not an isolated rule string. It reuses the same compiler, real-engine
-behavior tests and source-package builder as `corint validate / test / build`.
+behavior tests and source-package builder as explicit Core `corint validate --profile cdl-core-risk-draft-1`, `test` and `build`.
 It does not require Corint Work. Current evidence uses fixed, recorded model
 responses, not live-provider quality measurements or a Work product integration.
 
@@ -216,3 +216,9 @@ Review the draft against the [current CDL definitions](../CDL/overall.md), valid
 through the [intended execution entry](runtime-validation.md), and run independent tests
 before the caller stores or deploys it. For a complete Core candidate with those checks
 built into generation, use `CoreGenerator`.
+
+## Revision History
+
+| Date | Changes |
+|---|---|
+| 2026-09-07 | Distinguish strict generator compilation from default static CLI validation. |

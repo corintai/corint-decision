@@ -111,7 +111,13 @@ fn cli(dir: &Path, label: &str, args: &[&str], expected: i32) -> Value {
     command
         .env_clear()
         .current_dir(dir)
-        .args(args)
+        .args(args.iter().take(1))
+        .args(if args.first() == Some(&"validate") {
+            vec!["--profile", "cdl-core-risk-draft-1"]
+        } else {
+            vec![]
+        })
+        .args(args.iter().skip(1))
         .args(["--format", "json"]);
     let mut process = Process::spawn(command, dir, label);
     assert_eq!(process.wait().code(), Some(expected), "{}", process.logs());
