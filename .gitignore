@@ -47,3 +47,5 @@ __pycache__/
 
 # Isolated datasource E2E reports
 /tests/results.*/
+repo2
+simulated-data.csv
