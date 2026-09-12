@@ -187,8 +187,22 @@ export default function PipelineCanvas({
               conditionLabel(object(route).when),
             ),
           );
-        edge(step.id, step.default, "default", "默认（其余情况）");
-      } else edge(step.id, step.next);
+        edge(
+          step.id,
+          step.default === undefined ? "end" : step.default,
+          "default",
+          step.default === undefined
+            ? "默认结束（其余情况）"
+            : "默认（其余情况）",
+        );
+      } else {
+        edge(
+          step.id,
+          step.next === undefined ? "end" : step.next,
+          undefined,
+          step.next === undefined ? "默认结束" : undefined,
+        );
+      }
     });
     const all = [
       { id: "__entry", name: "开始处理事件", type: "start" } as Step,
