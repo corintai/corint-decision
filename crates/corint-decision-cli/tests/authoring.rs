@@ -483,7 +483,7 @@ fn missing_references_duplicate_ids_and_graph_cycles_fail() {
     has(&run(dir.path(), &["--root", "."], 1), "E_DUPLICATE_ID");
 }
 #[test]
-fn yaml_duplicates_multiple_bodies_and_unknown_versions_fail() {
+fn malformed_resource_declarations_and_unknown_versions_fail() {
     for text in [
         "rule: {}\nrule: {}",
         "rule: {}\n---\nrule: {}",
@@ -960,4 +960,65 @@ fn global_errors_do_not_print_misleading_file_passes() {
     let text = text_report(dir.path(), &["--root", "."], 1);
     assert!(!text.contains("[PASS]"));
     assert!(text.contains("E_UNRESOLVED_REFERENCE"));
+}
+
+#[test]
+fn shared_files_and_split_files_resolve_the_same_resources() {
+    let rule_a = "rule: {id: first, name: First, when: 'true', score: 10}\n";
+    let rule_b = "rule: {id: second, name: Second, when: 'true', score: 20}\n";
+    let ruleset = "ruleset:\n  id: combined\n  rules:\n    - first\n    - second\n  conclusion:\n    - default: true\n      signal: pass\n";
+    let pipeline = "pipeline:\n  id: bundled_pipeline\n  name: Bundled\n  entry: check\n  steps:\n    - step: {id: check, name: Check, type: ruleset, ruleset: combined, next: end}\n  decision:\n    - default: true\n      result: approve\n";
+    for separator in ["\n", "\n---\n"] {
+        let dir = tempfile::tempdir().unwrap();
+        let content = format!(
+            "version: '0.1'\n{pipeline}{separator}{rule_a}{separator}{rule_b}{separator}{ruleset}"
+        );
+        std::fs::write(dir.path().join("policy.yaml"), content).unwrap();
+        let report = run(dir.path(), &["policy.yaml"], 0);
+        assert_eq!(report["sources"].as_array().unwrap().len(), 1);
+        assert_eq!(report["references_checked"], true);
+        assert_eq!(report["execution_checked"], false);
+    }
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("pipeline.yaml"), pipeline).unwrap();
+    std::fs::write(dir.path().join("rules.yaml"), format!("{rule_a}{rule_b}")).unwrap();
+    std::fs::write(dir.path().join("ruleset.yaml"), ruleset).unwrap();
+    let report = run(dir.path(), &["pipeline.yaml"], 0);
+    assert_eq!(report["sources"].as_array().unwrap().len(), 3);
+    // Import groups may point at a shared file containing the expected kinds.
+    std::fs::write(
+        dir.path().join("pipeline.yaml"),
+        format!("import:\n  rules: [rules.yaml]\n  rulesets: [ruleset.yaml]\n---\n{pipeline}"),
+    )
+    .unwrap();
+    run(dir.path(), &["pipeline.yaml"], 0);
+}
+
+#[test]
+fn shared_files_never_silently_overwrite_duplicate_ids_or_fields() {
+    for (source, code) in [
+        ("rule: {id: same, name: Same, when: 'true', score: 1}\nrule: {id: same, name: Same, when: 'false', score: 2}", "E_DUPLICATE_ID"),
+        ("rule: {id: same, name: Same, when: 'true', score: 1, score: 2}", "E_YAML"),
+        ("version: '0.1'\nversion: '0.1'\nrule: {id: a, name: A, when: 'true', score: 1}", "E_YAML"),
+        ("version: '0.1'\n---\nversion: '99'\nrule: {id: a, name: A, when: 'true', score: 1}", "E_INVALID_STRUCTURE"),
+        ("rule: {id: a, name: A, when: 'true', score: 1}\nrule: {id: b, name: B, when: 'true', unknown: 2, score: 1}", "E_UNKNOWN_FIELD"),
+    ] {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("policy.yaml"), source).unwrap();
+        has(&run(dir.path(), &["policy.yaml"], 1), code);
+    }
+}
+
+#[test]
+fn all_seven_kinds_can_share_a_document_stream_with_their_own_versions() {
+    let dir = tempfile::tempdir().unwrap();
+    let contents = FILES
+        .iter()
+        .filter(|name| **name != "input-schema.yaml")
+        .map(|name| std::fs::read_to_string(fixtures().join(name)).unwrap())
+        .collect::<Vec<_>>()
+        .join("\n---\n");
+    std::fs::write(dir.path().join("all.yaml"), contents).unwrap();
+    let report = run(dir.path(), &["all.yaml"], 0);
+    assert_eq!(report["sources"].as_array().unwrap().len(), 1);
 }

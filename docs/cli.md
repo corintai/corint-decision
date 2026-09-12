@@ -150,13 +150,18 @@ Schema path. Text is the default.
 Diagnostics contain `source`, `field_path` (JSON pointer), `stage`, `code`, severity
 and message. YAML parse errors include line/column when available; semantic locations
 are reported as field paths, without invented line numbers. Independent files are
-checked in one run; shape diagnostics are capped at 32 per file. Invalid structures
+checked in one run; shape diagnostics are capped at 32 per resource. Invalid structures
 are not fed into semantic checks. Message wording is explanatory; branch on codes
 and paths, not English text. Service objects and credential values are not echoed
 in schema diagnostics.
 
 The default Skill loop is: **write or edit → validate → repair diagnostics → validate
 again**. Read exit status and `valid`, and retain the reported `unchecked` scope.
+Resources may share one source file (adjacent declarations or `---` documents),
+use separate files, or mix both layouts; see [authoring source layout](../CDL/overall.md#authoring-source-layout).
+All declarations are checked and indexed for imports and ID references. File paths
+appear once in `sources`, even when a file contains several resources.
+
 Both single-file and repository validation check referenced resources. Supplying an input Schema adds checks but is not a prerequisite.
 The [authoring Skill](../skills/cdl-policy-authoring/SKILL.md) follows this workflow.
 

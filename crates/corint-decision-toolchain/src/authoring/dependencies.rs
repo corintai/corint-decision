@@ -1,6 +1,5 @@
 //! Resolve a file's resource references without validating unrelated neighbors.
 use super::{sources, Document, Options, Reference, Report};
-use serde::Deserialize;
 use serde_json::Value;
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
@@ -97,15 +96,11 @@ impl Resolver {
                 let Some(text) = sources::read(&path, &mut Report::empty()) else {
                     continue;
                 };
-                for doc in serde_yaml::Deserializer::from_str(&text) {
-                    // Index decoded IDs even when their resource has a format
-                    // or schema error. Loading the referenced file reports it.
-                    let Ok(value) = serde_yaml::Value::deserialize(doc)
-                        .and_then(serde_yaml::from_value::<Value>)
-                    else {
-                        break;
-                    };
-                    index_value(&value, &path, &mut index);
+                // Index every declaration in a shared file, including repeated kinds.
+                if let Ok(values) = super::bundle::parse(&text) {
+                    for value in values {
+                        index_value(&value, &path, &mut index);
+                    }
                 }
             }
             self.index = Some(index);

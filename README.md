@@ -1,5 +1,7 @@
 # CORINT Decision Engine
 
+**可视化 CDL 编辑器：** 新增 [CDL Studio Web 应用](web/README.md)，支持 Pipeline 可视化编辑、其他资源 YAML 源码编辑和 CLI 静态校验。在 `web/` 运行 `npm ci && npm run dev` 启动；校验前需构建 `corint-decision-cli`。
+
 Service invocations use a unified `service + operation` node. See the
 [CDL Service contract](CDL/service.md) for HTTP bindings and custom adapters.
 

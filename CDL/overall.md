@@ -26,6 +26,33 @@ needs no Registry or input Schema. Repository mode additionally resolves referen
 an optional [input Schema](schema/authoring-input.json) adds event field checks.
 This authoring gate does not execute resources or change their execution profiles.
 
+### Authoring source layout
+
+For `cdl-static-1` and CDL Studio, file layout is independent of resource identity.
+Resources may be stored in separate files, together in one file, or in a mixture
+of both. A shared source can contain adjacent top-level `pipeline:`, `rule:`,
+`ruleset:`, `registry:`, `features:` and `lists:` declarations, including repeated
+resource kinds. Explicit YAML `---` document separators are also supported.
+Repeated declarations are a CDL source extension: a generic YAML mapping loader
+must not be used to decode them into a single last-value-wins object.
+
+The first document's `version` and `import` fields provide defaults for subsequent
+resource documents. An explicit document version overrides the default and is checked
+against its resource contract; duplicate fields within a document and a second import
+header are rejected. Version defaults are omitted for List and Service resources,
+whose schemas do not declare a version field. Unwrapped Service and List resources
+can share a file using document separators. Ordinary fields inside each resource
+remain unique, every resource is validated, and duplicate resource IDs remain errors.
+Imports and ID-based dependency discovery index every resource in a shared source;
+an import group's target must contain at least one resource of that kind.
+
+CDL Studio visualizes each Pipeline in a shared file independently. Selecting and
+editing a Pipeline preserves neighboring resource declarations and comments.
+The authoring loader normalizes each declaration to the resource schema below;
+strict Core compilation and its separately declared import profile still consume
+their documented normalized source forms.
+
+
 ## 1. Resource roles
 
 The four Core resource kinds have different responsibilities:

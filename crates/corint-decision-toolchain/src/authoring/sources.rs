@@ -92,6 +92,34 @@ pub(super) fn yaml(text: &str, source: &str, report: &mut Report) -> Option<Valu
     None
 }
 
+pub(super) fn resources(text: &str, source: &str, report: &mut Report) -> Option<Vec<Value>> {
+    if let Err(error) = corint_decision_dsl_parser::source_format::validate_rules_format(text) {
+        report.error(
+            source,
+            "/ruleset/rules",
+            "parse",
+            "E_RULES_FORMAT",
+            error.to_string(),
+        );
+        let diag = report.diagnostics.last_mut().unwrap();
+        diag.line = Some(error.line);
+        diag.column = Some(error.column);
+        return None;
+    }
+    match super::bundle::parse(text) {
+        Ok(values) => Some(values),
+        Err(error) => {
+            report.error(source, "", "parse", "E_YAML", error.to_string());
+            if let Some(location) = error.location() {
+                let diag = report.diagnostics.last_mut().unwrap();
+                diag.line = Some(location.line());
+                diag.column = Some(location.column());
+            }
+            None
+        }
+    }
+}
+
 pub(super) fn scan(dir: &Path, files: &mut Vec<(PathBuf, bool)>, report: &mut Report) {
     let entries = match std::fs::read_dir(dir) {
         Ok(entries) => entries,
@@ -244,7 +272,7 @@ pub(super) fn load(options: &Options, report: &mut Report) -> Vec<Document> {
 struct Loader<'a> {
     root: Option<PathBuf>,
     documents: Vec<Document>,
-    loaded: BTreeMap<PathBuf, Value>,
+    loaded: BTreeMap<PathBuf, Vec<Value>>,
     visiting: Vec<PathBuf>,
     report: &'a mut Report,
 }
@@ -310,11 +338,15 @@ impl Loader<'_> {
         if !self.report.sources.contains(&source) {
             self.report.sources.push(source.clone());
         }
-        let Some(mut value) = yaml(&text, &source, self.report) else {
+        let Some(mut values) = resources(&text, &source, self.report) else {
             return;
         };
         if discovered {
-            if let Some(reason) = auxiliary_kind(&value) {
+            if let Some(reason) = values
+                .first()
+                .filter(|_| values.len() == 1)
+                .and_then(auxiliary_kind)
+            {
                 self.report.sources.retain(|path| path != &source);
                 if !self
                     .report
@@ -334,81 +366,87 @@ impl Loader<'_> {
                 .skipped_sources
                 .retain(|entry| entry.source != source);
         }
-        check_kind(&value, expected, &source, self.report);
+        check_kind(&values, expected, &source, self.report);
         self.visiting.push(canonical.clone());
-        if let Some(imports) = value.get("import") {
-            if let Some(groups) = imports.as_object() {
-                for (group, paths) in groups {
-                    let kind = match group.as_str() {
-                        "rules" => "rule",
-                        "rulesets" => "ruleset",
-                        "pipelines" => "pipeline",
-                        "features" => "features",
-                        "lists" => "list",
-                        "services" => "service",
-                        _ => {
-                            self.report.error(
-                                &source,
-                                "/import",
-                                "schema",
-                                "E_UNKNOWN_FIELD",
-                                format!("Unknown import group: {group}"),
-                            );
-                            continue;
-                        }
-                    };
-                    if let Some(paths) = paths.as_array() {
-                        for path in paths {
-                            if let Some(path) = path.as_str().filter(|p| !p.trim().is_empty()) {
-                                if let Some(root) = &self.root {
-                                    let path = root.join(path);
-                                    self.load(&path, Some(kind), false);
-                                }
-                                // Without --root, only validate the import declaration;
-                                // explicit file/directory selection must not load siblings.
-                            } else {
+        for value in &mut values {
+            if let Some(imports) = value.get("import") {
+                if let Some(groups) = imports.as_object() {
+                    for (group, paths) in groups {
+                        let kind = match group.as_str() {
+                            "rules" => "rule",
+                            "rulesets" => "ruleset",
+                            "pipelines" => "pipeline",
+                            "features" => "features",
+                            "lists" => "list",
+                            "services" => "service",
+                            _ => {
                                 self.report.error(
                                     &source,
                                     "/import",
                                     "schema",
-                                    "E_INVALID_STRUCTURE",
-                                    "Import paths must be nonempty strings",
+                                    "E_UNKNOWN_FIELD",
+                                    format!("Unknown import group: {group}"),
                                 );
+                                continue;
                             }
+                        };
+                        if let Some(paths) = paths.as_array() {
+                            for path in paths {
+                                if let Some(path) = path.as_str().filter(|p| !p.trim().is_empty()) {
+                                    if let Some(root) = &self.root {
+                                        let path = root.join(path);
+                                        self.load(&path, Some(kind), false);
+                                    }
+                                    // Without --root, only validate the import declaration;
+                                    // explicit file/directory selection must not load siblings.
+                                } else {
+                                    self.report.error(
+                                        &source,
+                                        "/import",
+                                        "schema",
+                                        "E_INVALID_STRUCTURE",
+                                        "Import paths must be nonempty strings",
+                                    );
+                                }
+                            }
+                        } else {
+                            self.report.error(
+                                &source,
+                                "/import",
+                                "schema",
+                                "E_INVALID_STRUCTURE",
+                                "Import group must be an array of paths",
+                            );
                         }
-                    } else {
-                        self.report.error(
-                            &source,
-                            "/import",
-                            "schema",
-                            "E_INVALID_STRUCTURE",
-                            "Import group must be an array of paths",
-                        );
                     }
+                } else {
+                    self.report.error(
+                        &source,
+                        "/import",
+                        "schema",
+                        "E_INVALID_STRUCTURE",
+                        "Import must be a mapping",
+                    );
                 }
-            } else {
-                self.report.error(
-                    &source,
-                    "/import",
-                    "schema",
-                    "E_INVALID_STRUCTURE",
-                    "Import must be a mapping",
-                );
+                value.as_object_mut().unwrap().remove("import");
             }
-            value.as_object_mut().unwrap().remove("import");
         }
         self.visiting.pop();
-        self.loaded.insert(canonical, value.clone());
-        self.documents.push(Document { source, value });
+        self.loaded.insert(canonical, values.clone());
+        self.documents
+            .extend(values.into_iter().map(|value| Document {
+                source: source.clone(),
+                value,
+            }));
     }
 }
-fn check_kind(value: &Value, expected: Option<&str>, source: &str, report: &mut Report) {
+fn check_kind(values: &[Value], expected: Option<&str>, source: &str, report: &mut Report) {
     if let Some(expected) = expected {
-        let matches = match expected {
+        let matches = values.iter().any(|value| match expected {
             "list" => value.get("lists").is_some() || value.get("id").is_some(),
             "service" => value.get("base_url").is_some(),
             other => value.get(other).is_some(),
-        };
+        });
         if !matches {
             report.error(
                 source,

@@ -1,6 +1,6 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "title": "CDL static authoring document",
+  "title": "CDL normalized static authoring resource",
   "type": "object",
   "definitions": {
     "id": {
@@ -1355,7 +1355,7 @@
       ]
     }
   },
-  "description": "Full resource syntax. Static validation does not select an execution profile or establish external connectivity.",
+  "description": "Normalized resource syntax. Authoring sources may contain multiple adjacent declarations or YAML documents; each declaration is normalized and validated against this schema. Static validation does not select an execution profile or establish external connectivity.",
   "oneOf": [
     {
       "type": "object",

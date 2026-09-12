@@ -1,4 +1,5 @@
 //! Static CDL authoring checks. No engine, clients, data sources or actions run.
+mod bundle;
 mod dependencies;
 mod expressions;
 mod sources;
