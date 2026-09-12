@@ -12,6 +12,13 @@ Feature 是兼容运行时扩展，不属于当前严格 Core 支持范围。
 | median / stddev / percentile | 明确拒绝，不生成替代 SQL | 有 SQL 生成实现，需目标数据库验收 | 按连接器分别验收 |
 
 MySQL SQL 执行尚未实现。不能将方法出现在枚举、配置可解析或生成 SQL 等同于已验证的后端支持。
+
+RisingWave 通过 `feature_store` / `risingwave` 提供物化视图直接 Lookup，使用 `sqlx`
+的 PostgreSQL 协议连接，不执行 Aggregation，也不创建物化视图。宿主 `feature_mappings`
+将 Feature 名称映射到 schema/view/key_column/value_column，支持 text 或 int64 实体键。
+缺失映射和非法键在 fallback 边界外拒绝；查询错误、超时和多行结果可使用显式 fallback。
+缺失行返回 fallback 或 null，已找到的 SQL NULL 保持 null。详见
+[配置与结果类型](../feature-configuration.md#risingwave-direct-lookup)。
 注册 Feature 时，如果对应数据源已存在，会校验方法能力；先注册 Feature、后添加数据源时，
 `FeatureExecutor::add_datasource` 返回 `Result` 并校验已有定义，失败不替换原数据源。
 直接 Query 调用也在 SQL 生成阶段拒绝 SQLite 不支持的统计方法。
@@ -54,13 +61,43 @@ CDL 中的 YAML，以本地 SQLite 验证动态过滤、实体隔离、时间窗
 Runtime `DataSourceConfig.query_cache_ttl_secs` 默认 `0`，查询每次读取数据源。
 非零值显式启用查询缓存，单位秒；缓存完整结果（包括多行与空结果），缓存键包含完整 Query。
 配置 TTL 表示调用方接受该时间内的数据陈旧，不能把缓存查询当作实时最新值。
+
+RisingWave Lookup 单独复用 `query_cache_ttl_secs` 作为值缓存 TTL，默认 0；仅缓存
+找到的值（包括 SQL NULL），不缓存缺失行或错误。它不使用 Redis 的 `default_ttl`。
+Lookup 查询（含连接获取）受 `timeout_ms` 限制。多个 Lookup 不保证共享一致快照。
 写入后可调用 `DataSourceClient::clear_query_cache()` 主动失效。
 
 server.yaml 的数据源配置通过 `options.query_cache_ttl_secs: "60"` 传递该设置；
-无效数值会被拒绝。FeatureStore 的键值缓存使用其 `default_ttl`。
+无效数值会被拒绝。Redis FeatureStore 的键值缓存使用其 `default_ttl`。
 新 Feature 定义暂不支持单独的缓存策略或 Redis L2 Feature 缓存，不能依赖旧 Operator
 缓存字段配置新 Feature 的行为。
 
 回归证据见 [Feature 安全与 SQLite 测试](../../crates/corint-decision-runtime/tests/feature_safety.rs)。
 运行：`cargo test -p corint-decision-runtime --all-features --test feature_safety --locked`。
 固定截止点的 PostgreSQL/SQLite 聚合输入绑定另有真实后端验收，见 [FeaturePipeline](feature-pipeline.md)。其余 PostgreSQL 方法、Redis 与 OLAP 能力仍需分别验收。
+
+## RisingWave 验收
+
+完整 HTTP 链路使用 `RISINGWAVE_URL=... bash tests/scripts/run_e2e_tests.sh --risingwave`，
+覆盖源表 → 物化视图 → Feature Lookup → Rule → HTTP 决策。该后端也已纳入 `--all`；
+未配置连接时标记 skipped。环境、隔离和用例说明见 [E2E 测试说明](../../tests/README.md#risingwave-tests)。
+
+`crates/corint-decision-runtime/tests/risingwave_lookup.rs` 覆盖映射、键校验和无响应连接超时。
+真实 RisingWave 测试默认 ignored，必须显式提供测试数据库连接；它验证物化视图的实体隔离、
+参数绑定、更新/删除可见性、默认与显式缓存、结果类型、SQL NULL、缺失行、fallback 和多行错误。
+测试创建随机命名 schema，并在成功、返回错误或断言失败时清理。
+
+```sh
+cargo test -p corint-decision-runtime --features sqlx,redis --test risingwave_lookup --locked
+CORINT_TEST_RISINGWAVE_URL='postgresql://root@localhost:4566/dev' \
+  cargo test -p corint-decision-runtime --features sqlx,redis --test risingwave_lookup --locked -- --ignored
+```
+
+本次实现已在本地 RisingWave 2.8.0 (Homebrew) 通过真实后端验收；此证据不代表其他版本、
+生产负载、上游 ingestion 延迟或任意历史截止点查询的验收。
+
+## 修订历史
+
+| 日期 | 变更 |
+| --- | --- |
+| 2026-09-12 | 增加 RisingWave Lookup 的准入、缓存、错误语义与真实后端验收范围。 |

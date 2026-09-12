@@ -1,0 +1,6 @@
+version: "0.1"
+rule:
+  id: rw_high_velocity
+  name: High transaction velocity
+  when: features.rw_txn_count_1h >= 3
+  score: 100

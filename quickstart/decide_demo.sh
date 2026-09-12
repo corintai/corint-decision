@@ -6,7 +6,7 @@
 #
 # Features:
 #   - Protocol selection: HTTP or gRPC
-#   - Data source selection: PostgreSQL, ClickHouse, SQLite (+ Redis for lookups)
+#   - Data source selection: PostgreSQL, ClickHouse, SQLite, Redis, RisingWave
 #   - Automatic data initialization with cleanup
 #   - Server startup management
 #   - Multiple test scenarios covering various fraud patterns
@@ -70,6 +70,8 @@ PROTOCOL=""
 DATASOURCE=""
 SERVER_PID=""
 TEST_FAILURES=0
+RISINGWAVE_SCHEMA=""
+RISINGWAVE_SCHEMA_CREATED=false
 
 # ============================================================================
 # Helper Functions
@@ -117,6 +119,12 @@ cleanup() {
         print_info "Stopping server (PID: $SERVER_PID)..."
         kill "$SERVER_PID" 2>/dev/null || true
         wait "$SERVER_PID" 2>/dev/null || true
+    fi
+    if [ "$RISINGWAVE_SCHEMA_CREATED" = true ]; then
+        print_info "Removing RisingWave demo schema: $RISINGWAVE_SCHEMA"
+        risingwave_sql <<'SQL_CLEANUP'
+DROP SCHEMA :"rw_schema" CASCADE;
+SQL_CLEANUP
     fi
 }
 
@@ -236,6 +244,12 @@ select_datasource() {
                 copy_config_file
                 return 0
                 ;;
+            risingwave|5)
+                DATASOURCE="risingwave"
+                print_success "Selected: RisingWave (from TEST_DATASOURCE)"
+                copy_config_file
+                return 0
+                ;;
             *)
                 print_warn "Invalid TEST_DATASOURCE value: ${TEST_DATASOURCE}, falling back to interactive mode"
                 ;;
@@ -250,18 +264,19 @@ select_datasource() {
         return 0
     fi
 
-    echo "Select event data source for aggregation features:"
+    echo "Select a data source:"
     echo ""
     echo "  1) SQLite      - Lightweight file-based database [default]"
     echo "  2) PostgreSQL  - Production-grade RDBMS"
     echo "  3) ClickHouse  - High-performance OLAP database"
     echo "  4) Redis       - In-memory data store (lookup features only)"
+    echo "  5) RisingWave  - Live materialized view lookup"
     echo ""
 
     while true; do
         # Avoid exiting the whole script on read error with set -e
         set +e
-        read -p "Enter choice [1-4] (default: 1): " choice
+        read -p "Enter choice [1-5] (default: 1): " choice
         rc=$?
         set -e
         if [ $rc -ne 0 ]; then
@@ -294,8 +309,14 @@ select_datasource() {
                 copy_config_file
                 break
                 ;;
+            5)
+                DATASOURCE="risingwave"
+                print_success "Selected: RisingWave"
+                copy_config_file
+                break
+                ;;
             *)
-                print_error "Invalid choice. Please enter 1, 2, 3, or 4."
+                print_error "Invalid choice. Please enter 1, 2, 3, 4, or 5."
                 ;;
         esac
     done
@@ -306,6 +327,10 @@ copy_config_file() {
     local config_source=""
     
     case $DATASOURCE in
+        risingwave)
+            config_source="${SCRIPT_DIR}/config/server-risingwave.yaml"
+            RISINGWAVE_URL="${RISINGWAVE_URL:-postgresql://root@127.0.0.1:4566/dev}"
+            ;;
         sqlite)
             config_source="${SCRIPT_DIR}/config/server-sqlite.yaml"
             ;;
@@ -348,6 +373,18 @@ check_database_availability() {
             # SQLite is file-based, no need to check
             print_success "SQLite is file-based, no server required"
             return 0
+            ;;
+        risingwave)
+            command -v psql >/dev/null || { print_error "RisingWave requires psql"; return 1; }
+            local version
+            version=$(PGCONNECT_TIMEOUT=5 psql -X -A -t -v ON_ERROR_STOP=1 "$RISINGWAVE_URL" -c 'SELECT version()') || {
+                print_error "Cannot connect to RisingWave. Start it first or set RISINGWAVE_URL."
+                return 1
+            }
+            case "$version" in
+                *RisingWave*) print_success "RisingWave is available" ;;
+                *) print_error "RISINGWAVE_URL must point to RisingWave"; return 1 ;;
+            esac
             ;;
         postgresql)
             check_postgresql_availability
@@ -583,10 +620,41 @@ check_redis_availability() {
 # Data Initialization
 # ============================================================================
 
+risingwave_sql() {
+    PGCONNECT_TIMEOUT=5 psql "$RISINGWAVE_URL" -X -v ON_ERROR_STOP=1 \
+        -v rw_schema="$RISINGWAVE_SCHEMA"
+}
+
+initialize_risingwave_data() {
+    print_info "Creating RisingWave demo schema: $RISINGWAVE_SCHEMA"
+    risingwave_sql <<'SQL_SCHEMA' || return 1
+CREATE SCHEMA :"rw_schema";
+SQL_SCHEMA
+    RISINGWAVE_SCHEMA_CREATED=true
+    risingwave_sql <<'SQL_INIT'
+CREATE TABLE :"rw_schema".transactions (
+    id BIGINT PRIMARY KEY,
+    user_id VARCHAR,
+    event_timestamp TIMESTAMPTZ
+);
+CREATE MATERIALIZED VIEW :"rw_schema".user_features_mv AS
+SELECT user_id, COUNT(*) AS txn_count_1h
+FROM :"rw_schema".transactions
+WHERE event_timestamp >= NOW() - INTERVAL '1 hour'
+  AND event_timestamp < NOW()
+GROUP BY user_id;
+FLUSH;
+SQL_INIT
+}
+
 init_event_data() {
     local init_script=""
 
     case $DATASOURCE in
+        risingwave)
+            initialize_risingwave_data
+            return
+            ;;
         postgresql)
             init_script="${SCRIPT_DIR}/init_postgresql.sh"
             ;;
@@ -662,23 +730,27 @@ configure_demo_server() {
     # also contains backend examples that require external services.
     local demo_repository
     demo_repository=$(mktemp -d "${TEMP_DIR}/demo_repository_XXXXXX")
-    mkdir -p "$demo_repository/pipelines" "$demo_repository/features"
-    cp -R "${PROJECT_ROOT}/repository/rules" "${PROJECT_ROOT}/repository/rulesets" "$demo_repository/"
-    cp "${PROJECT_ROOT}/repository/pipelines/fraud_detection.yaml" \
-        "${PROJECT_ROOT}/repository/pipelines/login_risk_pipeline.yaml" "$demo_repository/pipelines/"
-    local feature_file
-    for feature_file in user_features device_features ip_features statistical_features; do
-        if [ "$DATASOURCE" = "redis" ]; then
-            cp "${PROJECT_ROOT}/repository/features/${feature_file}.yaml" "$demo_repository/features/"
-        else
-            # Profile lookups are unavailable in event-database-only demos.
-            # Disabled features return null; event history still computes normally.
-            awk '{ print } /^[[:space:]]+type: lookup/ { print "    enabled: false" }' \
-                "${PROJECT_ROOT}/repository/features/${feature_file}.yaml" \
-                > "$demo_repository/features/${feature_file}.yaml"
-        fi
-    done
-    cat > "$demo_repository/registry.yaml" <<'EOF'
+    if [ "$DATASOURCE" = risingwave ]; then
+        cp -R "${SCRIPT_DIR}/risingwave/." "$demo_repository/"
+        RISINGWAVE_SCHEMA="corint_demo_$(od -An -N16 -tx1 /dev/urandom | tr -d ' \n')"
+    else
+        mkdir -p "$demo_repository/pipelines" "$demo_repository/features"
+        cp -R "${PROJECT_ROOT}/repository/rules" "${PROJECT_ROOT}/repository/rulesets" "$demo_repository/"
+        cp "${PROJECT_ROOT}/repository/pipelines/fraud_detection.yaml" \
+            "${PROJECT_ROOT}/repository/pipelines/login_risk_pipeline.yaml" "$demo_repository/pipelines/"
+        local feature_file
+        for feature_file in user_features device_features ip_features statistical_features; do
+            if [ "$DATASOURCE" = "redis" ]; then
+                cp "${PROJECT_ROOT}/repository/features/${feature_file}.yaml" "$demo_repository/features/"
+            else
+                # Profile lookups are unavailable in event-database-only demos.
+                # Disabled features return null; event history still computes normally.
+                awk '{ print } /^[[:space:]]+type: lookup/ { print "    enabled: false" }' \
+                    "${PROJECT_ROOT}/repository/features/${feature_file}.yaml" \
+                    > "$demo_repository/features/${feature_file}.yaml"
+            fi
+        done
+        cat > "$demo_repository/registry.yaml" <<'EOF'
 version: "0.1"
 registry:
   - pipeline: fraud_detection_pipeline
@@ -686,18 +758,22 @@ registry:
   - pipeline: login_risk_pipeline
     when: event.type == "login"
 EOF
+    fi
 
     local updated_config
     updated_config=$(mktemp "${TEMP_DIR}/server_config_XXXXXX")
-    awk -v http="$HTTP_PORT" -v grpc="$GRPC_PORT" -v repo="$demo_repository" -v ds="$DATASOURCE" '
+    RISINGWAVE_CONNECTION_JSON=$(jq -nc --arg url "${RISINGWAVE_URL:-}" '$url') \
+    awk -v http="$HTTP_PORT" -v grpc="$GRPC_PORT" -v repo="$demo_repository" -v ds="$DATASOURCE" -v schema="$RISINGWAVE_SCHEMA" '
         /^[^[:space:]#]/ { in_server=0; in_repo=0; in_datasource=0 }
         /^server:/ { in_server=1; print; next }
         /^repository:/ { in_repo=1; print; next }
         /^datasource:/ { in_datasource=1; keep=0; print; next }
         in_datasource && /^  [^[:space:]#][^:]*:/ {
-            keep=($1 == "events_datasource:" || (ds == "redis" && $1 == "lookup_datasource:"))
+            keep=($1 == "events_datasource:" || (ds == "redis" && $1 == "lookup_datasource:") || (ds == "risingwave" && $1 == "risingwave_features:"))
         }
         in_datasource && !keep { next }
+        in_datasource && ds == "risingwave" && /^[[:space:]]+connection_string:/ { print "    connection_string: " ENVIRON["RISINGWAVE_CONNECTION_JSON"]; next }
+        in_datasource && ds == "risingwave" && /^[[:space:]]+schema:/ { print "        schema: " schema; next }
         in_repo && /^[[:space:]]+path:/ { print "  path: \"" repo "\""; next }
         in_server && /^[[:space:]]+port:/ { print "  port: " http; next }
         in_server && /^[[:space:]]+grpc_port:/ { print "  grpc_port: " grpc; next }
@@ -1113,6 +1189,13 @@ test_stats_user() {
 show_test_menu() {
     print_section "Test Scenarios"
 
+    if [ "$DATASOURCE" = risingwave ]; then
+        echo "   1) RisingWave live transaction velocity - APPROVE → DECLINE → REVIEW"
+        echo "   0) Exit"
+        echo ""
+        return
+    fi
+
     echo "Select a test scenario to run:"
     echo ""
     echo -e "  ${BOLD}Individual Scenarios:${NC}"
@@ -1139,6 +1222,10 @@ show_test_menu() {
 }
 
 run_all_scenarios() {
+    if [ "$DATASOURCE" = risingwave ]; then
+        test_risingwave_velocity
+        return
+    fi
     test_normal_user
     test_normal_user_2
     test_high_frequency_login
@@ -1153,6 +1240,36 @@ run_all_scenarios() {
 
     print_section "All Scenarios Completed"
     echo "Review the results above to verify expected decisions."
+}
+
+test_risingwave_velocity() {
+    print_section "RisingWave: Live Materialized View Lookup"
+    print_info "RisingWave maintains the one-hour count; CORINT looks it up by user_id."
+    print_info "Each FLUSH makes the fixture update visible before requesting a decision."
+    risingwave_sql <<'SQL_LOW'
+DELETE FROM :"rw_schema".transactions;
+INSERT INTO :"rw_schema".transactions VALUES
+    (1, 'risingwave_demo_user', NOW() - INTERVAL '1 minute');
+FLUSH;
+SQL_LOW
+    run_test "RisingWave: 1 transaction in the last hour" "risingwave_demo_user" \
+        "transaction" "100" "rw_device" "192.0.2.1" "US" "Seattle" "APPROVE"
+
+    risingwave_sql <<'SQL_HIGH'
+INSERT INTO :"rw_schema".transactions VALUES
+    (2, 'risingwave_demo_user', NOW() - INTERVAL '2 minutes'),
+    (3, 'risingwave_demo_user', NOW() - INTERVAL '3 minutes');
+FLUSH;
+SQL_HIGH
+    run_test "RisingWave: 3 transactions after live inserts" "risingwave_demo_user" \
+        "transaction" "100" "rw_device" "192.0.2.1" "US" "Seattle" "DECLINE"
+
+    risingwave_sql <<'SQL_MISSING'
+DELETE FROM :"rw_schema".transactions;
+FLUSH;
+SQL_MISSING
+    run_test "RisingWave: missing row uses fallback -1" "risingwave_demo_user" \
+        "transaction" "100" "rw_device" "192.0.2.1" "US" "Seattle" "REVIEW"
 }
 
 run_approve_scenarios() {
@@ -1278,7 +1395,9 @@ main() {
 
         # Handle read with set +e to avoid script exit on EOF/error
         set +e
-        read -p "Enter choice [0-15]: " choice
+        local choice_range="0-15"
+        if [ "$DATASOURCE" = risingwave ]; then choice_range="0-1"; fi
+        read -p "Enter choice [$choice_range]: " choice
         rc=$?
         set -e
 
@@ -1287,6 +1406,15 @@ main() {
             echo ""
             print_info "Input closed, exiting..."
             break
+        fi
+
+        if [ "$DATASOURCE" = risingwave ]; then
+            case $choice in
+                0) break ;;
+                1) test_risingwave_velocity ;;
+                *) print_error "Invalid choice. Please enter 0-1." ;;
+            esac
+            continue
         fi
 
         case $choice in

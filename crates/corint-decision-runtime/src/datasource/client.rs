@@ -3,7 +3,7 @@
 //! Provides a unified interface for accessing different data sources.
 
 use super::cache::FeatureCache;
-use super::config::{DataSourceConfig, DataSourceType};
+use super::config::{DataSourceConfig, DataSourceType, FeatureStoreProvider};
 use super::query::{Query, QueryResult};
 use crate::error::{Result, RuntimeError};
 use corint_decision_model::Value;
@@ -32,7 +32,20 @@ impl DataSourceClient {
     pub async fn new(config: DataSourceConfig) -> Result<Self> {
         let client: Box<dyn DataSourceImpl> = match &config.source_type {
             DataSourceType::FeatureStore(fs_config) => {
-                Box::new(FeatureStoreClient::new(fs_config.clone()).await?)
+                if matches!(fs_config.provider, FeatureStoreProvider::RisingWave) {
+                    Box::new(super::risingwave::RisingWaveClient::new(
+                        fs_config,
+                        config.pool_size,
+                        config.timeout_ms,
+                    )?)
+                } else {
+                    if !fs_config.feature_mappings.is_empty() {
+                        return Err(RuntimeError::InvalidOperation(
+                            "feature_mappings requires provider risingwave".into(),
+                        ));
+                    }
+                    Box::new(FeatureStoreClient::new(fs_config.clone()).await?)
+                }
             }
             DataSourceType::OLAP(olap_config) => {
                 Box::new(OLAPClient::new(olap_config.clone()).await?)
@@ -95,6 +108,7 @@ impl DataSourceClient {
 
     /// Admission check shared by feature registration and query construction.
     pub fn validate_aggregation(&self, method: &str) -> Result<()> {
+        self.validate_event_query()?;
         if !matches!(
             method,
             "count"
@@ -126,10 +140,26 @@ impl DataSourceClient {
         Ok(())
     }
 
+    /// Precomputed stores cannot execute event aggregations or State queries.
+    pub fn validate_event_query(&self) -> Result<()> {
+        if matches!(self.config.source_type, DataSourceType::FeatureStore(_)) {
+            return Err(RuntimeError::InvalidOperation(
+                "Feature Store bindings only support Lookup, not Aggregation or State".into(),
+            ));
+        }
+        Ok(())
+    }
+
     /// Get a feature from feature store
     pub async fn get_feature(&self, feature_name: &str, entity_key: &str) -> Result<Option<Value>> {
-        let cache_key = format!("feature:{}:{}", feature_name, entity_key);
+        self.validate_lookup_key(feature_name, entity_key)?;
+        let cache_key = serde_json::to_string(&(feature_name, entity_key)).unwrap();
         let ttl = match &self.config.source_type {
+            DataSourceType::FeatureStore(config)
+                if matches!(config.provider, FeatureStoreProvider::RisingWave) =>
+            {
+                self.config.query_cache_ttl_secs
+            }
             DataSourceType::FeatureStore(config) => config.default_ttl,
             _ => 0,
         };
@@ -141,10 +171,19 @@ impl DataSourceClient {
 
         // Get from feature store
         if let Some(fs_client) = self.client.as_feature_store() {
-            let value = fs_client.get_feature(feature_name, entity_key).await?;
+            let value = tokio::time::timeout(
+                Duration::from_millis(self.config.timeout_ms),
+                fs_client.get_feature(feature_name, entity_key),
+            )
+            .await
+            .map_err(|_| {
+                RuntimeError::InvalidOperation(
+                    "E_DATASOURCE_TIMEOUT: lookup deadline exceeded".into(),
+                )
+            })??;
 
             // Cache the result
-            if let Some(ref val) = value {
+            if let Some(val) = value.as_ref().filter(|_| ttl > 0) {
                 let mut row = HashMap::new();
                 row.insert("value".to_string(), val.clone());
                 self.cache
@@ -159,6 +198,24 @@ impl DataSourceClient {
                 "Data source is not a feature store".to_string(),
             ))
         }
+    }
+
+    /// Validate bindings before entering the Lookup fallback boundary.
+    pub fn validate_lookup(&self, feature_name: &str) -> Result<()> {
+        self.client
+            .as_feature_store()
+            .ok_or_else(|| {
+                RuntimeError::InvalidOperation("Data source is not a feature store".into())
+            })?
+            .validate_feature(feature_name)
+    }
+
+    pub fn validate_lookup_key(&self, feature_name: &str, entity_key: &str) -> Result<()> {
+        self.validate_lookup(feature_name)?;
+        self.client
+            .as_feature_store()
+            .unwrap()
+            .validate_key(feature_name, entity_key)
     }
 
     /// Generate cache key for a query
@@ -188,6 +245,12 @@ pub(super) trait DataSourceImpl: Send + Sync {
 /// Feature store operations
 #[async_trait::async_trait]
 pub(super) trait FeatureStoreOps: Send + Sync {
+    fn validate_feature(&self, _feature_name: &str) -> Result<()> {
+        Ok(())
+    }
+    fn validate_key(&self, _feature_name: &str, _entity_key: &str) -> Result<()> {
+        Ok(())
+    }
     /// Get a feature value
     async fn get_feature(&self, feature_name: &str, entity_key: &str) -> Result<Option<Value>>;
 }

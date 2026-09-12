@@ -23,7 +23,7 @@ pub struct DataSourceConfig {
     #[serde(default = "default_timeout")]
     pub timeout_ms: u64,
 
-    /// Query result cache TTL in seconds. Zero (default) always reads fresh data.
+    /// SQL/OLAP query and RisingWave lookup cache TTL in seconds. Zero disables caching.
     #[serde(default)]
     pub query_cache_ttl_secs: u64,
 
@@ -59,19 +59,50 @@ pub struct FeatureStoreConfig {
     #[serde(default)]
     pub namespace: String,
 
-    /// Default TTL for cached features (seconds)
+    /// Redis feature cache/write TTL (seconds); RisingWave uses query_cache_ttl_secs.
     #[serde(default = "default_feature_ttl")]
     pub default_ttl: u64,
 
     /// Additional configuration
     #[serde(default)]
     pub options: HashMap<String, String>,
+
+    /// Physical lookup bindings for RisingWave; connections and SQL stay outside CDL.
+    #[serde(default)]
+    pub feature_mappings: HashMap<String, FeatureLookupMapping>,
+}
+
+/// One scalar column in a relation with a unique entity key.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct FeatureLookupMapping {
+    #[serde(default = "default_lookup_schema")]
+    pub schema: String,
+    pub view: String,
+    pub key_column: String,
+    pub value_column: String,
+    #[serde(default)]
+    pub key_type: FeatureLookupKeyType,
+}
+
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum FeatureLookupKeyType {
+    #[default]
+    Text,
+    Int64,
+}
+
+fn default_lookup_schema() -> String {
+    "public".into()
 }
 
 /// Feature store provider types
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum FeatureStoreProvider {
+    /// Direct point queries over RisingWave materialized views.
+    RisingWave,
     /// Redis-based feature store
     Redis,
 

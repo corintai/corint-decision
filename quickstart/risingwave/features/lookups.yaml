@@ -1,0 +1,7 @@
+features:
+  - name: rw_txn_count_1h
+    type: lookup
+    datasource: risingwave_features
+    key: "${event.user_id}"
+    # Missing rows and query errors both require review in this demo policy.
+    fallback: -1

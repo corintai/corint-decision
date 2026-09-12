@@ -138,6 +138,43 @@ curl -X POST http://localhost:8080/v1/decide \
   -d '{"event": {"user_id": "suspicious_001", "type": "transaction", "amount": 999}}'
 ```
 
+## RisingWave Live Lookup Demo
+
+From the project root, run `bash quickstart/decide_demo.sh` and choose data source
+**5) RisingWave**, then HTTP or gRPC and scenario **1**. The demo requires a running
+RisingWave instance, `psql`, and the script's usual build/API dependencies (`cargo`,
+`jq`, `curl`, `lsof`; `grpcurl` for gRPC).
+
+For an automatic HTTP run:
+
+```bash
+RISINGWAVE_URL='postgresql://root@127.0.0.1:4566/dev' \
+TEST_DATASOURCE=risingwave TEST_PROTOCOL=http TEST_AUTO_RUN=1 \
+bash quickstart/decide_demo.sh
+```
+
+`RISINGWAVE_URL` defaults to the local URL above. The connection must allow creating
+and dropping a demo schema. Each run creates an isolated `corint_demo_*` schema,
+a transactions table, and a materialized view with transaction counts over the last
+hour. CORINT uses PostgreSQL wire protocol to look up the count by `event.user_id`.
+
+| Step | Materialized view state | Expected decision |
+|------|-------------------------|-------------------|
+| Insert one recent transaction | Count = 1 | APPROVE |
+| Insert two more transactions | Count = 3 | DECLINE |
+| Delete the user's transactions | Missing row → fallback `-1` | REVIEW |
+
+Each update is followed by `FLUSH` before requesting a decision. The lookup cache is
+disabled so all three requests read the current view. Calling `/v1/decide` does not
+insert the event into RisingWave; the demo writes history explicitly. The scenario
+can be repeated from the menu.
+
+Policies live in [`quickstart/risingwave`](../risingwave/), with the datasource
+mapping in [`server-risingwave.yaml`](../config/server-risingwave.yaml). The script
+copies the configuration to `config/server.yaml` and supplies the generated schema
+and policy directory. It removes its schema on exit; `KEEP_SERVER_RUNNING=true`
+retains both the server and schema for further inspection.
+
 ## Expected Results
 
 | User | Expected Decision | Triggered Rules |

@@ -1,0 +1,17 @@
+version: "0.1"
+import:
+  rules:
+    - rules/high_velocity.yaml
+    - rules/unavailable.yaml
+ruleset:
+  id: rw_risk
+  rules:
+    - rw_high_velocity
+    - rw_feature_unavailable
+  conclusion:
+    - when: total_score >= 100
+      signal: decline
+    - when: total_score >= 40
+      signal: review
+    - default: true
+      signal: approve

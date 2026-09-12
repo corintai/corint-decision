@@ -64,6 +64,20 @@ impl FeatureExecutor {
         let name = name.into();
         for feature in self.features.values() {
             if feature
+                .state
+                .as_ref()
+                .is_some_and(|config| config.datasource == name)
+            {
+                client.validate_event_query()?;
+            }
+            if feature
+                .lookup
+                .as_ref()
+                .is_some_and(|config| config.datasource == name)
+            {
+                client.validate_lookup(&feature.name)?;
+            }
+            if feature
                 .aggregation
                 .as_ref()
                 .is_some_and(|config| config.datasource == name)
@@ -94,6 +108,16 @@ impl FeatureExecutor {
         for mut feature in features {
             super::dependency::infer_dependencies(&mut feature)?;
             feature.validate().map_err(anyhow::Error::msg)?;
+            if let Some(config) = &feature.state {
+                if let Some(datasource) = self.datasources.get(&config.datasource) {
+                    datasource.validate_event_query()?;
+                }
+            }
+            if let Some(config) = &feature.lookup {
+                if let Some(datasource) = self.datasources.get(&config.datasource) {
+                    datasource.validate_lookup(&feature.name)?;
+                }
+            }
             if let Some(config) = &feature.aggregation {
                 if let Some(datasource) = self.datasources.get(&config.datasource) {
                     datasource
@@ -781,6 +805,7 @@ impl FeatureExecutor {
         datasource: &DataSourceClient,
         context: &HashMap<String, Value>,
     ) -> Result<Value> {
+        datasource.validate_event_query()?;
         debug!("execute_state called for feature '{}', type: {:?}, method: {:?}, state config present: {}",
                feature.name, feature.feature_type, feature.method, feature.state.is_some());
 
@@ -967,6 +992,7 @@ impl FeatureExecutor {
 
         // Substitute template in key (e.g., "user_risk_score:{event.user_id}" -> "user_risk_score:123")
         let key = ExpressionEvaluator::substitute_template(&config.key, context)?;
+        datasource.validate_lookup_key(&feature.name, &key)?;
 
         debug!("Lookup feature '{}' fetching key: {}", feature.name, key);
 

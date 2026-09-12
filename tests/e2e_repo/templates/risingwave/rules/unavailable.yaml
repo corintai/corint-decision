@@ -1,0 +1,6 @@
+version: "0.1"
+rule:
+  id: rw_feature_unavailable
+  name: Feature unavailable
+  when: features.rw_txn_count_1h == -1
+  score: 40

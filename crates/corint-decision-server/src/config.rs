@@ -86,6 +86,11 @@ pub struct DatasourceConfig {
     /// Additional options
     #[serde(default)]
     pub options: std::collections::HashMap<String, String>,
+
+    /// RisingWave Feature name to physical relation/column bindings.
+    #[serde(default)]
+    pub feature_mappings:
+        std::collections::HashMap<String, corint_decision_engine::FeatureLookupMapping>,
 }
 
 impl DatasourceConfig {
@@ -98,6 +103,15 @@ impl DatasourceConfig {
             DataSourceType, FeatureStoreConfig, FeatureStoreProvider, OLAPConfig, OLAPProvider,
             RuntimeDataSourceConfig as RuntimeConfig, SQLConfig, SQLProvider,
         };
+
+        if !self.feature_mappings.is_empty()
+            && !(self.source_type == "feature_store"
+                && self.provider.eq_ignore_ascii_case("risingwave"))
+        {
+            return Err(anyhow::anyhow!(
+                "feature_mappings requires a RisingWave feature_store"
+            ));
+        }
 
         let source_type = match self.source_type.as_str() {
             "sql" => {
@@ -164,6 +178,7 @@ impl DatasourceConfig {
             "feature_store" => {
                 let provider = match self.provider.to_lowercase().as_str() {
                     "redis" => FeatureStoreProvider::Redis,
+                    "risingwave" => FeatureStoreProvider::RisingWave,
                     "feast" => FeatureStoreProvider::Feast,
                     "http" => FeatureStoreProvider::Http,
                     _ => {
@@ -191,6 +206,7 @@ impl DatasourceConfig {
                     namespace,
                     default_ttl,
                     options: self.options.clone(),
+                    feature_mappings: self.feature_mappings.clone(),
                 })
             }
             _ => {
@@ -380,6 +396,51 @@ impl std::fmt::Debug for ServerConfig {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn risingwave_lookup_config_preserves_bindings_and_freshness() {
+        let config: DatasourceConfig = serde_yaml::from_str(
+            r#"
+type: feature_store
+provider: risingwave
+connection_string: postgresql://root@localhost:4566/dev
+feature_mappings:
+  user_txn_count_1h:
+    view: user_features_mv
+    key_column: user_id
+    value_column: txn_count_1h
+options:
+  max_connections: "4"
+  connection_timeout: "2"
+"#,
+        )
+        .unwrap();
+        let runtime = config.to_runtime_config("rw_features").unwrap();
+        assert_eq!(runtime.pool_size, 4);
+        assert_eq!(runtime.timeout_ms, 2000);
+        assert_eq!(runtime.query_cache_ttl_secs, 0);
+        let corint_decision_engine::DataSourceType::FeatureStore(store) = runtime.source_type
+        else {
+            panic!()
+        };
+        assert!(matches!(
+            store.provider,
+            corint_decision_engine::FeatureStoreProvider::RisingWave
+        ));
+        assert_eq!(store.feature_mappings["user_txn_count_1h"].schema, "public");
+        assert_eq!(
+            store.feature_mappings["user_txn_count_1h"].value_column,
+            "txn_count_1h"
+        );
+        let mut wrong = config.clone();
+        wrong.provider = "redis".into();
+        assert!(wrong.to_runtime_config("rw").is_err());
+        wrong = config;
+        wrong
+            .options
+            .insert("query_cache_ttl_secs".into(), "invalid".into());
+        assert!(wrong.to_runtime_config("rw").is_err());
+    }
 
     #[test]
     fn test_nested_server_settings() {

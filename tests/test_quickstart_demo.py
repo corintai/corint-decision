@@ -55,6 +55,7 @@ class DemoTests(unittest.TestCase):
         self.addCleanup(self.tmp.cleanup)
         self.root = Path(self.tmp.name)
         shutil.copytree(ROOT / 'quickstart/config', self.root / 'quickstart/config')
+        shutil.copytree(ROOT / 'quickstart/risingwave', self.root / 'quickstart/risingwave')
         shutil.copy(ROOT / 'quickstart/decide_demo.sh', self.root / 'quickstart/decide_demo.sh')
         shutil.copytree(ROOT / 'repository', self.root / 'repository')
         (self.root / 'config').mkdir()
@@ -70,7 +71,7 @@ class DemoTests(unittest.TestCase):
         )
 
     def test_fresh_checkout_initializes_all_datasources_before_reading(self):
-        for datasource in ('sqlite', 'postgresql', 'clickhouse', 'redis', ''):
+        for datasource in ('sqlite', 'postgresql', 'clickhouse', 'redis', 'risingwave', '5', ''):
             with self.subTest(datasource=datasource):
                 (self.root / 'config/server.yaml').unlink(missing_ok=True)
                 result = self.shell(
@@ -80,6 +81,49 @@ class DemoTests(unittest.TestCase):
                 self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
                 self.assertIn('CONFIG_READY', result.stdout)
                 self.assertTrue((self.root / 'config/server.yaml').exists())
+
+    def test_risingwave_auto_run_checks_live_updates_with_both_protocols(self):
+        for protocol in ('http', 'grpc'):
+            with self.subTest(protocol=protocol):
+                result = self.shell('''
+                    DATASOURCE=risingwave; PROTOCOL="$TEST_PROTOCOL"
+                    risingwave_sql() { cat; }
+                    run_test() { echo "DECISION:$PROTOCOL:${9}"; }
+                    run_all_scenarios
+                ''', TEST_PROTOCOL=protocol)
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                decisions = [line for line in result.stdout.splitlines()
+                             if line.startswith('DECISION:')]
+                self.assertEqual(decisions, [f'DECISION:{protocol}:{value}'
+                                            for value in ('APPROVE', 'DECLINE', 'REVIEW')])
+                self.assertEqual(result.stdout.count('FLUSH;'), 3)
+                self.assertEqual(result.stdout.count('DELETE FROM'), 2)
+
+    def test_risingwave_config_preserves_url_and_uses_isolated_schema(self):
+        url = 'postgresql://root@localhost:4566/dev?application_name=demo&options=a\\b'
+        result = self.shell('select_datasource; configure_demo_server',
+                            TEST_DATASOURCE='risingwave', RISINGWAVE_URL=url)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        config = (self.root / 'config/server.yaml').read_text()
+        connection = next(line.split(': ', 1)[1] for line in config.splitlines()
+                          if line.strip().startswith('connection_string:'))
+        self.assertEqual(json.loads(connection), url)
+        self.assertRegex(config, r'schema: corint_demo_[0-9a-f]{32}\n')
+        self.assertNotIn('events_datasource:', config)
+        self.assertIn('provider: risingwave', config)
+
+    def test_risingwave_partial_initialization_is_cleaned_up(self):
+        result = self.shell('''
+            RISINGWAVE_SCHEMA=corint_demo_test
+            risingwave_sql() {
+                local sql; sql=$(cat); echo "$sql"
+                [[ "$sql" != *"CREATE TABLE"* ]]
+            }
+            if initialize_risingwave_data; then exit 99; fi
+            [ "$RISINGWAVE_SCHEMA_CREATED" = true ]
+        ''')
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn('DROP SCHEMA :"rw_schema" CASCADE;', result.stdout)
 
     def test_occupied_port_is_preserved_and_credentials_are_generated(self):
         with endpoint(body={'service': 'agent-gateway', 'status': 'ok'}) as (port, _):

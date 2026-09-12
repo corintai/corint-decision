@@ -11,13 +11,14 @@ pub mod config;
 mod feature_store;
 mod olap;
 pub mod query;
+mod risingwave;
 mod sql;
 
 pub use cache::{CacheStrategy, CachedResult};
 pub use client::DataSourceClient;
 pub use config::{
-    DataSourceConfig, DataSourceType, FeatureStoreConfig, OLAPConfig, OLAPProvider, SQLConfig,
-    SQLProvider,
+    DataSourceConfig, DataSourceType, FeatureLookupKeyType, FeatureLookupMapping,
+    FeatureStoreConfig, OLAPConfig, OLAPProvider, SQLConfig, SQLProvider,
 };
 pub use query::{
     Aggregation, AggregationType, Filter, FilterOperator, Query, QueryResult, QueryType,

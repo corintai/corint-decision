@@ -280,6 +280,9 @@ impl FeatureStoreOps for FeatureStoreClient {
         tracing::debug!("Getting feature {} for entity {}", feature_name, entity_key);
 
         match self.config.provider {
+            FeatureStoreProvider::RisingWave => Err(RuntimeError::InvalidOperation(
+                "RisingWave requires its dedicated lookup client".into(),
+            )),
             FeatureStoreProvider::Redis => self.get_redis_feature(feature_name, entity_key).await,
             FeatureStoreProvider::Feast => Err(RuntimeError::RuntimeError(
                 "Feast not yet implemented".to_string(),
@@ -303,6 +306,7 @@ mod tests {
             namespace: "test_namespace".to_string(),
             default_ttl: 3600,
             options: HashMap::new(),
+            feature_mappings: HashMap::new(),
         };
 
         let feature_name = "user_risk_score";
@@ -319,6 +323,7 @@ mod tests {
             namespace: "".to_string(),
             default_ttl: 3600,
             options: HashMap::new(),
+            feature_mappings: HashMap::new(),
         };
 
         let expected_key_no_ns = format!("{}:{}", feature_name, entity_key);
@@ -339,6 +344,7 @@ mod tests {
             namespace: "test".to_string(),
             default_ttl: 3600,
             options: HashMap::new(),
+            feature_mappings: HashMap::new(),
         };
 
         // This should fail to connect but should not panic

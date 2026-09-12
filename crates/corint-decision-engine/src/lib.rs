@@ -37,8 +37,8 @@ pub use corint_decision_model::{ast::Signal, Value};
 pub use corint_decision_runtime::datasource::config::FeatureStoreProvider;
 pub use corint_decision_runtime::{
     datasource::{
-        DataSourceConfig as RuntimeDataSourceConfig, DataSourceType, FeatureStoreConfig,
-        OLAPConfig, OLAPProvider, SQLConfig, SQLProvider,
+        DataSourceConfig as RuntimeDataSourceConfig, DataSourceType, FeatureLookupKeyType,
+        FeatureLookupMapping, FeatureStoreConfig, OLAPConfig, OLAPProvider, SQLConfig, SQLProvider,
     },
     DecisionResult, ExecutionTrace, MetricsCollector, RuntimeError,
 };

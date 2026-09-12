@@ -35,6 +35,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             namespace: "user_features".to_string(),
             default_ttl: 3600, // 1 hour
             options: HashMap::new(),
+            feature_mappings: HashMap::new(),
         }),
         pool_size: 10,
         timeout_ms: 5000,

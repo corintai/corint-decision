@@ -25,7 +25,7 @@ fn blocks(text: &str) -> Vec<String> {
 fn source(name: &str, value: Value) -> CoreSource {
     CoreSource {
         path: name.into(),
-        yaml: serde_json::to_string(&value).unwrap(),
+        yaml: serde_yaml::to_string(&value).unwrap(),
     }
 }
 

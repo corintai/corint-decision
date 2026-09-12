@@ -1,0 +1,28 @@
+# Used by decide_demo.sh; the script supplies an isolated schema and repository.
+server:
+  host: "127.0.0.1"
+  port: 8080
+  grpc_port: 50051
+  enable_metrics: true
+  enable_tracing: true
+  log_level: "info"
+
+repository:
+  type: filesystem
+  path: "quickstart/risingwave"
+
+datasource:
+  risingwave_features:
+    type: feature_store
+    provider: risingwave
+    connection_string: "postgresql://root@127.0.0.1:4566/dev"
+    feature_mappings:
+      rw_txn_count_1h:
+        schema: public
+        view: user_features_mv
+        key_column: user_id
+        value_column: txn_count_1h
+        key_type: text
+    options:
+      query_cache_ttl_secs: "0"
+      connection_timeout: "3"

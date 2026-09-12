@@ -1,0 +1,23 @@
+version: "0.1"
+import:
+  rulesets:
+    - rulesets/risk.yaml
+pipeline:
+  id: risingwave_test_pipeline
+  name: RisingWave Lookup test
+  entry: assess
+  when: event.type == "transaction"
+  steps:
+    - step:
+        id: assess
+        name: Assess velocity
+        type: ruleset
+        ruleset: rw_risk
+        next: end
+  decision:
+    - when: results.rw_risk.signal == "decline"
+      result: decline
+    - when: results.rw_risk.signal == "review"
+      result: review
+    - default: true
+      result: approve

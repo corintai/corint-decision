@@ -240,7 +240,7 @@
       "page": "CDL/metadata.md",
       "block": 2,
       "language": "yaml",
-      "sha256": "a6c9b1cd898802cc062061fa866f8eb24c45cb9673e527ec57829adf94e4c608",
+      "sha256": "2d77b2240d5c40ceed8aa62a459dd09bebc22cdfdf75bb7d9e0f248ed81534a1",
       "kind": "core-negative",
       "compatibility_execution": "not_verified",
       "gate": "metadata_parse_and_core_rejection",
@@ -266,6 +266,24 @@
         "code": "E_UNKNOWN_FIELD",
         "field_path": "/pipeline"
       }
+    },
+    {
+      "id": "risingwave-host-2",
+      "page": "docs/feature-configuration.md",
+      "block": 2,
+      "language": "yaml",
+      "sha256": "4afc00b8b9bfc67a6aa3ac50b29fb934ac0c7a9371596726bbaca0ecc62ecf3a",
+      "kind": "core-negative",
+      "compatibility_execution": "not_verified"
+    },
+    {
+      "id": "risingwave-host-3",
+      "page": "docs/feature-configuration.md",
+      "block": 3,
+      "language": "sql",
+      "sha256": "f5fb7259e5ef7089f4d2ee2ee3899c40ab9f699266c832e710525eb9bef4a6d2",
+      "kind": "syntax-reference",
+      "compatibility_execution": "not_verified"
     }
   ]
 }

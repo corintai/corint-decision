@@ -169,5 +169,37 @@ is a store error, not a missing key. Invalid configuration, missing bindings and
 template errors fail before lookup and never use fallback. Fallback objects and arrays
 retain their JSON types and are not interpolated or mapped.
 
+### RisingWave materialized views
+
+A Lookup can read a precomputed column directly from a RisingWave materialized view
+through a host `feature_store` binding with provider `risingwave`. The runtime needs
+the `sqlx` build feature. No Redis or HTTP service is required.
+
+```yaml
+features:
+  - name: user_txn_count_1h
+    type: lookup
+    datasource: rw_features
+    key: "${event.user.id}"
+```
+
+The host maps `user_txn_count_1h` to a schema, view, key column and value column.
+The connector binds the resolved key as a query parameter and returns one value.
+No row means missing; a row containing SQL NULL is a found null value and does not
+activate fallback. Multiple matching rows are a query error. Missing mappings and
+invalid entity key types fail before querying and cannot use fallback.
+
+RisingWave maintains the computation independently of decision requests. The window
+and filters belong to the materialized view definition; `lookup` does not accept
+`window`, `when` or an `as_of` cutoff. Its result reflects the materialized state
+visible to the query, which may not include the current request event. Separate
+Feature lookups are separate queries and do not guarantee a shared snapshot.
+
+RisingWave Lookup caching is disabled by default. The host can explicitly accept
+stale values using `query_cache_ttl_secs`; Redis `default_ttl` and `namespace` do not
+apply to this provider. Mapping fields and connection settings belong to host
+configuration. This is an online extension; strict Core still requires the host
+to supply values as declared event inputs.
+
 See [Rule](rule.md), [Context](context.md) and [Expression](expression.md) for the
 separate condition and input contracts.

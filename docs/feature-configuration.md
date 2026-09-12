@@ -99,6 +99,83 @@ The compatibility engine builder can install `events_datasource` and `lookup_dat
 for configured sources. This is a loader convention. Explicit datasource names avoid relying on it;
 see the [engine builder](../crates/corint-decision-engine/src/builder.rs).
 
+## RisingWave direct Lookup
+
+Use `type: feature_store`, `provider: risingwave` to read materialized views through
+the PostgreSQL wire protocol. The runtime must be built with `sqlx` (enabled by the
+server). This provider implements named Lookup, not Aggregation or arbitrary SQL.
+It does not create sources, materialized views, indexes or credentials.
+
+```yaml
+datasource:
+  rw_features:
+    type: feature_store
+    provider: risingwave
+    connection_string: "postgresql://root@localhost:4566/dev"
+    feature_mappings:
+      user_txn_count_1h:
+        schema: public
+        view: user_features_mv
+        key_column: user_id
+        key_type: text
+        value_column: txn_count_1h
+    options:
+      max_connections: "10"
+      connection_timeout: "2"
+      query_cache_ttl_secs: "0"
+```
+
+`feature_mappings` is a nonempty map keyed by the exact CDL Feature name. Each entry
+requires `view`, `key_column` and `value_column`; `schema` defaults to `public` and
+`key_type` defaults to `text`. `text` binds a VARCHAR entity key; `int64` parses the
+resolved string as a signed 64-bit integer and binds BIGINT. Composite keys are not
+supported; expose a single key column in the view. Identifiers are individually
+quoted: put the schema in `schema`, not in a dotted `view` string. Unknown mapping
+fields, empty identifiers, missing bindings and invalid int64 keys are rejected.
+
+The key must uniquely identify a row. Queries select one value column with a bound
+`$1` key and `LIMIT 2`, detecting duplicates rather than silently choosing a row.
+Prepared statements are not retained across lookups, avoiding stale relation plans
+when a materialized view is dropped and recreated on RisingWave 2.8.
+Result types include boolean, smallint/integer/bigint, real/double, decimal/numeric,
+text/varchar, JSON/JSONB, date, timestamp and timestamptz. Numbers use Corint's f64
+representation (large integers and decimals may lose precision); nonfinite numbers
+are errors. Strings remain strings even when they contain digits. JSON retains
+arrays, objects and nested nulls. Dates and timestamps return ISO strings, with UTC
+offsets for timestamptz and no invented offset for timestamp without time zone.
+Unsupported non-null types fail; expose structured values as JSONB when needed.
+
+For an existing ingested relation `transactions` with a VARCHAR `user_id` and
+TIMESTAMPTZ `event_timestamp`, provision this view separately:
+
+```sql
+CREATE MATERIALIZED VIEW public.user_features_mv AS
+SELECT user_id, COUNT(*) AS txn_count_1h
+FROM public.transactions
+WHERE event_timestamp >= NOW() - INTERVAL '1 hour'
+  AND event_timestamp < NOW()
+GROUP BY user_id;
+```
+
+The view maintains a rolling `[now - 1h, now)` window using RisingWave's streaming
+clock. It is not a request-specific fixed-cutoff query. A user's group may disappear
+when its final event expires; Lookup then returns null unless an explicit fallback
+is configured. `fallback: 0` also covers query failures, so it cannot distinguish
+"no activity" from "database unavailable". Sources, lag and late-event policies remain
+deployment responsibilities. See RisingWave's [temporal filter documentation](https://docs.risingwave.com/processing/sql/temporal-filters).
+
+Connections are opened lazily. The runtime `timeout_ms` bounds each lookup including
+connection acquisition; server `options.connection_timeout` supplies this deadline
+in seconds. Runtime `pool_size` comes from `options.max_connections`. RisingWave
+Lookup uses runtime `query_cache_ttl_secs` (default 0), also set through server options;
+its nonzero TTL caches found values, including SQL NULL. Missing rows and failures
+are not cached. `default_ttl` and `namespace` are Redis settings and are ignored here.
+Separate lookups can observe different streaming snapshots.
+
+For standalone runtime datasource YAML, use the same `feature_mappings` alongside
+`name`, `type`, `provider` and `connection_string`, and put `pool_size`, `timeout_ms`
+and `query_cache_ttl_secs` at the top level rather than under server `options`.
+
 ## Validation and deployment
 
 Validate datasource names, connection settings and supported methods against the selected runtime.
@@ -106,3 +183,9 @@ Keep connection credentials in deployment configuration. Test query timeouts, ba
 cache freshness with the intended database; strict Core admission of a policy cannot verify these effects.
 See [Feature runtime evidence](contracts/feature-runtime.md) and the
 [FeaturePipeline integration contract](contracts/feature-pipeline.md) for executable coverage.
+
+## Revision History
+
+| Date | Changes |
+| --- | --- |
+| 2026-09-12 | Document RisingWave direct Lookup configuration, freshness, result types and validation. |

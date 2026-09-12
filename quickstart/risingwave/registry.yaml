@@ -1,0 +1,4 @@
+version: "0.1"
+registry:
+  - pipeline: risingwave_demo_pipeline
+    when: event.type == "transaction"

@@ -722,6 +722,7 @@ impl DecisionEngineBuilder {
                                         DataSourceType::FeatureStore(fs_config) => {
                                             let provider = match fs_config.provider {
                                                 corint_decision_runtime::datasource::config::FeatureStoreProvider::Redis => "redis",
+                                                corint_decision_runtime::datasource::config::FeatureStoreProvider::RisingWave => "risingwave",
                                                 corint_decision_runtime::datasource::config::FeatureStoreProvider::Feast => "feast",
                                                 corint_decision_runtime::datasource::config::FeatureStoreProvider::Http => "http",
                                             };
