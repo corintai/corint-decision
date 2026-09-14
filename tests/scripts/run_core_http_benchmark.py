@@ -73,6 +73,18 @@ with tempfile.TemporaryDirectory(prefix="corint-http-bench-") as directory:
             with urllib.request.build_opener(urllib.request.ProxyHandler({})).open(request, timeout=30) as response:
                 return json.load(response)
 
+        def drain_writes():
+            deadline = time.monotonic() + 30
+            while True:
+                state = call("/v1/core/persistence", publisher=True)
+                if state["failed"]:
+                    raise RuntimeError(f"Background persistence failed: {state}")
+                if state["pending"] == 0:
+                    return state
+                if time.monotonic() > deadline:
+                    raise TimeoutError("Background persistence drain")
+                time.sleep(0.01)
+
         def reload_repository():
             state = call("/v1/core/target", publisher=True)
             start = time.perf_counter()
@@ -94,6 +106,7 @@ with tempfile.TemporaryDirectory(prefix="corint-http-bench-") as directory:
                         decide(trace)
                     # Only this harness-owned disposable database is reset.
                     # Drain all previous requests before fixing the next workload's history.
+                    before_writes = drain_writes()
                     with sqlite3.connect(directory / "journal.sqlite") as journal:
                         journal.execute("DELETE FROM events")
                     with ThreadPoolExecutor(max_workers=concurrency) as executor, ThreadPoolExecutor(max_workers=1) as control:
@@ -102,15 +115,19 @@ with tempfile.TemporaryDirectory(prefix="corint-http-bench-") as directory:
                         times = sorted(executor.map(decide, [trace] * args.samples))
                         seconds = time.perf_counter() - start
                         reload_ms = reload_job.result() if reload_job else None
-                    measurements.append({"trace": trace, "concurrency": concurrency, "samples": args.samples, "initial_journal_records": 0, "during_reload": reloading, "reload_ms": reload_ms, "p95_ms": times[math.ceil(len(times) * .95) - 1], "p99_ms": times[math.ceil(len(times) * .99) - 1], "requests_per_second": args.samples / seconds})
+                    drain_start = time.perf_counter()
+                    after_writes = drain_writes()
+                    drain_ms = (time.perf_counter() - drain_start) * 1000
+                    assert after_writes["written"] - before_writes["written"] == args.samples
+                    measurements.append({"background_drain_ms": drain_ms, "persisted_records": args.samples, "trace": trace, "concurrency": concurrency, "samples": args.samples, "initial_journal_records": 0, "during_reload": reloading, "reload_ms": reload_ms, "p95_ms": times[math.ceil(len(times) * .95) - 1], "p99_ms": times[math.ceil(len(times) * .99) - 1], "requests_per_second": args.samples / seconds})
     finally:
         process.terminate()
         try:
-            process.wait(timeout=10)
+            process.wait(timeout=35)
         except subprocess.TimeoutExpired:
             process.kill()
             process.wait()
-report = {"format_version": "1", "scope": "synthetic_loopback_http_v3_journal", "build_mode": args.profile, "binary_sha256": hashlib.sha256((binary / "corint-decision-server").read_bytes()).hexdigest(), "host": platform.platform(), "measurements": measurements, "live_work_integration": False, "multi_node": False}
+report = {"format_version": "2", "scope": "synthetic_loopback_http_v3_async_journal", "build_mode": args.profile, "binary_sha256": hashlib.sha256((binary / "corint-decision-server").read_bytes()).hexdigest(), "host": platform.platform(), "measurements": measurements, "live_work_integration": False, "multi_node": False}
 args.output.parent.mkdir(parents=True, exist_ok=True)
 with args.output.open("x") as output:
     json.dump(report, output, indent=2)

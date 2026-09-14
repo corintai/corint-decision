@@ -2,7 +2,7 @@
 
 本页交付 W04、W07、W08 的离线公共契约，并覆盖相关 W05/W06/W09 证据约束。
 8 份自包含 JSON Schema Draft 7、完整正例和反例清单由共享工具链执行。
-这是实验性接口验收；Core 已接入持久反馈、真实记录和操作员评估审批门禁，见 [运行保障](core-operations.md)。真实 Work、在线 Feature/Model 与业务评估后端仍未集成。
+这是实验性接口验收；Core 已接入真实决策记录和操作员评估审批门禁；反馈管理由外部 Agent 负责，见 [运行保障](core-operations.md)。真实 Work、在线 Feature/Model 与业务评估后端仍未集成。
 Core draft-1 的运行时能力与 `TargetCapabilities v1.resources: []` 保持原有约束。
 
 ## 三项独立交付
@@ -100,7 +100,7 @@ DecisionRecord 固定租户、决策/业务事件 ID、决策时间、策略/上
 ActionReceipt 必须关联已记录的动作 ID 与幂等键，执行时间不能早于决策。
 v1 每个动作只接收一份终态回执（成功、失败或人工干预）；相同内容可重放，冲突终态拒绝。
 重试流水和终态更正需要后续版本；消费者不会执行动作或因回放产生副作用。
-当前 ledger 仅为内存参考实现；生产反馈还需持久化、可靠投递、认证和保留策略。
+当前 ledger 仅为离线/外部 Agent 的内存参考实现，不属于在线决策引擎主链路。在线 journal 只校验并保存单条决策记录；生产反馈由外部 Agent 系统负责持久化、关联、认证和保留策略。
 
 ## 固定用例与运行
 
@@ -134,3 +134,4 @@ cargo test -p corint-decision-toolchain --test phase0_contracts --locked --offli
 | Date | Changes |
 |---|---|
 | 2026-09-05 | 新增资源绑定、评估审批和反馈事件 v1 契约、消费者及固定验收用例。 |
+| 2026-09-14 | 明确 FeedbackLedger 仅用于离线或外部 Agent，在线 journal 只校验和保存本次决策。 |

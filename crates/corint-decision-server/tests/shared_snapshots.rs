@@ -712,3 +712,39 @@ async fn documented_http_example_runs_and_reserved_fields_are_rejected() {
         }
     }
 }
+
+#[tokio::test]
+async fn persistence_status_requires_publisher_and_disabled_state_is_explicit() {
+    let repo = repository();
+    let manager = manager(repo.path()).await;
+    let app = create_router(manager.clone(), access());
+    for (token, expected) in [
+        (DECISION_TOKEN, StatusCode::UNAUTHORIZED),
+        (PUBLISHER_TOKEN, StatusCode::OK),
+    ] {
+        let response = app
+            .clone()
+            .oneshot(
+                Request::get("/v1/persistence")
+                    .header("authorization", format!("Bearer {token}"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), expected);
+        if expected == StatusCode::OK {
+            let body = response.into_body().collect().await.unwrap().to_bytes();
+            assert_eq!(
+                serde_json::from_slice::<Value>(&body).unwrap(),
+                json!({"persistence":null})
+            );
+        }
+    }
+    let grpc = DecisionGrpcService::new(manager, access());
+    let result = grpc_decide(&grpc).await;
+    assert_eq!(
+        result.metadata().get("x-corint-persistence").unwrap(),
+        "disabled"
+    );
+}

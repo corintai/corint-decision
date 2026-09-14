@@ -134,6 +134,27 @@ async fn raw(
         .unwrap_or_else(|_| json!({"text":String::from_utf8_lossy(&bytes)}));
     (status, value)
 }
+async fn wait_for_writes(app: &Router) -> Value {
+    tokio::time::timeout(std::time::Duration::from_secs(5), async {
+        loop {
+            let (status, value) = call(
+                app,
+                "GET",
+                "/v1/core/persistence",
+                Some(PUBLISHER),
+                json!(null),
+            )
+            .await;
+            assert_eq!(status, StatusCode::OK, "{value}");
+            if value["pending"] == 0 {
+                return value;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+        }
+    })
+    .await
+    .expect("background writes finished")
+}
 async fn current(app: &Router) -> Value {
     let (status, value) = call(app, "GET", "/v1/core/target", Some(PUBLISHER), json!(null)).await;
     assert_eq!(status, StatusCode::OK);
@@ -818,72 +839,21 @@ async fn journal_records_real_decisions_errors_and_recovers_outbox_on_restart() 
         StatusCode::UNAUTHORIZED
     );
     assert_eq!(record["result"], "decline");
-    let mut outcome: Value = serde_json::from_str(
-        &std::fs::read_to_string(root().join("contracts/phase0/outcome-event.json")).unwrap(),
-    )
-    .unwrap();
-    outcome["tenant_id"] = record["tenant_id"].clone();
-    outcome["decision_id"] = record["decision_id"].clone();
-    outcome["business_event_id"] = record["business_event_id"].clone();
-    let duplicate = format!("{{\"tenant_id\":\"wrong\",{}", &outcome.to_string()[1..]);
-    assert_eq!(
-        raw(
-            &router,
-            "POST",
-            "/v1/core/feedback/outcome",
-            Some(consumer),
-            duplicate
-        )
-        .await
-        .0,
-        StatusCode::UNPROCESSABLE_ENTITY
-    );
-    assert_eq!(
-        call(
-            &router,
-            "POST",
-            "/v1/core/feedback/outcome",
-            Some(consumer),
-            outcome.clone()
-        )
-        .await
-        .1["status"],
-        "inserted"
-    );
-    assert_eq!(
-        call(
-            &router,
-            "POST",
-            "/v1/core/feedback/outcome",
-            Some(consumer),
-            outcome
-        )
-        .await
-        .1["status"],
-        "duplicate"
-    );
-    let mut action: Value = serde_json::from_str(
-        &std::fs::read_to_string(root().join("contracts/phase0/action-receipt.json")).unwrap(),
-    )
-    .unwrap();
-    for key in ["tenant_id", "decision_id", "business_event_id"] {
-        action[key] = record[key].clone();
+    for endpoint in ["outcome", "receipt", "query"] {
+        assert_eq!(
+            call(
+                &router,
+                "POST",
+                &format!("/v1/core/feedback/{endpoint}"),
+                Some(consumer),
+                json!({})
+            )
+            .await
+            .0,
+            StatusCode::NOT_FOUND
+        );
     }
-    action["action_id"] = record["actions"][0]["action_id"].clone();
-    action["idempotency_key"] = record["actions"][0]["idempotency_key"].clone();
-    action["executed_at_ms"] = record["decided_at_ms"].clone();
-    assert_eq!(
-        call(
-            &router,
-            "POST",
-            "/v1/core/feedback/receipt",
-            Some(consumer),
-            action
-        )
-        .await
-        .1["status"],
-        "inserted"
-    );
+    assert_eq!(wait_for_writes(&router).await["failed"], 0);
     drop(router);
     let router = app(dir.path(), &config).await;
     let (status, claimed) = call(
@@ -895,7 +865,7 @@ async fn journal_records_real_decisions_errors_and_recovers_outbox_on_restart() 
     )
     .await;
     assert_eq!(status, StatusCode::OK);
-    assert_eq!(claimed["events"].as_array().unwrap().len(), 4);
+    assert_eq!(claimed["events"].as_array().unwrap().len(), 2);
     assert_eq!(claimed["events"][0]["event"], *record);
 }
 
@@ -1243,6 +1213,7 @@ async fn core_runtime_error_details_are_bound_to_durable_records() {
         );
         assert_eq!(response["diagnostic"]["record"]["actions"], json!([]));
     }
+    assert_eq!(wait_for_writes(&router).await["failed"], 0);
     drop(router);
     let router = app(dir.path(), &config).await;
     let (status, claimed) = call(
@@ -1332,4 +1303,245 @@ async fn nested_agent_repository_executes_through_core_http() {
             if enabled { "completed" } else { "skipped" }
         );
     }
+}
+
+#[tokio::test]
+async fn online_journal_requires_no_feedback_or_export_credential() {
+    let (dir, mut config) = setup(&["initial"]);
+    config["config_version"] = json!("3");
+    config["journal"] =
+        json!({"path":"online.sqlite","tenant_id":"test","max_records":1,"max_bytes":1_000_000});
+    let router = app(dir.path(), &config).await;
+    let (status, result) = call(
+        &router,
+        "POST",
+        "/v1/core/decide",
+        Some(DECISION),
+        json!({"business_event_id":"payment-only","event":{"amount":1500}}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{result}");
+    assert_eq!(result["record"]["business_event_id"], "payment-only");
+    assert_eq!(result["persistence"], "queued");
+    assert_eq!(wait_for_writes(&router).await["written"], 1);
+    let pool = sqlx::SqlitePool::connect_with(
+        sqlx::sqlite::SqliteConnectOptions::new().filename(dir.path().join("online.sqlite")),
+    )
+    .await
+    .unwrap();
+    let row: (String, String) = sqlx::query_as("SELECT body,input FROM events")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(
+        serde_json::from_str::<Value>(&row.0).unwrap(),
+        result["record"]
+    );
+    assert_eq!(
+        serde_json::from_str::<Value>(&row.1).unwrap(),
+        json!({"amount":1500.0})
+    );
+    let (status, failure) = call(
+        &router,
+        "POST",
+        "/v1/core/decide",
+        Some(DECISION),
+        json!({"business_event_id":"cannot-store","event":{"amount":1500}}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{failure}");
+    assert_eq!(failure["persistence"], "queued");
+    let writes = wait_for_writes(&router).await;
+    assert_eq!(writes["failed"], 1);
+    assert_eq!(writes["last_failed_id"], failure["record"]["decision_id"]);
+    let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM events")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(count, 1);
+    for path in [
+        "/v1/core/outbox/claim",
+        "/v1/core/feedback/outcome",
+        "/v1/core/feedback/receipt",
+        "/v1/core/feedback/query",
+    ] {
+        assert_eq!(
+            call(&router, "POST", path, Some(DECISION), json!({}))
+                .await
+                .0,
+            StatusCode::NOT_FOUND
+        );
+    }
+}
+
+#[tokio::test]
+async fn decision_response_does_not_wait_for_database_write_lock() {
+    let (dir, mut config) = setup(&["initial"]);
+    config["config_version"] = json!("3");
+    config["journal"] =
+        json!({"path":"locked.sqlite","tenant_id":"test","max_records":10,"max_bytes":1_000_000});
+    let router = app(dir.path(), &config).await;
+    let pool = sqlx::SqlitePool::connect_with(
+        sqlx::sqlite::SqliteConnectOptions::new().filename(dir.path().join("locked.sqlite")),
+    )
+    .await
+    .unwrap();
+    let mut tx = pool.begin_with("BEGIN IMMEDIATE").await.unwrap();
+    let (status, response) = tokio::time::timeout(
+        std::time::Duration::from_secs(1),
+        call(
+            &router,
+            "POST",
+            "/v1/core/decide",
+            Some(DECISION),
+            json!({"business_event_id":"while-locked","event":{"amount":1500}}),
+        ),
+    )
+    .await
+    .expect("decision must return while SQLite is locked");
+    assert_eq!(status, StatusCode::OK, "{response}");
+    assert_eq!(response["persistence"], "queued");
+    let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM events")
+        .fetch_one(&mut *tx)
+        .await
+        .unwrap();
+    assert_eq!(count, 0);
+    let (status, _) = call(
+        &router,
+        "GET",
+        "/v1/core/persistence",
+        Some(DECISION),
+        json!(null),
+    )
+    .await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+    let (_, pending) = call(
+        &router,
+        "GET",
+        "/v1/core/persistence",
+        Some(PUBLISHER),
+        json!(null),
+    )
+    .await;
+    assert_eq!(pending["pending"], 1);
+    tx.commit().await.unwrap();
+    let complete = wait_for_writes(&router).await;
+    assert_eq!(complete["written"], 1);
+    assert_eq!(complete["failed"], 0);
+    let stored: String = sqlx::query_scalar("SELECT body FROM events")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(
+        serde_json::from_str::<Value>(&stored).unwrap(),
+        response["record"]
+    );
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn sigterm_drains_queued_decision_before_server_exits() {
+    use std::process::{Command, Stdio};
+    struct ChildGuard(std::process::Child);
+    impl Drop for ChildGuard {
+        fn drop(&mut self) {
+            let _ = self.0.kill();
+            let _ = self.0.wait();
+        }
+    }
+    let (dir, mut config) = setup(&["initial"]);
+    config["config_version"] = json!("3");
+    config["listen"] = json!("127.0.0.1:0");
+    config["journal"] =
+        json!({"path":"shutdown.sqlite","tenant_id":"test","max_records":10,"max_bytes":1_000_000});
+    let config_path = dir.path().join("core.json");
+    std::fs::write(&config_path, config.to_string()).unwrap();
+    let log_path = dir.path().join("server.log");
+    let log = std::fs::File::create(&log_path).unwrap();
+    let mut child = ChildGuard(
+        Command::new(env!("CARGO_BIN_EXE_corint-decision-server"))
+            .env("CORINT_CORE_CONFIG", &config_path)
+            .env(config["decision_token_env"].as_str().unwrap(), DECISION)
+            .env(config["publisher_token_env"].as_str().unwrap(), PUBLISHER)
+            .env("RUST_LOG", "corint_decision_server=info")
+            .stdout(Stdio::from(log.try_clone().unwrap()))
+            .stderr(Stdio::from(log))
+            .spawn()
+            .unwrap(),
+    );
+    let address = tokio::time::timeout(std::time::Duration::from_secs(10), async {
+        loop {
+            assert!(
+                child.0.try_wait().unwrap().is_none(),
+                "server exited: {}",
+                std::fs::read_to_string(&log_path).unwrap()
+            );
+            let log = std::fs::read_to_string(&log_path).unwrap();
+            if let Some(start) = log.find("Experimental strict Core server listening on 127.0.0.1:")
+            {
+                let tail = &log[start + "Experimental strict Core server listening on ".len()..];
+                break tail
+                    .chars()
+                    .take_while(|c| c.is_ascii_digit() || *c == '.' || *c == ':')
+                    .collect::<String>();
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("server ready");
+    let pool = sqlx::SqlitePool::connect_with(
+        sqlx::sqlite::SqliteConnectOptions::new().filename(dir.path().join("shutdown.sqlite")),
+    )
+    .await
+    .unwrap();
+    let tx = pool.begin_with("BEGIN IMMEDIATE").await.unwrap();
+    let response = reqwest::Client::builder()
+        .no_proxy()
+        .timeout(std::time::Duration::from_secs(2))
+        .build()
+        .unwrap()
+        .post(format!("http://{address}/v1/core/decide"))
+        .bearer_auth(DECISION)
+        .json(&json!({"business_event_id":"before-stop","event":{"amount":1500}}))
+        .send()
+        .await
+        .unwrap();
+    assert!(response.status().is_success());
+    let response: Value = response.json().await.unwrap();
+    assert_eq!(response["persistence"], "queued");
+    assert!(Command::new("kill")
+        .args(["-TERM", &child.0.id().to_string()])
+        .status()
+        .unwrap()
+        .success());
+    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    assert!(
+        child.0.try_wait().unwrap().is_none(),
+        "server must drain the blocked write"
+    );
+    tx.commit().await.unwrap();
+    let status = tokio::time::timeout(std::time::Duration::from_secs(5), async {
+        loop {
+            if let Some(status) = child.0.try_wait().unwrap() {
+                break status;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("graceful shutdown");
+    assert!(
+        status.success(),
+        "{}",
+        std::fs::read_to_string(&log_path).unwrap()
+    );
+    let record: String = sqlx::query_scalar("SELECT body FROM events")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(
+        serde_json::from_str::<Value>(&record).unwrap(),
+        response["record"]
+    );
 }

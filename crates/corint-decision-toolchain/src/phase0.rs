@@ -372,26 +372,32 @@ pub struct FeedbackLedger {
 fn decision_key(v: &Value) -> (String, String) {
     (s(&v["tenant_id"]).into(), s(&v["decision_id"]).into())
 }
+/// Validate one decision without loading any prior decisions or feedback.
+pub fn validate_decision_record(record: &Contract) -> Result<(), CoreError> {
+    record.require("decision-record")?;
+    let v = record.value();
+    record.ensure(
+        (v["result"] == "error") == !v["error_code"].is_null(),
+        "/error_code",
+        "E_DECISION_RESULT",
+        "Error result and error code must agree",
+    )?;
+    let mut ids = BTreeSet::new();
+    let mut keys = BTreeSet::new();
+    for a in items(&v["actions"]) {
+        record.ensure(
+            ids.insert(s(&a["action_id"])) && keys.insert(s(&a["idempotency_key"])),
+            "/actions",
+            "E_ACTION_IDENTITY",
+            "Duplicate action identity or idempotency key",
+        )?;
+    }
+    Ok(())
+}
 impl FeedbackLedger {
     pub fn record_decision(&mut self, record: Contract) -> Result<Ingest, CoreError> {
-        record.require("decision-record")?;
+        validate_decision_record(&record)?;
         let v = record.value();
-        record.ensure(
-            (v["result"] == "error") == !v["error_code"].is_null(),
-            "/error_code",
-            "E_DECISION_RESULT",
-            "Error result and error code must agree",
-        )?;
-        let mut ids = BTreeSet::new();
-        let mut keys = BTreeSet::new();
-        for a in items(&v["actions"]) {
-            record.ensure(
-                ids.insert(s(&a["action_id"])) && keys.insert(s(&a["idempotency_key"])),
-                "/actions",
-                "E_ACTION_IDENTITY",
-                "Duplicate action identity or idempotency key",
-            )?;
-        }
         let key = decision_key(v);
         if let Some(old) = self.decisions.get(&key) {
             record.ensure(

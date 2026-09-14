@@ -24,6 +24,12 @@ pub(super) async fn health(State(state): State<AppState>) -> (HeaderMap, Json<He
     )
 }
 
+/// Operator-only background database status for the active engine.
+pub(super) async fn persistence_status(State(state): State<AppState>) -> Json<serde_json::Value> {
+    let snapshot = state.engine.snapshot().await;
+    Json(serde_json::json!({"persistence":snapshot.engine.persistence_status()}))
+}
+
 /// Decision endpoint
 #[axum::debug_handler]
 pub(super) async fn decide(
@@ -110,9 +116,20 @@ pub(super) async fn decide(
         .unwrap_or("pass")
         .to_string();
 
-    // Build the response
+    // Report queue admission explicitly; it is not a commit acknowledgement.
+    let mut headers = snapshot_headers(&snapshot);
+    headers.insert(
+        "x-corint-persistence",
+        if snapshot.engine.persistence_status().is_some() {
+            "queued"
+        } else {
+            "disabled"
+        }
+        .parse()
+        .expect("static header"),
+    );
     Ok((
-        snapshot_headers(&snapshot),
+        headers,
         Json(DecideResponsePayload {
             request_id: response.request_id,
             status: 200,

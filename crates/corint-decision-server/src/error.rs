@@ -5,17 +5,10 @@ use axum::{
     response::{IntoResponse, Response},
     Json,
 };
-use chrono::Utc;
+use corint_decision_engine::request_id::generate_request_id;
 use serde::Serialize;
 use serde_json::json;
 use thiserror::Error;
-
-/// Generate a unique request ID
-fn generate_request_id() -> String {
-    let timestamp = Utc::now().format("%Y%m%d%H%M%S");
-    let random: u32 = rand::random::<u32>() & 0xFFFFFF;
-    format!("req_{}_{:06x}", timestamp, random)
-}
 
 /// Server error type
 #[derive(Error, Debug)]
@@ -275,8 +268,8 @@ mod tests {
     #[test]
     fn test_generate_request_id_format() {
         let request_id = generate_request_id();
-        assert!(request_id.starts_with("req_"));
-        assert!(request_id.len() > 10);
+        assert!(request_id.starts_with("rq_"));
+        assert_eq!(request_id.len(), 21);
     }
 
     #[test]

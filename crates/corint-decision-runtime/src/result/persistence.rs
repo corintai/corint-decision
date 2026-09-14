@@ -9,6 +9,7 @@
 //! - risk_decisions: Main decision results
 //! - rule_executions: Individual rule execution logs
 
+use super::background::{BackgroundWrites, PersistenceStatus};
 use crate::error::{Result, RuntimeError};
 use crate::result::DecisionResult;
 use corint_decision_model::ast::Signal;
@@ -18,7 +19,7 @@ use std::collections::HashMap;
 use tokio::sync::Semaphore;
 
 /// Rule execution record for persistence
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize)]
 pub struct RuleExecutionRecord {
     /// Request ID (links to risk_decisions)
     pub request_id: String,
@@ -56,7 +57,7 @@ pub struct RuleExecutionRecord {
 }
 
 /// Decision result record for persistence
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize)]
 pub struct DecisionRecord {
     /// Request ID (unique identifier)
     pub request_id: String,
@@ -92,9 +93,10 @@ pub struct DecisionRecord {
     pub rule_executions: Vec<RuleExecutionRecord>,
 }
 
-/// Acknowledged legacy PostgreSQL persistence. A successful call means the
-/// transaction committed. Bounded admission rejects overload without losing work.
+/// PostgreSQL result storage. Online decisions use bounded background admission;
+/// explicit `write_decision` calls still await a committed transaction.
 pub struct DecisionResultWriter {
+    background: BackgroundWrites,
     #[cfg(feature = "sqlx")]
     pool: Option<sqlx::PgPool>,
     permits: Semaphore,
@@ -105,11 +107,59 @@ impl DecisionResultWriter {
         Self {
             pool: Some(pool),
             permits: Semaphore::new(64),
+            background: BackgroundWrites::default(),
         }
     }
     #[cfg(not(feature = "sqlx"))]
     pub fn new() -> Self {
         Self::default()
+    }
+    /// Queue an online result; success acknowledges only volatile admission.
+    pub fn enqueue_decision(&self, record: DecisionRecord) -> Result<()> {
+        #[cfg(feature = "sqlx")]
+        {
+            let pool = self.pool.clone().ok_or_else(|| {
+                RuntimeError::RuntimeError("Persistence is not configured".into())
+            })?;
+            let bytes = serde_json::to_vec(&record)
+                .map_err(|error| RuntimeError::RuntimeError(error.to_string()))?
+                .len();
+            self.background
+                .submit_once(record.request_id.clone(), bytes, move || {
+                    let pool = pool.clone();
+                    let record = record.clone();
+                    async move {
+                        Self::write_to_database(&pool, &record)
+                            .await
+                            .map_err(|error| error.to_string())
+                    }
+                })
+                .map_err(RuntimeError::RuntimeError)
+        }
+        #[cfg(not(feature = "sqlx"))]
+        {
+            let _ = record;
+            Err(RuntimeError::RuntimeError(
+                "Persistence requires sqlx".into(),
+            ))
+        }
+    }
+    pub fn persistence_status(&self) -> PersistenceStatus {
+        self.background.status()
+    }
+
+    pub async fn shutdown(&self, timeout: std::time::Duration) -> Result<()> {
+        self.background
+            .shutdown(timeout)
+            .await
+            .map_err(RuntimeError::RuntimeError)?;
+        let failed = self.background.status().failed;
+        if failed > 0 {
+            return Err(RuntimeError::RuntimeError(format!(
+                "{failed} background decision writes failed"
+            )));
+        }
+        Ok(())
     }
     pub async fn write_decision(&self, record: DecisionRecord) -> Result<()> {
         let _permit = self
@@ -323,6 +373,7 @@ impl Default for DecisionResultWriter {
             #[cfg(feature = "sqlx")]
             pool: None,
             permits: Semaphore::new(64),
+            background: BackgroundWrites::default(),
         }
     }
 }
@@ -374,5 +425,38 @@ impl DecisionRecord {
             processing_time_ms,
             rule_executions,
         }
+    }
+}
+
+#[cfg(all(test, feature = "sqlx"))]
+mod background_tests {
+    use super::*;
+    #[tokio::test]
+    async fn admission_does_not_wait_for_postgres_and_reports_later_failure_without_retry() {
+        // A closed lazy pool performs no network I/O and fails only when the
+        // background task reaches storage, not when the request is admitted.
+        let pool = sqlx::postgres::PgPoolOptions::new()
+            .connect_lazy("postgres://unused@localhost/unused")
+            .unwrap();
+        pool.close().await;
+        let writer = DecisionResultWriter::new(pool);
+        let record = DecisionRecord::from_decision_result(
+            "rq_test".into(),
+            None,
+            "pipeline".into(),
+            &DecisionResult::new(Signal::Approve, 0),
+            0,
+            vec![],
+        );
+        writer.enqueue_decision(record).unwrap();
+        assert_eq!(writer.persistence_status().pending, 1);
+        assert!(writer
+            .shutdown(std::time::Duration::from_secs(1))
+            .await
+            .is_err());
+        let status = writer.persistence_status();
+        assert_eq!(status.pending, 0);
+        assert_eq!(status.failed, 1);
+        assert_eq!(status.retries, 0);
     }
 }

@@ -195,8 +195,19 @@ ruleset:
     let response = engine.decide(request).await.unwrap();
 
     println!("Auto-generated request_id: {}", response.request_id);
-    assert!(response.request_id.starts_with("req_"));
-    assert!(response.request_id.len() > 10);
+    let parts: Vec<_> = response.request_id.split('_').collect();
+    assert_eq!(parts.len(), 3);
+    assert_eq!(parts[0], "rq");
+    assert_eq!(parts[1].len(), 6);
+    assert_eq!(parts[2].len(), 11);
+    assert!(parts[1]
+        .bytes()
+        .chain(parts[2].bytes())
+        .all(|byte| byte.is_ascii_alphanumeric()));
+    assert_eq!(
+        response.metadata.get("request_id"),
+        Some(&response.request_id)
+    );
 
     // Test Case 2: Custom request ID
     let request = DecisionRequest::new(event_data)
@@ -466,7 +477,7 @@ ruleset:
     let request = DecisionRequest::new(event_data);
     let response = engine.decide(request).await.unwrap();
 
-    assert!(response.request_id.starts_with("req_"));
+    assert!(response.request_id.starts_with("rq_"));
     println!(
         "Config test passed with request_id: {}",
         response.request_id

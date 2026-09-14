@@ -18,6 +18,7 @@ use crate::api::grpc::DecisionGrpcService;
 use crate::config::ServerConfig;
 use crate::snapshot::EngineManager;
 use anyhow::Result;
+use corint_decision_engine::background::shutdown_background_writes;
 use std::sync::Arc;
 use tokio::net::TcpListener;
 use tonic::transport::Server as TonicServer;
@@ -28,6 +29,12 @@ use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 async fn main() -> Result<()> {
     // Initialize tracing
     init_tracing()?;
+    let (shutdown_tx, shutdown_rx) = tokio::sync::watch::channel(false);
+    let notify_shutdown = shutdown_tx.clone();
+    tokio::spawn(async move {
+        shutdown_signal().await;
+        let _ = notify_shutdown.send(true);
+    });
 
     // Explicit isolated mode: errors never fall back to compatibility loading.
     // Do not load/log legacy datasource configuration or start a second gRPC engine.
@@ -38,7 +45,13 @@ async fn main() -> Result<()> {
             "Experimental strict Core server listening on {}",
             listener.local_addr()?
         );
-        axum::serve(listener, app).await?;
+        let result = axum::serve(listener, app)
+            .with_graceful_shutdown(shutdown_requested(shutdown_rx))
+            .await;
+        shutdown_background_writes(std::time::Duration::from_secs(30))
+            .await
+            .map_err(anyhow::Error::msg)?;
+        result?;
         return Ok(());
     }
 
@@ -79,7 +92,7 @@ async fn main() -> Result<()> {
     );
 
     // Start gRPC server if configured
-    if let Some(grpc_port) = config.server.grpc_port {
+    let grpc_task = if let Some(grpc_port) = config.server.grpc_port {
         let grpc_addr = format!("{}:{}", config.server.host, grpc_port).parse()?;
 
         let grpc_service = DecisionGrpcService::new(manager.clone(), access.clone());
@@ -95,25 +108,56 @@ async fn main() -> Result<()> {
             .unwrap();
 
         // Spawn gRPC server in background
-        tokio::spawn(async move {
+        let grpc_shutdown = shutdown_rx.clone();
+        let task = tokio::spawn(async move {
             TonicServer::builder()
                 .add_service(DecisionServiceServer::new(grpc_service))
                 .add_service(reflection_service)
-                .serve(grpc_addr)
+                .serve_with_shutdown(grpc_addr, shutdown_requested(grpc_shutdown))
                 .await
-                .expect("gRPC server failed");
         });
 
         info!("✓ gRPC Server listening on {}", grpc_addr);
         info!("  gRPC Decision API: {}:Decide", grpc_addr);
         info!("  gRPC Health check: {}:HealthCheck", grpc_addr);
         info!("  gRPC Reflection API enabled");
-    }
+        Some(task)
+    } else {
+        None
+    };
 
     // Run HTTP server
-    axum::serve(listener, app).await?;
-
+    let result = axum::serve(listener, app)
+        .with_graceful_shutdown(shutdown_requested(shutdown_rx))
+        .await;
+    let _ = shutdown_tx.send(true);
+    if let Some(task) = grpc_task {
+        task.await??;
+    }
+    shutdown_background_writes(std::time::Duration::from_secs(30))
+        .await
+        .map_err(anyhow::Error::msg)?;
+    result?;
     Ok(())
+}
+
+async fn shutdown_requested(mut signal: tokio::sync::watch::Receiver<bool>) {
+    if !*signal.borrow() {
+        let _ = signal.changed().await;
+    }
+}
+async fn shutdown_signal() {
+    #[cfg(unix)]
+    {
+        let mut terminate =
+            tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+                .expect("install SIGTERM handler");
+        tokio::select! { _ = tokio::signal::ctrl_c() => {}, _ = terminate.recv() => {} }
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = tokio::signal::ctrl_c().await;
+    }
 }
 
 /// Initialize tracing subscriber

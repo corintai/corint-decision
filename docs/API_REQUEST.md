@@ -51,9 +51,24 @@
 | `features` | 仅 `return_features=true` 时返回，当前兼容实现为引擎结果 context 的 JSON 映射 |
 | `trace` | 请求启用且引擎生成时返回执行 trace |
 
+自动生成的 `request_id` 使用 `rq_<6位Base62随机串>_<11位Base62雪花ID>`，
+例如 `rq_a3F2eZ_9oVW9PpkHy8`，总长 21 字符。随机段每次请求重新生成，
+字符集为 `0-9A-Za-z`。Base62 区分大小写，存储、比较和传输必须保留完整 ID 及大小写。
+生成器无需外部服务；跨进程唯一性仍属于概率保证，不能把该字段当作业务幂等键。
+兼容服务的错误响应使用同一生成器。SDK 显式传入的 `metadata.request_id` 继续原样沿用；
+这不是 HTTP 请求新增的输入字段。算法细节见 [SDK 说明](../crates/corint-decision-sdk/README.md#request-id-generation)。
+
 响应头 `x-corint-revision` 标识当前运行快照，`x-corint-compiled-sha256` 标识编译策略。
 两者不是严格 Core 的发布批准或业务验收证据。HTTP 与 gRPC 的信号均为小写；
 FFI 原生响应结构不同，不能直接套用本页的 HTTP 响应格式。
+
+## 异步保存结果
+
+策略计算仍在本次请求中完成，结果保存使用后台队列；这与请求选项 `async`（异步计算/任务轮询）不同。
+配置结果 writer 时，HTTP/gRPC 返回 `x-corint-persistence: queued`，表示入队成功而非数据库提交；未配置时为 `disabled`。
+每个 writer 最多保留 64 个未完成任务、32 MiB 序列化数据，队列满或关闭时请求报错。数据库后续失败不能撤回已返回结果，由日志及 publisher 专用 `GET /v1/persistence` 的状态计数报告。
+兼容 PostgreSQL 写入不自动重试，避免不确定提交重复产生明细；Core 的幂等 journal 支持有界重试，见 [运行保障](contracts/core-operations.md)。
+正常服务停机先停止请求，再最多等待 30 秒排空；崩溃或强制退出可能丢失尚未落库记录。该行为不提供“响应成功必已持久化”的保证。
 
 ## 错误与管理
 
@@ -67,3 +82,9 @@ FFI 原生响应结构不同，不能直接套用本页的 HTTP 响应格式。
 直接执行，覆盖请求接受、被禁止字段、异步拒绝及小写响应。
 
 `api` 已从请求模型移除；即使值为 `null` 也按未知字段拒绝。在线 SDK 的服务结果统一使用 `service`。
+
+## 修订历史
+
+| 日期 | 变更 |
+|---|---|
+| 2026-09-14 | 更新 Base62 请求 ID 格式、异步保存状态、队列限制和停机语义。 |

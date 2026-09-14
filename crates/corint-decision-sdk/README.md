@@ -275,7 +275,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .build()
         .await?;
 
-    // Decisions are automatically saved to database
+    // Decisions enqueue background writes; the response does not wait for commit
     let response = engine.decide(request).await?;
 
     // Results are persisted asynchronously with:
@@ -284,9 +284,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // - processing time
     // - individual rule execution details
 
+    // Call only when stopping the host, after stopping new requests.
+    engine.shutdown_persistence(std::time::Duration::from_secs(30)).await?;
     Ok(())
 }
 ```
+
+Background persistence is bounded to 64 unfinished records and 32 MiB of serialized
+payload per writer. `engine.persistence_status()` exposes pending/success/failure
+counts and the latest failed ID. Admission failures fail the request; later database
+failures are logged and counted after the response. Compatibility PostgreSQL writes
+are not automatically retried because its rule-detail inserts are not retry-idempotent.
+Keep the Tokio runtime alive and call `shutdown_persistence` before stopping the host.
+An abrupt shutdown can lose buffered records; queue admission is not durable storage.
 
 ## Configuration
 
@@ -374,14 +384,28 @@ Without registry, pipelines are matched by `event_type` metadata in pipeline def
 
 Request IDs are automatically generated using the format:
 ```
-req_YYYYMMDDHHmmss_xxxxxx
+rq_<6 random Base62 characters>_<11 Base62 snowflake characters>
 ```
 
-Example: `req_20231209143052_a3f2e1`
+Example shape: `rq_a3F2eZ_9oVW9PpkHy8` (21 characters including separators).
 
 Components:
-- Timestamp: UTC time in `YYYYMMDDHHmmss` format
-- Random suffix: 6 hex digits for uniqueness
+- `rq`: request business prefix.
+- Random segment: six independently sampled characters from `0-9A-Za-z`, refreshed
+  for every request using OS entropy.
+- Snowflake: 41 milliseconds-since-2024 timestamp bits, a 10-bit random node ID
+  selected once per process, and a 12-bit sequence, encoded as 11 Base62 characters.
+
+The generator is shared within the process and needs no external service. Clock
+rollback retains the last timestamp and sequence; sequence exhaustion waits for
+the clock to advance. Generator state is not persisted across restarts. Random
+node IDs and request segments reduce cross-process collisions, but do not provide
+an absolute uniqueness guarantee. Base62 is case-sensitive: preserve the entire
+ID, including case, in storage, comparison and transport. Request IDs are not
+business idempotency keys. OS entropy failure or a clock outside the supported
+epoch range fails generation instead of falling back to a weaker ID.
+
+The shared generator also supplies compatibility server error-response IDs.
 
 You can also provide custom request IDs via metadata:
 ```rust
@@ -483,7 +507,7 @@ async fn test_with_metadata() {
     let response = engine.decide(request).await.unwrap();
 
     assert_eq!(response.metadata.get("event_id"), Some(&"evt_123".to_string()));
-    assert!(response.request_id.starts_with("req_"));
+    assert!(response.request_id.starts_with("rq_"));
 }
 ```
 

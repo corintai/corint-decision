@@ -1,7 +1,8 @@
-//! Bounded durable event journal and leased, at-least-once outbox.
+//! Durable online decision records with an optional, at-least-once export outbox.
 //! This stores evidence, never policy source or the active policy selection.
 use corint_decision_compiler::core::CoreSource;
-use corint_decision_toolchain::phase0::{Contract, FeedbackLedger, Ingest};
+use corint_decision_engine::background::{BackgroundWrites, PersistenceStatus};
+use corint_decision_toolchain::phase0::{validate_decision_record, Contract, Ingest};
 use serde::Deserialize;
 use serde_json::{json, Value};
 use sqlx::{
@@ -17,11 +18,13 @@ pub struct JournalConfig {
     pub tenant_id: String,
     pub max_records: u32,
     pub max_bytes: u64,
-    /// Separate feedback/outbox role, loaded only from operator environment.
+    /// Optional decision-export role. Empty disables outbox HTTP routes.
+    #[serde(default)]
     pub consumer_token_env: String,
 }
 #[derive(Clone)]
 pub struct Journal {
+    background: BackgroundWrites,
     pool: SqlitePool,
     pub tenant_id: String,
     max_records: u32,
@@ -37,20 +40,10 @@ pub fn contract(kind: &str, value: &Value) -> anyhow::Result<Contract> {
         },
     )?)
 }
-fn apply(ledger: &mut FeedbackLedger, kind: &str, value: &Value) -> anyhow::Result<Ingest> {
-    let c = contract(kind, value)?;
-    Ok(match kind {
-        "decision-record" => ledger.record_decision(c)?,
-        "outcome-event" => ledger.ingest_outcome(c)?,
-        "action-receipt" => ledger.ingest_receipt(c)?,
-        _ => anyhow::bail!("Unsupported event kind"),
-    })
-}
 impl Journal {
     pub async fn open(root: &Path, config: &JournalConfig) -> anyhow::Result<Self> {
         anyhow::ensure!(
-            (1..=100_000).contains(&config.max_records)
-                && (1024..=1024 * 1024 * 1024).contains(&config.max_bytes),
+            config.max_records > 0 && (1024..=i64::MAX as u64).contains(&config.max_bytes),
             "Invalid journal capacity"
         );
         anyhow::ensure!(
@@ -76,8 +69,8 @@ impl Journal {
             .journal_mode(SqliteJournalMode::Wal)
             .synchronous(SqliteSynchronous::Full)
             .busy_timeout(std::time::Duration::from_secs(5));
-        // Serialize validation and append in a transaction; a second process must
-        // take the same write lock before reconstructing correlation history.
+        // Serialize local inserts and capacity accounting. Separate processes use
+        // the same database write lock, without reconstructing feedback history.
         let pool = SqlitePoolOptions::new()
             .max_connections(1)
             .connect_with(options)
@@ -101,39 +94,107 @@ impl Journal {
         );
         sqlx::query("CREATE TABLE IF NOT EXISTS events (seq INTEGER PRIMARY KEY AUTOINCREMENT, kind TEXT NOT NULL, digest TEXT NOT NULL UNIQUE, body TEXT NOT NULL, input TEXT, bytes INTEGER NOT NULL, delivered INTEGER NOT NULL DEFAULT 0, lease TEXT, retry_at INTEGER NOT NULL DEFAULT 0, attempts INTEGER NOT NULL DEFAULT 0)").execute(&pool).await?;
         let journal = Self {
+            background: BackgroundWrites::default(),
             pool,
             tenant_id: tenant,
             max_records: config.max_records,
             max_bytes: config.max_bytes,
             admission: std::sync::Arc::new(tokio::sync::Semaphore::new(64)),
         };
-        // Refuse corrupt or semantically invalid persisted histories on restart.
-        let mut tx = journal.pool.begin().await?;
-        let rows = sqlx::query("SELECT kind,body,digest,bytes FROM events ORDER BY seq LIMIT ?")
-            .bind(i64::from(config.max_records) + 1)
-            .fetch_all(&mut *tx)
-            .await?;
-        anyhow::ensure!(
-            rows.len() <= config.max_records as usize,
-            "Journal capacity exceeded"
-        );
-        let mut ledger = FeedbackLedger::default();
-        let mut bytes = 0u64;
-        for row in rows {
-            let value: Value = serde_json::from_str(row.get("body"))?;
-            anyhow::ensure!(
-                contract(row.get("kind"), &value)?.sha256() == row.get::<String, _>("digest"),
-                "Journal content fingerprint mismatch"
-            );
-            bytes += row.get::<i64, _>("bytes") as u64;
-            apply(&mut ledger, row.get("kind"), &value)?;
-        }
-        anyhow::ensure!(bytes <= journal.max_bytes, "Journal byte capacity exceeded");
-        tx.commit().await?;
+        journal.initialize_storage().await?;
         Ok(journal)
     }
-    /// Validation, history update, input evidence and outbox insertion are atomic.
-    /// Full or unavailable storage fails the request; no successful audit is lost.
+
+    // A transactional, one-time upgrade of the existing events table. Historical
+    // feedback stays untouched for external migration; it is never replayed.
+    async fn initialize_storage(&self) -> anyhow::Result<()> {
+        let mut tx = self.pool.begin_with("BEGIN IMMEDIATE").await?;
+        sqlx::query("CREATE TABLE IF NOT EXISTS journal_usage (id INTEGER PRIMARY KEY CHECK(id=1), record_count INTEGER NOT NULL, total_bytes INTEGER NOT NULL)")
+            .execute(&mut *tx).await?;
+        let initialized: bool =
+            sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM journal_usage WHERE id=1)")
+                .fetch_one(&mut *tx)
+                .await?;
+        if !initialized {
+            let rows = sqlx::query(
+                "SELECT body,digest FROM events WHERE kind='decision-record' ORDER BY seq",
+            )
+            .fetch_all(&mut *tx)
+            .await?;
+            for row in rows {
+                let value: Value = serde_json::from_str(row.get("body"))?;
+                anyhow::ensure!(value["tenant_id"] == self.tenant_id, "Tenant mismatch");
+                let record = contract("decision-record", &value)?;
+                validate_decision_record(&record)?;
+                anyhow::ensure!(
+                    record.sha256() == row.get::<String, _>("digest"),
+                    "Journal content fingerprint mismatch"
+                );
+            }
+            sqlx::query("CREATE UNIQUE INDEX journal_decision_identity ON events(json_extract(body,'$.tenant_id'), json_extract(body,'$.decision_id')) WHERE kind='decision-record'")
+                .execute(&mut *tx).await?;
+            sqlx::query("CREATE INDEX journal_pending_decisions ON events(seq) WHERE kind='decision-record' AND delivered=0")
+                .execute(&mut *tx).await?;
+            sqlx::query(
+                "INSERT INTO journal_usage SELECT 1,COUNT(*),COALESCE(SUM(bytes),0) FROM events",
+            )
+            .execute(&mut *tx)
+            .await?;
+            // Triggers keep counters correct across connections, restarts and
+            // future archive/delete operations, in the same transaction as rows.
+            sqlx::query("CREATE TRIGGER journal_usage_insert AFTER INSERT ON events BEGIN UPDATE journal_usage SET record_count=record_count+1,total_bytes=total_bytes+NEW.bytes WHERE id=1; END")
+                .execute(&mut *tx).await?;
+            sqlx::query("CREATE TRIGGER journal_usage_delete AFTER DELETE ON events BEGIN UPDATE journal_usage SET record_count=record_count-1,total_bytes=total_bytes-OLD.bytes WHERE id=1; END")
+                .execute(&mut *tx).await?;
+            sqlx::query("CREATE TRIGGER journal_usage_update AFTER UPDATE OF bytes ON events BEGIN UPDATE journal_usage SET total_bytes=total_bytes+NEW.bytes-OLD.bytes WHERE id=1; END")
+                .execute(&mut *tx).await?;
+        }
+        let usage = sqlx::query("SELECT record_count,total_bytes FROM journal_usage WHERE id=1")
+            .fetch_one(&mut *tx)
+            .await?;
+        anyhow::ensure!(
+            usage.get::<i64, _>("record_count") <= i64::from(self.max_records)
+                && usage.get::<i64, _>("total_bytes") <= self.max_bytes as i64,
+            "Journal capacity exceeded"
+        );
+        tx.commit().await?;
+        Ok(())
+    }
+
+    /// Queue one frozen decision and input without waiting for SQLite I/O.
+    pub fn enqueue(&self, value: Value, input: Value) -> anyhow::Result<()> {
+        anyhow::ensure!(value["tenant_id"] == self.tenant_id, "Tenant mismatch");
+        let record = contract("decision-record", &value)?;
+        validate_decision_record(&record)?;
+        let bytes = value.to_string().len() + input.to_string().len();
+        anyhow::ensure!(bytes <= 8 * 1024 * 1024, "Event too large");
+        let id = value["decision_id"]
+            .as_str()
+            .expect("validated decision ID")
+            .to_owned();
+        let journal = self.clone();
+        self.background
+            .submit(id, bytes, move || {
+                let journal = journal.clone();
+                let value = value.clone();
+                let input = input.clone();
+                async move {
+                    journal
+                        .append("decision-record", &value, Some(&input))
+                        .await
+                        .map(|_| ())
+                        .map_err(|error| error.to_string())
+                }
+            })
+            .map_err(anyhow::Error::msg)
+    }
+    pub fn persistence_status(&self) -> PersistenceStatus {
+        self.background.status()
+    }
+
+    /// Validate only this decision, then atomically save its evidence and export
+    /// state. Same ID/content is idempotent; conflicting content never overwrites.
+    /// Feedback ingestion and cross-event state belong to the external Agent.
     pub async fn append(
         &self,
         kind: &str,
@@ -144,52 +205,58 @@ impl Journal {
             .admission
             .try_acquire()
             .map_err(|_| anyhow::anyhow!("Journal admission full"))?;
+        anyhow::ensure!(
+            kind == "decision-record",
+            "Journal accepts only decision records; feedback belongs to the external Agent"
+        );
         anyhow::ensure!(value["tenant_id"] == self.tenant_id, "Tenant mismatch");
         let body = value.to_string();
         let input = input.map(Value::to_string);
         let bytes = body.len() + input.as_ref().map_or(0, String::len);
         anyhow::ensure!(bytes <= 8 * 1024 * 1024, "Event too large");
         let candidate = contract(kind, value)?;
+        validate_decision_record(&candidate)?;
+        let digest = candidate.sha256();
         let mut tx = self.pool.begin_with("BEGIN IMMEDIATE").await?;
-        let rows = sqlx::query("SELECT kind,body,digest,bytes FROM events ORDER BY seq LIMIT ?")
-            .bind(i64::from(self.max_records) + 1)
-            .fetch_all(&mut *tx)
-            .await?;
-        let count = rows.len();
-        anyhow::ensure!(
-            count <= self.max_records as usize,
-            "Journal capacity exceeded"
-        );
-        let mut total = 0u64;
-        let mut ledger = FeedbackLedger::default();
-        for row in rows {
-            total += row.get::<i64, _>("bytes") as u64;
-            let value: Value = serde_json::from_str(row.get("body"))?;
+        let existing = sqlx::query("SELECT digest,input FROM events WHERE kind='decision-record' AND json_extract(body,'$.tenant_id')=? AND json_extract(body,'$.decision_id')=?")
+            .bind(&self.tenant_id)
+            .bind(value["decision_id"].as_str().expect("validated decision ID"))
+            .fetch_optional(&mut *tx).await?;
+        if let Some(existing) = existing {
             anyhow::ensure!(
-                contract(row.get("kind"), &value)?.sha256() == row.get::<String, _>("digest"),
-                "Journal content fingerprint mismatch"
+                existing.get::<String, _>("digest") == digest,
+                "Decision ID reused with different content"
             );
-            apply(&mut ledger, row.get("kind"), &value)?;
-        }
-        let result = apply(&mut ledger, kind, value)?;
-        if result == Ingest::Duplicate {
+            if let Some(input) = &input {
+                anyhow::ensure!(
+                    existing.get::<Option<String>, _>("input").as_ref() == Some(input),
+                    "Decision ID reused with different input evidence"
+                );
+            }
             tx.commit().await?;
-            return Ok(result);
+            return Ok(Ingest::Duplicate);
         }
+        let usage = sqlx::query("SELECT record_count,total_bytes FROM journal_usage WHERE id=1")
+            .fetch_one(&mut *tx)
+            .await?;
+        let total = usage.get::<i64, _>("total_bytes");
         anyhow::ensure!(
-            count < self.max_records as usize && total + bytes as u64 <= self.max_bytes,
+            usage.get::<i64, _>("record_count") < i64::from(self.max_records)
+                && total >= 0
+                && bytes as u64 <= self.max_bytes
+                && total as u64 <= self.max_bytes - bytes as u64,
             "Journal capacity exhausted"
         );
         sqlx::query("INSERT INTO events(kind,digest,body,input,bytes) VALUES(?,?,?,?,?)")
             .bind(kind)
-            .bind(candidate.sha256())
+            .bind(digest)
             .bind(body)
             .bind(input)
             .bind(bytes as i64)
             .execute(&mut *tx)
             .await?;
         tx.commit().await?;
-        Ok(result)
+        Ok(Ingest::Inserted)
     }
     /// A crashed or disconnected consumer leaves a lease that becomes eligible
     /// again. Stable digest is the consumer's idempotency key across retries.
@@ -199,10 +266,16 @@ impl Journal {
             .try_acquire()
             .map_err(|_| anyhow::anyhow!("Journal admission full"))?;
         let mut tx = self.pool.begin_with("BEGIN IMMEDIATE").await?;
-        let rows = sqlx::query("SELECT seq,digest,body,attempts FROM (SELECT seq,digest,body,attempts,SUM(bytes) OVER (ORDER BY seq) AS batch_bytes FROM events WHERE delivered=0 AND retry_at<=?) WHERE batch_bytes<=8388608 ORDER BY seq LIMIT 100").bind(now_ms).fetch_all(&mut *tx).await?;
+        let rows = sqlx::query("SELECT seq,digest,body,bytes,attempts FROM events WHERE kind='decision-record' AND delivered=0 AND retry_at<=? ORDER BY seq LIMIT 100")
+            .bind(now_ms).fetch_all(&mut *tx).await?;
         let lease = uuid::Uuid::new_v4().to_string();
         let mut events = Vec::new();
+        let mut batch_bytes = 0i64;
         for row in rows {
+            batch_bytes += row.get::<i64, _>("bytes");
+            if batch_bytes > 8 * 1024 * 1024 {
+                break;
+            }
             let attempts: i64 = row.get("attempts");
             // 1, 2, 4 ... 60 minutes. Retries remain eligible after restarts.
             let delay = 60_000i64 * (1i64 << attempts.min(6)).min(60);
@@ -246,31 +319,5 @@ impl Journal {
         }
         tx.commit().await?;
         Ok(())
-    }
-    pub async fn outcome_as_of(
-        &self,
-        decision: &str,
-        label: &str,
-        time: u64,
-    ) -> anyhow::Result<Option<Value>> {
-        let _permit = self
-            .admission
-            .try_acquire()
-            .map_err(|_| anyhow::anyhow!("Journal admission full"))?;
-        let rows = sqlx::query("SELECT kind,body,digest,bytes FROM events ORDER BY seq LIMIT ?")
-            .bind(i64::from(self.max_records) + 1)
-            .fetch_all(&self.pool)
-            .await?;
-        let mut ledger = FeedbackLedger::default();
-        for row in rows {
-            apply(
-                &mut ledger,
-                row.get("kind"),
-                &serde_json::from_str::<Value>(row.get("body"))?,
-            )?;
-        }
-        Ok(ledger
-            .outcome_as_of(&self.tenant_id, decision, label, time)
-            .map(|c| c.value().clone()))
     }
 }

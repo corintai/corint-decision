@@ -64,6 +64,24 @@ pub struct DecisionEngine {
 }
 
 impl DecisionEngine {
+    /// Background database status for configured compatibility persistence.
+    pub fn persistence_status(
+        &self,
+    ) -> Option<corint_decision_runtime::result::background::PersistenceStatus> {
+        self.result_writer
+            .as_ref()
+            .map(|writer| writer.persistence_status())
+    }
+
+    /// Stop persistence admission and drain accepted records before stopping the
+    /// embedding Tokio runtime. Does not belong in the per-request path.
+    pub async fn shutdown_persistence(&self, timeout: std::time::Duration) -> Result<()> {
+        if let Some(writer) = &self.result_writer {
+            writer.shutdown(timeout).await?;
+        }
+        Ok(())
+    }
+
     /// Build the first strict Core increment without filesystem, Work or network dependencies.
     /// Every resource must be supplied explicitly; legacy loading is never a fallback.
     pub fn from_core(
@@ -137,26 +155,6 @@ impl DecisionEngine {
                 )?)
             })
             .collect()
-    }
-
-    /// Generate a unique request ID
-    /// Format: req_YYYYMMDDHHmmss_xxxxxx
-    /// Example: req_20231209143052_a3f2e1
-    ///
-    /// Uses chrono for timestamp and rand for truly random suffix
-    fn generate_request_id() -> String {
-        use chrono::Utc;
-        use rand::Rng;
-
-        // Get current UTC time and format it directly - this correctly handles
-        // leap years, variable month lengths, and all date edge cases
-        let now = Utc::now();
-        let datetime_str = now.format("%Y%m%d%H%M%S").to_string();
-
-        // Generate truly random suffix using thread_rng
-        let random: u32 = rand::thread_rng().gen_range(0..0xFFFFFF);
-
-        format!("req_{}_{:06x}", datetime_str, random)
     }
 
     /// Create a new decision engine from configuration
@@ -343,7 +341,7 @@ impl DecisionEngine {
         let request_id = if let Some(existing_id) = request.metadata.get("request_id") {
             existing_id.clone()
         } else {
-            let new_id = Self::generate_request_id();
+            let new_id = crate::request_id::generate_request_id();
             request
                 .metadata
                 .insert("request_id".to_string(), new_id.clone());
@@ -1291,7 +1289,7 @@ impl DecisionEngine {
         }
         let processing_time_ms = start.elapsed().as_millis() as u64;
 
-        // Commit legacy persistence before reporting success, when configured
+        // Admit background persistence without waiting for the database, when configured
         tracing::debug!("Checking result_writer in DecisionEngine.decide()...");
         tracing::debug!(
             "  Engine has result_writer: {}",
@@ -1336,8 +1334,12 @@ impl DecisionEngine {
                 combined_result.signal
             );
 
-            // Fail the decision response if durable persistence did not commit.
-            result_writer.write_decision(decision_record).await?;
+            // Only queue admission failures affect this response; later database errors
+            // are reported by background persistence status and structured logs.
+            result_writer.enqueue_decision(decision_record)?;
+            request
+                .metadata
+                .insert("persistence".into(), "queued".into());
         } else {
             tracing::debug!("Result writer not configured, skipping persistence");
         }

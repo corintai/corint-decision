@@ -1,5 +1,6 @@
 //! Execution result types and persistence
 
+pub mod background;
 mod persistence;
 #[allow(clippy::module_inception)]
 mod result;

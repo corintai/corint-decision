@@ -207,7 +207,18 @@ impl DecisionService for DecisionGrpcService {
             },
         };
 
-        Ok(with_snapshot(grpc_response, &snapshot))
+        let mut result = with_snapshot(grpc_response, &snapshot);
+        result.metadata_mut().insert(
+            "x-corint-persistence",
+            if snapshot.engine.persistence_status().is_some() {
+                "queued"
+            } else {
+                "disabled"
+            }
+            .parse()
+            .expect("static metadata"),
+        );
+        Ok(result)
     }
 
     async fn health_check(

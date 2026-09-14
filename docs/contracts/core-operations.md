@@ -1,12 +1,12 @@
-# 单实例 Core 发布、审计与反馈
+# 单实例 Core 发布与在线决策持久化
 
 本轮 P0/P1 的交付范围是通用 Agent 可独立使用的单实例执行链路。repo 是唯一策略来源；
-事件日志只保存决策证据、反馈和投递状态。真实 Work、完整跨产品 PolicyPackage、在线 Feature/Model、
+在线主链路负责执行策略、将本次决策证据入队、立即返回结果，由后台保存；反馈关联、标签更正、动作回执管理和策略调优由外部 Agent 系统负责。事件日志只新增决策记录，可选提供结果投递。真实 Work、完整跨产品 PolicyPackage、在线 Feature/Model、
 企业身份联合、多节点发布及严格 Core 的其他协议适配仍属于后续阶段。
 
 ## 配置与角色
 
-保留配置 v2 的离线/本地兼容模式。需要持久决策记录时使用 **`config_version: "3"`**，v3 必须配置 journal。
+保留配置 v2 的离线/本地兼容模式。需要后台保存决策记录时使用 **`config_version: "3"`**，v3 必须配置 journal。
 在 [Core server](core-server.md) 的上下文、目标、样例、repo、决策/发布凭据与批准列表之外，增加：
 
 ```json
@@ -23,8 +23,9 @@
 ```
 
 这是配置增量，不是可独立启动的完整配置。路径相对操作员配置目录。
-consumer、decision、publisher 三个凭据必须各不相同，均为 32–1024 字节可打印非空格 ASCII。
-consumer 是被操作员信任的反馈/投递网关；它可以为该实例固定租户提交来源声明，不能切换租户或发布策略。
+`consumer_token_env` 可省略或为空：此时只启用在线决策落库，不需要消费者凭据，也不注册 outbox HTTP 接口。
+配置 consumer 后，consumer、decision、publisher 三个凭据必须各不相同，均为 32–1024 字节可打印非空格 ASCII。
+consumer 只能领取和确认该实例的决策记录，不能提交业务反馈、切换租户或发布策略。
 固定 tenant 写入数据库元数据，其他 tenant 的记录和复用该数据库的配置均拒绝。
 所有服务监听仍限定 loopback；这不是企业多租户身份系统或公网 TLS 服务。
 
@@ -38,8 +39,8 @@ consumer 是被操作员信任的反馈/投递网关；它可以为该实例固�
 {"business_event_id":"payment-123","event":{"amount":1500},"enable_trace":true}
 ```
 
-成功响应包含 `snapshot`、`decision`、`record`。执行/输入校验失败返回 422，已落盘的错误记录位于
-`diagnostic.record`，对应版本位于 `diagnostic.snapshot`。缺失业务事件 ID、鉴权失败或无法解析请求正文时
+成功响应包含 `snapshot`、`decision`、`record` 和 `persistence`。启用 journal 时 `persistence: "queued"` 只表示记录已进入内存后台队列，不代表事务已提交；禁用时为 `"disabled"`。执行/输入校验失败返回 422，已入队的错误记录位于
+`diagnostic.record`，入队状态位于 `diagnostic.persistence`，对应版本位于 `diagnostic.snapshot`。缺失业务事件 ID、鉴权失败或无法解析请求正文时
 尚未进入决策，不伪造 DecisionRecord。事件 ID用于关联业务事件，不充当请求去重键；重复决策请求产生独立决策 ID。
 
 生产者按 [DecisionRecord v1](schema/decision-record.json) 写入记录：
@@ -57,35 +58,42 @@ consumer 是被操作员信任的反馈/投递网关；它可以为该实例固�
 
 ## 持久化与可靠投递
 
-SQLite 使用 WAL、`synchronous=FULL`，日志请求采用 64 个有界准入名额。决策记录、私有输入与待投递事件在同一事务中提交后才报告成功。
-数据库不可用或达到容量上限返回 503 / `E_JOURNAL_UNAVAILABLE`；不异步丢弃，也不改写为业务通过。
-重启验证已有历史及内容指纹，恢复关联、去重、更正链和未确认事件。
+在线决策不等待数据库 I/O：校验本次记录并进入后台队列后即可返回。每个写入器最多保留 64 个未完成任务、32 MiB 序列化记录/输入，单个 Core 事件仍限 8 MiB；该预算不包括对象和任务本身的内存开销。
+队列满、字节预算不足或正在停机时，入队失败返回 503 / `E_PERSISTENCE_QUEUE_UNAVAILABLE`。数据库不可用或持久容量耗尽发生在响应之后，记录后台失败，不能撤回已返回的业务结果。
+SQLite 使用 WAL、`synchronous=FULL`；后台仍在一个事务中保存决策记录、私有输入与待投递事件。Core 对同记录的写入最多尝试 3 次，间隔 100/200 ms，依靠同 ID/内容幂等避免重复插入。
+`GET /v1/core/persistence` 使用 publisher 凭据，返回 `accepting`、`pending`、`written`、`failed`、`retries` 和 `last_failed_id`。写入失败同时产生结构化错误日志；计数是当前进程状态，重启归零。
 
-消费接口均使用 consumer 凭据：
+这是有界的易失内存队列，不是可靠消息队列。强制退出、崩溃或主机故障可能丢失未提交记录；重试耗尽的记录不持久保留在失败队列中。需要无丢失保障时，应另行接入持久消息系统或改用等待可靠提交的模式。
+服务收到 SIGINT/SIGTERM 后停止 HTTP/gRPC 接收并等待在途请求，随后最多等待 30 秒排空后台写入；超时或已知写入失败报告错误。outbox 只能领取已经提交的记录，紧跟决策响应的查询可能暂时看不到新记录。
+
+后台写入只校验本条 DecisionRecord，通过 `(tenant_id, decision_id)` 唯一索引查重；相同 ID 和内容返回 duplicate，不同内容或冲突输入证据拒绝，绝不覆盖旧记录。
+条数与逻辑字节数由数据库触发器在同一事务中维护，每次写入不再统计或重放全部历史。
+重启直接使用持久化索引、计数和投递状态，不重建 FeedbackLedger。
+
+可选的结果导出接口均使用 consumer 凭据：
 
 | 接口 | 请求 / 响应 |
 |---|---|
 | `POST /v1/core/outbox/claim` | 空请求；返回 `lease` 和最多 100 个、合计不超过 8 MiB 计费正文/输入的 `events` |
 | `POST /v1/core/outbox/ack` | `{"lease":"…","idempotency_keys":["…"]}` |
-| `POST /v1/core/feedback/outcome` | 完整 OutcomeEvent v1；返回 inserted / duplicate |
-| `POST /v1/core/feedback/receipt` | 完整 ActionReceipt v1；返回 inserted / duplicate |
-| `POST /v1/core/feedback/query` | `{"decision_id":"…","label_name":"fraud","available_at_ms":123456}`；返回历史时点结果或 null |
 
 每个出箱项包含契约内容哈希 `idempotency_key`、`attempt`、`lease_expires_at_ms` 和事件正文。
 首次租期 1 分钟；未确认事件按 1、2、4…60 分钟退避后重新可领取。租约和次数持久化，消费者崩溃或响应丢失不会删除事件。
 消费者须按幂等键完成自身持久处理，再确认。旧/过期/被替换的租约返回 409；有效租约下重复确认允许。
 这是至少一次投递，不保证副作用恰好一次。服务不主动请求消费者 URL，通用消费者可按自己的调度轮询。
 
-日志容量包含已确认历史，因为反馈关联仍需要原决策。上限是 100000 条、1 GiB 逻辑正文/输入；
-SQLite 索引和 WAL 有额外开销。不会自动删除审计历史；满后停止新增，操作员必须规划存储容量。
-当前消费者重放有界历史完成跨事件校验，适用于首期单实例；高吞吐索引/归档服务不在此实现中。
+持久容量由操作员的 `max_records` / `max_bytes` 配置限制，包含已确认记录及旧库保留的数据；达到上限时后台拒绝新增并计为写入失败，不自动删除审计记录。`max_records` 为正 u32，`max_bytes` 范围为 1024 到 i64 最大值；已移除首期硬编码的 100000 条/1 GiB 上限。这不是吞吐或磁盘容量承诺，SQLite 索引和 WAL 另占空间。
 
-OutcomeEvent 校验 tenant、decision、business_event、单调标签版本、supersedes 和可用时间。
-乱序更正或尚未到达的决策返回 422，发送方保留事件后重试。历史查询不会把迟到更正写回过去。
-ActionReceipt 必须匹配已有动作身份、幂等键和执行时间；冲突的终态回执拒绝，重复内容返回 duplicate。
+### 旧库升级与职责迁移
 
-兼容 PostgreSQL `DecisionResultWriter::write_decision` 已改成 async 确认写入，最多 64 个并发提交。
-引擎等待事务提交，失败传回调用者；删除无界内存队列与“日志报错后丢记录”路径。
+首次打开旧 SQLite journal 时，在一个事务中校验已有决策记录、建立唯一索引及容量计数。旧库有同决策 ID 的冲突记录或损坏的决策内容时，升级失败，事务回滚。此一次性升级仍与旧决策数量有关，后续启动和在线写入不再全量校验历史。
+原有 outcome-event、action-receipt、输入证据及投递状态不删除。旧反馈不重放、不参与决策校验，也不再通过 outbox 导出；如需迁移，由外部 Agent 系统从旧库读取。outbox 只投递 DecisionRecord。
+
+`POST /v1/core/feedback/outcome`、`/receipt`、`/query` 已从在线服务移除，返回 404。外部 Agent 根据决策 ID/业务事件 ID 关联业务反馈、维护标签更正和回执，再进行策略评估。原有离线反馈契约和 `FeedbackLedger` 参考实现仍保留在 toolchain，供外部系统复用；在线服务不依赖该账本。
+历史全量完整性核验应作为独立离线工作，不放在每次在线写入或常规启动路径。
+
+兼容 PostgreSQL 的在线引擎调用 `enqueue_decision`，同样不等待数据库提交，采用 64 个任务/32 MiB 的后台准入限制。兼容写入暂不自动重试，以免提交结果不确定时重复写入规则明细。失败通过日志和状态报告；`GET /v1/persistence` 使用 publisher 凭据读取状态。HTTP/gRPC 的 `x-corint-persistence` 响应头/元数据表明 `queued` 或 `disabled`。
+显式调用底层 `DecisionResultWriter::write_decision` 仍等待事务提交；SDK 宿主退出前应调用 `engine.shutdown_persistence(timeout)`，并保持 Tokio runtime 存活直到排空。
 兼容表格式保留原协议，不冒充上述 Core 版本化记录/反馈日志。
 
 ## 评估与审批门禁
@@ -145,9 +153,15 @@ SQLite/PostgreSQL 的单文档查询有事务快照；文件、HTTP 后端发布
 
 ## 验证入口
 
-- `cargo test -p corint-decision-server --test core_activation --test durable_feedback --test shared_snapshots`
+- `cargo test -p corint-decision-server --test core_activation --test durable_decisions --test shared_snapshots`
 - `python3 tests/scripts/run_p1_postgres_tests.py`：临时 PostgreSQL、私有 Unix socket、禁止 TCP，结束后清理。
 - `cargo test -p corint-decision-ffi`：真实 repo、C ABI 决策与版本条件重载。
 - `tests/scripts/run_core_e2e_tests.sh`：普通 Agent 文件经公开 CLI 到真实 Core HTTP 进程。
 
 这些测试使用合成策略/样例和独立测试凭据；证明执行、事务与权限机制，不证明客户业务效果或外部生产环境已经部署。
+
+## 修订历史
+
+- 2026-09-14：在线 journal 改为单条决策校验、唯一索引查重和事务插入；移除在线反馈管理和全历史账本重建，结果导出凭据改为可选；增加旧库一次性升级与索引/计数。
+
+- 2026-09-14：响应与数据库提交解耦，增加有界后台写入、状态与失败统计、Core 幂等重试及正常停机排空；明确异步内存队列的丢失窗口。

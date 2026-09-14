@@ -167,7 +167,9 @@ The engine report covers 16/128/512 rules, concurrency 1/4/16 and Trace off/on, 
 time, P50/P95/P99, throughput and child-process peak RSS. The HTTP report uses real CLI/server
 processes, a random loopback port, synthetic inputs and a v3 SQLite journal, with and without
 concurrent reload. After warmup each load group clears only its own temporary journal, starting
-with no history. The HTTP figures include connection setup, the Python client and journal costs;
+with no history after draining prior background writes. HTTP latency includes connection setup,
+the Python client and queue admission, but does not wait for database commit. The report separately
+records the final background drain duration and verifies every accepted record was persisted;
 compare them separately from in-process engine results. `--profile debug` is for HTTP functional
 checks; performance measurement defaults to release.
 
@@ -195,3 +197,9 @@ These are observations for that run. The [before](../tests/performance/baselines
 and [after](../tests/performance/baselines/2026-09-06-macos-aarch64-after.json) reports retain all
 18 workloads and build state. The [HTTP functional report](../tests/performance/baselines/2026-09-06-macos-http-debug.json)
 covers 12 workloads in debug mode and is not a production-throughput estimate.
+
+## Revision History
+
+| Date | Changes |
+|---|---|
+| 2026-09-14 | Separate HTTP response latency from background persistence drain time and verify accepted records before benchmark cleanup. |

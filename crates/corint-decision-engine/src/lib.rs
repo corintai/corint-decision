@@ -10,6 +10,7 @@ pub mod config;
 pub mod decision_engine;
 pub mod error;
 pub mod feature_pipeline;
+pub mod request_id;
 pub mod score;
 pub mod snapshot;
 pub mod validator;
@@ -49,3 +50,6 @@ pub use corint_decision_runtime::{
     ServiceAuth, ServiceClient, ServiceOperation, ServiceRequest, ServiceResponse,
     ServiceResponseMapping,
 };
+
+// Shared lifecycle for background result persistence used by transport adapters.
+pub use corint_decision_runtime::result::background;

@@ -190,19 +190,21 @@ pub async fn create_router(
         "Core v3 requires a durable journal"
     );
     let (journal, consumer) = if let Some(journal) = &config.journal {
-        let token = std::env::var(&journal.consumer_token_env)
-            .map_err(|_| anyhow::anyhow!("Missing journal consumer credential"))?;
-        anyhow::ensure!(
-            (32..=1024).contains(&token.len())
-                && token.bytes().all(|b| b.is_ascii_graphic())
-                && token != decision_token
-                && token != publisher_token,
-            "Consumer requires an independent credential"
-        );
-        (
-            Some(Journal::open(root, journal).await?),
-            Some(Credential(Sha256::digest(token.as_bytes()).into())),
-        )
+        let consumer = if journal.consumer_token_env.is_empty() {
+            None
+        } else {
+            let token = std::env::var(&journal.consumer_token_env)
+                .map_err(|_| anyhow::anyhow!("Missing journal consumer credential"))?;
+            anyhow::ensure!(
+                (32..=1024).contains(&token.len())
+                    && token.bytes().all(|b| b.is_ascii_graphic())
+                    && token != decision_token
+                    && token != publisher_token,
+                "Consumer requires an independent credential"
+            );
+            Some(Credential(Sha256::digest(token.as_bytes()).into()))
+        };
+        (Some(Journal::open(root, journal).await?), consumer)
     } else {
         (None, None)
     };
@@ -245,16 +247,14 @@ pub async fn create_router(
         ));
     let control = Router::new()
         .route("/v1/core/target", get(target_state))
+        .route("/v1/core/persistence", get(persistence_status))
         .route("/v1/core/repo/reload", post(reload))
         .route_layer(middleware::from_fn_with_state(
             credential(publisher_token),
             authenticate,
         ));
-    let feedback = if let Some(credential) = consumer {
+    let outbox = if let Some(credential) = consumer {
         Router::new()
-            .route("/v1/core/feedback/outcome", post(outcome))
-            .route("/v1/core/feedback/receipt", post(action_receipt))
-            .route("/v1/core/feedback/query", post(outcome_query))
             .route("/v1/core/outbox/claim", post(outbox_claim))
             .route("/v1/core/outbox/ack", post(outbox_ack))
             .route_layer(middleware::from_fn_with_state(credential, authenticate))
@@ -262,7 +262,7 @@ pub async fn create_router(
         Router::new()
     };
     Ok(Router::new()
-        .merge(feedback)
+        .merge(outbox)
         .merge(decisions)
         .merge(control)
         .with_state(state)
@@ -542,22 +542,31 @@ async fn decide(
             "resources":[],"triggered_rules":rules,"reasons":reasons,"result":signal,"error_code":error,
             "duration_ms":started.elapsed().as_millis() as u64,"actions":actions});
         journal
-            .append("decision-record", &record, Some(&input))
-            .await
-            .map_err(|_| ApiError::new(StatusCode::SERVICE_UNAVAILABLE, "E_JOURNAL_UNAVAILABLE"))?;
+            .enqueue(record.clone(), input.clone())
+            .map_err(|_| {
+                ApiError::new(
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    "E_PERSISTENCE_QUEUE_UNAVAILABLE",
+                )
+            })?;
         Some(record)
     } else {
         None
     };
+    let persistence = if record.is_some() {
+        "queued"
+    } else {
+        "disabled"
+    };
     match result {
         Ok(response) => Ok(Json(
-            json!({"snapshot":receipt(&active, &state.gate),"decision":response,"record":record}),
+            json!({"snapshot":receipt(&active, &state.gate),"decision":response,"record":record,"persistence":persistence}),
         )),
         Err(error) => Err(ApiError {
             status: StatusCode::UNPROCESSABLE_ENTITY,
             code: "E_CORE_DECISION".into(),
             diagnostic: Some(
-                json!({"record":record,"snapshot":receipt(&active,&state.gate),"cause":match error { corint_decision_engine::EngineError::Core(error) => Some(error.diagnostic), _ => None }}),
+                json!({"record":record,"persistence":persistence,"snapshot":receipt(&active,&state.gate),"cause":match error { corint_decision_engine::EngineError::Core(error) => Some(error.diagnostic), _ => None }}),
             ),
         }),
     }
@@ -569,42 +578,10 @@ fn journal(state: &CoreState) -> Result<&Journal, ApiError> {
         .as_ref()
         .ok_or_else(|| ApiError::new(StatusCode::NOT_FOUND, "E_JOURNAL_DISABLED"))
 }
-async fn ingest(
-    state: CoreState,
-    body: Bytes,
-    kind: &str,
-) -> Result<Json<serde_json::Value>, ApiError> {
-    // Validate original bytes before materializing JSON, so duplicate keys cannot
-    // disappear into a last-value-wins map before contract validation.
-    let value = corint_decision_toolchain::phase0::Contract::load(
-        kind,
-        &CoreSource {
-            path: "feedback".into(),
-            yaml: String::from_utf8(body.to_vec())
-                .map_err(|_| ApiError::new(StatusCode::BAD_REQUEST, "E_FEEDBACK_REQUEST"))?,
-        },
-    )
-    .map_err(|_| ApiError::new(StatusCode::UNPROCESSABLE_ENTITY, "E_FEEDBACK_REJECTED"))?;
-    let value = value.value();
-    let result = journal(&state)?
-        .append(kind, value, None)
-        .await
-        .map_err(|_| ApiError::new(StatusCode::UNPROCESSABLE_ENTITY, "E_FEEDBACK_REJECTED"))?;
-    Ok(Json(
-        json!({"status": if result == corint_decision_toolchain::phase0::Ingest::Duplicate { "duplicate" } else { "inserted" }}),
-    ))
-}
-async fn outcome(
+async fn persistence_status(
     State(state): State<CoreState>,
-    body: Bytes,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    ingest(state, body, "outcome-event").await
-}
-async fn action_receipt(
-    State(state): State<CoreState>,
-    body: Bytes,
-) -> Result<Json<serde_json::Value>, ApiError> {
-    ingest(state, body, "action-receipt").await
+    Ok(Json(json!(journal(&state)?.persistence_status())))
 }
 async fn outbox_claim(State(state): State<CoreState>) -> Result<Json<serde_json::Value>, ApiError> {
     journal(&state)?
@@ -632,21 +609,4 @@ async fn outbox_ack(
         .await
         .map_err(|_| ApiError::new(StatusCode::CONFLICT, "E_OUTBOX_LEASE"))?;
     Ok(Json(json!({"acknowledged":true})))
-}
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct OutcomeQuery {
-    decision_id: String,
-    label_name: String,
-    available_at_ms: u64,
-}
-async fn outcome_query(
-    State(state): State<CoreState>,
-    Json(q): Json<OutcomeQuery>,
-) -> Result<Json<serde_json::Value>, ApiError> {
-    let result = journal(&state)?
-        .outcome_as_of(&q.decision_id, &q.label_name, q.available_at_ms)
-        .await
-        .map_err(|_| ApiError::new(StatusCode::SERVICE_UNAVAILABLE, "E_JOURNAL_UNAVAILABLE"))?;
-    Ok(Json(json!({"outcome":result})))
 }

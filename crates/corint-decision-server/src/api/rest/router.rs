@@ -31,6 +31,7 @@ pub fn create_router(engine: Arc<EngineManager>, access: AccessPolicy) -> Router
     Router::new()
         .route("/health", get(health))
         .route("/v1/decide", post(decide))
+        .route("/v1/persistence", get(persistence_status))
         .route("/v1/repo/reload", post(reload_repository)) // Changed from GET to POST
         .route_layer(middleware::from_fn_with_state(access, authenticate))
         .with_state(state)
@@ -38,6 +39,7 @@ pub fn create_router(engine: Arc<EngineManager>, access: AccessPolicy) -> Router
         .layer(CorsLayer::new().expose_headers([
             HeaderName::from_static(REVISION_HEADER),
             HeaderName::from_static(POLICY_HEADER),
+            HeaderName::from_static("x-corint-persistence"),
         ]))
         .layer(TraceLayer::new_for_http())
 }
@@ -53,7 +55,11 @@ async fn authenticate(
     let headers = request.headers().get_all("authorization");
     let mut values = headers.iter();
     let token = values.next().and_then(|v| v.to_str().ok());
-    if values.next().is_some() || !access.permits(token, request.uri().path() == "/v1/repo/reload")
+    if values.next().is_some()
+        || !access.permits(
+            token,
+            matches!(request.uri().path(), "/v1/repo/reload" | "/v1/persistence"),
+        )
     {
         return (StatusCode::UNAUTHORIZED, "UNAUTHORIZED").into_response();
     }
