@@ -27,6 +27,41 @@ use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    let args: Vec<_> = std::env::args_os().collect();
+    if args.get(1).is_some_and(|v| v == "--replay-journal") {
+        anyhow::ensure!(
+            args.len() == 4,
+            "usage: corint-decision-server --replay-journal BUNDLE_JSON EXPORT_ITEM_JSON"
+        );
+        fn read(path: &std::ffi::OsStr) -> Result<String> {
+            use std::io::Read;
+            let file = std::fs::File::open(path)?;
+            anyhow::ensure!(
+                file.metadata()?.is_file(),
+                "Replay input must be a regular file"
+            );
+            let mut bytes = Vec::new();
+            file.take(8 * 1024 * 1024 + 1).read_to_end(&mut bytes)?;
+            anyhow::ensure!(bytes.len() <= 8 * 1024 * 1024, "Replay input exceeds 8 MiB");
+            Ok(String::from_utf8(bytes)?)
+        }
+        let bundle = corint_decision_toolchain::transfer::read_bundle(
+            &corint_decision_compiler::core::CoreSource {
+                path: "bundle".into(),
+                yaml: read(&args[2])?,
+            },
+        )?;
+        let export = serde_json::from_str(&read(&args[3])?)
+            .map_err(|_| anyhow::anyhow!("Invalid journal export JSON"))?;
+        let report = corint_decision_toolchain::replay::replay_journal(
+            &bundle.sources,
+            &bundle.input_schema,
+            &export,
+        )
+        .await?;
+        println!("{}", serde_json::to_string(&report)?);
+        return Ok(());
+    }
     // Initialize tracing
     init_tracing()?;
     let (shutdown_tx, shutdown_rx) = tokio::sync::watch::channel(false);

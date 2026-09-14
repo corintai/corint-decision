@@ -315,3 +315,115 @@ pub fn replay(
     }
     Ok(actual)
 }
+
+/// Replay a trusted journal export item. Requires the original server executable
+/// and frozen bundle. No feature/database reads or action dispatch occur.
+pub async fn replay_journal(
+    sources: &[CoreSource],
+    input: &CoreSource,
+    export: &Json,
+) -> Result<Json, CoreError> {
+    use sha2::{Digest, Sha256};
+    if serde_json::to_vec(export)
+        .map_err(|_| error("E_REPLAY_FORMAT", "Invalid export"))?
+        .len()
+        > MAX_RECORD_BYTES
+    {
+        return Err(error("E_REPLAY_LIMIT", "Journal export exceeds 8 MiB"));
+    }
+    let record = &export["event"];
+    let contract = crate::phase0::Contract::load(
+        "decision-record",
+        &CoreSource {
+            path: "journal-export".into(),
+            yaml: record.to_string(),
+        },
+    )?;
+    crate::phase0::validate_decision_record(&contract)?;
+    if export["idempotency_key"] != contract.sha256() {
+        return Err(error("E_REPLAY_DIGEST", "Journal record changed"));
+    }
+    if record["subject"]["policy_sha256"] != package::policy_identity(sources, input)? {
+        return Err(error("E_REPLAY_POLICY", "Frozen policy or schema differs"));
+    }
+    if record["subject"]["checker_sha256"] != package::checker_identity()?.1 {
+        return Err(error(
+            "E_REPLAY_ENGINE",
+            "Use the original server executable for journal replay",
+        ));
+    }
+    let mut evidence = export["input_evidence"].clone();
+    evidence.sort_all_objects();
+    if format!("{:x}", Sha256::digest(evidence.to_string().as_bytes()))
+        != record["input_evidence"]["sha256"]
+            .as_str()
+            .unwrap_or_default()
+    {
+        return Err(error(
+            "E_REPLAY_INPUT",
+            "Journal input evidence missing or changed",
+        ));
+    }
+    let raw = if evidence.get("feature_binding_sha256").is_some() {
+        &evidence["event"]
+    } else {
+        &evidence
+    };
+    let event: HashMap<String, Value> = serde_json::from_value(raw.clone()).map_err(|_| {
+        error(
+            "E_REPLAY_INCOMPLETE",
+            "Input preparation did not produce a replayable event",
+        )
+    })?;
+    let expected = &export["response"];
+    let body_record = if expected.get("decision").is_some() {
+        &expected["record"]
+    } else {
+        &expected["diagnostic"]["record"]
+    };
+    if body_record != record {
+        return Err(error(
+            "E_REPLAY_INCOMPLETE",
+            "Frozen response missing or inconsistent",
+        ));
+    }
+    let traced = expected["decision"]["trace"].is_object();
+    let engine = DecisionEngine::from_core(sources, parse_core_input_schema(input)?)
+        .map_err(engine_error)?;
+    let request = DecisionRequest::new(event);
+    let actual = engine
+        .decide(if traced {
+            request.with_trace()
+        } else {
+            request
+        })
+        .await;
+    let actual_trace = actual
+        .as_ref()
+        .ok()
+        .and_then(|v| v.trace.as_ref())
+        .map(|v| json!({"conditions":v.core_conditions_v1,"calls":v.core_calls_v1}));
+    let (actual, _) = behavior::outcome(actual, traced);
+    if let Some(decision) = expected.get("decision") {
+        let mut expected: corint_decision_engine::DecisionResponse =
+            serde_json::from_value(decision.clone())
+                .map_err(|_| error("E_REPLAY_FORMAT", "Invalid frozen decision"))?;
+        let expected_trace = expected
+            .trace
+            .as_ref()
+            .map(|v| json!({"conditions":v.core_conditions_v1,"calls":v.core_calls_v1}));
+        // Internal compatibility trace flags are intentionally not serialized.
+        // Compare the emitted Core traces above; project the deserialized result
+        // without validating those absent in-memory flags.
+        expected.trace = None;
+        let (expected, _) = behavior::outcome(Ok(expected), false);
+        if actual != expected || actual_trace != expected_trace {
+            return Err(error("E_REPLAY_MISMATCH", "Decision or trace differs"));
+        }
+    } else if actual["error"]["code"] != record["error_code"] || record["result"] != "error" {
+        return Err(error("E_REPLAY_MISMATCH", "Execution error differs"));
+    }
+    Ok(
+        json!({"matched":true,"decision_id":record["decision_id"],"scope":"offline_journal_replay","external_data_requeried":false,"actions_executed":false}),
+    )
+}

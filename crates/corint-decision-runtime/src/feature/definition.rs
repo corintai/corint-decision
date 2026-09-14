@@ -213,13 +213,9 @@ impl WhenCondition {
         }
     }
     fn validate(&self) -> Result<(), String> {
-        let parser = corint_decision_model::condition::ConditionParser::new();
-        for condition in self.conditions()? {
-            parser
-                .parse_condition(condition)
-                .map_err(|error| format!("Invalid feature condition '{condition}': {error}"))?;
-        }
-        Ok(())
+        super::filter::parse(self, None)
+            .map(|_| ())
+            .map_err(|e| e.to_string())
     }
 }
 

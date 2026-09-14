@@ -10,6 +10,7 @@
 mod cache;
 mod dependency;
 mod expression;
+mod filter;
 
 pub mod definition;
 pub mod executor;
@@ -30,4 +31,11 @@ pub use registry::FeatureRegistry;
 /// Does not compute a feature or access any data source.
 pub fn expression_dependencies(expression: &str) -> anyhow::Result<Vec<String>> {
     expression::ExpressionEvaluator::extract_dependencies(expression)
+}
+
+/// Parse the exact filter subset used during execution, without resolving templates.
+pub fn validated_filters(
+    when: &definition::WhenCondition,
+) -> anyhow::Result<Vec<crate::datasource::query::Filter>> {
+    filter::parse(when, None)
 }

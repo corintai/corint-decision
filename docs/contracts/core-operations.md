@@ -1,12 +1,12 @@
 # 单实例 Core 发布与在线决策持久化
 
 本轮 P0/P1 的交付范围是通用 Agent 可独立使用的单实例执行链路。repo 是唯一策略来源；
-在线主链路负责执行策略、将本次决策证据入队、立即返回结果，由后台保存；反馈关联、标签更正、动作回执管理和策略调优由外部 Agent 系统负责。事件日志只新增决策记录，可选提供结果投递。真实 Work、完整跨产品 PolicyPackage、在线 Model、
+在线主链路默认执行策略、完成本地可靠日志接收后返回结果，下游数据库和 Agent 通过异步 outbox 消费；反馈关联、标签更正、动作回执管理和策略调优由外部 Agent 系统负责。事件日志只新增决策记录，可选提供结果投递。真实 Work、完整跨产品 PolicyPackage、在线 Model、
 企业身份联合、多节点发布及严格 Core 的其他协议适配仍属于后续阶段。
 
 ## 配置与角色
 
-保留配置 v2 的离线/本地兼容模式。需要后台保存决策记录时使用 **`config_version: "3"`**，v3 必须配置 journal。
+保留配置 v2 的离线/本地兼容模式。需要保存决策记录时使用 **`config_version: "3"`**，v3 必须配置 journal。
 在 [Core server](core-server.md) 的上下文、目标、样例、repo、决策/发布凭据与批准列表之外，增加：
 
 ```json
@@ -39,9 +39,25 @@ consumer 只能领取和确认该实例的决策记录，不能提交业务反�
 {"business_event_id":"payment-123","event":{"amount":1500},"enable_trace":true}
 ```
 
-成功响应包含 `snapshot`、`decision`、`record` 和 `persistence`。启用 journal 时 `persistence: "queued"` 只表示记录已进入内存后台队列，不代表事务已提交；禁用时为 `"disabled"`。执行/输入校验失败返回 422，已入队的错误记录位于
-`diagnostic.record`，入队状态位于 `diagnostic.persistence`，对应版本位于 `diagnostic.snapshot`。缺失业务事件 ID、鉴权失败或无法解析请求正文时
-尚未进入决策，不伪造 DecisionRecord。事件 ID用于关联业务事件，不充当请求去重键；重复决策请求产生独立决策 ID。
+成功响应包含 `snapshot`、`decision`、`record` 和 `persistence`。journal 默认可靠模式，
+`persistence: "durable"` 表示记录、输入和完整响应已在本地 SQLite FULL/WAL 事务中提交。
+未启用 journal 时为 `disabled`。只有显式配置 `journal.best_effort: true` 时才采用原易失队列，返回 `queued`。
+执行错误返回 422，错误记录位于 `diagnostic.record`；接收失败返回 503，不返回成功决策。
+
+请求可携带 `idempotency_key`（1–128 位 ASCII 字母、数字、`_:-.`）。它独立于业务关联字段
+`business_event_id`，仅在可靠 journal 模式可用。同键、相同 event/业务事件 ID/trace 选项返回首次冻结的
+HTTP 状态和完整响应，包含原策略快照、决策 ID 和动作幂等键，跨重载和重启有效。
+同键不同参数返回 409 / `E_IDEMPOTENCY_CONFLICT`；同键仍执行中返回 409 / `E_REQUEST_IN_PROGRESS`，稍后用原键重试。
+已完成的幂等查询不执行新策略，仍需有效 decision 凭据；它不受当前策略撤销或 journal 满额影响。
+主动重新决策必须使用新键；省略键每次独立执行。
+
+幂等范围为同一 tenant 的同一 journal 文件，独立节点文件之间不去重。未完成请求最多 64 个，
+占用可用记录槽；崩溃或取消留下的占位在 120 秒后可被接管，旧持有者不能覆盖新结果。
+已冻结的键随记录保留，不自动过期。示例：
+
+```json
+{"idempotency_key":"payment-123:decision-1","business_event_id":"payment-123","event":{"amount":1500},"enable_trace":true}
+```
 
 生产者按 [DecisionRecord v1](schema/decision-record.json) 写入记录：
 
@@ -53,18 +69,21 @@ consumer 只能领取和确认该实例的决策记录，不能提交业务反�
 
 记录与执行使用同一个冻结快照。输入证据单独保存在同一 SQLite 事务中；
 `input_evidence.reference = journal:<decision_id>`，SHA-256 对递归排序后的紧凑事件 JSON 计算。
-出箱接口仅返回记录，不返回原始输入。持有本地数据库权限的审计工具可按记录定位输入。
+出箱接口默认仅返回记录。操作员显式设置 `journal.export_replay: true` 后，consumer 还会收到私有 `input_evidence` 和冻结 `response`；应只授予有权读取原始输入的回放消费者。
 `runtime` 是 v1 的可选扩展字段；本生产者始终填写，历史离线 fixture 仍可读取。
 
 ## 持久化与可靠投递
 
-在线决策不等待数据库 I/O：校验本次记录并进入后台队列后即可返回。每个写入器最多保留 64 个未完成任务、32 MiB 序列化记录/输入，单个 Core 事件仍限 8 MiB；该预算不包括对象和任务本身的内存开销。
-队列满、字节预算不足或正在停机时，入队失败返回 503 / `E_PERSISTENCE_QUEUE_UNAVAILABLE`。数据库不可用或持久容量耗尽发生在响应之后，记录后台失败，不能撤回已返回的业务结果。
-SQLite 使用 WAL、`synchronous=FULL`；后台仍在一个事务中保存决策记录、私有输入与待投递事件。Core 对同记录的写入最多尝试 3 次，间隔 100/200 ms，依靠同 ID/内容幂等避免重复插入。
-`GET /v1/core/persistence` 使用 publisher 凭据，返回 `accepting`、`pending`、`written`、`failed`、`retries` 和 `last_failed_id`。写入失败同时产生结构化错误日志；计数是当前进程状态，重启归零。
+默认可靠模式在返回前等待本地日志事务，不依赖外部服务。最终下游写入通过 outbox 异步进行。
+本地 I/O 失败、容量耗尽或并发准入不足返回 503 / `E_PERSISTENCE_UNAVAILABLE`；不会先返回 200 再丢弃记录。
+条数容量先预留，完整记录、输入和响应字节预算在提交时检查。失败事务回滚，客户端使用相同幂等键重试；
+若提交已成功但响应丢失，重试直接得到原结果。可靠模式逻辑字节计费包括冻结响应及每条请求元数据预留。
 
-这是有界的易失内存队列，不是可靠消息队列。强制退出、崩溃或主机故障可能丢失未提交记录；重试耗尽的记录不持久保留在失败队列中。需要无丢失保障时，应另行接入持久消息系统或改用等待可靠提交的模式。
-服务收到 SIGINT/SIGTERM 后停止 HTTP/gRPC 接收并等待在途请求，随后最多等待 30 秒排空后台写入；超时或已知写入失败报告错误。outbox 只能领取已经提交的记录，紧跟决策响应的查询可能暂时看不到新记录。
+显式 `best_effort: true` 保留原吞吐优先模式：最多 64 个未完成任务、32 MiB 队列、单事件 8 MiB；
+后台最多尝试 3 次。`queued` 不是可靠接收，不支持请求幂等键；崩溃或重试耗尽仍可能丢失记录。
+`GET /v1/core/persistence` 在可靠模式返回 `mode: reliable`、`accepting`、持久条数/字节数、容量上限和在途请求数；
+满额时 `accepting: false`。仅易失模式下该接口 的 `pending/written/failed/retries/last_failed_id` 是后台写入统计，重启归零。
+服务停机先停止接收并等待在途请求，再最多等待 30 秒排空易失队列。可靠模式已经返回的结果不依赖排空。
 
 后台写入只校验本条 DecisionRecord，通过 `(tenant_id, decision_id)` 唯一索引查重；相同 ID 和内容返回 duplicate，不同内容或冲突输入证据拒绝，绝不覆盖旧记录。
 条数与逻辑字节数由数据库触发器在同一事务中维护，每次写入不再统计或重放全部历史。
@@ -82,7 +101,7 @@ SQLite 使用 WAL、`synchronous=FULL`；后台仍在一个事务中保存决策
 消费者须按幂等键完成自身持久处理，再确认。旧/过期/被替换的租约返回 409；有效租约下重复确认允许。
 这是至少一次投递，不保证副作用恰好一次。服务不主动请求消费者 URL，通用消费者可按自己的调度轮询。
 
-持久容量由操作员的 `max_records` / `max_bytes` 配置限制，包含已确认记录及旧库保留的数据；达到上限时后台拒绝新增并计为写入失败，不自动删除审计记录。`max_records` 为正 u32，`max_bytes` 范围为 1024 到 i64 最大值；已移除首期硬编码的 100000 条/1 GiB 上限。这不是吞吐或磁盘容量承诺，SQLite 索引和 WAL 另占空间。
+持久容量由操作员的 `max_records` / `max_bytes` 配置限制，包含已确认记录及旧库保留的数据；默认可靠模式达到上限时拒绝新增请求，返回 503；易失模式则可能在响应后写入失败。不会自动删除审计记录。恢复磁盘或提高容量配置后重启，以原幂等键补偿重试；归档和删除需要独立的保留策略，不能只确认 outbox 就假定容量已释放。`max_records` 为正 u32，`max_bytes` 范围为 1024 到 i64 最大值；已移除首期硬编码的 100000 条/1 GiB 上限。这不是吞吐或磁盘容量承诺，SQLite 索引和 WAL 另占空间。
 
 ### 旧库升级与职责迁移
 
@@ -99,7 +118,7 @@ SQLite 使用 WAL、`synchronous=FULL`；后台仍在一个事务中保存决策
 ## 外部特征输入
 
 可通过操作员 `feature_pipeline` 文件配置公共 DecisionHost，在严格 Core 前执行固定截止点的 SQLite/PostgreSQL 聚合或表达式。
-策略和资源配置共同批准，成功与错误均可异步保存本次实际输入及特征证据，详见[Feature → Core 契约](feature-pipeline.md)。
+策略和资源配置共同批准，成功与错误均可保存本次实际输入及特征证据，详见[Feature → Core 契约](feature-pipeline.md)。
 此时业务评估必须覆盖当前完整特征集合，不能复用没有资源绑定的旧批准。
 
 ## 有界运行指标
@@ -193,3 +212,5 @@ SQLite/PostgreSQL 的单文档查询有事务快照；文件、HTTP 后端发布
 - 2026-09-14：运行指标采用固定桶并限制名称基数，接入采集开关及 publisher 专用 JSON 导出，明确重载和近似分位语义。
 
 - 2026-09-14：接入可选 DecisionHost 特征准备，绑定完整资源配置与业务证据，记录实际执行输入并保持异步落库。
+
+| 2026-09-14 | 默认可靠本地接收、持久请求幂等、容量背压及显式私有回放导出。 |

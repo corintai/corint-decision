@@ -268,7 +268,7 @@ pub struct StepTrace {
     pub ruleset_id: Option<String>,
 
     /// Condition evaluation traces for this step (for router steps, shows which condition matched)
-    #[serde(skip_serializing_if = "Vec::is_empty")]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub conditions: Vec<ConditionTrace>,
 
     /// Execution time for this step in milliseconds
@@ -342,11 +342,11 @@ pub struct PipelineTrace {
     pub pipeline_id: String,
 
     /// When condition evaluation traces
-    #[serde(skip_serializing_if = "Vec::is_empty")]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub when_conditions: Vec<ConditionTrace>,
 
     /// Step execution traces (ordered by execution)
-    #[serde(skip_serializing_if = "Vec::is_empty")]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub steps: Vec<StepTrace>,
 
     /// Index of the executed branch (for branch steps)
@@ -354,14 +354,14 @@ pub struct PipelineTrace {
     pub executed_branch: Option<usize>,
 
     /// Branch condition evaluation traces
-    #[serde(skip_serializing_if = "Vec::is_empty")]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub branch_conditions: Vec<ConditionTrace>,
 
     /// Ruleset execution traces
     pub rulesets: Vec<RulesetTrace>,
 
     /// Final conclusion evaluation traces
-    #[serde(skip_serializing_if = "Vec::is_empty")]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub final_conclusion: Vec<ConclusionTrace>,
 }
 

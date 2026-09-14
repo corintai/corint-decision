@@ -30,6 +30,19 @@ pub struct FeatureDatasource {
 pub struct FeatureHostConfig {
     pub plan: FeaturePlan,
     pub datasources: BTreeMap<String, FeatureDatasource>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub activation_cases: Vec<HostCase>,
+}
+
+/// Trusted deployment examples use raw input and a fixed cutoff. Expected values
+/// and outcomes are checked by executing the real datasource and strict Core.
+#[derive(Clone, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct HostCase {
+    pub event: HashMap<String, Value>,
+    pub as_of: i64,
+    pub expected_values: BTreeMap<String, Value>,
+    pub expected_score: i32,
 }
 
 pub fn canonical_sha256(value: &impl Serialize) -> String {
@@ -55,7 +68,7 @@ impl FeatureHostConfig {
             .map(|output| {
                 json!({
                     "kind":"feature", "id":output.definition.name,
-                    "revision":self.plan.revision, "sha256":canonical_sha256(&output.definition)
+                    "revision":self.plan.revision, "sha256":canonical_sha256(output)
                 })
             })
             .collect()
@@ -185,6 +198,30 @@ impl DecisionHost {
         })
     }
 
+    pub async fn validate_activation_cases(&self, cases: &[HostCase]) -> Result<(), EngineError> {
+        if cases.is_empty() || cases.len() > 16 {
+            return Err(fail("E_HOST_CASES", "Require 1–16 host activation cases"));
+        }
+        for case in cases {
+            for trace in [false, true] {
+                let execution = self.decide(case.event.clone(), case.as_of, trace).await;
+                let response = execution
+                    .result
+                    .map_err(|_| fail("E_HOST_CASES", "Host activation case could not execute"))?;
+                if response.result.score as i64 != i64::from(case.expected_score)
+                    || execution.feature_evidence.as_ref().map(|e| &e.values)
+                        != Some(&case.expected_values)
+                {
+                    return Err(fail(
+                        "E_HOST_CASES",
+                        "Host activation evidence or score differs from expectation",
+                    ));
+                }
+            }
+        }
+        Ok(())
+    }
+
     pub fn feature_binding_sha256(&self) -> Option<&str> {
         self.feature_binding.as_deref()
     }
@@ -304,6 +341,64 @@ mod tests {
         assert!(host.metrics().histogram_names().is_empty());
         assert_eq!(host.admission.available_permits(), 64);
     }
+    #[tokio::test]
+    async fn raw_input_types_and_generated_field_dependencies_are_checked_before_activation() {
+        let (sources, mut schema, config) = fixture();
+        schema.fields.insert(
+            "label".into(),
+            crate::SchemaField::new("label".into(), crate::FieldType::String),
+        );
+        for expression in [
+            "event.amount + 1",
+            "event.missing + 1",
+            "event.label + 1",
+            "missing_feature + 1",
+            "features.constant + 1",
+            "'text'",
+        ] {
+            let mut invalid = config.clone();
+            invalid.plan.outputs[0]
+                .definition
+                .expression
+                .as_mut()
+                .unwrap()
+                .expression = Some(expression.into());
+            assert!(
+                DecisionHost::new(&sources, schema.clone(), Some(invalid), false)
+                    .await
+                    .is_err(),
+                "{expression}"
+            );
+        }
+        let mut valid = config;
+        schema.fields.insert(
+            "raw_amount".into(),
+            crate::SchemaField::new("raw_amount".into(), crate::FieldType::Number).required(),
+        );
+        valid.plan.outputs[0]
+            .definition
+            .expression
+            .as_mut()
+            .unwrap()
+            .expression = Some("event.raw_amount + 1".into());
+        let host = DecisionHost::new(&sources, schema, Some(valid), false)
+            .await
+            .unwrap();
+        assert_eq!(
+            host.decide(
+                HashMap::from([("raw_amount".into(), Value::Number(1100.0))]),
+                120,
+                false
+            )
+            .await
+            .result
+            .unwrap()
+            .result
+            .score,
+            60
+        );
+    }
+
     #[test]
     fn invalid_host_configuration_is_rejected_before_connecting() {
         let (_, _, config) = fixture();

@@ -295,7 +295,7 @@ mod sqlite {
                 .add_datasource("events", client(&dir, 0).await)
                 .unwrap();
             assert!(executor
-                .register_feature(aggregation(method, "'true == true'"))
+                .register_feature(aggregation(method, "'amount >= 0'"))
                 .unwrap_err()
                 .to_string()
                 .contains("Unsupported aggregation"));

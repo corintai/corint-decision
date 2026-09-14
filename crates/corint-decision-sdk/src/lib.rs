@@ -32,9 +32,9 @@ pub use corint_decision_engine::{
 };
 
 pub use corint_decision_engine::decision_host::{
-    DecisionHost, FeatureDatasource, FeatureHostConfig, HostExecution,
+    DecisionHost, FeatureDatasource, FeatureHostConfig, HostCase, HostExecution,
 };
-pub use corint_decision_engine::feature_pipeline::{FeatureInput, FeaturePlan};
+pub use corint_decision_engine::feature_pipeline::{FeatureFreshness, FeatureInput, FeaturePlan};
 
 pub use corint_decision_engine::{
     HttpServiceConfig, ServiceAuth, ServiceClient, ServiceOperation, ServiceRequest,

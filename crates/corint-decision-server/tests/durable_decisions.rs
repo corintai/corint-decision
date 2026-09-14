@@ -14,6 +14,8 @@ fn fixture(kind: &str) -> Value {
 fn config() -> JournalConfig {
     JournalConfig {
         path: "journal.sqlite".into(),
+        best_effort: false,
+        export_replay: false,
         tenant_id: "fixture-tenant".into(),
         max_records: 100,
         max_bytes: 1_000_000,
@@ -33,6 +35,7 @@ async fn restart_recovers_decision_evidence_and_unacknowledged_delivery() {
         assert!(j.append(kind, &fixture(kind), None).await.is_err());
     }
     let first = j.claim(1000).await.unwrap();
+    assert!(first["events"][0].get("input_evidence").is_none());
     assert_eq!(first["events"].as_array().unwrap().len(), 1);
     assert!(j.claim(1001).await.unwrap()["events"]
         .as_array()
@@ -309,4 +312,63 @@ async fn failed_legacy_upgrade_keeps_all_rows_and_rolls_back_indexes() {
     let upgrades: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM sqlite_master WHERE name IN ('journal_usage','journal_decision_identity')")
         .fetch_one(&pool).await.unwrap();
     assert_eq!(upgrades, 0);
+}
+
+#[tokio::test]
+async fn request_reservations_are_bounded_fenced_and_shared_across_connections() {
+    use corint_decision_server::journal::RequestStart;
+    let dir = tempfile::tempdir().unwrap();
+    let mut config = config();
+    config.max_records = 1;
+    config.export_replay = true;
+    let a = Journal::open(dir.path(), &config).await.unwrap();
+    let b = Journal::open(dir.path(), &config).await.unwrap();
+    let RequestStart::Reserved(old) = a.begin_request(Some("key"), "same", 1000).await.unwrap()
+    else {
+        panic!()
+    };
+    assert!(b
+        .begin_request(Some("key"), "different", 1001)
+        .await
+        .unwrap_err()
+        .to_string()
+        .contains("E_IDEMPOTENCY_CONFLICT"));
+    assert!(b.begin_request(Some("key"), "same", 1001).await.is_err());
+    assert!(b
+        .begin_request(Some("another"), "same", 1001)
+        .await
+        .is_err());
+    let RequestStart::Reserved(new) = b.begin_request(Some("key"), "same", 121001).await.unwrap()
+    else {
+        panic!()
+    };
+    let decision = fixture("decision-record");
+    let response = json!({"record":decision,"persistence":"durable"});
+    assert!(a
+        .append_response(
+            "decision-record",
+            &decision,
+            Some(&json!({})),
+            Some((&old, 200, &response))
+        )
+        .await
+        .is_err());
+    b.append_response(
+        "decision-record",
+        &decision,
+        Some(&json!({})),
+        Some((&new, 200, &response)),
+    )
+    .await
+    .unwrap();
+    let RequestStart::Replay(status, actual) =
+        a.begin_request(Some("key"), "same", 121002).await.unwrap()
+    else {
+        panic!()
+    };
+    assert_eq!(status, 200);
+    assert_eq!(actual, response);
+    let exported = b.claim(121003).await.unwrap();
+    assert_eq!(exported["events"][0]["response"], response);
+    assert_eq!(exported["events"][0]["input_evidence"], json!({}));
 }

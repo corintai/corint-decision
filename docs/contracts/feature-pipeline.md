@@ -25,7 +25,7 @@ SDK 使用 SQL 数据源时需启用 `sqlx` crate feature；未启用时构造�
 4. 查询数据源并按依赖顺序执行，同一请求共享依赖只执行一次。每个宿主最多接纳 64 个并发特征决策，超限返回 `E_HOST_BUSY`；无等待队列。
 5. 输出必须是有限 number；null、缺失、错误或超时均失败，不隐式转成 0 或 false。
 6. 填入绑定字段后调用严格 Core，形成决策及输入/资源证据。响应 `processing_time_ms` 包含宿主取数和策略执行时间。
-7. HTTP 将本次记录和输入证据交给后台 journal，然后返回结果；不等待数据库提交。
+7. HTTP 默认完成本地 journal 可靠接收后返回；下游异步导出。显式 `best_effort` 模式才仅等待内存入队。
 
 计划查询超时为 1–60000 ms；数据源 `timeout_ms` 也限制单次查询等待。
 连接初始化使用总计 60 秒的截止时间，连接失败或超时拒绝候选，保留已有快照。
@@ -33,7 +33,7 @@ SDK 使用 SQL 数据源时需启用 `sqlx` crate feature；未启用时构造�
 聚合维度支持 `event.user.id` 和 `${event.user.id}`、多个插值及嵌套路径；缺失字段、未闭合模板和错误类型报错。
 
 SQL 聚合空集合可能产生 null，因此 sum/avg 等会按输出契约失败；count 返回 0。
-固定截止点排除未来事件，但不能排除事后补录，也不构成跨表/跨数据源事务快照。
+固定事件截止点本身不能排除事后补录。可为输出配置 `available_at_field`（数据首次可用时间，数值 Unix 秒），查询会同时要求该列 `<= as_of`。生产数据必须保留不可变的首次可用时间，历史改写、删除及跨表/跨源事务快照仍由数据层负责。
 历史回放使用保存的特征值，不重新查询当前数据库。
 
 ## 配置、输入与输出
@@ -43,6 +43,10 @@ Core 配置 v2/v3 可增加 `"feature_pipeline": "features.json"`，路径相对
 
 ```json
 {
+  "activation_cases": [{
+    "event": {"user_id":"u1"}, "as_of":120,
+    "expected_values": {"amount":1100.0}, "expected_score":60
+  }],
   "plan": {
     "format_version": "1",
     "revision": "volume-v1",
@@ -74,7 +78,39 @@ Core 配置 v2/v3 可增加 `"feature_pipeline": "features.json"`，路径相对
 
 Core 完整输入 schema 和业务 context 需同时声明 `user_id` 和必填 number 字段 `amount`。
 调用方仅提交 `{"business_event_id":"payment-123","event":{"user_id":"u1"}}`，`amount` 由宿主计算。
-独立策略行为用例仍使用包含 `amount` 的完整输入，以隔离验证纯策略行为；它们不代替真实取数验收。
+独立策略行为用例仍使用包含 `amount` 的完整输入。启用 HTTP 特征计划还必须提供 1–16 个
+`activation_cases`，固定原始 event、Unix 秒截止点、完整预期特征值和决策分数。示例对应 `[60,120)` 内 u1 的 400+700 两条记录，需部署方提供其可信验收数据。
+启动和重载用候选实际数据源执行每个用例的 Trace 开/关路径；缺少用例、执行失败、取值或分数不符均拒绝激活，保留旧快照。
+验收总预算 60 秒，使用独立禁用指标的宿主，避免污染在线指标；用例本身纳入配置批准指纹。
+SDK 构造不隐式执行验收，宿主可显式调用 `validate_activation_cases`。
+
+原始输入、输出与依赖联合检查：`event.<输出字段>` 被拒绝，即便该字段属于另一个特征；
+特征间引用应写成 `features.<特征名>`。表达式原始字段必须在 schema 中声明为 number，
+嵌套路径必须有显式对象 schema；聚合维度与过滤模板须引用已声明的原始标量字段。
+
+过滤器支持单谓词、`all`、`and`/`&&`；按完整 AST 解析，字符串里的操作符不参与切分。
+`or`/`any`、正则、未引用的字符串、尾随垃圾、非字面量数组 IN、集合内模板、非有限数字和 NULL 大小比较在发布前拒绝。
+`== null`/`!= null` 使用 IS NULL/IS NOT NULL。IN/NOT IN 采用集合成员语义：NULL 可作为显式成员，
+空 IN 恒假、空 NOT IN 恒真；例如 NULL 不属于 `['good']`，但属于 `['good', null]`。
+
+可给 aggregation 输出增加以下字段（表达式输出不接受它们）：
+
+```json
+{
+  "available_at_field": "available_at",
+  "freshness": {
+    "entity":"source_watermarks", "key_field":"source_id", "key":"events",
+    "watermark_field":"complete_through", "max_lag_seconds":5
+  }
+}
+```
+
+水位表必须准确返回一行，`complete_through` 是非负整数 Unix 秒，表示源数据已完整到达的事件时间。
+每次决策读取并要求 `watermark >= as_of - max_lag_seconds`，未来墙钟水位、缺行、多行或陈旧水位都报 `E_FEATURE_FRESHNESS`，不执行 Core。
+新鲜度查询与特征查询共享计划超时预算，`max_lag_seconds` 为 0–86400。
+水位由数据生产者正确维护；取水位和特征不是跨查询事务快照，水位并不证明历史版本不可变。
+证据 `feature_evidence.freshness` 按输出字段记录水位、允许延迟和可用时间过滤状态。
+未配置时明确 `watermark_checked: false` / `availability_filtered: false`，不宣称新鲜度或历史可用性保证。
 
 `FeatureHostConfig::binding_sha256()` 对解析后的计划、数据源 revision 及完整有效连接配置计算规范化 SHA-256。
 修改连接目标或凭据也会改变指纹，即使声明的 revision 不变。配置只从操作员文件读取，不通过 HTTP 接收或导出。
@@ -111,7 +147,7 @@ SDK 可从 `corint_decision_sdk` 导入 `DecisionHost`、`FeatureHostConfig`、`
 `subject_with_features` 定义组合规则，指纹生成工具本身不生成批准或业务评估。
 Core target 的 `resources: []` 仍描述纯计算内核，宿主输入资源单独绑定，不扩大其 CDL 能力声明。
 
-异步决策记录的 `resources` 保存已完成输入准备的特征引用（definition 指纹、计划 revision）；
+异步决策记录的 `resources` 保存已完成输入准备的特征引用（输出绑定指纹，包括定义、字段和时效约束，以及计划 revision）；
 `input_evidence.sha256` 绑定 journal 私有输入包，内容为：
 
 - `raw_event`：解析后的原始事件，数值已按引擎类型规范化。
@@ -143,7 +179,7 @@ PostgreSQL 用例需独立临时环境，未运行时不得计为通过。
 ## 常见问题
 
 - **要部署新服务吗？** 不需要。DecisionHost 是引擎内部公共执行模块。
-- **结果是否已落库？** `persistence: queued` 只表示后台入队，易失队列和停机约束见[运行保障](core-operations.md)。
+- **结果是否已落库？** 默认 `persistence: durable` 表示本地可靠接收；显式易失模式的 `queued` 只表示后台入队，约束见[运行保障](core-operations.md)。
 - **会接管反馈和策略调优吗？** 不会；这些由外部 Agent 系统负责。
 - **所有入口和资源都已统一了吗？** 本次统一 SDK 与严格 Core HTTP 的已支持特征输入路径；兼容策略迁移、严格 gRPC/FFI、List/Model/Service 宿主步骤仍需各自实现和验收。
 
@@ -152,3 +188,5 @@ PostgreSQL 用例需独立临时环境，未运行时不得计为通过。
 | 日期 | 变更 |
 |---|---|
 | 2026-09-14 | 增加公共 DecisionHost、Core HTTP 特征接入、完整资源配置绑定、业务证据覆盖和异步输入记录。 |
+
+| 2026-09-14 | 修复过滤 NULL/集合/复合语义，增加原始输入依赖校验、真实宿主发布用例、水位及历史可用时间约束。 |

@@ -20,7 +20,20 @@ use std::{
 #[serde(deny_unknown_fields)]
 pub struct FeatureInput {
     pub field: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub available_at_field: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub freshness: Option<FeatureFreshness>,
     pub definition: FeatureDefinition,
+}
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct FeatureFreshness {
+    pub entity: String,
+    pub key_field: String,
+    pub key: String,
+    pub watermark_field: String,
+    pub max_lag_seconds: u32,
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -50,6 +63,7 @@ pub struct FeatureEvidence {
     pub datasource_revisions: BTreeMap<String, String>,
     pub as_of: i64,
     pub values: BTreeMap<String, Value>,
+    pub freshness: BTreeMap<String, serde_json::Value>,
 }
 #[derive(Debug)]
 pub struct FeatureDecision {
@@ -181,6 +195,81 @@ impl FeaturePipeline {
             }
             raw_schema.fields.remove(&output.field);
         }
+        // Outputs are unavailable in the raw event for EVERY feature, including
+        // references to another output. Dependencies use features.<name> instead.
+        for output in &plan.outputs {
+            if let Some(expression) = output
+                .definition
+                .expression
+                .as_ref()
+                .and_then(|c| c.expression.as_deref())
+            {
+                let ast = corint_decision_dsl_parser::ExpressionParser::parse(expression)
+                    .map_err(|_| fail("/outputs", "E_FEATURE_INPUT", "Invalid expression"))?;
+                let mut pending = vec![&ast];
+                while let Some(node) = pending.pop() {
+                    use corint_decision_model::ast::Expression;
+                    match node {
+                        Expression::FieldAccess(path)
+                            if path.first().is_some_and(|p| p == "event") =>
+                        {
+                            validate_raw_path(&raw_schema, &path[1..], true)?;
+                        }
+                        Expression::Binary { left, right, .. } => {
+                            pending.push(left);
+                            pending.push(right);
+                        }
+                        Expression::Unary { operand, .. } => pending.push(operand),
+                        Expression::FunctionCall { args, .. } => pending.extend(args),
+                        _ => (),
+                    }
+                }
+            }
+            let identifier = |name: &str| {
+                !name.is_empty()
+                    && name.len() <= 128
+                    && name.bytes().enumerate().all(|(i, b)| {
+                        b == b'_' || b.is_ascii_alphabetic() || i > 0 && b.is_ascii_digit()
+                    })
+            };
+            if output
+                .available_at_field
+                .as_ref()
+                .is_some_and(|f| !identifier(f))
+                || output.freshness.as_ref().is_some_and(|f| {
+                    !identifier(&f.entity)
+                        || !identifier(&f.key_field)
+                        || !identifier(&f.watermark_field)
+                        || f.key.len() > 256
+                        || f.max_lag_seconds > 86400
+                })
+                || (output.available_at_field.is_some() || output.freshness.is_some())
+                    && output.definition.aggregation.is_none()
+            {
+                return Err(fail(
+                    "/outputs",
+                    "E_FEATURE_FRESHNESS",
+                    "Invalid availability or watermark contract",
+                ));
+            }
+            if let Some(field) = &output.available_at_field {
+                executor.set_availability_field(output.definition.name.clone(), field.clone());
+            }
+            if let Some(config) = &output.definition.aggregation {
+                validate_template(&raw_schema, &config.dimension_value)?;
+                if let Some(when) = &config.when {
+                    for filter in corint_decision_runtime::feature::validated_filters(when)
+                        .map_err(|_| {
+                            fail("/outputs", "E_FEATURE_PLAN", "Invalid aggregation filter")
+                        })?
+                    {
+                        if let Value::String(text) = filter.value {
+                            validate_template(&raw_schema, &text)?;
+                        }
+                    }
+                }
+            }
+        }
         executor
             .register_features(plan.outputs.iter().map(|v| v.definition.clone()).collect())
             .map_err(|_| {
@@ -238,19 +327,38 @@ impl FeaturePipeline {
         let context = ExecutionContext::new(corint_decision_runtime::context::ContextInput::new(
             event.clone(),
         ))?;
-        let values = tokio::time::timeout(
-            Duration::from_millis(self.plan.timeout_ms),
-            self.executor.execute_features_at(&names, &context, as_of),
-        )
-        .await
-        .map_err(|_| fail("/outputs", "E_FEATURE_TIMEOUT", "Feature deadline exceeded"))?
-        .map_err(|_| {
-            fail(
-                "/outputs",
-                "E_FEATURE_EXECUTION",
-                "Feature calculation failed; no decision was executed",
-            )
-        })?;
+        let (values, freshness) = tokio::time::timeout(Duration::from_millis(self.plan.timeout_ms), async {
+            use corint_decision_runtime::datasource::query::{Query, QueryType, Filter, FilterOperator};
+            let mut freshness = BTreeMap::new();
+            for output in &self.plan.outputs {
+                let mut evidence = serde_json::json!({"watermark_checked":false,"availability_filtered":output.available_at_field.is_some()});
+                if let Some(contract) = &output.freshness {
+                    let source = &output.definition.aggregation.as_ref().unwrap().datasource;
+                    let rows = self.executor.query_datasource(source, Query {
+                        query_type: QueryType::RawEvents, entity: contract.entity.clone(),
+                        filters: vec![Filter { field: contract.key_field.clone(), operator: FilterOperator::Eq, value: Value::String(contract.key.clone()) }],
+                        time_window: None, aggregations: vec![], group_by: vec![], limit: Some(2),
+                    }).await.map_err(|_| fail("/outputs", "E_FEATURE_FRESHNESS", "Watermark query failed"))?;
+                    let watermark = match rows.rows.as_slice() {
+                        [row] => match row.get(&contract.watermark_field) {
+                            Some(Value::Number(n)) if n.is_finite() && n.fract() == 0.0 && *n >= 0.0 && *n <= chrono::Utc::now().timestamp() as f64 => *n as i64,
+                            _ => return Err(fail("/outputs", "E_FEATURE_FRESHNESS", "Invalid source watermark")),
+                        },
+                        _ => return Err(fail("/outputs", "E_FEATURE_FRESHNESS", "Expected exactly one watermark")),
+                    };
+                    if watermark < as_of.saturating_sub(i64::from(contract.max_lag_seconds)) {
+                        return Err(fail("/outputs", "E_FEATURE_FRESHNESS", "Source watermark is stale"));
+                    }
+                    evidence["watermark_checked"] = true.into();
+                    evidence["watermark_unix_seconds"] = watermark.into();
+                    evidence["max_lag_seconds"] = contract.max_lag_seconds.into();
+                }
+                freshness.insert(output.field.clone(), evidence);
+            }
+            let values = self.executor.execute_features_at(&names, &context, as_of).await
+                .map_err(|_| fail("/outputs", "E_FEATURE_EXECUTION", "Feature calculation failed; no decision was executed"))?;
+            Ok::<_, EngineError>((values, freshness))
+        }).await.map_err(|_| fail("/outputs", "E_FEATURE_TIMEOUT", "Feature deadline exceeded"))??;
         let mut enriched = event;
         let mut evidence = BTreeMap::new();
         for output in &self.plan.outputs {
@@ -276,7 +384,77 @@ impl FeaturePipeline {
                 datasource_revisions: self.plan.datasource_revisions.clone(),
                 as_of,
                 values: evidence,
+                freshness,
             },
         })
     }
+}
+
+fn validate_raw_path(schema: &Schema, path: &[String], numeric: bool) -> Result<(), EngineError> {
+    let mut schema = schema;
+    let mut field_type = None;
+    for (index, name) in path.iter().enumerate() {
+        let field = schema.fields.get(name).ok_or_else(|| {
+            fail(
+                "/outputs",
+                "E_FEATURE_INPUT",
+                "Feature references an undeclared or generated raw input",
+            )
+        })?;
+        field_type = Some(&field.field_type);
+        if index + 1 < path.len() {
+            schema = match &field.field_type {
+                crate::FieldType::Object {
+                    schema: Some(schema),
+                } => schema,
+                _ => {
+                    return Err(fail(
+                        "/outputs",
+                        "E_FEATURE_INPUT",
+                        "Nested input needs an explicit object schema",
+                    ))
+                }
+            };
+        }
+    }
+    if !matches!(field_type, Some(crate::FieldType::Number)) && numeric
+        || !numeric
+            && !matches!(
+                field_type,
+                Some(
+                    crate::FieldType::Number | crate::FieldType::String | crate::FieldType::Boolean
+                )
+            )
+    {
+        return Err(fail(
+            "/outputs",
+            "E_FEATURE_INPUT",
+            "Feature operand has an incompatible raw input type",
+        ));
+    }
+    Ok(())
+}
+fn validate_template(schema: &Schema, template: &str) -> Result<(), EngineError> {
+    let mut rest = template;
+    while let Some(start) = rest.find("${").or_else(|| rest.find("{event.")) {
+        let body = &rest[start + if rest[start..].starts_with('$') { 2 } else { 1 }..];
+        let end = body
+            .find('}')
+            .ok_or_else(|| fail("/outputs", "E_FEATURE_INPUT", "Unclosed template"))?;
+        let path = body[..end].strip_prefix("event.").unwrap_or(&body[..end]);
+        validate_raw_path(
+            schema,
+            &path.split('.').map(str::to_owned).collect::<Vec<_>>(),
+            false,
+        )?;
+        rest = &body[end + 1..];
+    }
+    if let Some(path) = template.strip_prefix("event.") {
+        validate_raw_path(
+            schema,
+            &path.split('.').map(str::to_owned).collect::<Vec<_>>(),
+            false,
+        )?;
+    }
+    Ok(())
 }

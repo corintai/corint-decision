@@ -1,6 +1,6 @@
 # 严格 Core 服务端：以 repository 为唯一策略来源（实验性）
 
-由 `CORINT_CORE_CONFIG` 显式启用，支持配置 **`2`** 和必须配置后台结果存储的 **`3`**。新配置、决策持久化与可选结果导出、业务证据和非文件 repo 详见 [Core 运行保障](core-operations.md)。
+由 `CORINT_CORE_CONFIG` 显式启用，支持配置 **`2`** 和必须配置结果存储的 **`3`**。新配置、决策持久化与可选结果导出、业务证据和非文件 repo 详见 [Core 运行保障](core-operations.md)。
 服务启动和重载均读取同一已配置 repository；内存引擎只是已验收 repo 版本的派生快照。
 源码、版本历史与发布选择由 repo 管理。HTTP 不接受策略上传，不产生独立持久化策略库。
 
@@ -95,12 +95,14 @@ CORINT_CORE_CONFIG=/absolute/path/core-server.json ./target/debug/corint-decisio
 | 方法 / 路径 | 凭据 | 作用 |
 |---|---|---|
 | `GET /v1/core/target` | publisher | 返回当前执行快照及其 repo 身份 |
-| `POST /v1/core/decide` | decision | 严格执行，仅接受 event 和可选 enable_trace |
+| `POST /v1/core/decide` | decision | 严格执行，支持 event、enable_trace、business_event_id、idempotency_key |
 | `POST /v1/core/repo/reload` | publisher | 重新读取配置的 repo，验收后原子替换快照 |
 
 重载请求仅为：`{"expected_revision":"<GET target 返回的 revision>"}`。
 它不接受 bundle、repo 路径、目标版本、context、cases、approval 或验证报告。
 旧 `/v1/core/policies/activate` 上传路由已移除，返回 404。
+
+journal 的可靠模式、幂等重试及私有回放导出见 [Core 运行保障](core-operations.md)。
 
 决策请求示例：`{"event":{"amount":1001},"enable_trace":true}`。
 不接受可信 features/api/service/llm/vars 注入。响应包含原生 `decision` 和实际执行的 `snapshot`。
@@ -155,3 +157,5 @@ CDL 语言版本、source package/bundle v1 格式和兼容入口保持各自原
 | 2026-09-05 | 更新 repo 唯一来源、启动/重载、授权、回滚和配置迁移契约。 |
 | 2026-09-14 | 配置 v3 改为后台保存决策结果，结果导出可选，反馈管理迁至外部 Agent。 |
 | 2026-09-14 | 增加可选特征宿主入口及单独的资源配置批准绑定。 |
+
+| 2026-09-14 | 增加可靠记录接收与请求幂等参数，特征发布检查覆盖完整宿主。 |

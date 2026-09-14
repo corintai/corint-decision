@@ -563,3 +563,11 @@ async fn test_with_metadata() {
 Services are bound with `DecisionEngineBuilder::with_service(name, adapter)` or
 `with_http_service(binding)`. Policies use `type: service`, `service` and
 `operation`; results default to `service.<step_id>`.
+
+Feature plans now validate raw schema references before construction. Generated fields
+cannot be read through `event`; use explicit feature dependencies. `FeatureFreshness`
+and `available_at_field` optionally constrain source watermarks and historical availability.
+Inspect `FeatureEvidence.freshness` to distinguish checked and unchecked inputs. HTTP
+activation additionally requires trusted `HostCase` examples; embedded callers can run
+`validate_activation_cases` explicitly. The Rust SDK does not manage request idempotency
+or persistence; those guarantees belong to the server's reliable journal adapter.

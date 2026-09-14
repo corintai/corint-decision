@@ -455,8 +455,55 @@ impl SQLClient {
 
     /// Build filter clause
     fn build_filter(&self, filter: &Filter) -> Result<String> {
+        if matches!(filter.operator, FilterOperator::In | FilterOperator::NotIn) {
+            let Value::Array(values) = &filter.value else {
+                return Err(RuntimeError::InvalidOperation(
+                    "IN requires an array".into(),
+                ));
+            };
+            let negated = filter.operator == FilterOperator::NotIn;
+            let has_null = values.iter().any(|v| matches!(v, Value::Null));
+            let literals = values
+                .iter()
+                .filter(|v| !matches!(v, Value::Null))
+                .map(|v| self.format_value(v))
+                .collect::<Result<Vec<_>>>()?;
+            let membership = if literals.is_empty() {
+                if negated {
+                    "1=1".into()
+                } else {
+                    "1=0".into()
+                }
+            } else {
+                format!(
+                    "COALESCE({} {}IN ({}), {})",
+                    filter.field,
+                    if negated { "NOT " } else { "" },
+                    literals.join(", "),
+                    if negated { "TRUE" } else { "FALSE" }
+                )
+            };
+            return Ok(if has_null {
+                format!(
+                    "({membership} {} {} IS {}NULL)",
+                    if negated { "AND" } else { "OR" },
+                    filter.field,
+                    if negated { "NOT " } else { "" }
+                )
+            } else {
+                membership
+            });
+        }
+        if matches!(filter.value, Value::Null) {
+            return match filter.operator {
+                FilterOperator::Eq => Ok(format!("{} IS NULL", filter.field)),
+                FilterOperator::Ne => Ok(format!("{} IS NOT NULL", filter.field)),
+                _ => Err(RuntimeError::InvalidOperation(
+                    "NULL only supports equality or membership".into(),
+                )),
+            };
+        }
         let value_str = self.format_value(&filter.value)?;
-
         let expr = match filter.operator {
             FilterOperator::Eq => format!("{} = {}", filter.field, value_str),
             FilterOperator::Ne => format!("{} != {}", filter.field, value_str),
@@ -464,32 +511,7 @@ impl SQLClient {
             FilterOperator::Ge => format!("{} >= {}", filter.field, value_str),
             FilterOperator::Lt => format!("{} < {}", filter.field, value_str),
             FilterOperator::Le => format!("{} <= {}", filter.field, value_str),
-            FilterOperator::In => {
-                if let Value::Array(ref arr) = filter.value {
-                    let values: Vec<String> = arr
-                        .iter()
-                        .map(|v| self.format_value(v))
-                        .collect::<Result<Vec<_>>>()?;
-                    format!("{} IN ({})", filter.field, values.join(", "))
-                } else {
-                    return Err(RuntimeError::RuntimeError(
-                        "IN operator requires array value".to_string(),
-                    ));
-                }
-            }
-            FilterOperator::NotIn => {
-                if let Value::Array(ref arr) = filter.value {
-                    let values: Vec<String> = arr
-                        .iter()
-                        .map(|v| self.format_value(v))
-                        .collect::<Result<Vec<_>>>()?;
-                    format!("{} NOT IN ({})", filter.field, values.join(", "))
-                } else {
-                    return Err(RuntimeError::RuntimeError(
-                        "NOT IN operator requires array value".to_string(),
-                    ));
-                }
-            }
+            FilterOperator::In | FilterOperator::NotIn => unreachable!(),
             FilterOperator::Contains | FilterOperator::StartsWith | FilterOperator::EndsWith => {
                 let Value::String(text) = &filter.value else {
                     return Err(RuntimeError::InvalidOperation(

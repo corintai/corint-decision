@@ -37,7 +37,7 @@ fn fixtures() -> (Vec<CoreSource>, Schema) {
 }
 fn plan(entity: &str) -> FeaturePlan {
     FeaturePlan { format_version:"1".into(), revision:"volume-v1".into(), datasource_revisions:BTreeMap::from([("events".into(), "test-v1".into())]), timeout_ms:1000,
-        outputs:vec![FeatureInput { field:"amount".into(), definition:serde_yaml::from_str(&format!("name: volume\ntype: aggregation\nmethod: sum\ndatasource: events\nentity: {entity}\ndimension: user_id\ndimension_value: '${{event.user_id}}'\nfield: amount\nwindow: 60s\ntimestamp_field: occurred_at\n")).unwrap() }] }
+        outputs:vec![FeatureInput { available_at_field: None, freshness: None, field:"amount".into(), definition:serde_yaml::from_str(&format!("name: volume\ntype: aggregation\nmethod: sum\ndatasource: events\nentity: {entity}\ndimension: user_id\ndimension_value: '${{event.user_id}}'\nfield: amount\nwindow: 60s\ntimestamp_field: occurred_at\n")).unwrap() }] }
 }
 fn source_config(provider: &str, connection: &str, ttl: u64) -> DataSourceConfig {
     serde_json::from_value(serde_json::json!({"name":"events","type":"sql","provider":provider,"connection_string":connection,"database":"test","timeout_ms":100,"query_cache_ttl_secs":ttl})).unwrap()
@@ -78,6 +78,7 @@ async fn verify(provider: &str, connection: &str, entity: &str) {
         &sources,
         schema.clone(),
         Some(FeatureHostConfig {
+            activation_cases: vec![],
             plan: plan.clone(),
             datasources: BTreeMap::from([(
                 "events".into(),
@@ -168,6 +169,37 @@ async fn sqlite_feature_to_core_preserves_cutoff_binding_and_replay() {
         .await
         .unwrap();
     verify("sqlite", path.to_str().unwrap(), "events").await;
+    sqlx::query("ALTER TABLE events ADD COLUMN status TEXT")
+        .execute(&pool)
+        .await
+        .unwrap();
+    sqlx::query(&filter_rows("events"))
+        .execute(&pool)
+        .await
+        .unwrap();
+    verify_filters("sqlite", path.to_str().unwrap(), "events").await;
+    sqlx::query("ALTER TABLE events ADD COLUMN available_at BIGINT DEFAULT 0")
+        .execute(&pool)
+        .await
+        .unwrap();
+    sqlx::query("CREATE TABLE events_watermark(source TEXT, watermark BIGINT)")
+        .execute(&pool)
+        .await
+        .unwrap();
+    sqlx::query("INSERT INTO events_watermark VALUES('events',119)")
+        .execute(&pool)
+        .await
+        .unwrap();
+    sqlx::query("INSERT INTO events VALUES('filter',1,'1970-01-01 00:01:30','good',121)")
+        .execute(&pool)
+        .await
+        .unwrap();
+    verify_freshness("sqlite", path.to_str().unwrap(), "events", true).await;
+    sqlx::query("UPDATE events_watermark SET watermark=50")
+        .execute(&pool)
+        .await
+        .unwrap();
+    verify_freshness("sqlite", path.to_str().unwrap(), "events", false).await;
     // Remove the source: computation must fail instead of producing a zero score.
     let (sources, schema) = fixtures();
     let plan = plan("events");
@@ -226,6 +258,49 @@ async fn postgres_feature_to_core_matches_offline_oracle() {
         .await
         .unwrap();
     verify("postgresql", &url, &table).await;
+    sqlx::query(&format!("ALTER TABLE {table} ADD COLUMN status TEXT"))
+        .execute(&pool)
+        .await
+        .unwrap();
+    sqlx::query(&filter_rows(&table))
+        .execute(&pool)
+        .await
+        .unwrap();
+    verify_filters("postgresql", &url, &table).await;
+    sqlx::query(&format!(
+        "ALTER TABLE {table} ADD COLUMN available_at BIGINT DEFAULT 0"
+    ))
+    .execute(&pool)
+    .await
+    .unwrap();
+    sqlx::query(&format!(
+        "CREATE TABLE {table}_watermark(source TEXT, watermark BIGINT)"
+    ))
+    .execute(&pool)
+    .await
+    .unwrap();
+    sqlx::query(&format!(
+        "INSERT INTO {table}_watermark VALUES('events',119)"
+    ))
+    .execute(&pool)
+    .await
+    .unwrap();
+    sqlx::query(&format!(
+        "INSERT INTO {table} VALUES('filter',1,'1970-01-01 00:01:30+00','good',121)"
+    ))
+    .execute(&pool)
+    .await
+    .unwrap();
+    verify_freshness("postgresql", &url, &table, true).await;
+    sqlx::query(&format!("UPDATE {table}_watermark SET watermark=50"))
+        .execute(&pool)
+        .await
+        .unwrap();
+    verify_freshness("postgresql", &url, &table, false).await;
+    sqlx::query(&format!("DROP TABLE {table}_watermark"))
+        .execute(&pool)
+        .await
+        .unwrap();
     sqlx::query(&format!("DROP TABLE {table}"))
         .execute(&pool)
         .await
@@ -276,4 +351,149 @@ async fn feature_deadline_expires_without_running_a_decision() {
         .unwrap_err()
         .to_string()
         .contains("E_FEATURE_TIMEOUT"));
+}
+
+fn filter_rows(table: &str) -> String {
+    format!("WITH RECURSIVE n(x) AS (SELECT 1 UNION ALL SELECT x+1 FROM n WHERE x<1102) INSERT INTO {table}(user_id,amount,occurred_at,status) SELECT 'filter',1,'1970-01-01 00:01:30',CASE WHEN x=1102 THEN NULL ELSE 'good' END FROM n")
+}
+async fn verify_filters(provider: &str, connection: &str, entity: &str) {
+    use corint_decision_runtime::feature::definition::WhenCondition;
+    let (sources, schema) = fixtures();
+    for (predicate, count) in [
+        ("status != null", 1101.0),
+        ("status == null", 1.0),
+        ("status != null and amount >= 1", 1101.0),
+        ("status in ['good', 'other']", 1101.0),
+        ("status in ['good', null]", 1102.0),
+        ("status not in ['good']", 1.0),
+        ("status not in ['good', null]", 0.0),
+        ("status in []", 0.0),
+        ("status not in []", 1102.0),
+        ("status == 'good and amount > 0'", 0.0),
+    ] {
+        let mut plan = plan(entity);
+        plan.outputs[0].definition.method = Some("count".into());
+        plan.outputs[0]
+            .definition
+            .aggregation
+            .as_mut()
+            .unwrap()
+            .when = Some(WhenCondition::Simple(predicate.into()));
+        let host = DecisionHost::new(
+            &sources,
+            schema.clone(),
+            Some(FeatureHostConfig {
+                plan,
+                activation_cases: vec![],
+                datasources: BTreeMap::from([(
+                    "events".into(),
+                    FeatureDatasource {
+                        revision: "test-v1".into(),
+                        config: source_config(provider, connection, 0),
+                    },
+                )]),
+            }),
+            false,
+        )
+        .await
+        .unwrap();
+        let result = host.decide(event("filter"), 120, false).await;
+        assert_eq!(
+            result.feature_evidence.unwrap().values["amount"],
+            Value::Number(count),
+            "{provider}: {predicate}"
+        );
+        assert_eq!(
+            result.result.unwrap().result.score,
+            if count > 1000.0 { 60 } else { 0 }
+        );
+    }
+    for invalid in [
+        "status == 'good' or amount > 0",
+        "status == good",
+        "status > null",
+        "status in 'good'",
+        "status matches '.*'",
+        "status == 1e999",
+        "status in '${event.user_id}'",
+        "status in ['${event.user_id}']",
+        "status == 'good' garbage",
+    ] {
+        let mut plan = plan(entity);
+        plan.outputs[0]
+            .definition
+            .aggregation
+            .as_mut()
+            .unwrap()
+            .when = Some(WhenCondition::Simple(invalid.into()));
+        assert!(
+            DecisionHost::new(
+                &sources,
+                schema.clone(),
+                Some(FeatureHostConfig {
+                    plan,
+                    activation_cases: vec![],
+                    datasources: BTreeMap::from([(
+                        "events".into(),
+                        FeatureDatasource {
+                            revision: "test-v1".into(),
+                            config: source_config(provider, connection, 0)
+                        }
+                    )]),
+                }),
+                false
+            )
+            .await
+            .is_err(),
+            "{invalid}"
+        );
+    }
+}
+
+async fn verify_freshness(provider: &str, connection: &str, entity: &str, fresh: bool) {
+    use corint_decision_engine::feature_pipeline::FeatureFreshness;
+    let (sources, schema) = fixtures();
+    let mut plan = plan(entity);
+    plan.outputs[0].definition.method = Some("count".into());
+    plan.outputs[0].available_at_field = Some("available_at".into());
+    plan.outputs[0].freshness = Some(FeatureFreshness {
+        entity: format!("{entity}_watermark"),
+        key_field: "source".into(),
+        key: "events".into(),
+        watermark_field: "watermark".into(),
+        max_lag_seconds: 5,
+    });
+    let host = DecisionHost::new(
+        &sources,
+        schema,
+        Some(FeatureHostConfig {
+            plan,
+            activation_cases: vec![],
+            datasources: BTreeMap::from([(
+                "events".into(),
+                FeatureDatasource {
+                    revision: "test-v1".into(),
+                    config: source_config(provider, connection, 0),
+                },
+            )]),
+        }),
+        false,
+    )
+    .await
+    .unwrap();
+    let execution = host.decide(event("filter"), 120, false).await;
+    if fresh {
+        assert_eq!(execution.result.unwrap().result.score, 60);
+        let evidence = execution.feature_evidence.unwrap();
+        assert_eq!(evidence.values["amount"], Value::Number(1102.0));
+        assert_eq!(evidence.freshness["amount"]["watermark_unix_seconds"], 119);
+        assert_eq!(evidence.freshness["amount"]["availability_filtered"], true);
+    } else {
+        assert!(execution
+            .result
+            .unwrap_err()
+            .to_string()
+            .contains("E_FEATURE_FRESHNESS"));
+        assert!(execution.feature_evidence.is_none());
+    }
 }

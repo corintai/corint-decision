@@ -432,6 +432,27 @@ impl Gate {
                 "E_CORE_BEHAVIOR_REJECTED",
             ));
         }
+        if let Some(config) = &features {
+            self.runtime.block_on(async {
+                tokio::time::timeout(std::time::Duration::from_secs(60), async {
+                    let probe = DecisionHost::new(
+                        &bundle.sources,
+                        parse_core_input_schema(&bundle.input_schema)?,
+                        Some(config.clone()),
+                        false,
+                    )
+                    .await?;
+                    probe
+                        .validate_activation_cases(&config.activation_cases)
+                        .await
+                })
+                .await
+                .map_err(|_| {
+                    ApiError::new(StatusCode::UNPROCESSABLE_ENTITY, "E_HOST_CASES_TIMEOUT")
+                })?
+                .map_err(|_| ApiError::new(StatusCode::UNPROCESSABLE_ENTITY, "E_HOST_CASES"))
+            })?;
+        }
         let host = self
             .runtime
             .block_on(DecisionHost::new(
@@ -555,15 +576,14 @@ async fn reload(
 #[serde(deny_unknown_fields)]
 struct EventRequest {
     #[serde(default)]
+    idempotency_key: Option<String>,
+    #[serde(default)]
     business_event_id: Option<String>,
     event: HashMap<String, Value>,
     #[serde(default)]
     enable_trace: bool,
 }
-async fn decide(
-    State(state): State<CoreState>,
-    body: Bytes,
-) -> Result<Json<serde_json::Value>, ApiError> {
+async fn decide(State(state): State<CoreState>, body: Bytes) -> Result<Response, ApiError> {
     let event: EventRequest = serde_json::from_slice(&body)
         .map_err(|_| ApiError::new(StatusCode::BAD_REQUEST, "E_CORE_REQUEST"))?;
     // Keep the engine and identity from ONE snapshot; no lock during evaluation.
@@ -579,13 +599,62 @@ async fn decide(
             "E_BUSINESS_EVENT_ID",
         ));
     }
+    if event.idempotency_key.as_ref().is_some_and(|k| {
+        k.is_empty()
+            || k.len() > 128
+            || !k
+                .bytes()
+                .all(|b| b.is_ascii_alphanumeric() || b"_:-.".contains(&b))
+    }) {
+        return Err(ApiError::new(StatusCode::BAD_REQUEST, "E_IDEMPOTENCY_KEY"));
+    }
+    if event.idempotency_key.is_some() && state.journal.as_ref().is_none_or(|j| j.best_effort) {
+        return Err(ApiError::new(
+            StatusCode::BAD_REQUEST,
+            "E_IDEMPOTENCY_REQUIRES_RELIABLE_JOURNAL",
+        ));
+    }
+    let fingerprint = corint_decision_engine::decision_host::canonical_sha256(
+        &json!({"event":event.event,"business_event_id":event.business_event_id,"enable_trace":event.enable_trace}),
+    );
+    let reservation = if let Some(journal) = state.journal.as_ref().filter(|j| !j.best_effort) {
+        match journal
+            .begin_request(
+                event.idempotency_key.as_deref(),
+                &fingerprint,
+                chrono::Utc::now().timestamp_millis(),
+            )
+            .await
+            .map_err(|e| {
+                let code = e.to_string();
+                if code == "E_IDEMPOTENCY_CONFLICT" || code == "E_REQUEST_IN_PROGRESS" {
+                    ApiError::new(StatusCode::CONFLICT, &code)
+                } else {
+                    ApiError::new(StatusCode::SERVICE_UNAVAILABLE, "E_PERSISTENCE_UNAVAILABLE")
+                }
+            })? {
+            crate::journal::RequestStart::Replay(status, body) => {
+                return Ok((StatusCode::from_u16(status).unwrap(), Json(body)).into_response())
+            }
+            crate::journal::RequestStart::Reserved(reservation) => Some(reservation),
+        }
+    } else {
+        None
+    };
     // Re-read trusted evidence so expiry/revocation also stops new decisions.
     let gate = state.gate.clone();
     let subject = active.policy.subject.clone();
     let resources = active.policy.host.required_resources().to_vec();
-    tokio::task::spawn_blocking(move || gate.check_evidence(&subject, &resources))
+    let check = tokio::task::spawn_blocking(move || gate.check_evidence(&subject, &resources))
         .await
-        .map_err(|_| ApiError::new(StatusCode::INTERNAL_SERVER_ERROR, "E_CORE_WORKER"))??;
+        .map_err(|_| ApiError::new(StatusCode::INTERNAL_SERVER_ERROR, "E_CORE_WORKER"))
+        .and_then(|r| r);
+    if let Err(error) = check {
+        if let (Some(journal), Some(reservation)) = (&state.journal, &reservation) {
+            journal.abandon(reservation).await;
+        }
+        return Err(error);
+    }
     let now = chrono::Utc::now().timestamp_millis();
     let started = std::time::Instant::now();
     let execution = active
@@ -615,40 +684,62 @@ async fn decide(
                 "repository_manifest_sha256":active.policy.repository.manifest_sha256,"pipeline_id":pipeline},
             "resources":execution.resources,"triggered_rules":rules,"reasons":reasons,"result":signal,"error_code":error,
             "duration_ms":started.elapsed().as_millis() as u64,"actions":actions});
-        journal
-            .enqueue(record.clone(), input.clone())
-            .map_err(|_| {
-                ApiError::new(
-                    StatusCode::SERVICE_UNAVAILABLE,
-                    "E_PERSISTENCE_QUEUE_UNAVAILABLE",
-                )
-            })?;
         Some(record)
     } else {
         None
     };
-    let persistence = if record.is_some() {
-        "queued"
-    } else {
-        "disabled"
+    let persistence = match &state.journal {
+        Some(journal) if journal.best_effort => "queued",
+        Some(_) => "durable",
+        None => "disabled",
     };
-    match result {
-        Ok(response) => Ok(Json(
+    let (status, response) = match result {
+        Ok(response) => (
+            StatusCode::OK,
             json!({"snapshot":receipt(&active, &state.gate),"decision":response,"record":record,"persistence":persistence,"feature_evidence":execution.feature_evidence}),
-        )),
-        Err(error) => Err(ApiError {
-            status: if matches!(&error, corint_decision_engine::EngineError::Core(error) if error.diagnostic.code == "E_HOST_BUSY")
+        ),
+        Err(error) => {
+            let status = if matches!(&error, corint_decision_engine::EngineError::Core(error) if error.diagnostic.code == "E_HOST_BUSY")
             {
                 StatusCode::SERVICE_UNAVAILABLE
             } else {
                 StatusCode::UNPROCESSABLE_ENTITY
-            },
-            code: "E_CORE_DECISION".into(),
-            diagnostic: Some(
-                json!({"record":record,"persistence":persistence,"snapshot":receipt(&active,&state.gate),"feature_evidence":execution.feature_evidence,"cause":match error { corint_decision_engine::EngineError::Core(error) => Some(error.diagnostic), _ => None }}),
-            ),
-        }),
+            };
+            (
+                status,
+                json!({"error":"E_CORE_DECISION", "diagnostic":{
+                    "record":record,"persistence":persistence,"snapshot":receipt(&active,&state.gate),
+                    "feature_evidence":execution.feature_evidence,
+                    "cause":match error { corint_decision_engine::EngineError::Core(error) => Some(error.diagnostic), _ => None }
+                }}),
+            )
+        }
+    };
+    if let (Some(journal), Some(record)) = (&state.journal, &record) {
+        let saved = if let Some(reservation) = &reservation {
+            journal
+                .append_response(
+                    "decision-record",
+                    record,
+                    Some(&input),
+                    Some((reservation, status.as_u16(), &response)),
+                )
+                .await
+                .map(|_| ())
+        } else {
+            journal.enqueue(record.clone(), input)
+        };
+        if saved.is_err() {
+            if let Some(reservation) = &reservation {
+                journal.abandon(reservation).await;
+            }
+            return Err(ApiError::new(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "E_PERSISTENCE_UNAVAILABLE",
+            ));
+        }
     }
+    Ok((status, Json(response)).into_response())
 }
 
 fn journal(state: &CoreState) -> Result<&Journal, ApiError> {
@@ -660,7 +751,9 @@ fn journal(state: &CoreState) -> Result<&Journal, ApiError> {
 async fn persistence_status(
     State(state): State<CoreState>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    Ok(Json(json!(journal(&state)?.persistence_status())))
+    Ok(Json(journal(&state)?.status().await.map_err(|_| {
+        ApiError::new(StatusCode::SERVICE_UNAVAILABLE, "E_PERSISTENCE_UNAVAILABLE")
+    })?))
 }
 
 async fn metrics(State(state): State<CoreState>) -> Json<serde_json::Value> {

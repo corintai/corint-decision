@@ -794,7 +794,7 @@ async fn journal_records_real_decisions_errors_and_recovers_outbox_on_restart() 
     let consumer = "test-consumer-credential-0000000000000000";
     std::env::set_var("CORE_JOURNAL_TEST_CONSUMER", consumer);
     config["config_version"] = json!("3");
-    config["journal"] = json!({"path":"events.sqlite","tenant_id":"test","max_records":10,"max_bytes":1_000_000,"consumer_token_env":"CORE_JOURNAL_TEST_CONSUMER"});
+    config["journal"] = json!({"best_effort":true,"path":"events.sqlite","tenant_id":"test","max_records":10,"max_bytes":1_000_000,"consumer_token_env":"CORE_JOURNAL_TEST_CONSUMER"});
     let router = app(dir.path(), &config).await;
     let (status, value) = call(
         &router,
@@ -1184,7 +1184,7 @@ async fn core_runtime_error_details_are_bound_to_durable_records() {
     let consumer = "test-runtime-error-consumer-000000000000000";
     std::env::set_var("CORE_RUNTIME_ERROR_CONSUMER", consumer);
     config["config_version"] = json!("3");
-    config["journal"] = json!({"path":"events.sqlite","tenant_id":"test","max_records":10,"max_bytes":1_000_000,"consumer_token_env":"CORE_RUNTIME_ERROR_CONSUMER"});
+    config["journal"] = json!({"best_effort":true,"path":"events.sqlite","tenant_id":"test","max_records":10,"max_bytes":1_000_000,"consumer_token_env":"CORE_RUNTIME_ERROR_CONSUMER"});
     publish(dir.path(), &bundle("arithmetic"), "arithmetic");
     let router = app(dir.path(), &config).await;
     for trace in [false, true] {
@@ -1309,8 +1309,7 @@ async fn nested_agent_repository_executes_through_core_http() {
 async fn online_journal_requires_no_feedback_or_export_credential() {
     let (dir, mut config) = setup(&["initial"]);
     config["config_version"] = json!("3");
-    config["journal"] =
-        json!({"path":"online.sqlite","tenant_id":"test","max_records":1,"max_bytes":1_000_000});
+    config["journal"] = json!({"best_effort":true,"path":"online.sqlite","tenant_id":"test","max_records":1,"max_bytes":1_000_000});
     let router = app(dir.path(), &config).await;
     let (status, result) = call(
         &router,
@@ -1378,8 +1377,7 @@ async fn online_journal_requires_no_feedback_or_export_credential() {
 async fn decision_response_does_not_wait_for_database_write_lock() {
     let (dir, mut config) = setup(&["initial"]);
     config["config_version"] = json!("3");
-    config["journal"] =
-        json!({"path":"locked.sqlite","tenant_id":"test","max_records":10,"max_bytes":1_000_000});
+    config["journal"] = json!({"best_effort":true,"path":"locked.sqlite","tenant_id":"test","max_records":10,"max_bytes":1_000_000});
     let router = app(dir.path(), &config).await;
     let pool = sqlx::SqlitePool::connect_with(
         sqlx::sqlite::SqliteConnectOptions::new().filename(dir.path().join("locked.sqlite")),
@@ -1452,8 +1450,7 @@ async fn sigterm_drains_queued_decision_before_server_exits() {
     let (dir, mut config) = setup(&["initial"]);
     config["config_version"] = json!("3");
     config["listen"] = json!("127.0.0.1:0");
-    config["journal"] =
-        json!({"path":"shutdown.sqlite","tenant_id":"test","max_records":10,"max_bytes":1_000_000});
+    config["journal"] = json!({"best_effort":true,"path":"shutdown.sqlite","tenant_id":"test","max_records":10,"max_bytes":1_000_000});
     let config_path = dir.path().join("core.json");
     std::fs::write(&config_path, config.to_string()).unwrap();
     let log_path = dir.path().join("server.log");
@@ -1675,12 +1672,12 @@ async fn feature_host_setup() -> (
             .unwrap();
     }
     let plan = FeaturePlan { format_version:"1".into(), revision:"volume-v1".into(), datasource_revisions:BTreeMap::from([("events".into(), "db-v1".into())]), timeout_ms:1000,
-        outputs:vec![FeatureInput { field:"amount".into(), definition:serde_yaml::from_str("name: volume\ntype: aggregation\nmethod: sum\ndatasource: events\nentity: events\ndimension: user_id\ndimension_value: '${event.user_id}'\nfield: amount\nwindow: 60s\ntimestamp_field: occurred_at\n").unwrap() }] };
-    let features: FeatureHostConfig = serde_json::from_value(json!({"plan":plan,"datasources":{"events":{"revision":"db-v1","config":{"name":"events","type":"sql","provider":"sqlite","connection_string":db,"database":"test","pool_size":1,"timeout_ms":1000,"query_cache_ttl_secs":0}}}})).unwrap();
+        outputs:vec![FeatureInput { available_at_field: None, freshness: None, field:"amount".into(), definition:serde_yaml::from_str("name: volume\ntype: aggregation\nmethod: sum\ndatasource: events\nentity: events\ndimension: user_id\ndimension_value: '${event.user_id}'\nfield: amount\nwindow: 60s\ntimestamp_field: occurred_at\n").unwrap() }] };
+    let features: FeatureHostConfig = serde_json::from_value(json!({"activation_cases":[{"event":{"user_id":"u2"},"as_of":chrono::Utc::now().timestamp(),"expected_values":{"amount":500.0},"expected_score":0}],"plan":plan,"datasources":{"events":{"revision":"db-v1","config":{"name":"events","type":"sql","provider":"sqlite","connection_string":db,"database":"test","pool_size":1,"timeout_ms":1000,"query_cache_ttl_secs":0}}}})).unwrap();
     config["feature_pipeline"] = "features.json".into();
     config["approvals"][0]["feature_binding_sha256"] = features.binding_sha256().into();
     config["config_version"] = "3".into();
-    config["journal"] = json!({"path":"journal.sqlite","tenant_id":"test","max_records":1000,"max_bytes":10_000_000});
+    config["journal"] = json!({"best_effort":true,"path":"journal.sqlite","tenant_id":"test","max_records":1000,"max_bytes":10_000_000});
     save(&dir.path().join("features.json"), &json!(features));
     (dir, config, features, pool, sources)
 }
@@ -1924,6 +1921,10 @@ async fn feature_host_inflight_request_keeps_resource_snapshot_during_reload() {
     {
         sql.connection_string = second_path.to_string_lossy().into();
     }
+    next.activation_cases[0].event.insert(
+        "user_id".into(),
+        corint_decision_engine::Value::String("u1".into()),
+    );
     // Even changing only the connection target (keeping declared revisions)
     // produces a different required approval binding.
     assert_ne!(next.binding_sha256(), features.binding_sha256());
@@ -2079,4 +2080,392 @@ async fn feature_host_business_evidence_must_cover_exact_features_and_binding() 
         feature_request(&router, json!({"user_id":"u1"})).await.0,
         StatusCode::FORBIDDEN
     );
+}
+
+#[tokio::test]
+async fn reliable_decisions_freeze_retries_across_reload_restart_and_capacity() {
+    let (dir, mut config) = setup(&["initial", "second"]);
+    config["config_version"] = "3".into();
+    config["journal"] =
+        json!({"path":"reliable.sqlite","tenant_id":"test","max_records":1,"max_bytes":1_000_000});
+    let router = app(dir.path(), &config).await;
+    let request = json!({"idempotency_key":"payment:1:attempt:1", "business_event_id":"payment-1","event":{"amount":2500},"enable_trace":true});
+    let (status, first) = call(
+        &router,
+        "POST",
+        "/v1/core/decide",
+        Some(DECISION),
+        request.clone(),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{first}");
+    assert_eq!(first["persistence"], "durable");
+    let (_, health) = call(
+        &router,
+        "GET",
+        "/v1/core/persistence",
+        Some(PUBLISHER),
+        json!(null),
+    )
+    .await;
+    assert_eq!(health["mode"], "reliable");
+    assert_eq!(health["accepting"], false);
+    let replay_snapshot =
+        corint_decision_toolchain::repository::load(&dir.path().join("repository")).unwrap();
+    let original_sources = replay_snapshot.closure.bundle();
+    let mut input = json!({"amount":2500.0});
+    input.sort_all_objects();
+    let mut export = json!({"idempotency_key":corint_decision_server::journal::contract("decision-record",&first["record"]).unwrap().sha256(),"event":first["record"],"input_evidence":input,"response":first});
+    let replay = corint_decision_toolchain::replay::replay_journal(
+        &original_sources.sources,
+        &original_sources.input_schema,
+        &export,
+    )
+    .await
+    .unwrap();
+    assert_eq!(replay["matched"], true);
+    export["input_evidence"]["amount"] = 1.into();
+    assert!(corint_decision_toolchain::replay::replay_journal(
+        &original_sources.sources,
+        &original_sources.input_schema,
+        &export
+    )
+    .await
+    .is_err());
+
+    let pool = sqlx::SqlitePool::connect_with(
+        sqlx::sqlite::SqliteConnectOptions::new().filename(dir.path().join("reliable.sqlite")),
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM events")
+            .fetch_one(&pool)
+            .await
+            .unwrap(),
+        1
+    );
+    let (_, replay) = call(
+        &router,
+        "POST",
+        "/v1/core/decide",
+        Some(DECISION),
+        request.clone(),
+    )
+    .await;
+    assert_eq!(replay, first);
+    let mut conflict = request.clone();
+    conflict["event"]["amount"] = 500.into();
+    let (status, error) = call(&router, "POST", "/v1/core/decide", Some(DECISION), conflict).await;
+    assert_eq!(status, StatusCode::CONFLICT);
+    assert_eq!(error["error"], "E_IDEMPOTENCY_CONFLICT");
+    let state = current(&router).await;
+    assert_eq!(
+        call(
+            &router,
+            "POST",
+            "/v1/core/repo/reload",
+            Some(PUBLISHER),
+            candidate(dir.path(), &state, "second")
+        )
+        .await
+        .0,
+        StatusCode::OK
+    );
+    assert_eq!(
+        call(
+            &router,
+            "POST",
+            "/v1/core/decide",
+            Some(DECISION),
+            request.clone()
+        )
+        .await
+        .1,
+        first
+    );
+    drop(router);
+    let router = app(dir.path(), &config).await;
+    assert_eq!(
+        call(
+            &router,
+            "POST",
+            "/v1/core/decide",
+            Some(DECISION),
+            request.clone()
+        )
+        .await
+        .1,
+        first
+    );
+    for key in ["payment:1:attempt:2", "payment:2"] {
+        let mut next = request.clone();
+        next["idempotency_key"] = key.into();
+        let (status, error) = call(&router, "POST", "/v1/core/decide", Some(DECISION), next).await;
+        assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE, "{error}");
+    }
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM events")
+            .fetch_one(&pool)
+            .await
+            .unwrap(),
+        1
+    );
+}
+
+#[tokio::test]
+async fn reliable_storage_failure_never_returns_success_and_retry_can_recover() {
+    let (dir, mut config) = setup(&["initial"]);
+    config["journal"] =
+        json!({"path":"fault.sqlite","tenant_id":"test","max_records":10,"max_bytes":1_000_000});
+    let router = app(dir.path(), &config).await;
+    let pool = sqlx::SqlitePool::connect_with(
+        sqlx::sqlite::SqliteConnectOptions::new().filename(dir.path().join("fault.sqlite")),
+    )
+    .await
+    .unwrap();
+    sqlx::query(
+        "CREATE TRIGGER fail_write AFTER INSERT ON events BEGIN SELECT RAISE(ABORT,'failure'); END",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+    let request = json!({"idempotency_key":"retry-after-failure","business_event_id":"payment","event":{"amount":1500}});
+    assert_eq!(
+        call(
+            &router,
+            "POST",
+            "/v1/core/decide",
+            Some(DECISION),
+            request.clone()
+        )
+        .await
+        .0,
+        StatusCode::SERVICE_UNAVAILABLE
+    );
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM events")
+            .fetch_one(&pool)
+            .await
+            .unwrap(),
+        0
+    );
+    sqlx::query("DROP TRIGGER fail_write")
+        .execute(&pool)
+        .await
+        .unwrap();
+    let (a, b) = tokio::join!(
+        call(
+            &router,
+            "POST",
+            "/v1/core/decide",
+            Some(DECISION),
+            request.clone()
+        ),
+        call(
+            &router,
+            "POST",
+            "/v1/core/decide",
+            Some(DECISION),
+            request.clone()
+        )
+    );
+    assert!(a.0 == StatusCode::OK || b.0 == StatusCode::OK);
+    let first = if a.0 == StatusCode::OK {
+        a.1.clone()
+    } else {
+        b.1.clone()
+    };
+    for response in [a, b] {
+        assert!(response.0 == StatusCode::OK || response.0 == StatusCode::CONFLICT);
+        if response.0 == StatusCode::OK {
+            assert_eq!(response.1, first);
+        }
+    }
+    assert_eq!(
+        call(&router, "POST", "/v1/core/decide", Some(DECISION), request)
+            .await
+            .1,
+        first
+    );
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM events")
+            .fetch_one(&pool)
+            .await
+            .unwrap(),
+        1
+    );
+
+    let invalid =
+        json!({"idempotency_key":"invalid-input","business_event_id":"invalid-input","event":{}});
+    let rejected = call(
+        &router,
+        "POST",
+        "/v1/core/decide",
+        Some(DECISION),
+        invalid.clone(),
+    )
+    .await;
+    assert_eq!(rejected.0, StatusCode::UNPROCESSABLE_ENTITY);
+    assert_eq!(rejected.1["diagnostic"]["persistence"], "durable");
+    assert_eq!(
+        call(&router, "POST", "/v1/core/decide", Some(DECISION), invalid).await,
+        rejected
+    );
+}
+
+#[tokio::test]
+async fn feature_activation_executes_raw_input_cases_and_rejects_invalid_plans() {
+    for invalid in [
+        "missing-cases",
+        "wrong-values",
+        "self-reference",
+        "bad-filter",
+    ] {
+        let (dir, mut config, mut features, _pool, _) = feature_host_setup().await;
+        match invalid {
+            "missing-cases" => features.activation_cases.clear(),
+            "wrong-values" => {
+                features.activation_cases[0].expected_values.insert(
+                    "amount".into(),
+                    corint_decision_engine::Value::Number(999.0),
+                );
+            }
+            "self-reference" => {
+                features.plan.outputs[0].definition = serde_yaml::from_str(
+                    "name: volume\ntype: expression\nexpression: event.amount + 1",
+                )
+                .unwrap()
+            }
+            _ => {
+                features.plan.outputs[0]
+                    .definition
+                    .aggregation
+                    .as_mut()
+                    .unwrap()
+                    .when =
+                    Some(serde_json::from_value(json!("amount > 1 or user_id == 'u2'")).unwrap())
+            }
+        }
+        config["approvals"][0]["feature_binding_sha256"] = features.binding_sha256().into();
+        save(&dir.path().join("features.json"), &json!(features));
+        assert!(
+            core::create_router(
+                serde_json::from_value(config).unwrap(),
+                dir.path(),
+                DECISION,
+                PUBLISHER
+            )
+            .await
+            .is_err(),
+            "{invalid}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn original_server_binary_replays_durable_export_without_online_configuration() {
+    use std::process::{Command, Stdio};
+    struct ChildGuard(std::process::Child);
+    impl Drop for ChildGuard {
+        fn drop(&mut self) {
+            let _ = self.0.kill();
+            let _ = self.0.wait();
+        }
+    }
+    let (dir, mut config) = setup(&["initial"]);
+    config["config_version"] = json!("3");
+    config["listen"] = json!("127.0.0.1:0");
+    config["journal"] =
+        json!({"path":"replay.sqlite","tenant_id":"test","max_records":10,"max_bytes":1_000_000});
+    let config_path = dir.path().join("core.json");
+    std::fs::write(&config_path, config.to_string()).unwrap();
+    let log_path = dir.path().join("server.log");
+    let log = std::fs::File::create(&log_path).unwrap();
+    let mut child = ChildGuard(
+        Command::new(env!("CARGO_BIN_EXE_corint-decision-server"))
+            .env("CORINT_CORE_CONFIG", &config_path)
+            .env(config["decision_token_env"].as_str().unwrap(), DECISION)
+            .env(config["publisher_token_env"].as_str().unwrap(), PUBLISHER)
+            .env("RUST_LOG", "corint_decision_server=info")
+            .stdout(Stdio::from(log.try_clone().unwrap()))
+            .stderr(Stdio::from(log))
+            .spawn()
+            .unwrap(),
+    );
+    let address = tokio::time::timeout(std::time::Duration::from_secs(10), async {
+        loop {
+            assert!(
+                child.0.try_wait().unwrap().is_none(),
+                "server exited: {}",
+                std::fs::read_to_string(&log_path).unwrap()
+            );
+            let log = std::fs::read_to_string(&log_path).unwrap();
+            if let Some(start) = log.find("Experimental strict Core server listening on 127.0.0.1:")
+            {
+                let tail = &log[start + "Experimental strict Core server listening on ".len()..];
+                break tail
+                    .chars()
+                    .take_while(|c| c.is_ascii_digit() || *c == '.' || *c == ':')
+                    .collect::<String>();
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("server ready");
+
+    let client = reqwest::Client::builder()
+        .no_proxy()
+        .timeout(std::time::Duration::from_secs(5))
+        .build()
+        .unwrap();
+    let result:Value=client.post(format!("http://{address}/v1/core/decide")).bearer_auth(DECISION)
+        .json(&json!({"idempotency_key":"binary-replay","business_event_id":"binary-replay","event":{"amount":1500},"enable_trace":true}))
+        .send().await.unwrap().error_for_status().unwrap().json().await.unwrap();
+    child.0.kill().unwrap();
+    child.0.wait().unwrap();
+    let pool = sqlx::SqlitePool::connect_with(
+        sqlx::sqlite::SqliteConnectOptions::new().filename(dir.path().join("replay.sqlite")),
+    )
+    .await
+    .unwrap();
+    let (digest, body, input, response): (String, String, String, String) =
+        sqlx::query_as("SELECT digest,body,input,response FROM events")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    let export = json!({"idempotency_key":digest,"event":serde_json::from_str::<Value>(&body).unwrap(),"input_evidence":serde_json::from_str::<Value>(&input).unwrap(),"response":serde_json::from_str::<Value>(&response).unwrap()});
+    assert_eq!(export["response"], result);
+    let snapshot =
+        corint_decision_toolchain::repository::load(&dir.path().join("repository")).unwrap();
+    let bundle_path = dir.path().join("bundle.json");
+    save(&bundle_path, &json!(snapshot.closure.bundle()));
+    let export_path = dir.path().join("export.json");
+    save(&export_path, &export);
+    let output = Command::new(env!("CARGO_BIN_EXE_corint-decision-server"))
+        .arg("--replay-journal")
+        .arg(&bundle_path)
+        .arg(&export_path)
+        .env("CORINT_CORE_CONFIG", "/does-not-exist.json")
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let report: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(report["matched"], true);
+    let mut changed = export;
+    changed["response"]["decision"]["result"]["score"] = 0.into();
+    save(&export_path, &changed);
+    assert!(!Command::new(env!("CARGO_BIN_EXE_corint-decision-server"))
+        .arg("--replay-journal")
+        .arg(&bundle_path)
+        .arg(&export_path)
+        .output()
+        .unwrap()
+        .status
+        .success());
 }

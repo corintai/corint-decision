@@ -13,7 +13,6 @@ use crate::feature::definition::FeatureDefinition;
 use crate::feature::expression::ExpressionEvaluator;
 use crate::feature::operator::{CacheBackend, Operator};
 use anyhow::{Context as AnyhowContext, Result};
-use corint_decision_model::condition::ConditionParser;
 use corint_decision_model::Value;
 use std::collections::HashMap;
 use std::future::Future;
@@ -36,6 +35,7 @@ pub struct FeatureExecutor {
     features: HashMap<String, FeatureDefinition>,
     /// Request-owned cutoff, never populated from an untrusted context field.
     as_of: Option<i64>,
+    availability_fields: HashMap<String, String>,
 }
 
 impl FeatureExecutor {
@@ -46,6 +46,7 @@ impl FeatureExecutor {
             datasources: HashMap::new(),
             features: HashMap::new(),
             as_of: None,
+            availability_fields: HashMap::new(),
         }
     }
 
@@ -348,6 +349,23 @@ impl FeatureExecutor {
         self.execute_features(&feature_names, context).await
     }
 
+    /// Trusted host-only query constraints; availability columns contain Unix seconds.
+    pub fn set_availability_field(&mut self, feature: String, field: String) {
+        self.availability_fields.insert(feature, field);
+    }
+    pub async fn query_datasource(
+        &self,
+        name: &str,
+        query: crate::datasource::query::Query,
+    ) -> Result<crate::datasource::query::QueryResult> {
+        Ok(self
+            .datasources
+            .get(name)
+            .ok_or_else(|| anyhow::anyhow!("Unknown datasource"))?
+            .query(query)
+            .await?)
+    }
+
     /// Fixed-cutoff aggregation/expression execution. Fresh reads only; callers
     /// retain the resulting values for historical replay (late data can change SQL).
     pub async fn execute_features_at(
@@ -392,6 +410,7 @@ impl FeatureExecutor {
             datasources: self.datasources.clone(),
             features: self.features.clone(),
             as_of: Some(as_of),
+            availability_fields: self.availability_fields.clone(),
         };
         request.execute_features(names, context).await
     }
@@ -548,6 +567,17 @@ impl FeatureExecutor {
             operator: FilterOperator::Eq,
             value: Value::String(dimension_value),
         });
+
+        if let Some(field) = self.availability_fields.get(&feature.name) {
+            let cutoff = self
+                .as_of
+                .ok_or_else(|| anyhow::anyhow!("Availability requires a fixed cutoff"))?;
+            all_filters.push(Filter {
+                field: field.clone(),
+                operator: FilterOperator::Le,
+                value: Value::Number(cutoff as f64),
+            });
+        }
 
         // Determine query type and build aggregation based on method
         let (query_type, aggregations) =
@@ -731,71 +761,10 @@ impl FeatureExecutor {
         when: &Option<crate::feature::definition::WhenCondition>,
         context: &HashMap<String, Value>,
     ) -> Result<Vec<crate::datasource::query::Filter>> {
-        use crate::datasource::query::Filter;
-
-        let Some(when) = when else {
-            return Ok(vec![]);
-        };
-
-        let conditions = when.conditions().map_err(anyhow::Error::msg)?;
-
-        // Use shared ConditionParser
-        let parser = ConditionParser::with_context(context.clone());
-        let mut filters = Vec::new();
-
-        for condition_str in conditions {
-            match parser.parse_condition(condition_str) {
-                Ok(parsed) => {
-                    // Convert core operator to filter operator
-                    let filter_op = Self::convert_operator(&parsed.operator)?;
-
-                    // Get the resolved value
-                    let value = match parsed.value.try_to_value() {
-                        Some(v) => v,
-                        None => {
-                            anyhow::bail!(
-                                "Unresolved template variable in condition '{condition_str}'"
-                            );
-                        }
-                    };
-
-                    filters.push(Filter {
-                        field: parsed.field,
-                        operator: filter_op,
-                        value,
-                    });
-                }
-                Err(e) => {
-                    anyhow::bail!("Invalid feature condition '{condition_str}': {e}");
-                }
-            }
-        }
-
-        Ok(filters)
-    }
-
-    /// Convert corint_decision_model::ast::operator::Operator to FilterOperator
-    fn convert_operator(
-        op: &corint_decision_model::ast::operator::Operator,
-    ) -> Result<crate::datasource::query::FilterOperator> {
-        use crate::datasource::query::FilterOperator;
-        use corint_decision_model::ast::operator::Operator as CoreOp;
-
-        Ok(match op {
-            CoreOp::Eq => FilterOperator::Eq,
-            CoreOp::Ne => FilterOperator::Ne,
-            CoreOp::Gt => FilterOperator::Gt,
-            CoreOp::Ge => FilterOperator::Ge,
-            CoreOp::Lt => FilterOperator::Lt,
-            CoreOp::Le => FilterOperator::Le,
-            CoreOp::In => FilterOperator::In,
-            CoreOp::NotIn => FilterOperator::NotIn,
-            CoreOp::Regex => FilterOperator::Regex,
-            CoreOp::Contains => FilterOperator::Contains,
-            CoreOp::StartsWith => FilterOperator::StartsWith,
-            CoreOp::EndsWith => FilterOperator::EndsWith,
-            _ => anyhow::bail!("Unsupported feature filter operator: {op:?}"),
-        })
+        when.as_ref()
+            .map(|when| super::filter::parse(when, Some(context)))
+            .transpose()
+            .map(Option::unwrap_or_default)
     }
 
     /// Execute state feature
