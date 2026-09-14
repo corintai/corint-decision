@@ -5,16 +5,19 @@ use corint_decision_engine::background::{BackgroundWrites, PersistenceStatus};
 use corint_decision_toolchain::phase0::{validate_decision_record, Contract, Ingest};
 use serde::Deserialize;
 use serde_json::{json, Value};
-use sqlx::{
-    sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions, SqliteSynchronous},
-    Row, SqlitePool,
-};
+use sqlx::Row;
+mod storage;
 use std::path::{Path, PathBuf};
+use storage::Storage;
 
 #[derive(Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct JournalConfig {
+    /// Legacy/default SQLite file path; forbidden for PostgreSQL.
+    #[serde(default)]
     pub path: PathBuf,
+    #[serde(default)]
+    pub backend: JournalBackend,
     /// Explicit opt-in to volatile queuing; cannot provide request idempotency.
     #[serde(default)]
     pub best_effort: bool,
@@ -28,12 +31,28 @@ pub struct JournalConfig {
     #[serde(default)]
     pub consumer_token_env: String,
 }
+/// Backend selection is independent of policy repositories and feature sources.
+#[derive(Clone, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
+pub enum JournalBackend {
+    Sqlite {},
+    #[serde(alias = "postgresql")]
+    Postgres {
+        url_env: String,
+        schema: String,
+    },
+}
+impl Default for JournalBackend {
+    fn default() -> Self {
+        Self::Sqlite {}
+    }
+}
 #[derive(Clone)]
 pub struct Journal {
     pub best_effort: bool,
     export_replay: bool,
     background: BackgroundWrites,
-    pool: SqlitePool,
+    storage: Storage,
     pub tenant_id: String,
     max_records: u32,
     max_bytes: u64,
@@ -63,132 +82,20 @@ impl Journal {
                     .all(|b| b.is_ascii_alphanumeric() || b"_-".contains(&b)),
             "Invalid journal tenant"
         );
-        let path = root.join(&config.path);
-        anyhow::ensure!(path != Path::new(":memory:"), "Journal must be persistent");
-        if let Ok(meta) = std::fs::symlink_metadata(&path) {
-            anyhow::ensure!(
-                meta.is_file() && !meta.file_type().is_symlink(),
-                "Journal must be a regular file"
-            );
-        }
-        let options = SqliteConnectOptions::new()
-            .filename(&path)
-            .create_if_missing(true)
-            .journal_mode(SqliteJournalMode::Wal)
-            .synchronous(SqliteSynchronous::Full)
-            .busy_timeout(std::time::Duration::from_secs(5));
-        // Serialize local inserts and capacity accounting. Separate processes use
-        // the same database write lock, without reconstructing feedback history.
-        let pool = SqlitePoolOptions::new()
-            .max_connections(1)
-            .connect_with(options)
-            .await?;
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600))?;
-        }
-        sqlx::query("CREATE TABLE IF NOT EXISTS journal_meta (id INTEGER PRIMARY KEY CHECK(id=1), tenant TEXT NOT NULL)").execute(&pool).await?;
-        sqlx::query("INSERT OR IGNORE INTO journal_meta VALUES(1,?)")
-            .bind(&config.tenant_id)
-            .execute(&pool)
-            .await?;
-        let tenant: String = sqlx::query_scalar("SELECT tenant FROM journal_meta WHERE id=1")
-            .fetch_one(&pool)
-            .await?;
-        anyhow::ensure!(
-            tenant == config.tenant_id,
-            "Journal belongs to a different tenant"
-        );
-        sqlx::query("CREATE TABLE IF NOT EXISTS events (seq INTEGER PRIMARY KEY AUTOINCREMENT, kind TEXT NOT NULL, digest TEXT NOT NULL UNIQUE, body TEXT NOT NULL, input TEXT, bytes INTEGER NOT NULL, delivered INTEGER NOT NULL DEFAULT 0, lease TEXT, retry_at INTEGER NOT NULL DEFAULT 0, attempts INTEGER NOT NULL DEFAULT 0)").execute(&pool).await?;
-        let journal = Self {
+        let storage = Storage::open(root, config).await?;
+        Ok(Self {
             best_effort: config.best_effort,
             export_replay: config.export_replay,
             background: BackgroundWrites::default(),
-            pool,
-            tenant_id: tenant,
+            storage,
+            tenant_id: config.tenant_id.clone(),
             max_records: config.max_records,
             max_bytes: config.max_bytes,
             admission: std::sync::Arc::new(tokio::sync::Semaphore::new(64)),
-        };
-        journal.initialize_storage().await?;
-        Ok(journal)
+        })
     }
 
-    // A transactional, one-time upgrade of the existing events table. Historical
-    // feedback stays untouched for external migration; it is never replayed.
-    async fn initialize_storage(&self) -> anyhow::Result<()> {
-        let mut tx = self.pool.begin_with("BEGIN IMMEDIATE").await?;
-        sqlx::query("CREATE TABLE IF NOT EXISTS journal_usage (id INTEGER PRIMARY KEY CHECK(id=1), record_count INTEGER NOT NULL, total_bytes INTEGER NOT NULL)")
-            .execute(&mut *tx).await?;
-        let initialized: bool =
-            sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM journal_usage WHERE id=1)")
-                .fetch_one(&mut *tx)
-                .await?;
-        if !initialized {
-            let rows = sqlx::query(
-                "SELECT body,digest FROM events WHERE kind='decision-record' ORDER BY seq",
-            )
-            .fetch_all(&mut *tx)
-            .await?;
-            for row in rows {
-                let value: Value = serde_json::from_str(row.get("body"))?;
-                anyhow::ensure!(value["tenant_id"] == self.tenant_id, "Tenant mismatch");
-                let record = contract("decision-record", &value)?;
-                validate_decision_record(&record)?;
-                anyhow::ensure!(
-                    record.sha256() == row.get::<String, _>("digest"),
-                    "Journal content fingerprint mismatch"
-                );
-            }
-            sqlx::query("CREATE UNIQUE INDEX journal_decision_identity ON events(json_extract(body,'$.tenant_id'), json_extract(body,'$.decision_id')) WHERE kind='decision-record'")
-                .execute(&mut *tx).await?;
-            sqlx::query("CREATE INDEX journal_pending_decisions ON events(seq) WHERE kind='decision-record' AND delivered=0")
-                .execute(&mut *tx).await?;
-            sqlx::query(
-                "INSERT INTO journal_usage SELECT 1,COUNT(*),COALESCE(SUM(bytes),0) FROM events",
-            )
-            .execute(&mut *tx)
-            .await?;
-            // Triggers keep counters correct across connections, restarts and
-            // future archive/delete operations, in the same transaction as rows.
-            sqlx::query("CREATE TRIGGER journal_usage_insert AFTER INSERT ON events BEGIN UPDATE journal_usage SET record_count=record_count+1,total_bytes=total_bytes+NEW.bytes WHERE id=1; END")
-                .execute(&mut *tx).await?;
-            sqlx::query("CREATE TRIGGER journal_usage_delete AFTER DELETE ON events BEGIN UPDATE journal_usage SET record_count=record_count-1,total_bytes=total_bytes-OLD.bytes WHERE id=1; END")
-                .execute(&mut *tx).await?;
-            sqlx::query("CREATE TRIGGER journal_usage_update AFTER UPDATE OF bytes ON events BEGIN UPDATE journal_usage SET total_bytes=total_bytes+NEW.bytes-OLD.bytes WHERE id=1; END")
-                .execute(&mut *tx).await?;
-        }
-        let usage = sqlx::query("SELECT record_count,total_bytes FROM journal_usage WHERE id=1")
-            .fetch_one(&mut *tx)
-            .await?;
-        anyhow::ensure!(
-            usage.get::<i64, _>("record_count") <= i64::from(self.max_records)
-                && usage.get::<i64, _>("total_bytes") <= self.max_bytes as i64,
-            "Journal capacity exceeded"
-        );
-        // Incremental upgrade; no scan or replay of historical decisions.
-        let columns = sqlx::query("PRAGMA table_info(events)")
-            .fetch_all(&mut *tx)
-            .await?;
-        if !columns
-            .iter()
-            .any(|r| r.get::<String, _>("name") == "response")
-        {
-            sqlx::query("ALTER TABLE events ADD COLUMN response TEXT")
-                .execute(&mut *tx)
-                .await?;
-            sqlx::query("ALTER TABLE events ADD COLUMN http_status INTEGER")
-                .execute(&mut *tx)
-                .await?;
-        }
-        sqlx::query("CREATE TABLE IF NOT EXISTS request_keys (key TEXT PRIMARY KEY, fingerprint TEXT NOT NULL, owner TEXT NOT NULL, expires INTEGER NOT NULL, decision_id TEXT)").execute(&mut *tx).await?;
-        sqlx::query("CREATE INDEX IF NOT EXISTS pending_request_expiry ON request_keys(expires) WHERE decision_id IS NULL").execute(&mut *tx).await?;
-        tx.commit().await?;
-        Ok(())
-    }
-
-    /// Queue one frozen decision and input without waiting for SQLite I/O.
+    /// Queue one frozen decision and input without waiting for database I/O.
     pub fn enqueue(&self, value: Value, input: Value) -> anyhow::Result<()> {
         anyhow::ensure!(value["tenant_id"] == self.tenant_id, "Tenant mismatch");
         let record = contract("decision-record", &value)?;
@@ -223,12 +130,13 @@ impl Journal {
         if self.best_effort {
             let mut status = serde_json::to_value(self.background.status())?;
             status["mode"] = "best_effort".into();
+            status["backend"] = self.storage.name().into();
             return Ok(status);
         }
-        let row: (i64,i64,i64) = sqlx::query_as("SELECT record_count,total_bytes,(SELECT COUNT(*) FROM request_keys WHERE decision_id IS NULL AND expires>?) FROM journal_usage WHERE id=1")
-            .bind(chrono::Utc::now().timestamp_millis()).fetch_one(&self.pool).await?;
+        let row: (i64,i64,i64) = sqlx::query_as("SELECT record_count,total_bytes,(SELECT COUNT(*) FROM request_keys WHERE decision_id IS NULL AND expires>$1) FROM journal_usage WHERE id=1")
+            .bind(chrono::Utc::now().timestamp_millis()).fetch_one(&self.storage.pool).await?;
         Ok(
-            json!({"mode":"reliable","accepting":row.0+row.2 < i64::from(self.max_records) && row.1 < self.max_bytes as i64 && row.2 < 64,
+            json!({"mode":"reliable","backend":self.storage.name(),"accepting":row.0+row.2 < i64::from(self.max_records) && row.1 < self.max_bytes as i64 && row.2 < 64,
             "stored_records":row.0,"stored_bytes":row.1,"inflight_requests":row.2,"max_records":self.max_records,"max_bytes":self.max_bytes}),
         )
     }
@@ -271,16 +179,21 @@ impl Journal {
         let candidate = contract(kind, value)?;
         validate_decision_record(&candidate)?;
         let digest = candidate.sha256();
-        let mut tx = self.pool.begin_with("BEGIN IMMEDIATE").await?;
+        let mut tx = self.storage.begin().await?;
         if let Some((reservation, _, _)) = response {
-            let owned: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM request_keys WHERE key=? AND owner=? AND decision_id IS NULL)")
+            let owned: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM request_keys WHERE key=$1 AND owner=$2 AND decision_id IS NULL")
                 .bind(&reservation.key).bind(&reservation.owner).fetch_one(&mut *tx).await?;
-            anyhow::ensure!(owned, "Request reservation was superseded");
+            anyhow::ensure!(owned == 1, "Request reservation was superseded");
         }
-        let existing = sqlx::query("SELECT digest,input FROM events WHERE kind='decision-record' AND json_extract(body,'$.tenant_id')=? AND json_extract(body,'$.decision_id')=?")
+        let existing = sqlx::query(self.storage.decision_lookup())
             .bind(&self.tenant_id)
-            .bind(value["decision_id"].as_str().expect("validated decision ID"))
-            .fetch_optional(&mut *tx).await?;
+            .bind(
+                value["decision_id"]
+                    .as_str()
+                    .expect("validated decision ID"),
+            )
+            .fetch_optional(&mut *tx)
+            .await?;
         if let Some(existing) = existing {
             anyhow::ensure!(
                 existing.get::<String, _>("digest") == digest,
@@ -306,7 +219,7 @@ impl Journal {
                 && total as u64 <= self.max_bytes - bytes as u64,
             "Journal capacity exhausted"
         );
-        sqlx::query("INSERT INTO events(kind,digest,body,input,bytes) VALUES(?,?,?,?,?)")
+        sqlx::query("INSERT INTO events(kind,digest,body,input,bytes) VALUES($1,$2,$3,$4,$5)")
             .bind(kind)
             .bind(digest)
             .bind(body)
@@ -315,23 +228,25 @@ impl Journal {
             .execute(&mut *tx)
             .await?;
         if let Some((reservation, status, _)) = response {
-            sqlx::query("UPDATE events SET response=?,http_status=? WHERE digest=?")
+            sqlx::query("UPDATE events SET response=$1,http_status=$2 WHERE digest=$3")
                 .bind(response_body)
                 .bind(i64::from(status))
                 .bind(candidate.sha256())
                 .execute(&mut *tx)
                 .await?;
-            sqlx::query("UPDATE request_keys SET decision_id=?,expires=0 WHERE key=? AND owner=?")
-                .bind(value["decision_id"].as_str())
-                .bind(&reservation.key)
-                .bind(&reservation.owner)
-                .execute(&mut *tx)
-                .await?;
+            sqlx::query(
+                "UPDATE request_keys SET decision_id=$1,expires=0 WHERE key=$2 AND owner=$3",
+            )
+            .bind(value["decision_id"].as_str())
+            .bind(&reservation.key)
+            .bind(&reservation.owner)
+            .execute(&mut *tx)
+            .await?;
         }
         tx.commit().await?;
         Ok(Ingest::Inserted)
     }
-    /// Reserve a bounded execution slot in the same local durability domain as
+    /// Reserve a bounded execution slot in the same durability domain as
     /// the result. Expiry fences abandoned owners; only the current owner can commit.
     pub async fn begin_request(
         &self,
@@ -354,9 +269,9 @@ impl Journal {
         let key = key
             .map(|k| format!("client:{k}"))
             .unwrap_or_else(|| format!("auto:{}", uuid::Uuid::new_v4()));
-        let mut tx = self.pool.begin_with("BEGIN IMMEDIATE").await?;
+        let mut tx = self.storage.begin().await?;
         if let Some(row) = sqlx::query(
-            "SELECT fingerprint,owner,decision_id,expires FROM request_keys WHERE key=?",
+            "SELECT fingerprint,owner,decision_id,expires FROM request_keys WHERE key=$1",
         )
         .bind(&key)
         .fetch_optional(&mut *tx)
@@ -367,8 +282,11 @@ impl Journal {
                 "E_IDEMPOTENCY_CONFLICT"
             );
             if let Some(id) = row.get::<Option<String>, _>("decision_id") {
-                let result: (i64, String) = sqlx::query_as("SELECT http_status,response FROM events WHERE kind='decision-record' AND json_extract(body,'$.tenant_id')=? AND json_extract(body,'$.decision_id')=?")
-                    .bind(&self.tenant_id).bind(id).fetch_one(&mut *tx).await?;
+                let result: (i64, String) = sqlx::query_as(self.storage.response_lookup())
+                    .bind(&self.tenant_id)
+                    .bind(id)
+                    .fetch_one(&mut *tx)
+                    .await?;
                 tx.commit().await?;
                 return Ok(RequestStart::Replay(
                     result.0 as u16,
@@ -377,7 +295,7 @@ impl Journal {
             }
             anyhow::ensure!(row.get::<i64, _>("expires") <= now, "E_REQUEST_IN_PROGRESS");
         }
-        sqlx::query("DELETE FROM request_keys WHERE decision_id IS NULL AND expires<=?")
+        sqlx::query("DELETE FROM request_keys WHERE decision_id IS NULL AND expires<=$1")
             .bind(now)
             .execute(&mut *tx)
             .await?;
@@ -396,7 +314,7 @@ impl Journal {
             "E_JOURNAL_CAPACITY"
         );
         let owner = uuid::Uuid::new_v4().to_string();
-        sqlx::query("INSERT INTO request_keys(key,fingerprint,owner,expires) VALUES(?,?,?,?)")
+        sqlx::query("INSERT INTO request_keys(key,fingerprint,owner,expires) VALUES($1,$2,$3,$4)")
             .bind(&key)
             .bind(fingerprint)
             .bind(&owner)
@@ -407,12 +325,22 @@ impl Journal {
         Ok(RequestStart::Reserved(RequestReservation { key, owner }))
     }
     pub async fn abandon(&self, reservation: &RequestReservation) {
-        let _ =
-            sqlx::query("DELETE FROM request_keys WHERE key=? AND owner=? AND decision_id IS NULL")
-                .bind(&reservation.key)
-                .bind(&reservation.owner)
-                .execute(&self.pool)
-                .await;
+        // Serialize with reservation/commit, including across PostgreSQL hosts.
+        // If storage is unavailable the bounded reservation expires naturally.
+        let result: anyhow::Result<()> = async {
+            let mut tx = self.storage.begin().await?;
+            sqlx::query(
+                "DELETE FROM request_keys WHERE key=$1 AND owner=$2 AND decision_id IS NULL",
+            )
+            .bind(&reservation.key)
+            .bind(&reservation.owner)
+            .execute(&mut *tx)
+            .await?;
+            tx.commit().await?;
+            Ok(())
+        }
+        .await;
+        let _ = result;
     }
 
     /// A crashed or disconnected consumer leaves a lease that becomes eligible
@@ -422,8 +350,8 @@ impl Journal {
             .admission
             .try_acquire()
             .map_err(|_| anyhow::anyhow!("Journal admission full"))?;
-        let mut tx = self.pool.begin_with("BEGIN IMMEDIATE").await?;
-        let rows = sqlx::query("SELECT seq,digest,body,input,response,bytes,attempts FROM events WHERE kind='decision-record' AND delivered=0 AND retry_at<=? ORDER BY seq LIMIT 100")
+        let mut tx = self.storage.begin().await?;
+        let rows = sqlx::query("SELECT seq,digest,body,input,response,bytes,attempts FROM events WHERE kind='decision-record' AND delivered=0 AND retry_at<=$1 ORDER BY seq LIMIT 100")
             .bind(now_ms).fetch_all(&mut *tx).await?;
         let lease = uuid::Uuid::new_v4().to_string();
         let mut events = Vec::new();
@@ -436,7 +364,7 @@ impl Journal {
             let attempts: i64 = row.get("attempts");
             // 1, 2, 4 ... 60 minutes. Retries remain eligible after restarts.
             let delay = 60_000i64 * (1i64 << attempts.min(6)).min(60);
-            sqlx::query("UPDATE events SET lease=?,retry_at=?,attempts=attempts+1 WHERE seq=?")
+            sqlx::query("UPDATE events SET lease=$1,retry_at=$2,attempts=attempts+1 WHERE seq=$3")
                 .bind(&lease)
                 .bind(now_ms + delay)
                 .bind(row.get::<i64, _>("seq"))
@@ -474,10 +402,10 @@ impl Journal {
             !digests.is_empty() && digests.len() <= 100,
             "Invalid acknowledgement size"
         );
-        let mut tx = self.pool.begin_with("BEGIN IMMEDIATE").await?;
+        let mut tx = self.storage.begin().await?;
         for digest in digests {
             let n = sqlx::query(
-                "UPDATE events SET delivered=1 WHERE digest=? AND lease=? AND retry_at>? ",
+                "UPDATE events SET delivered=1 WHERE digest=$1 AND lease=$2 AND retry_at>$3 ",
             )
             .bind(digest)
             .bind(lease)

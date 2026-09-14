@@ -14,6 +14,7 @@ fn fixture(kind: &str) -> Value {
 fn config() -> JournalConfig {
     JournalConfig {
         path: "journal.sqlite".into(),
+        backend: Default::default(),
         best_effort: false,
         export_replay: false,
         tenant_id: "fixture-tenant".into(),

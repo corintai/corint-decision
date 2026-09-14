@@ -8,7 +8,7 @@
 
 ## 信任与部署边界
 
-- 仅允许 loopback、单进程、单目标；不启动旧 gRPC 引擎或兼容 `/v1/decide` 路由。
+- 每个实例仅允许 loopback、单进程、单目标；不启动旧 gRPC 引擎或兼容 `/v1/decide` 路由。多个实例可共享 PostgreSQL Journal，策略快照和发布仍独立管理。
 - 配置错误、repo 无效或初始验收失败时退出，不回退到宽松加载或历史内存版本。
 - repo、上下文、目标、独立验收样例和批准指纹列表由本地操作者控制。
   Agent/Work 应先经授权向 repo 提交候选，完成发布方验收后再更新发布声明。
@@ -102,7 +102,7 @@ CORINT_CORE_CONFIG=/absolute/path/core-server.json ./target/debug/corint-decisio
 它不接受 bundle、repo 路径、目标版本、context、cases、approval 或验证报告。
 旧 `/v1/core/policies/activate` 上传路由已移除，返回 404。
 
-journal 的可靠模式、幂等重试及私有回放导出见 [Core 运行保障](core-operations.md)。
+journal 可选择 SQLite 或 PostgreSQL；省略 backend 兼容原 SQLite 配置。可靠模式、跨实例幂等重试及私有回放导出见 [Core 运行保障](core-operations.md)。
 
 决策请求示例：`{"event":{"amount":1001},"enable_trace":true}`。
 不接受可信 features/api/service/llm/vars 注入。响应包含原生 `decision` 和实际执行的 `snapshot`。
@@ -159,3 +159,5 @@ CDL 语言版本、source package/bundle v1 格式和兼容入口保持各自原
 | 2026-09-14 | 增加可选特征宿主入口及单独的资源配置批准绑定。 |
 
 | 2026-09-14 | 增加可靠记录接收与请求幂等参数，特征发布检查覆盖完整宿主。 |
+
+- 2026-09-14：补充 SQLite/PostgreSQL Journal 后端选择和共享存储的实例边界。

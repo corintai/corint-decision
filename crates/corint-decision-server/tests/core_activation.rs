@@ -2469,3 +2469,190 @@ async fn original_server_binary_replays_durable_export_without_online_configurat
         .status
         .success());
 }
+
+#[tokio::test]
+#[ignore = "requires isolated PostgreSQL; run_journal_postgres_tests.py"]
+async fn postgres_journal_http_shared_retries_rollback_and_recovery() {
+    let (dir, mut config) = setup(&["initial", "second"]);
+    let schema = format!("journal_http_{}", uuid::Uuid::new_v4().simple());
+    let pool = sqlx::PgPool::connect(&std::env::var("CORINT_TEST_POSTGRES_URL").unwrap())
+        .await
+        .unwrap();
+    config["config_version"] = "3".into();
+    config["journal"] = json!({
+        "backend":{"type":"postgres","url_env":"CORINT_TEST_POSTGRES_URL","schema":schema},
+        "tenant_id":"test","max_records":2,"max_bytes":1_000_000,
+        "export_replay":true,"consumer_token_env":"PG_JOURNAL_HTTP_CONSUMER"
+    });
+    let consumer = "test-postgres-journal-consumer-1234567890";
+    std::env::set_var("PG_JOURNAL_HTTP_CONSUMER", consumer);
+    let (a, b) = tokio::join!(app(dir.path(), &config), app(dir.path(), &config));
+    // Make the final request-key update fail after the record has been inserted.
+    // The HTTP result, input, capacity and idempotency completion must all roll back.
+    sqlx::query(&format!("CREATE FUNCTION \"{schema}\".fail_completion() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'injected storage failure'; END $$")).execute(&pool).await.unwrap();
+    sqlx::query(&format!("CREATE TRIGGER fail_completion BEFORE UPDATE ON \"{schema}\".request_keys FOR EACH ROW EXECUTE FUNCTION \"{schema}\".fail_completion()")).execute(&pool).await.unwrap();
+    let request = json!({"idempotency_key":"payment:1","business_event_id":"payment-1","event":{"amount":2500},"enable_trace":true});
+    let failed = call(
+        &a,
+        "POST",
+        "/v1/core/decide",
+        Some(DECISION),
+        request.clone(),
+    )
+    .await;
+    assert_eq!(failed.0, StatusCode::SERVICE_UNAVAILABLE, "{failed:?}");
+    let rows: i64 = sqlx::query_scalar(&format!("SELECT COUNT(*) FROM \"{schema}\".events"))
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(rows, 0);
+    let usage: (i64, i64) = sqlx::query_as(&format!(
+        "SELECT record_count,total_bytes FROM \"{schema}\".journal_usage"
+    ))
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(usage, (0, 0));
+    sqlx::query(&format!(
+        "DROP TRIGGER fail_completion ON \"{schema}\".request_keys"
+    ))
+    .execute(&pool)
+    .await
+    .unwrap();
+    let (ra, rb) = tokio::join!(
+        call(
+            &a,
+            "POST",
+            "/v1/core/decide",
+            Some(DECISION),
+            request.clone()
+        ),
+        call(
+            &b,
+            "POST",
+            "/v1/core/decide",
+            Some(DECISION),
+            request.clone()
+        )
+    );
+    assert!(
+        ra.0 == StatusCode::OK || rb.0 == StatusCode::OK,
+        "{ra:?} {rb:?}"
+    );
+    let first = if ra.0 == StatusCode::OK {
+        ra.1.clone()
+    } else {
+        rb.1.clone()
+    };
+    for result in [ra, rb] {
+        assert!(
+            result.0 == StatusCode::OK || result.0 == StatusCode::CONFLICT,
+            "{result:?}"
+        );
+        if result.0 == StatusCode::OK {
+            assert_eq!(result.1, first);
+        }
+    }
+    assert_eq!(first["persistence"], "durable");
+    let rows: i64 = sqlx::query_scalar(&format!("SELECT COUNT(*) FROM \"{schema}\".events"))
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(rows, 1);
+    let mut changed = request.clone();
+    changed["event"]["amount"] = 1.into();
+    assert_eq!(
+        call(&b, "POST", "/v1/core/decide", Some(DECISION), changed)
+            .await
+            .0,
+        StatusCode::CONFLICT
+    );
+    let bad_input = json!({"idempotency_key":"bad","business_event_id":"bad","event":{}});
+    let error = call(
+        &a,
+        "POST",
+        "/v1/core/decide",
+        Some(DECISION),
+        bad_input.clone(),
+    )
+    .await;
+    assert_eq!(error.0, StatusCode::UNPROCESSABLE_ENTITY);
+    assert_eq!(
+        call(&b, "POST", "/v1/core/decide", Some(DECISION), bad_input).await,
+        error
+    );
+    let (_, health) = call(
+        &b,
+        "GET",
+        "/v1/core/persistence",
+        Some(PUBLISHER),
+        json!(null),
+    )
+    .await;
+    assert_eq!(health["backend"], "postgres");
+    assert_eq!(health["stored_records"], 2);
+    assert_eq!(health["accepting"], false);
+    let mut next = request.clone();
+    next["idempotency_key"] = "no-room".into();
+    assert_eq!(
+        call(&a, "POST", "/v1/core/decide", Some(DECISION), next)
+            .await
+            .0,
+        StatusCode::SERVICE_UNAVAILABLE
+    );
+    drop(a);
+    drop(b);
+    // Another instance activates a different policy; retries still return the first result.
+    publish(dir.path(), &bundle("second"), "second");
+    let restarted = app(dir.path(), &config).await;
+    assert_eq!(
+        call(
+            &restarted,
+            "POST",
+            "/v1/core/decide",
+            Some(DECISION),
+            request
+        )
+        .await,
+        (StatusCode::OK, first.clone())
+    );
+    let (status, batch) = call(
+        &restarted,
+        "POST",
+        "/v1/core/outbox/claim",
+        Some(consumer),
+        json!({}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{batch}");
+    assert_eq!(batch["events"].as_array().unwrap().len(), 2);
+    assert_eq!(batch["events"][0]["response"], first);
+    assert_eq!(
+        batch["events"][0]["input_evidence"],
+        json!({"amount":2500.0})
+    );
+    let ack = json!({"lease":batch["lease"],"idempotency_keys":batch["events"].as_array().unwrap().iter().map(|e| e["idempotency_key"].clone()).collect::<Vec<_>>()});
+    assert_eq!(
+        call(
+            &restarted,
+            "POST",
+            "/v1/core/outbox/ack",
+            Some(consumer),
+            ack
+        )
+        .await
+        .0,
+        StatusCode::OK
+    );
+    assert!(std::fs::read_dir(dir.path()).unwrap().all(|entry| entry
+        .unwrap()
+        .path()
+        .extension()
+        .is_none_or(|ext| ext != "sqlite")));
+    drop(restarted);
+    sqlx::query(&format!("DROP SCHEMA \"{schema}\" CASCADE"))
+        .execute(&pool)
+        .await
+        .unwrap();
+    pool.close().await;
+}
