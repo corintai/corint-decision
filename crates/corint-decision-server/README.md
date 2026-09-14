@@ -593,7 +593,7 @@ These limitations will be addressed in future versions.
 ### Long-term (3-6 months)
 
 - [ ] Distributed deployment support
-- [ ] Multi-tenant support
+- [x] Scoped multi-tenant Core HTTP host, resource isolation and lifecycle ([guide](../../../docs/contracts/multi-tenancy.md))
 - [ ] Advanced caching strategy (Redis)
 - [ ] Complete observability (Metrics + Tracing + Logging)
 - [ ] Performance monitoring and alerting

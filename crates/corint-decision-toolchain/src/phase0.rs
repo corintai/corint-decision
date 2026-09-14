@@ -303,6 +303,12 @@ pub fn check_approval(
     let e = evaluation.value();
     let a = approval.value();
     approval.ensure(
+        a["audience"] == e["audience"],
+        "/audience",
+        "E_EVIDENCE_AUDIENCE",
+        "Approval and evaluation audiences differ",
+    )?;
+    approval.ensure(
         e["subject"] == *subject
             && a["subject"] == *subject
             && a["evaluation_sha256"] == evaluation.sha256(),
@@ -376,6 +382,12 @@ fn decision_key(v: &Value) -> (String, String) {
 pub fn validate_decision_record(record: &Contract) -> Result<(), CoreError> {
     record.require("decision-record")?;
     let v = record.value();
+    record.ensure(
+        v.get("tenant_context").is_none() || v["tenant_context"]["tenant_id"] == v["tenant_id"],
+        "/tenant_context",
+        "E_TENANT_SCOPE",
+        "Decision tenant differs from its authenticated context",
+    )?;
     record.ensure(
         (v["result"] == "error") == !v["error_code"].is_null(),
         "/error_code",

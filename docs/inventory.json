@@ -3,6 +3,10 @@
   "note": "Page paths are repository-relative. CDL/ contains language definitions; docs/ contains tool, runtime and integration guides. Reading scope is not production acceptance. Documentation examples are bound to executable fixtures by tests/conformance/documentation/examples.json and executable_examples below.",
   "pages": [
     {
+      "path": "docs/contracts/multi-tenancy.md",
+      "scope": "contract"
+    },
+    {
       "path": "docs/API_REQUEST.md",
       "scope": "contract"
     },

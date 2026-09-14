@@ -1,5 +1,6 @@
 //! Opt-in, single-target Core server. Local operator configuration is the trust
 //! root. Policies come only from the configured repository, including on reload.
+use crate::tenancy::{Boundary, Permission, Scope, TenantContext};
 use crate::{
     evidence::{self, EvidenceConfig},
     journal::{Journal, JournalConfig},
@@ -11,7 +12,7 @@ use axum::{
     middleware::{self, Next},
     response::{IntoResponse, Response},
     routing::{get, post},
-    Json, Router,
+    Extension, Json, Router,
 };
 use corint_decision_compiler::core::{parse_core_input_schema, CoreError, CoreSource};
 use corint_decision_engine::{
@@ -41,7 +42,7 @@ const MAX_BYTES: usize = 8 * 1024 * 1024;
 
 /// Read only from operator-owned local files, never from HTTP request data.
 /// Configuration and secrets are immutable until process restart.
-#[derive(Deserialize)]
+#[derive(Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct CoreConfig {
     pub config_version: String,
@@ -69,9 +70,13 @@ pub struct CoreConfig {
 }
 
 /// An explicit local operator allowlist, NOT a portable approval or signature.
-#[derive(Deserialize)]
+#[derive(Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct OperatorApproval {
+    #[serde(default)]
+    pub tenant_scope: Option<Scope>,
+    #[serde(default)]
+    pub resource_scope_sha256: Option<String>,
     pub policy_sha256: String,
     pub context_sha256: String,
     pub target_sha256: String,
@@ -90,7 +95,16 @@ struct Active {
     revision: String,
     policy: Policy,
 }
+fn activation_revision(policy: &Policy, gate: &Gate) -> String {
+    if let Some(boundary) = &gate.boundary {
+        corint_decision_engine::decision_host::canonical_sha256(&json!({"scope":boundary.scope,
+            "resources":boundary.fingerprint(),"subject":policy.subject,"repository":policy.repository,"cases":gate.cases_sha256}))
+    } else {
+        uuid::Uuid::new_v4().to_string()
+    }
+}
 struct Gate {
+    boundary: Option<Arc<Boundary>>,
     enable_metrics: bool,
     feature_pipeline: Option<PathBuf>,
     runtime: tokio::runtime::Handle,
@@ -110,7 +124,10 @@ struct CoreState {
     journal: Option<Journal>,
 }
 #[derive(Clone)]
-struct Credential([u8; 32]);
+enum Credential {
+    Local([u8; 32]),
+    Tenant(Scope, Permission),
+}
 
 fn metrics_enabled_by_default() -> bool {
     true
@@ -165,6 +182,26 @@ pub async fn create_router(
     decision_token: &str,
     publisher_token: &str,
 ) -> anyhow::Result<Router> {
+    create_router_inner(config, root, decision_token, publisher_token, None, None).await
+}
+
+pub(crate) async fn create_tenant_router(
+    config: CoreConfig,
+    root: &Path,
+    boundary: Arc<Boundary>,
+    journal: Journal,
+) -> anyhow::Result<Router> {
+    create_router_inner(config, root, "", "", Some(boundary), Some(journal)).await
+}
+
+async fn create_router_inner(
+    config: CoreConfig,
+    root: &Path,
+    decision_token: &str,
+    publisher_token: &str,
+    boundary: Option<Arc<Boundary>>,
+    scoped_journal: Option<Journal>,
+) -> anyhow::Result<Router> {
     anyhow::ensure!(
         matches!(config.config_version.as_str(), "2" | "3"),
         "Unsupported Core server config version"
@@ -175,14 +212,17 @@ pub async fn create_router(
         config.listen.ip().is_loopback(),
         "Core mode requires a loopback listener"
     );
-    for token in [decision_token, publisher_token] {
+    for token in [decision_token, publisher_token]
+        .into_iter()
+        .filter(|_| boundary.is_none())
+    {
         anyhow::ensure!(
             token.len() >= 32 && token.len() <= 1024 && token.bytes().all(|b| b.is_ascii_graphic()),
             "Core tokens require 32..1024 printable non-space ASCII characters"
         );
     }
     anyhow::ensure!(
-        decision_token != publisher_token,
+        boundary.is_some() || decision_token != publisher_token,
         "Decision and publisher credentials must differ"
     );
     anyhow::ensure!(
@@ -213,7 +253,19 @@ pub async fn create_router(
         config.config_version != "3" || config.journal.is_some(),
         "Core v3 requires a durable journal"
     );
-    let (journal, consumer) = if let Some(journal) = &config.journal {
+    let (journal, consumer) = if let Some(boundary) = &boundary {
+        anyhow::ensure!(
+            scoped_journal.is_some(),
+            "Tenant mode requires a scoped journal"
+        );
+        (
+            scoped_journal,
+            Some(Credential::Tenant(
+                boundary.scope.clone(),
+                Permission::Consume,
+            )),
+        )
+    } else if let Some(journal) = &config.journal {
         let consumer = if journal.consumer_token_env.is_empty() {
             None
         } else {
@@ -226,7 +278,7 @@ pub async fn create_router(
                     && token != publisher_token,
                 "Consumer requires an independent credential"
             );
-            Some(Credential(Sha256::digest(token.as_bytes()).into()))
+            Some(Credential::Local(Sha256::digest(token.as_bytes()).into()))
         };
         (Some(Journal::open(root, journal).await?), consumer)
     } else {
@@ -237,6 +289,7 @@ pub async fn create_router(
     let cases = read(&root.join(&config.cases))?;
     behavior::validate_suite(&cases)?;
     let gate = Arc::new(Gate {
+        boundary: boundary.clone(),
         enable_metrics: config.enable_metrics,
         feature_pipeline: config.feature_pipeline,
         runtime: tokio::runtime::Handle::current(),
@@ -246,7 +299,8 @@ pub async fn create_router(
             root,
             &config.repository,
             config.repository_backend,
-        )?,
+        )?
+        .scoped(boundary.as_ref().map(|b| &b.scope))?,
         contracts: TargetContracts::load(&context, &target)?,
         cases_sha256: hash(cases.yaml.as_bytes()),
         cases,
@@ -256,29 +310,35 @@ pub async fn create_router(
     let policy = tokio::task::spawn_blocking(move || worker_gate.prepare())
         .await?
         .map_err(|e| anyhow::anyhow!("Core initial policy rejected: {}", e.code))?;
+    let revision = activation_revision(&policy, &gate);
     let state = CoreState {
         journal,
         gate,
-        active: Arc::new(RwLock::new(Arc::new(Active {
-            revision: uuid::Uuid::new_v4().to_string(),
-            policy,
-        }))),
+        active: Arc::new(RwLock::new(Arc::new(Active { revision, policy }))),
         preparation: Arc::new(Semaphore::new(1)),
     };
-    let credential = |token: &str| Credential(Sha256::digest(token.as_bytes()).into());
+    let credential = |token: &str, permission: Permission| match &boundary {
+        Some(boundary) => Credential::Tenant(boundary.scope.clone(), permission),
+        None => Credential::Local(Sha256::digest(token.as_bytes()).into()),
+    };
     let decisions = Router::new()
         .route("/v1/core/decide", post(decide))
         .route_layer(middleware::from_fn_with_state(
-            credential(decision_token),
+            credential(decision_token, Permission::Decide),
             authenticate,
         ));
     let control = Router::new()
         .route("/v1/core/target", get(target_state))
         .route("/v1/core/persistence", get(persistence_status))
         .route("/v1/core/metrics", get(metrics))
+        .route_layer(middleware::from_fn_with_state(
+            credential(publisher_token, Permission::Inspect),
+            authenticate,
+        ));
+    let publication = Router::new()
         .route("/v1/core/repo/reload", post(reload))
         .route_layer(middleware::from_fn_with_state(
-            credential(publisher_token),
+            credential(publisher_token, Permission::Publish),
             authenticate,
         ));
     let outbox = if let Some(credential) = consumer {
@@ -293,6 +353,7 @@ pub async fn create_router(
         .merge(outbox)
         .merge(decisions)
         .merge(control)
+        .merge(publication)
         .with_state(state)
         .layer(DefaultBodyLimit::max(MAX_BYTES)))
 }
@@ -302,6 +363,20 @@ async fn authenticate(
     request: Request,
     next: Next,
 ) -> Response {
+    if let Credential::Tenant(scope, permission) = &expected {
+        return if request
+            .extensions()
+            .get::<TenantContext>()
+            .is_some_and(|c| c.permits(scope, *permission))
+        {
+            next.run(request).await
+        } else {
+            ApiError::new(StatusCode::FORBIDDEN, "E_TENANT_FORBIDDEN").into_response()
+        };
+    }
+    let Credential::Local(expected) = expected else {
+        unreachable!()
+    };
     let headers = request.headers().get_all(AUTHORIZATION);
     let mut values = headers.iter();
     let token = values
@@ -311,7 +386,7 @@ async fn authenticate(
     let allowed = if values.next().is_none() {
         token.filter(|t| t.len() <= 1024).is_some_and(|t| {
             let actual: [u8; 32] = Sha256::digest(t.as_bytes()).into();
-            bool::from(actual.ct_eq(&expected.0))
+            bool::from(actual.ct_eq(&expected))
         })
     } else {
         false
@@ -360,7 +435,12 @@ impl Gate {
         self.feature_pipeline
             .as_ref()
             .map(|path| {
-                read(&self.root.join(path))
+                let path = if self.boundary.is_some() {
+                    crate::tenancy::confined(&self.root, path)
+                } else {
+                    Ok(self.root.join(path))
+                };
+                path.and_then(|path| read(&path))
                     .and_then(|source| Ok(serde_json::from_str(&source.yaml)?))
                     .map_err(|_| {
                         ApiError::new(StatusCode::UNPROCESSABLE_ENTITY, "E_FEATURE_CONFIG")
@@ -374,20 +454,52 @@ impl Gate {
         resources: &[serde_json::Value],
     ) -> Result<(), ApiError> {
         if let Some(config) = &self.business_evidence {
-            evidence::check_with_features(
+            evidence::check_scoped(
                 &self.root,
                 config,
                 subject,
                 resources,
                 chrono::Utc::now().timestamp_millis() as u64,
+                self.boundary.as_ref().map(|b| &b.scope),
             )
             .map_err(|_| ApiError::new(StatusCode::FORBIDDEN, "E_PUBLICATION_EVIDENCE"))?;
         }
         Ok(())
     }
     fn prepare(&self) -> Result<Policy, ApiError> {
+        let _preparation =
+            self.boundary
+                .as_ref()
+                .map(|b| {
+                    b.preparations.clone().try_acquire_owned().map_err(|_| {
+                        ApiError::new(StatusCode::TOO_MANY_REQUESTS, "E_PREPARATION_BUSY")
+                    })
+                })
+                .transpose()?;
+        let _repository_connection = if matches!(
+            self.repository,
+            crate::repo_source::Source::TenantSqlite { .. }
+                | crate::repo_source::Source::TenantPostgres { .. }
+        ) {
+            Some(
+                self.boundary
+                    .as_ref()
+                    .expect("scoped repository")
+                    .connections
+                    .acquire(1)
+                    .map_err(|_| {
+                        ApiError::new(StatusCode::TOO_MANY_REQUESTS, "E_CONNECTION_BUDGET")
+                    })?,
+            )
+        } else {
+            None
+        };
         let snapshot = match &self.repository {
             crate::repo_source::Source::Filesystem(path) => {
+                if self.boundary.is_some() {
+                    crate::tenancy::confined(&self.root, path)
+                        .map_err(|_| ApiError::new(StatusCode::FORBIDDEN, "E_TENANT_PATH"))?;
+                }
                 corint_decision_toolchain::repository::load(path)?
             }
             _ => self.repository.load().map_err(|_| {
@@ -399,6 +511,13 @@ impl Gate {
             .contracts
             .check(&bundle.sources, &bundle.input_schema, None)?;
         let features = self.features()?;
+        let access = self
+            .boundary
+            .as_ref()
+            .map(|b| b.authorize(features.as_ref()))
+            .transpose()
+            .map_err(|_| ApiError::new(StatusCode::FORBIDDEN, "E_RESOURCE_SCOPE"))?
+            .unwrap_or_default();
         let feature_binding = features.as_ref().map(FeatureHostConfig::binding_sha256);
         if !self.approvals.iter().any(|approval| {
             approval.policy_sha256 == compatibility.policy_sha256
@@ -406,6 +525,8 @@ impl Gate {
                 && approval.target_sha256 == compatibility.target.sha256
                 && approval.cases_sha256 == self.cases_sha256
                 && approval.feature_binding_sha256 == feature_binding
+                && approval.tenant_scope.as_ref() == self.boundary.as_ref().map(|b| &b.scope)
+                && approval.resource_scope_sha256 == self.boundary.as_ref().map(|b| b.fingerprint())
         }) {
             return Err(ApiError::new(
                 StatusCode::FORBIDDEN,
@@ -433,13 +554,16 @@ impl Gate {
             ));
         }
         if let Some(config) = &features {
+            let probe_guard = self.resource_guard(features.as_ref())?;
             self.runtime.block_on(async {
                 tokio::time::timeout(std::time::Duration::from_secs(60), async {
-                    let probe = DecisionHost::new(
+                    let probe = DecisionHost::new_with_access(
                         &bundle.sources,
                         parse_core_input_schema(&bundle.input_schema)?,
                         Some(config.clone()),
                         false,
+                        access.clone(),
+                        probe_guard,
                     )
                     .await?;
                     probe
@@ -455,11 +579,13 @@ impl Gate {
         }
         let host = self
             .runtime
-            .block_on(DecisionHost::new(
+            .block_on(DecisionHost::new_with_access(
                 &bundle.sources,
                 parse_core_input_schema(&bundle.input_schema)?,
-                features,
+                features.clone(),
                 self.enable_metrics,
+                access,
+                self.resource_guard(features.as_ref())?,
             ))
             .map_err(|_| ApiError::new(StatusCode::INTERNAL_SERVER_ERROR, "E_CORE_ENGINE"))?;
         self.repository
@@ -483,10 +609,30 @@ impl Gate {
             subject,
         })
     }
+
+    fn resource_guard(
+        &self,
+        features: Option<&FeatureHostConfig>,
+    ) -> Result<Option<Arc<dyn Send + Sync>>, ApiError> {
+        self.boundary
+            .as_ref()
+            .map(|b| {
+                b.reserve_host(features)
+                    .map(|p| p as Arc<dyn Send + Sync>)
+                    .map_err(|_| {
+                        ApiError::new(StatusCode::TOO_MANY_REQUESTS, "E_CONNECTION_BUDGET")
+                    })
+            })
+            .transpose()
+    }
 }
 
 #[derive(Serialize)]
 struct ActiveReceipt<'a> {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    tenant_scope: Option<&'a Scope>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    resource_scope_sha256: Option<String>,
     revision: &'a str,
     subject: &'a serde_json::Value,
     policy_sha256: &'a str,
@@ -507,6 +653,8 @@ struct ActiveReceipt<'a> {
 fn receipt<'a>(active: &'a Active, gate: &'a Gate) -> ActiveReceipt<'a> {
     let report = &active.policy.compatibility;
     ActiveReceipt {
+        tenant_scope: gate.boundary.as_ref().map(|b| &b.scope),
+        resource_scope_sha256: gate.boundary.as_ref().map(|b| b.fingerprint()),
         revision: &active.revision,
         subject: &active.policy.subject,
         policy_sha256: &report.policy_sha256,
@@ -566,7 +714,7 @@ async fn reload(
         return Err(ApiError::new(StatusCode::CONFLICT, "E_ACTIVE_REVISION"));
     }
     *active = Arc::new(Active {
-        revision: uuid::Uuid::new_v4().to_string(),
+        revision: activation_revision(&policy, &state.gate),
         policy,
     });
     Ok(Json(json!(receipt(&active, &state.gate))))
@@ -583,9 +731,20 @@ struct EventRequest {
     #[serde(default)]
     enable_trace: bool,
 }
-async fn decide(State(state): State<CoreState>, body: Bytes) -> Result<Response, ApiError> {
+async fn decide(
+    State(state): State<CoreState>,
+    context: Option<Extension<TenantContext>>,
+    body: Bytes,
+) -> Result<Response, ApiError> {
     let event: EventRequest = serde_json::from_slice(&body)
         .map_err(|_| ApiError::new(StatusCode::BAD_REQUEST, "E_CORE_REQUEST"))?;
+    if state.gate.boundary.is_some()
+        && ["tenant_id", "environment", "deployment", "tenant_context"]
+            .iter()
+            .any(|k| event.event.contains_key(*k))
+    {
+        return Err(ApiError::new(StatusCode::BAD_REQUEST, "E_TENANT_INPUT"));
+    }
     // Keep the engine and identity from ONE snapshot; no lock during evaluation.
     let active = state.active.read().await.clone();
     if state.journal.is_some()
@@ -671,19 +830,26 @@ async fn decide(State(state): State<CoreState>, body: Bytes) -> Result<Response,
                 if response.pipeline_id.is_none() { "no_match".into() } else { response.result.signal.as_ref().map(|s| format!("{s:?}").to_lowercase()).unwrap_or_else(|| "pass".into()) },
                 response.pipeline_id.clone(), response.result.triggered_rules.clone(),
                 if response.result.explanation.trim().is_empty() { vec![] } else { vec![response.result.explanation.clone()] },
-                response.result.actions.iter().enumerate().map(|(i,a)| json!({"action_id":format!("{id}:{i}"),"idempotency_key":format!("{}:{id}:{i}",journal.tenant_id),"type":a})).collect::<Vec<_>>(), None),
+                response.result.actions.iter().enumerate().map(|(i,a)| json!({"action_id":format!("{id}:{i}"),"idempotency_key":format!("{}:{id}:{i}",journal.tenant_id()),"type":a})).collect::<Vec<_>>(), None),
             Err(corint_decision_engine::EngineError::Core(error)) => ("error".to_owned(), None, vec![], vec![], vec![], Some(error.diagnostic.code.as_str())),
             Err(_) => ("error".to_owned(), None, vec![], vec![], vec![], Some("E_CORE_DECISION")),
         };
-        let record = json!({"kind":"corint-decision-record","contract_version":"1","id":id,"revision":"1",
+        let mut record = json!({"kind":"corint-decision-record","contract_version":"1","id":id,"revision":"1",
             "provenance":{"producer":"corint-core","reference":active.revision},
-            "tenant_id":journal.tenant_id,"decision_id":id,"business_event_id":event.business_event_id,
+            "tenant_id":journal.tenant_id(),"decision_id":id,"business_event_id":event.business_event_id,
             "decided_at_ms":now,"subject":active.policy.subject,"engine_version":corint_decision_engine::ENGINE_VERSION,
             "input_evidence":{"reference":format!("journal:{id}"),"sha256":hash(input.to_string().as_bytes())},
             "runtime":{"revision":active.revision,"repository_revision":active.policy.repository.revision,
                 "repository_manifest_sha256":active.policy.repository.manifest_sha256,"pipeline_id":pipeline},
             "resources":execution.resources,"triggered_rules":rules,"reasons":reasons,"result":signal,"error_code":error,
             "duration_ms":started.elapsed().as_millis() as u64,"actions":actions});
+        if state.gate.boundary.is_some() {
+            record["tenant_context"] = context
+                .as_ref()
+                .expect("tenant route authenticated")
+                .0
+                .audit();
+        }
         Some(record)
     } else {
         None
@@ -760,9 +926,17 @@ async fn metrics(State(state): State<CoreState>) -> Json<serde_json::Value> {
     let active = state.active.read().await.clone();
     Json(json!({"revision":active.revision,"metrics":active.policy.host.metrics().snapshot()}))
 }
-async fn outbox_claim(State(state): State<CoreState>) -> Result<Json<serde_json::Value>, ApiError> {
+async fn outbox_claim(
+    State(state): State<CoreState>,
+    context: Option<Extension<TenantContext>>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    let allow_private = state.gate.boundary.as_ref().is_none_or(|b| {
+        context
+            .as_ref()
+            .is_some_and(|c| c.0.permits(&b.scope, Permission::Export))
+    });
     journal(&state)?
-        .claim(chrono::Utc::now().timestamp_millis())
+        .claim_authorized(chrono::Utc::now().timestamp_millis(), allow_private)
         .await
         .map(Json)
         .map_err(|_| ApiError::new(StatusCode::SERVICE_UNAVAILABLE, "E_JOURNAL_UNAVAILABLE"))

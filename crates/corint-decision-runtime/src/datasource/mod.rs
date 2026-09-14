@@ -24,3 +24,4 @@ pub use query::{
     Aggregation, AggregationType, Filter, FilterOperator, Query, QueryResult, QueryType,
     RelativeWindow, TimeUnit, TimeWindow, TimeWindowType,
 };
+pub mod scope;

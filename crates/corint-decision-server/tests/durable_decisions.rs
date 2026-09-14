@@ -239,8 +239,8 @@ async fn append_uses_indexed_identity_and_counters_without_revalidating_history(
     let pool = pool(dir.path()).await;
     // Populate historical rows with deliberately stale digests. An online append
     // must not revalidate unrelated historical content; a whole-ledger replay fails.
-    sqlx::query("WITH RECURSIVE n(x) AS (SELECT 1 UNION ALL SELECT x+1 FROM n WHERE x<10000) INSERT INTO events(kind,digest,body,bytes) SELECT 'decision-record',printf('historical-%d',x),json_set(?,'$.decision_id',printf('historical-%d',x)),2000 FROM n")
-        .bind(fixture("decision-record").to_string()).execute(&pool).await.unwrap();
+    sqlx::query("WITH RECURSIVE n(x) AS (SELECT 1 UNION ALL SELECT x+1 FROM n WHERE x<10000) INSERT INTO events(tenant_id,kind,digest,body,bytes) SELECT ?,'decision-record',printf('historical-%d',x),json_set(?,'$.decision_id',printf('historical-%d',x)),2000 FROM n")
+        .bind(&config.tenant_id).bind(fixture("decision-record").to_string()).execute(&pool).await.unwrap();
     let record = fixture("decision-record");
     assert_eq!(
         j.append("decision-record", &record, None).await.unwrap(),
@@ -251,7 +251,7 @@ async fn append_uses_indexed_identity_and_counters_without_revalidating_history(
         .await
         .unwrap();
     assert_eq!(usage, 10_001);
-    let plan = sqlx::query("EXPLAIN QUERY PLAN SELECT digest,input FROM events WHERE kind='decision-record' AND json_extract(body,'$.tenant_id')=? AND json_extract(body,'$.decision_id')=?")
+    let plan = sqlx::query("EXPLAIN QUERY PLAN SELECT digest,input FROM events WHERE tenant_id=$1 AND kind='decision-record' AND json_extract(body,'$.tenant_id')=$1 AND json_extract(body,'$.decision_id')=$2")
         .bind("fixture-tenant").bind("decision-1").fetch_all(&pool).await.unwrap();
     assert!(plan.iter().any(|row| row
         .get::<String, _>("detail")

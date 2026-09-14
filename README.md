@@ -535,15 +535,23 @@ cargo build
 - ✅ Show request/response for each test case
 - ✅ Validate expected vs actual decisions
 
-The demo generates temporary bearer credentials (or uses exported
-`CORINT_DECISION_TOKEN`, `CORINT_PUBLISHER_TOKEN`, and `CORINT_TENANT_ID`) and
-sends authenticated requests. Occupied ports are left running; the demo selects
+The demo bootstraps a temporary administrator, then requests decision and publisher
+tokens from the credential API. Only their hashes are persisted in a private SQLite
+control database under `temp/`; HTTP and gRPC share the database credential cache.
+Previously exported decision/publisher tokens are not reused by the demo. The tenant
+defaults to `local`; set `CORINT_TENANT_ID` to override it.
+Occupied ports are left running; the demo selects
 available ports and prints the endpoints. It prepares a repository under `temp/`
 containing the transaction and login scenarios, so SQLite mode does not require
 Redis or the PostgreSQL list examples. Unless Redis is selected, profile lookups
 are disabled (their feature values are `null`); event history features still query
 the selected database. HTTP errors are displayed with their status and original
 response body. Auto-run exits with a nonzero status if any scenario fails.
+
+Single-tenant deployments default to tenant `local` when the tenant ID is omitted.
+For a shared HTTP host with tenant/environment isolation, Agent delegation and
+independent lifecycle controls, see the [multi-tenancy guide](docs/contracts/multi-tenancy.md)
+and run `python3 quickstart/tenant_demo.py --output /tmp/corint-tenants-demo`.
 
 ### Option 2: Manual Setup
 

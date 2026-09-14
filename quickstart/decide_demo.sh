@@ -786,15 +786,48 @@ EOF
     mv "$updated_config" "$CONFIG_FILE"
     read_config
 
-    # Generate separate ephemeral roles when the caller has not supplied them.
-    if [ -z "${CORINT_DECISION_TOKEN:-}" ]; then
-        CORINT_DECISION_TOKEN=$(od -An -N32 -tx1 /dev/urandom | tr -d ' \n')
-    fi
-    if [ -z "${CORINT_PUBLISHER_TOKEN:-}" ]; then
-        CORINT_PUBLISHER_TOKEN=$(od -An -N32 -tx1 /dev/urandom | tr -d ' \n')
-    fi
-    CORINT_TENANT_ID="${CORINT_TENANT_ID:-quickstart}"
-    export CORINT_DECISION_TOKEN CORINT_PUBLISHER_TOKEN CORINT_TENANT_ID
+    # Bootstrap only the platform administrator. Business tokens are issued by
+    # the server and persisted as hashes after HTTP readiness.
+    local auth_dir
+    auth_dir=$(mktemp -d "${TEMP_DIR}/demo_auth_XXXXXX")
+    chmod 700 "$auth_dir"
+    CORINT_DEMO_ADMIN_TOKEN=$(od -An -N32 -tx1 /dev/urandom | tr -d ' \n')
+    CORINT_TENANT_ID="${CORINT_TENANT_ID:-local}"
+    CORINT_AUTH_CONFIG="${auth_dir}/auth.json"
+    (umask 077
+        jq -n '{format_version:"1",principals:[{id:"demo_admin",token_env:"CORINT_DEMO_ADMIN_TOKEN",platform_admin:true,grants:[]}]}' > "${auth_dir}/credentials.json"
+        jq -n --arg tenant "$CORINT_TENANT_ID" '{scope:{tenant_id:$tenant,environment:"demo",deployment:"default"},credentials:"credentials.json",control_store:{type:"sqlite",path:"credentials.sqlite"}}' > "$CORINT_AUTH_CONFIG"
+    )
+    unset CORINT_CORE_CONFIG CORINT_TENANT_CONFIG
+    export CORINT_DEMO_ADMIN_TOKEN CORINT_AUTH_CONFIG CORINT_TENANT_ID
+}
+
+provision_demo_credentials() {
+    local role payload response status token
+    for role in decide publish; do
+        payload=$(jq -n --arg role "$role" --arg tenant "$CORINT_TENANT_ID" '{action:"create",id:("demo_"+$role),grants:[{scope:{tenant_id:$tenant,environment:"demo",deployment:"default"},permissions:[$role]}]}')
+        if ! response=$(curl -sS --connect-timeout 5 --max-time 30 \
+            -w '\n%{http_code}' -X POST "http://${HTTP_HOST}/v1/tenancy/credentials" \
+            -H "Content-Type: application/json" \
+            -H "Authorization: Bearer ${CORINT_DEMO_ADMIN_TOKEN}" -d "$payload"); then
+            print_error "Could not provision demo credentials"
+            exit 1
+        fi
+        status="${response##*$'\n'}"
+        if [ "$status" != "200" ]; then
+            print_error "Credential creation returned HTTP ${status}"
+            exit 1
+        fi
+        token=$(printf '%s' "${response%$'\n'*}" | jq -er '.token | select(type == "string" and length == 64)')
+        if [ "$role" = decide ]; then
+            CORINT_DECISION_TOKEN="$token"
+        else
+            CORINT_PUBLISHER_TOKEN="$token"
+        fi
+    done
+    export CORINT_DECISION_TOKEN CORINT_PUBLISHER_TOKEN
+    print_success "Demo credentials issued and stored as database hashes"
+
 }
 
 start_server() {
@@ -845,6 +878,7 @@ start_server() {
         fi
     done
 
+    provision_demo_credentials
     print_success "Server started successfully (PID: $SERVER_PID)"
 }
 

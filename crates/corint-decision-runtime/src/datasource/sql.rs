@@ -14,7 +14,7 @@ use std::time::Instant;
 #[cfg(feature = "sqlx")]
 use chrono::{DateTime, FixedOffset, NaiveDateTime, Utc};
 #[cfg(feature = "sqlx")]
-use sqlx::{Column, Row};
+use sqlx::{Column, ConnectOptions, Row};
 
 // Import the DataSourceImpl trait from client module
 use super::client::DataSourceImpl;
@@ -22,6 +22,7 @@ use super::client::DataSourceImpl;
 /// SQL Database Client
 pub(super) struct SQLClient {
     config: SQLConfig,
+    scope: Option<super::scope::DataAccessScope>,
     #[cfg(feature = "sqlx")]
     pg_pool: Option<sqlx::PgPool>,
     #[cfg(feature = "sqlx")]
@@ -31,6 +32,19 @@ pub(super) struct SQLClient {
 impl SQLClient {
     #[cfg_attr(not(feature = "sqlx"), allow(unused_variables))]
     pub(super) async fn new(config: SQLConfig, pool_size: u32) -> Result<Self> {
+        Self::new_with_scope(config, pool_size, None).await
+    }
+
+    #[cfg_attr(not(feature = "sqlx"), allow(unused_variables))]
+    pub(super) async fn new_with_scope(
+        config: SQLConfig,
+        pool_size: u32,
+        scope: Option<super::scope::DataAccessScope>,
+    ) -> Result<Self> {
+        if let Some(scope) = &scope {
+            scope.validate()?;
+        }
+        let read_only = scope.is_some();
         tracing::info!("Initializing SQL client: {:?}", config.provider);
 
         #[cfg(feature = "sqlx")]
@@ -41,6 +55,7 @@ impl SQLClient {
             match config.provider {
                 SQLProvider::PostgreSQL => {
                     use sqlx::postgres::PgPoolOptions;
+                    use std::str::FromStr;
 
                     tracing::info!("Creating PostgreSQL connection pool");
                     // Use provided pool_size or get from config options, default to 10
@@ -52,7 +67,28 @@ impl SQLClient {
 
                     let pool = PgPoolOptions::new()
                         .max_connections(effective_pool_size)
-                        .connect(&config.connection_string)
+                        .after_connect(move |conn, _| {
+                            Box::pin(async move {
+                                sqlx::query("SET standard_conforming_strings=on")
+                                    .execute(&mut *conn)
+                                    .await?;
+                                if read_only {
+                                    sqlx::query("SET default_transaction_read_only=on")
+                                        .execute(&mut *conn)
+                                        .await?;
+                                }
+                                Ok(())
+                            })
+                        })
+                        .connect_with(
+                            sqlx::postgres::PgConnectOptions::from_str(&config.connection_string)
+                                .map_err(|_| {
+                                    RuntimeError::RuntimeError(
+                                        "Invalid PostgreSQL connection configuration".into(),
+                                    )
+                                })?
+                                .disable_statement_logging(),
+                        )
                         .await
                         .map_err(|e| {
                             RuntimeError::RuntimeError(format!(
@@ -96,7 +132,14 @@ impl SQLClient {
 
                     let pool = SqlitePoolOptions::new()
                         .max_connections(effective_pool_size)
-                        .connect_with(connect_options)
+                        .connect_with(if read_only {
+                            connect_options
+                                .read_only(true)
+                                .create_if_missing(false)
+                                .disable_statement_logging()
+                        } else {
+                            connect_options.disable_statement_logging()
+                        })
                         .await
                         .map_err(|e| {
                             RuntimeError::RuntimeError(format!(
@@ -119,6 +162,7 @@ impl SQLClient {
 
             Ok(Self {
                 config,
+                scope,
                 pg_pool,
                 sqlite_pool,
             })
@@ -126,7 +170,7 @@ impl SQLClient {
 
         #[cfg(not(feature = "sqlx"))]
         {
-            Ok(Self { config })
+            Ok(Self { config, scope })
         }
     }
 }
@@ -138,7 +182,7 @@ impl DataSourceImpl for SQLClient {
 
         // Build SQL query
         let sql = self.build_sql(&query)?;
-        tracing::debug!("Generated SQL: {}", sql);
+        tracing::debug!("SQL query prepared");
 
         // Execute query based on provider
         match self.config.provider {
@@ -154,6 +198,13 @@ impl DataSourceImpl for SQLClient {
 impl SQLClient {
     /// Build SQL query from Query struct
     fn build_sql(&self, query: &Query) -> Result<String> {
+        // Enforce again at the actual database boundary, even when an internal
+        // caller bypasses the higher-level cache/query client.
+        let mut query = query.clone();
+        if let Some(scope) = &self.scope {
+            scope.apply(&mut query)?;
+        }
+        let query = &query;
         let mut sql = String::new();
 
         // Build SELECT clause
@@ -562,7 +613,7 @@ impl SQLClient {
 
     /// Execute query on PostgreSQL
     async fn execute_postgresql(&self, sql: &str) -> Result<QueryResult> {
-        tracing::info!("Executing PostgreSQL query: {}", sql);
+        tracing::debug!("Executing PostgreSQL query");
 
         #[cfg(feature = "sqlx")]
         {
@@ -697,7 +748,7 @@ impl SQLClient {
                         }
                     };
 
-                    tracing::debug!("Extracted value for {}: {:?}", column_name, value);
+                    tracing::trace!(column = %column_name, "SQL column decoded");
                     map.insert(column_name, value);
                 }
 
@@ -722,7 +773,7 @@ impl SQLClient {
 
     /// Execute query on SQLite
     async fn execute_sqlite(&self, sql: &str) -> Result<QueryResult> {
-        tracing::info!("Executing SQLite query: {}", sql);
+        tracing::debug!("Executing SQLite query");
 
         #[cfg(feature = "sqlx")]
         {
@@ -817,7 +868,7 @@ impl SQLClient {
                         }
                     };
 
-                    tracing::debug!("Extracted value for {}: {:?}", column_name, value);
+                    tracing::trace!(column = %column_name, "SQL column decoded");
                     map.insert(column_name, value);
                 }
 
@@ -865,6 +916,7 @@ mod time_window_tests {
         };
         for provider in [SQLProvider::PostgreSQL, SQLProvider::SQLite] {
             let client = SQLClient {
+                scope: None,
                 config: SQLConfig {
                     provider,
                     connection_string: String::new(),

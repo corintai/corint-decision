@@ -521,7 +521,10 @@ impl HttpServiceClient {
         Self::render_body_template(template, |_| Ok("null".into())).map(|_| ())
     }
 
-    fn render_body_template(template: &str, resolve: impl Fn(&str) -> Result<String>) -> Result<String> {
+    fn render_body_template(
+        template: &str,
+        resolve: impl Fn(&str) -> Result<String>,
+    ) -> Result<String> {
         let invalid = |message: &str| RuntimeError::ServiceCallFailed(message.into());
         let replace = |placeholder: &str, head: &str, tail: &str| -> Result<String> {
             let name = placeholder

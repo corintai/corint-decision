@@ -92,7 +92,7 @@ impl FeatureStoreClient {
                 format!("{}:{}:{}", self.config.namespace, feature_name, entity_key)
             };
 
-            tracing::debug!("Fetching Redis key: {}", redis_key);
+            tracing::debug!("Fetching Redis feature");
 
             let Some(ref conn) = self.redis_conn else {
                 return Err(RuntimeError::RuntimeError(
@@ -105,7 +105,7 @@ impl FeatureStoreClient {
             // Try to get the value from Redis
             match conn.get::<_, Option<String>>(&redis_key).await {
                 Ok(Some(value_str)) => {
-                    tracing::debug!("Found value in Redis for key {}: {}", redis_key, value_str);
+                    tracing::debug!("Redis feature found");
 
                     // Parse the value - try to detect the type
                     let value = if let Ok(num) = value_str.parse::<f64>() {

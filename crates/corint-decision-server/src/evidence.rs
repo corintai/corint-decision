@@ -66,6 +66,17 @@ pub fn check_with_features(
     required_features: &[Value],
     now: u64,
 ) -> anyhow::Result<()> {
+    check_scoped(root, config, subject, required_features, now, None)
+}
+
+pub fn check_scoped(
+    root: &Path,
+    config: &EvidenceConfig,
+    subject: &Value,
+    required_features: &[Value],
+    now: u64,
+    scope: Option<&crate::tenancy::Scope>,
+) -> anyhow::Result<()> {
     let contract = |kind, path: &Path| -> anyhow::Result<Contract> {
         Ok(Contract::load(
             kind,
@@ -77,6 +88,14 @@ pub fn check_with_features(
     };
     let evaluation = contract("evaluation-evidence", &config.evaluation)?;
     let approval = contract("approval-evidence", &config.approval)?;
+    if let Some(scope) = scope {
+        for value in [evaluation.value(), approval.value()] {
+            anyhow::ensure!(
+                value["audience"] == serde_json::to_value(scope)?,
+                "Evidence audience differs from tenant deployment"
+            );
+        }
+    }
     let trust: TrustFile = serde_json::from_str(&read(&root.join(&config.trust))?)?;
     phase0::check_approval(
         &evaluation,

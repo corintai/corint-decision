@@ -292,7 +292,7 @@ fn no_pipeline_match_and_overflow_are_controlled_expected_errors() {
     .unwrap();
     std::fs::write(
         dir.path().join("ruleset.yaml"),
-        fixture("ruleset.yaml").replace("[large_amount]", "[large_amount, extra]"),
+        fixture("ruleset.yaml").replace("    - large_amount", "    - large_amount\n    - extra"),
     )
     .unwrap();
     let mut files = FILES.to_vec();

@@ -2,6 +2,7 @@
 //! in one transaction/HTTP representation, never a mutable per-file read sequence.
 use corint_decision_toolchain::repository::{self, RepositoryIdentity, RepositorySnapshot};
 use serde::Deserialize;
+use sqlx::Row;
 use std::path::{Path, PathBuf};
 
 #[derive(Clone, Deserialize)]
@@ -16,9 +17,40 @@ pub enum Source {
     Filesystem(PathBuf),
     Sqlite(PathBuf),
     Postgres(String),
-    Http { url: reqwest::Url, token: String },
+    Http {
+        url: reqwest::Url,
+        token: String,
+    },
+    TenantSqlite {
+        path: PathBuf,
+        scope: crate::tenancy::Scope,
+    },
+    TenantPostgres {
+        url: String,
+        scope: crate::tenancy::Scope,
+    },
 }
 impl Source {
+    pub fn scoped(self, scope: Option<&crate::tenancy::Scope>) -> anyhow::Result<Self> {
+        let Some(scope) = scope else {
+            return Ok(self);
+        };
+        scope.validate()?;
+        Ok(match self {
+            Self::Sqlite(path) => Self::TenantSqlite {
+                path,
+                scope: scope.clone(),
+            },
+            Self::Postgres(url) => Self::TenantPostgres {
+                url,
+                scope: scope.clone(),
+            },
+            Self::Filesystem(path) => Self::Filesystem(path),
+            _ => anyhow::bail!(
+                "Tenant repository requires a confined filesystem or scoped SQL publication"
+            ),
+        })
+    }
     pub fn configure(
         root: &Path,
         path: &Path,
@@ -86,6 +118,31 @@ impl Source {
     async fn document(&self) -> anyhow::Result<Vec<u8>> {
         let bytes = match self {
             Self::Filesystem(_) => unreachable!(),
+            Self::TenantSqlite { path, scope } => {
+                use sqlx::{sqlite::SqliteConnectOptions, Connection};
+                let options = SqliteConnectOptions::new()
+                    .filename(path)
+                    .read_only(true)
+                    .busy_timeout(std::time::Duration::from_secs(5));
+                let mut conn = sqlx::SqliteConnection::connect_with(&options).await?;
+                let row = crate::tenancy::queries::sqlite_publication(scope)?
+                    .fetch_one(&mut conn)
+                    .await?;
+                let document: String = row.try_get("document")?;
+                document.into_bytes()
+            }
+            Self::TenantPostgres { url, scope } => {
+                use sqlx::Connection;
+                tokio::time::timeout(std::time::Duration::from_secs(5), async {
+                    let mut conn = sqlx::PgConnection::connect(url).await?;
+                    let row = crate::tenancy::queries::postgres_publication(scope)?
+                        .fetch_one(&mut conn)
+                        .await?;
+                    let document: String = row.try_get("document")?;
+                    Ok::<_, anyhow::Error>(document.into_bytes())
+                })
+                .await??
+            }
             Self::Sqlite(path) => {
                 use sqlx::{sqlite::SqliteConnectOptions, Connection};
                 let options = SqliteConnectOptions::new()

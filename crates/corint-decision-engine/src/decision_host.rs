@@ -127,12 +127,13 @@ impl FeatureHostConfig {
 }
 
 enum Executor {
-    Core(DecisionEngine),
-    Features(FeaturePipeline),
+    Core(Box<DecisionEngine>),
+    Features(Box<FeaturePipeline>),
 }
 
 pub struct DecisionHost {
     executor: Executor,
+    _resource_guard: Option<Arc<dyn Send + Sync>>,
     feature_binding: Option<String>,
     resources: Vec<serde_json::Value>,
     admission: Semaphore,
@@ -154,28 +155,57 @@ impl DecisionHost {
         features: Option<FeatureHostConfig>,
         enable_metrics: bool,
     ) -> Result<Self, EngineError> {
+        Self::new_with_access(
+            sources,
+            schema,
+            features,
+            enable_metrics,
+            BTreeMap::new(),
+            None,
+        )
+        .await
+    }
+
+    /// An embedding host supplies immutable resource authorization, never raw events.
+    pub async fn new_with_access(
+        sources: &[CoreSource],
+        schema: Schema,
+        features: Option<FeatureHostConfig>,
+        enable_metrics: bool,
+        mut access: BTreeMap<String, crate::DataAccessScope>,
+        resource_guard: Option<Arc<dyn Send + Sync>>,
+    ) -> Result<Self, EngineError> {
         let engine =
             DecisionEngine::from_core_with_metrics(sources, schema.clone(), enable_metrics)?;
         let Some(config) = features else {
             return Ok(Self {
-                executor: Executor::Core(engine),
+                _resource_guard: resource_guard,
+                executor: Executor::Core(Box::new(engine)),
                 feature_binding: None,
                 resources: vec![],
                 admission: Semaphore::new(64),
             });
         };
         config.validate()?;
+        if !access.is_empty() && !access.keys().eq(config.datasources.keys()) {
+            return Err(fail(
+                "E_RESOURCE_SCOPE",
+                "Resource authorization differs from datasource bindings",
+            ));
+        }
         let feature_binding = Some(config.binding_sha256());
         let resources = config.resources();
         let datasources = tokio::time::timeout(Duration::from_secs(60), async {
             let mut clients = HashMap::new();
             for (name, binding) in config.datasources {
-                let client = DataSourceClient::new(binding.config).await.map_err(|_| {
-                    fail(
-                        "E_FEATURE_CONNECTION",
-                        "Feature datasource initialization failed",
-                    )
-                })?;
+                let client = DataSourceClient::new_scoped(binding.config, access.remove(&name))
+                    .await
+                    .map_err(|_| {
+                        fail(
+                            "E_FEATURE_CONNECTION",
+                            "Feature datasource initialization failed",
+                        )
+                    })?;
                 clients.insert(name, (binding.revision, client));
             }
             Ok::<_, EngineError>(clients)
@@ -191,7 +221,8 @@ impl DecisionHost {
         let pipeline =
             FeaturePipeline::from_engine(engine, schema, config.plan, datasources, &plan_binding)?;
         Ok(Self {
-            executor: Executor::Features(pipeline),
+            _resource_guard: resource_guard,
+            executor: Executor::Features(Box::new(pipeline)),
             feature_binding,
             resources,
             admission: Semaphore::new(64),

@@ -12,3 +12,4 @@ pub mod evidence;
 pub mod journal;
 pub mod repo_source;
 pub mod snapshot;
+pub mod tenancy;

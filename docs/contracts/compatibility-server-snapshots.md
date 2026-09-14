@@ -51,8 +51,21 @@ FFI 返回原生 DecisionResponse（signal 为 tagged object），metadata 增�
 新增 `corint_engine_reload(engine, expected_revision)`，返回相同版本冲突/忙/失败语义。
 FFI 属于可信嵌入边界，宿主负责调用者授权；不是网络匿名接口。
 
-兼容服务启动必须设置 `CORINT_DECISION_TOKEN`、`CORINT_PUBLISHER_TOKEN`、`CORINT_TENANT_ID`，
-两个角色凭据必须不同。HTTP/gRPC 决策和管理操作都认证，health 仍允许本地探测。
+兼容 HTTP/gRPC 可通过 `CORINT_AUTH_CONFIG` 指向 JSON 配置，接入与多租户入口相同的数据库凭据服务。示例：
+
+```json
+{
+  "scope": {"tenant_id":"local","environment":"demo","deployment":"default"},
+  "credentials": "credentials.json",
+  "control_store": {"type":"sqlite","path":"credentials.sqlite"}
+}
+```
+
+路径相对认证配置目录解析；控制存储也支持 `{"type":"postgres","url_env":"AUTH_DATABASE_URL","schema":"corint_auth"}`。`credentials` 只用于空数据库首次初始化管理员，后续可删除。Scope 由操作员确定，HTTP/gRPC 使用该 Scope 校验 token 权限并注入租户，不接受调用方改写。管理员通过 HTTP `POST /v1/tenancy/credentials` 创建、轮换、撤销业务凭据，`POST /v1/tenancy/credentials/reload` 强制刷新当前节点；两种传输共用内存缓存，自动刷新间隔 60 秒，最大缓存年龄 120 秒。创建返回 token 明文一次，数据库仅保存摘要。平台管理员不会自动获得决策／发布权限。
+
+`quickstart/decide_demo.sh` 自动准备私有 SQLite 凭据库和初始管理员，等待服务就绪后调用管理接口创建 decide/publish 两个主体，再使用返回 token 执行原有 HTTP/gRPC 场景。凭据库独立于所选业务数据源，脚本不直接写凭据表，也不再复用外部设置的旧业务 token。
+
+未设置 `CORINT_AUTH_CONFIG` 时保留环境变量方式：设置不同的 `CORINT_DECISION_TOKEN`、`CORINT_PUBLISHER_TOKEN`；`CORINT_TENANT_ID` 默认为 `local`。配置了数据库认证而加载失败时直接启动失败，不回退到环境变量。HTTP/gRPC 决策和管理操作都认证，health 仍允许本地探测。
 服务限定 loopback，移除 permissive CORS；配置 Debug 和服务端错误不输出连接凭据。
 客户端只能提交 event，user/features/api/service/llm/vars 和 event.tenant_id 不能覆盖可信数据；
 tenant 由操作员配置注入 vars。HTTP async、gRPC pipeline_id/score_normalization 及任意 metadata 覆盖明确拒绝。
@@ -75,3 +88,4 @@ Axum router 与 tonic service，覆盖任一入口重载后两侧版本/结果�
 | Date | Changes |
 |---|---|
 | 2026-09-05 | 记录兼容 HTTP/gRPC 共享快照、重载与版本协议及验证范围。 |
+| 2026-09-14 | 兼容 HTTP/gRPC 复用数据库凭据服务；演示脚本通过管理接口签发业务 token。 |

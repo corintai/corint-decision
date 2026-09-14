@@ -6,7 +6,9 @@ use corint_decision_toolchain::phase0::{validate_decision_record, Contract, Inge
 use serde::Deserialize;
 use serde_json::{json, Value};
 use sqlx::Row;
+mod queries;
 mod storage;
+use queries::Operation;
 use std::path::{Path, PathBuf};
 use storage::Storage;
 
@@ -24,6 +26,7 @@ pub struct JournalConfig {
     /// Explicitly allow the export role to receive private replay inputs/results.
     #[serde(default)]
     pub export_replay: bool,
+    #[serde(default = "crate::access::local_tenant")]
     pub tenant_id: String,
     pub max_records: u32,
     pub max_bytes: u64,
@@ -49,11 +52,12 @@ impl Default for JournalBackend {
 }
 #[derive(Clone)]
 pub struct Journal {
+    scope: Option<Value>,
     pub best_effort: bool,
     export_replay: bool,
     background: BackgroundWrites,
     storage: Storage,
-    pub tenant_id: String,
+    tenant_id: String,
     max_records: u32,
     max_bytes: u64,
     admission: std::sync::Arc<tokio::sync::Semaphore>,
@@ -68,7 +72,29 @@ pub fn contract(kind: &str, value: &Value) -> anyhow::Result<Contract> {
     )?)
 }
 impl Journal {
+    pub fn tenant_id(&self) -> &str {
+        &self.tenant_id
+    }
+
     pub async fn open(root: &Path, config: &JournalConfig) -> anyhow::Result<Self> {
+        Self::open_inner(root, config, None).await
+    }
+    pub(crate) async fn open_scoped(
+        root: &Path,
+        config: &JournalConfig,
+        scope: &crate::tenancy::Scope,
+    ) -> anyhow::Result<Self> {
+        anyhow::ensure!(
+            config.tenant_id == scope.tenant_id && !config.best_effort,
+            "Tenant journal requires matching identity and reliable persistence"
+        );
+        Self::open_inner(root, config, Some(serde_json::to_value(scope)?)).await
+    }
+    async fn open_inner(
+        root: &Path,
+        config: &JournalConfig,
+        scope: Option<Value>,
+    ) -> anyhow::Result<Self> {
         anyhow::ensure!(
             config.max_records > 0 && (1024..=i64::MAX as u64).contains(&config.max_bytes),
             "Invalid journal capacity"
@@ -83,7 +109,9 @@ impl Journal {
             "Invalid journal tenant"
         );
         let storage = Storage::open(root, config).await?;
+        storage.bind_scope(scope.as_ref()).await?;
         Ok(Self {
+            scope,
             best_effort: config.best_effort,
             export_replay: config.export_replay,
             background: BackgroundWrites::default(),
@@ -133,8 +161,15 @@ impl Journal {
             status["backend"] = self.storage.name().into();
             return Ok(status);
         }
-        let row: (i64,i64,i64) = sqlx::query_as("SELECT record_count,total_bytes,(SELECT COUNT(*) FROM request_keys WHERE decision_id IS NULL AND expires>$1) FROM journal_usage WHERE id=1")
-            .bind(chrono::Utc::now().timestamp_millis()).fetch_one(&self.storage.pool).await?;
+        let row = self
+            .storage
+            .status(chrono::Utc::now().timestamp_millis())
+            .await?;
+        let row = (
+            row.get::<i64, _>("record_count"),
+            row.get::<i64, _>("total_bytes"),
+            row.get::<i64, _>("pending"),
+        );
         Ok(
             json!({"mode":"reliable","backend":self.storage.name(),"accepting":row.0+row.2 < i64::from(self.max_records) && row.1 < self.max_bytes as i64 && row.2 < 64,
             "stored_records":row.0,"stored_bytes":row.1,"inflight_requests":row.2,"max_records":self.max_records,"max_bytes":self.max_bytes}),
@@ -169,6 +204,14 @@ impl Journal {
             "Journal accepts only decision records; feedback belongs to the external Agent"
         );
         anyhow::ensure!(value["tenant_id"] == self.tenant_id, "Tenant mismatch");
+        if let Some(scope) = &self.scope {
+            for key in ["tenant_id", "environment", "deployment"] {
+                anyhow::ensure!(
+                    value["tenant_context"][key] == scope[key],
+                    "Decision deployment scope mismatch"
+                );
+            }
+        }
         let body = value.to_string();
         let input = input.map(Value::to_string);
         let response_body = response.as_ref().map(|(_, _, body)| body.to_string());
@@ -181,12 +224,25 @@ impl Journal {
         let digest = candidate.sha256();
         let mut tx = self.storage.begin().await?;
         if let Some((reservation, _, _)) = response {
-            let owned: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM request_keys WHERE key=$1 AND owner=$2 AND decision_id IS NULL")
-                .bind(&reservation.key).bind(&reservation.owner).fetch_one(&mut *tx).await?;
-            anyhow::ensure!(owned == 1, "Request reservation was superseded");
+            anyhow::ensure!(
+                reservation.tenant == self.tenant_id && reservation.scope == self.scope,
+                "Reservation tenant scope mismatch"
+            );
+            let owned = self
+                .storage
+                .query(Operation::ReservationOwned)
+                .bind(&reservation.key)
+                .bind(&reservation.owner)
+                .fetch_one(&mut *tx)
+                .await?;
+            anyhow::ensure!(
+                owned.get::<i64, _>("count") == 1,
+                "Request reservation was superseded"
+            );
         }
-        let existing = sqlx::query(self.storage.decision_lookup())
-            .bind(&self.tenant_id)
+        let existing = self
+            .storage
+            .query(Operation::Decision)
             .bind(
                 value["decision_id"]
                     .as_str()
@@ -208,7 +264,9 @@ impl Journal {
             tx.commit().await?;
             return Ok(Ingest::Duplicate);
         }
-        let usage = sqlx::query("SELECT record_count,total_bytes FROM journal_usage WHERE id=1")
+        let usage = self
+            .storage
+            .query(Operation::Usage)
             .fetch_one(&mut *tx)
             .await?;
         let total = usage.get::<i64, _>("total_bytes");
@@ -219,7 +277,8 @@ impl Journal {
                 && total as u64 <= self.max_bytes - bytes as u64,
             "Journal capacity exhausted"
         );
-        sqlx::query("INSERT INTO events(kind,digest,body,input,bytes) VALUES($1,$2,$3,$4,$5)")
+        self.storage
+            .query(Operation::InsertDecision)
             .bind(kind)
             .bind(digest)
             .bind(body)
@@ -228,20 +287,20 @@ impl Journal {
             .execute(&mut *tx)
             .await?;
         if let Some((reservation, status, _)) = response {
-            sqlx::query("UPDATE events SET response=$1,http_status=$2 WHERE digest=$3")
+            self.storage
+                .query(Operation::SaveResponse)
                 .bind(response_body)
                 .bind(i64::from(status))
                 .bind(candidate.sha256())
                 .execute(&mut *tx)
                 .await?;
-            sqlx::query(
-                "UPDATE request_keys SET decision_id=$1,expires=0 WHERE key=$2 AND owner=$3",
-            )
-            .bind(value["decision_id"].as_str())
-            .bind(&reservation.key)
-            .bind(&reservation.owner)
-            .execute(&mut *tx)
-            .await?;
+            self.storage
+                .query(Operation::CompleteRequest)
+                .bind(value["decision_id"].as_str())
+                .bind(&reservation.key)
+                .bind(&reservation.owner)
+                .execute(&mut *tx)
+                .await?;
         }
         tx.commit().await?;
         Ok(Ingest::Inserted)
@@ -270,51 +329,57 @@ impl Journal {
             .map(|k| format!("client:{k}"))
             .unwrap_or_else(|| format!("auto:{}", uuid::Uuid::new_v4()));
         let mut tx = self.storage.begin().await?;
-        if let Some(row) = sqlx::query(
-            "SELECT fingerprint,owner,decision_id,expires FROM request_keys WHERE key=$1",
-        )
-        .bind(&key)
-        .fetch_optional(&mut *tx)
-        .await?
+        if let Some(row) = self
+            .storage
+            .query(Operation::Request)
+            .bind(&key)
+            .fetch_optional(&mut *tx)
+            .await?
         {
             anyhow::ensure!(
                 row.get::<String, _>("fingerprint") == fingerprint,
                 "E_IDEMPOTENCY_CONFLICT"
             );
             if let Some(id) = row.get::<Option<String>, _>("decision_id") {
-                let result: (i64, String) = sqlx::query_as(self.storage.response_lookup())
-                    .bind(&self.tenant_id)
+                let result = self
+                    .storage
+                    .query(Operation::Response)
                     .bind(id)
                     .fetch_one(&mut *tx)
                     .await?;
                 tx.commit().await?;
                 return Ok(RequestStart::Replay(
-                    result.0 as u16,
-                    serde_json::from_str(&result.1)?,
+                    result.get::<i64, _>("http_status") as u16,
+                    serde_json::from_str(result.get("response"))?,
                 ));
             }
             anyhow::ensure!(row.get::<i64, _>("expires") <= now, "E_REQUEST_IN_PROGRESS");
         }
-        sqlx::query("DELETE FROM request_keys WHERE decision_id IS NULL AND expires<=$1")
+        self.storage
+            .query(Operation::DeleteExpired)
             .bind(now)
             .execute(&mut *tx)
             .await?;
-        let pending: i64 =
-            sqlx::query_scalar("SELECT COUNT(*) FROM request_keys WHERE decision_id IS NULL")
-                .fetch_one(&mut *tx)
-                .await?;
-        let usage: (i64, i64) =
-            sqlx::query_as("SELECT record_count,total_bytes FROM journal_usage WHERE id=1")
-                .fetch_one(&mut *tx)
-                .await?;
+        let pending = self
+            .storage
+            .query(Operation::Pending)
+            .fetch_one(&mut *tx)
+            .await?;
+        let usage = self
+            .storage
+            .query(Operation::Usage)
+            .fetch_one(&mut *tx)
+            .await?;
         anyhow::ensure!(
-            pending < 64
-                && usage.0 + pending < i64::from(self.max_records)
-                && usage.1 < self.max_bytes as i64,
+            pending.get::<i64, _>("count") < 64
+                && usage.get::<i64, _>("record_count") + pending.get::<i64, _>("count")
+                    < i64::from(self.max_records)
+                && usage.get::<i64, _>("total_bytes") < self.max_bytes as i64,
             "E_JOURNAL_CAPACITY"
         );
         let owner = uuid::Uuid::new_v4().to_string();
-        sqlx::query("INSERT INTO request_keys(key,fingerprint,owner,expires) VALUES($1,$2,$3,$4)")
+        self.storage
+            .query(Operation::Reserve)
             .bind(&key)
             .bind(fingerprint)
             .bind(&owner)
@@ -322,20 +387,27 @@ impl Journal {
             .execute(&mut *tx)
             .await?;
         tx.commit().await?;
-        Ok(RequestStart::Reserved(RequestReservation { key, owner }))
+        Ok(RequestStart::Reserved(RequestReservation {
+            key,
+            owner,
+            tenant: self.tenant_id.clone(),
+            scope: self.scope.clone(),
+        }))
     }
     pub async fn abandon(&self, reservation: &RequestReservation) {
+        if reservation.tenant != self.tenant_id || reservation.scope != self.scope {
+            return;
+        }
         // Serialize with reservation/commit, including across PostgreSQL hosts.
         // If storage is unavailable the bounded reservation expires naturally.
         let result: anyhow::Result<()> = async {
             let mut tx = self.storage.begin().await?;
-            sqlx::query(
-                "DELETE FROM request_keys WHERE key=$1 AND owner=$2 AND decision_id IS NULL",
-            )
-            .bind(&reservation.key)
-            .bind(&reservation.owner)
-            .execute(&mut *tx)
-            .await?;
+            self.storage
+                .query(Operation::Abandon)
+                .bind(&reservation.key)
+                .bind(&reservation.owner)
+                .execute(&mut *tx)
+                .await?;
             tx.commit().await?;
             Ok(())
         }
@@ -346,13 +418,24 @@ impl Journal {
     /// A crashed or disconnected consumer leaves a lease that becomes eligible
     /// again. Stable digest is the consumer's idempotency key across retries.
     pub async fn claim(&self, now_ms: i64) -> anyhow::Result<Value> {
+        self.claim_authorized(now_ms, true).await
+    }
+    pub(crate) async fn claim_authorized(
+        &self,
+        now_ms: i64,
+        allow_private: bool,
+    ) -> anyhow::Result<Value> {
         let _permit = self
             .admission
             .try_acquire()
             .map_err(|_| anyhow::anyhow!("Journal admission full"))?;
         let mut tx = self.storage.begin().await?;
-        let rows = sqlx::query("SELECT seq,digest,body,input,response,bytes,attempts FROM events WHERE kind='decision-record' AND delivered=0 AND retry_at<=$1 ORDER BY seq LIMIT 100")
-            .bind(now_ms).fetch_all(&mut *tx).await?;
+        let rows = self
+            .storage
+            .query(Operation::Claim)
+            .bind(now_ms)
+            .fetch_all(&mut *tx)
+            .await?;
         let lease = uuid::Uuid::new_v4().to_string();
         let mut events = Vec::new();
         let mut batch_bytes = 0i64;
@@ -364,14 +447,15 @@ impl Journal {
             let attempts: i64 = row.get("attempts");
             // 1, 2, 4 ... 60 minutes. Retries remain eligible after restarts.
             let delay = 60_000i64 * (1i64 << attempts.min(6)).min(60);
-            sqlx::query("UPDATE events SET lease=$1,retry_at=$2,attempts=attempts+1 WHERE seq=$3")
+            self.storage
+                .query(Operation::Lease)
                 .bind(&lease)
                 .bind(now_ms + delay)
                 .bind(row.get::<i64, _>("seq"))
                 .execute(&mut *tx)
                 .await?;
             let mut item = json!({"idempotency_key":row.get::<String,_>("digest"),"attempt":attempts+1,"lease_expires_at_ms":now_ms+delay,"event":serde_json::from_str::<Value>(row.get("body"))?});
-            if self.export_replay {
+            if self.export_replay && allow_private {
                 item["input_evidence"] = row
                     .get::<Option<String>, _>("input")
                     .map(|v| serde_json::from_str::<Value>(&v))
@@ -404,15 +488,15 @@ impl Journal {
         );
         let mut tx = self.storage.begin().await?;
         for digest in digests {
-            let n = sqlx::query(
-                "UPDATE events SET delivered=1 WHERE digest=$1 AND lease=$2 AND retry_at>$3 ",
-            )
-            .bind(digest)
-            .bind(lease)
-            .bind(now_ms)
-            .execute(&mut *tx)
-            .await?
-            .rows_affected();
+            let n = self
+                .storage
+                .query(Operation::Acknowledge)
+                .bind(digest)
+                .bind(lease)
+                .bind(now_ms)
+                .execute(&mut *tx)
+                .await?
+                .rows_affected();
             anyhow::ensure!(n == 1, "Unknown, expired or replaced lease");
         }
         tx.commit().await?;
@@ -424,6 +508,8 @@ impl Journal {
 pub struct RequestReservation {
     key: String,
     owner: String,
+    tenant: String,
+    scope: Option<Value>,
 }
 #[derive(Debug)]
 pub enum RequestStart {

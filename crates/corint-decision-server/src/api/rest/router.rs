@@ -28,6 +28,7 @@ pub fn create_router(engine: Arc<EngineManager>, access: AccessPolicy) -> Router
         access: access.clone(),
     };
 
+    let credential_router = access.credential_router();
     Router::new()
         .route("/health", get(health))
         .route("/v1/decide", post(decide))
@@ -36,6 +37,7 @@ pub fn create_router(engine: Arc<EngineManager>, access: AccessPolicy) -> Router
         .route("/v1/repo/reload", post(reload_repository)) // Changed from GET to POST
         .route_layer(middleware::from_fn_with_state(access, authenticate))
         .with_state(state)
+        .merge(credential_router)
         .layer(DefaultBodyLimit::max(8 * 1024 * 1024))
         .layer(CorsLayer::new().expose_headers([
             HeaderName::from_static(REVISION_HEADER),
@@ -57,13 +59,15 @@ async fn authenticate(
     let mut values = headers.iter();
     let token = values.next().and_then(|v| v.to_str().ok());
     if values.next().is_some()
-        || !access.permits(
-            token,
-            matches!(
-                request.uri().path(),
-                "/v1/repo/reload" | "/v1/persistence" | "/v1/metrics"
-            ),
-        )
+        || !access
+            .permits(
+                token,
+                matches!(
+                    request.uri().path(),
+                    "/v1/repo/reload" | "/v1/persistence" | "/v1/metrics"
+                ),
+            )
+            .await
     {
         return (StatusCode::UNAUTHORIZED, "UNAUTHORIZED").into_response();
     }

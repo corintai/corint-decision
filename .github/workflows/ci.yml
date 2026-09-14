@@ -33,6 +33,10 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
       - name: Run isolated Core server authorization and activation checks
         run: cargo test -p corint-decision-server --test core_activation --locked
+      - name: Verify tenant identity, resources, persistence and lifecycle
+        run: cargo test -p corint-decision-server --test tenancy --test tenant_database --test journal_backends --locked
+      - name: Verify scoped SQL query and cache boundaries
+        run: cargo test -p corint-decision-runtime --features sqlx scoped_sql_and_cache --locked
       - name: Run Core process e2e (fixed model, real CLI and loopback HTTP)
         timeout-minutes: 15
         run: bash tests/scripts/run_core_e2e_tests.sh
@@ -58,6 +62,14 @@ jobs:
         env:
           CORINT_TEST_POSTGRES_URL: postgresql://corint_test:isolated_ci_test_password@127.0.0.1:5432/corint_test
         run: cargo test -p corint-decision-engine --features sqlx --test feature_pipeline --locked -- --ignored --exact postgres_feature_to_core_matches_offline_oracle
+      - name: Install Protocol Buffers compiler
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
+      - name: Verify shared PostgreSQL tenant persistence and control
+        env:
+          CORINT_TEST_POSTGRES_URL: postgresql://corint_test:isolated_ci_test_password@127.0.0.1:5432/corint_test
+        run: |
+          cargo test -p corint-decision-server --test tenancy --locked postgres_tenant_ -- --ignored
+          cargo test -p corint-decision-server --test journal_backends --locked postgres_shared_ -- --ignored
 
   test:
     name: Test
@@ -98,6 +110,9 @@ jobs:
 
       - name: Check all document scopes, local links and executable example bindings
         run: python3 tests/scripts/check_docs.py
+
+      - name: Enforce tenant SQL boundaries
+        run: python3 tests/scripts/check_tenant_sql.py
 
       - name: Check code formatting
         run: cargo fmt --all -- --check

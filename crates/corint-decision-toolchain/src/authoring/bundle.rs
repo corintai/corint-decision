@@ -92,13 +92,13 @@ pub(super) fn parse(text: &str) -> Result<Vec<Value>, serde_yaml::Error> {
         }
         if declarations == 0 {
             // Services and bare lists do not have a version field in their schema.
-            if common.contains_key("base_url")
+            if (common.contains_key("base_url")
                 || common.contains_key("backend")
-                || common.contains_key("datasource")
+                || common.contains_key("datasource"))
+                && index > 0
+                && !explicit_version
             {
-                if index > 0 && !explicit_version {
-                    common.remove("version");
-                }
+                common.remove("version");
             }
             output.push(Value::Object(common));
         }

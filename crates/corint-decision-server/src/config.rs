@@ -454,7 +454,7 @@ options:
         assert!(!config.server.enable_tracing);
         assert_eq!(config.server.log_level, "debug");
         assert!(
-            matches!(config.repository, RepositoryType::FileSystem { path } if path == PathBuf::from("demo"))
+            matches!(config.repository, RepositoryType::FileSystem { path } if path == std::path::Path::new("demo"))
         );
     }
 

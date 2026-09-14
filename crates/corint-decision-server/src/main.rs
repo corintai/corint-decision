@@ -12,6 +12,7 @@ pub mod evidence;
 pub mod journal;
 pub mod repo_source;
 pub mod snapshot;
+pub mod tenancy;
 
 use crate::api::grpc::pb::decision_service_server::DecisionServiceServer;
 use crate::api::grpc::DecisionGrpcService;
@@ -73,6 +74,28 @@ async fn main() -> Result<()> {
 
     // Explicit isolated mode: errors never fall back to compatibility loading.
     // Do not load/log legacy datasource configuration or start a second gRPC engine.
+    anyhow::ensure!(
+        std::env::var_os("CORINT_CORE_CONFIG").is_none()
+            || std::env::var_os("CORINT_TENANT_CONFIG").is_none(),
+        "Choose Core or tenant configuration, not both"
+    );
+    if let Some(path) = std::env::var_os("CORINT_TENANT_CONFIG") {
+        let (address, app) = tenancy::load(std::path::Path::new(&path)).await?;
+        let listener = TcpListener::bind(address).await?;
+        info!(
+            "Tenant decision host listening on {}",
+            listener.local_addr()?
+        );
+        let result = axum::serve(listener, app)
+            .with_graceful_shutdown(shutdown_requested(shutdown_rx))
+            .await;
+        tenancy::drain(std::time::Duration::from_secs(120)).await?;
+        shutdown_background_writes(std::time::Duration::from_secs(30))
+            .await
+            .map_err(anyhow::Error::msg)?;
+        result?;
+        return Ok(());
+    }
     if let Some(path) = std::env::var_os("CORINT_CORE_CONFIG") {
         let (address, app) = core::load(std::path::Path::new(&path)).await?;
         let listener = TcpListener::bind(address).await?;
@@ -92,7 +115,7 @@ async fn main() -> Result<()> {
 
     // Load configuration
     let config = ServerConfig::load()?;
-    let access = access::AccessPolicy::from_env()?;
+    let access = access::AccessPolicy::load().await?;
     anyhow::ensure!(
         config
             .server
@@ -169,6 +192,7 @@ async fn main() -> Result<()> {
     if let Some(task) = grpc_task {
         task.await??;
     }
+    access.drain(std::time::Duration::from_secs(30)).await?;
     shutdown_background_writes(std::time::Duration::from_secs(30))
         .await
         .map_err(anyhow::Error::msg)?;

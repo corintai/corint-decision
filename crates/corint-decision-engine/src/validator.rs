@@ -149,13 +149,7 @@ ruleset:
   id: test_ruleset
   name: Test Ruleset
   rules:
-    - rule:
-        id: inner_rule
-        name: Inner Rule
-        when:
-          conditions:
-            - event.amount > 100
-        score: 50
+    - inner_rule
 "#;
 
         let result = validate_ruleset(ruleset_yaml);

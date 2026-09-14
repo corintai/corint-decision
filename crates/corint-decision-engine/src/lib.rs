@@ -53,4 +53,5 @@ pub use corint_decision_runtime::{
 };
 
 // Shared lifecycle for background result persistence used by transport adapters.
+pub use corint_decision_runtime::datasource::scope::DataAccessScope;
 pub use corint_decision_runtime::result::background;

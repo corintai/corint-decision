@@ -11,7 +11,8 @@ use std::{path::Path, time::Duration};
 
 #[derive(Clone)]
 pub(super) struct Storage {
-    pub pool: AnyPool,
+    pool: AnyPool,
+    tenant: String,
     postgres: bool,
 }
 
@@ -67,6 +68,7 @@ impl Storage {
                     .map_err(|_| anyhow::anyhow!("Cannot connect to PostgreSQL journal"))?;
                 let storage = Self {
                     pool,
+                    tenant: config.tenant_id.clone(),
                     postgres: true,
                 };
                 storage.initialize_postgres(config, schema).await?;
@@ -117,6 +119,7 @@ impl Storage {
         }
         let storage = Self {
             pool,
+            tenant: config.tenant_id.clone(),
             postgres: false,
         };
         storage.initialize_sqlite(config).await?;
@@ -129,6 +132,35 @@ impl Storage {
         } else {
             "sqlite"
         }
+    }
+
+    /// Bind the whole file/schema to one environment/deployment as well as tenant.
+    /// An unscoped opener must never silently adopt a scoped journal.
+    pub async fn bind_scope(&self, scope: Option<&serde_json::Value>) -> anyhow::Result<()> {
+        let mut tx = self.begin().await?;
+        sqlx::query("CREATE TABLE IF NOT EXISTS journal_scope (id BIGINT PRIMARY KEY CHECK(id=1), scope_key TEXT NOT NULL)").execute(&mut *tx).await?;
+        let existing: Option<String> =
+            sqlx::query_scalar("SELECT scope_key FROM journal_scope WHERE id=1")
+                .fetch_optional(&mut *tx)
+                .await?;
+        let expected = scope.map(Value::to_string).unwrap_or_default();
+        if let Some(existing) = existing {
+            ensure!(existing == expected, "Journal deployment scope mismatch");
+        } else {
+            if scope.is_some() {
+                let count: i64 = sqlx::query_scalar("SELECT record_count+(SELECT COUNT(*) FROM request_keys) FROM journal_usage WHERE id=1").fetch_one(&mut *tx).await?;
+                ensure!(
+                    count == 0,
+                    "An existing unscoped journal requires an explicit migration"
+                );
+            }
+            sqlx::query("INSERT INTO journal_scope VALUES(1,$1)")
+                .bind(expected)
+                .execute(&mut *tx)
+                .await?;
+        }
+        tx.commit().await?;
+        Ok(())
     }
 
     /// All writers lock the same usage row before looking up or reserving keys.
@@ -146,26 +178,26 @@ impl Storage {
         sqlx::query("SET LOCAL synchronous_commit = on")
             .execute(&mut *tx)
             .await?;
-        sqlx::query("SELECT id FROM journal_usage WHERE id=1 FOR UPDATE")
+        self.query(super::queries::Operation::LockUsage)
             .fetch_one(&mut *tx)
             .await?;
         Ok(tx)
     }
 
-    pub fn decision_lookup(&self) -> &'static str {
-        if self.postgres {
-            "SELECT digest,input FROM events WHERE kind='decision-record' AND (body::jsonb->>'tenant_id')=$1 AND (body::jsonb->>'decision_id')=$2"
-        } else {
-            "SELECT digest,input FROM events WHERE kind='decision-record' AND json_extract(body,'$.tenant_id')=$1 AND json_extract(body,'$.decision_id')=$2"
-        }
+    /// The only online query constructor: SQL is selected from a closed enum and
+    /// the first parameter is always bound here, never by the business caller.
+    pub fn query<'q>(
+        &self,
+        op: super::queries::Operation,
+    ) -> sqlx::query::Query<'q, Any, sqlx::any::AnyArguments<'q>> {
+        sqlx::query(op.sql(self.postgres)).bind(self.tenant.clone())
     }
-
-    pub fn response_lookup(&self) -> &'static str {
-        if self.postgres {
-            "SELECT http_status,response FROM events WHERE kind='decision-record' AND (body::jsonb->>'tenant_id')=$1 AND (body::jsonb->>'decision_id')=$2"
-        } else {
-            "SELECT http_status,response FROM events WHERE kind='decision-record' AND json_extract(body,'$.tenant_id')=$1 AND json_extract(body,'$.decision_id')=$2"
-        }
+    pub async fn status(&self, now: i64) -> anyhow::Result<sqlx::any::AnyRow> {
+        Ok(self
+            .query(super::queries::Operation::Status)
+            .bind(now)
+            .fetch_one(&self.pool)
+            .await?)
     }
 
     async fn initialize_postgres(
@@ -216,6 +248,8 @@ impl Storage {
             "Unsupported PostgreSQL journal schema version"
         );
         if !created {
+            self.upgrade_tenant_columns(&mut tx, config, Some(schema))
+                .await?;
             Self::check_capacity(&mut tx, config).await?;
             tx.commit().await?;
             return Ok(());
@@ -246,8 +280,110 @@ impl Storage {
         sqlx::query(&format!("CREATE TRIGGER journal_usage_change AFTER INSERT OR DELETE OR UPDATE OF bytes ON events FOR EACH ROW EXECUTE FUNCTION \"{schema}\".maintain_journal_usage()")).execute(&mut *tx).await?;
         sqlx::query("CREATE TABLE IF NOT EXISTS request_keys (key TEXT PRIMARY KEY, fingerprint TEXT NOT NULL, owner TEXT NOT NULL, expires BIGINT NOT NULL, decision_id TEXT)").execute(&mut *tx).await?;
         sqlx::query("CREATE INDEX IF NOT EXISTS pending_request_expiry ON request_keys(expires) WHERE decision_id IS NULL").execute(&mut *tx).await?;
+        self.upgrade_tenant_columns(&mut tx, config, Some(schema))
+            .await?;
         Self::check_capacity(&mut tx, config).await?;
         tx.commit().await?;
+        Ok(())
+    }
+
+    // Operator-only schema migration. It runs transactionally once; online
+    // requests never scan historical records or construct arbitrary SQL.
+    async fn upgrade_tenant_columns(
+        &self,
+        tx: &mut Transaction<'_, Any>,
+        config: &JournalConfig,
+        schema: Option<&str>,
+    ) -> anyhow::Result<()> {
+        sqlx::query("CREATE TABLE IF NOT EXISTS journal_access_schema (id BIGINT PRIMARY KEY CHECK(id=1), version BIGINT NOT NULL)").execute(&mut **tx).await?;
+        let version: Option<i64> =
+            sqlx::query_scalar("SELECT version FROM journal_access_schema WHERE id=1")
+                .fetch_optional(&mut **tx)
+                .await?;
+        if let Some(version) = version {
+            ensure!(version == 1, "Unsupported tenant access schema");
+            return Ok(());
+        }
+        let invalid = if self.postgres {
+            "SELECT COUNT(*) FROM events WHERE kind='decision-record' AND ((body::jsonb->>'tenant_id') IS NULL OR (body::jsonb->>'tenant_id')<>$1)"
+        } else {
+            "SELECT COUNT(*) FROM events WHERE kind='decision-record' AND (json_extract(body,'$.tenant_id') IS NULL OR json_extract(body,'$.tenant_id')<>$1)"
+        };
+        let invalid: i64 = sqlx::query_scalar(invalid)
+            .bind(&self.tenant)
+            .fetch_one(&mut **tx)
+            .await?;
+        ensure!(
+            invalid == 0,
+            "Cannot migrate records belonging to another tenant"
+        );
+        // Backfill from the verified storage owner, never the current request.
+        for table in ["events", "request_keys", "journal_usage"] {
+            sqlx::query(&format!(
+                "ALTER TABLE {table} ADD COLUMN tenant_id TEXT NOT NULL DEFAULT ''"
+            ))
+            .execute(&mut **tx)
+            .await?;
+            sqlx::query(&format!(
+                "UPDATE {table} SET tenant_id=$1 WHERE tenant_id=''"
+            ))
+            .bind(&config.tenant_id)
+            .execute(&mut **tx)
+            .await?;
+            if self.postgres {
+                sqlx::query(&format!(
+                    "ALTER TABLE {table} ALTER COLUMN tenant_id DROP DEFAULT"
+                ))
+                .execute(&mut **tx)
+                .await?;
+                sqlx::query(&format!("ALTER TABLE {table} ADD CONSTRAINT {table}_tenant_required CHECK (tenant_id<>'')")).execute(&mut **tx).await?;
+            } else {
+                for action in ["INSERT", "UPDATE"] {
+                    sqlx::query(&format!("CREATE TRIGGER {table}_tenant_required_{action} BEFORE {action} ON {table} WHEN NEW.tenant_id='' BEGIN SELECT RAISE(ABORT,'tenant_id required'); END")).execute(&mut **tx).await?;
+                }
+            }
+        }
+        if self.postgres {
+            sqlx::query("ALTER TABLE events ADD CONSTRAINT event_tenant_matches CHECK (kind<>'decision-record' OR (body::jsonb->>'tenant_id') IS NOT DISTINCT FROM tenant_id)").execute(&mut **tx).await?;
+        } else {
+            for action in ["INSERT", "UPDATE"] {
+                sqlx::query(&format!("CREATE TRIGGER event_tenant_matches_{action} BEFORE {action} ON events WHEN NEW.kind='decision-record' AND json_extract(NEW.body,'$.tenant_id') IS NOT NEW.tenant_id BEGIN SELECT RAISE(ABORT,'event tenant mismatch'); END")).execute(&mut **tx).await?;
+            }
+        }
+        sqlx::query("CREATE INDEX journal_tenant_pending ON events(tenant_id,seq) WHERE kind='decision-record' AND delivered=0").execute(&mut **tx).await?;
+        sqlx::query("CREATE INDEX journal_tenant_requests ON request_keys(tenant_id,key)")
+            .execute(&mut **tx)
+            .await?;
+        if let Some(schema) = schema {
+            sqlx::query(&format!(r#"CREATE OR REPLACE FUNCTION "{schema}".maintain_journal_usage() RETURNS trigger LANGUAGE plpgsql AS $$
+                BEGIN
+                    IF TG_OP = 'INSERT' THEN
+                        UPDATE "{schema}".journal_usage SET record_count=record_count+1,total_bytes=total_bytes+NEW.bytes WHERE id=1 AND tenant_id=NEW.tenant_id;
+                    ELSIF TG_OP = 'DELETE' THEN
+                        UPDATE "{schema}".journal_usage SET record_count=record_count-1,total_bytes=total_bytes-OLD.bytes WHERE id=1 AND tenant_id=OLD.tenant_id;
+                    ELSE
+                        UPDATE "{schema}".journal_usage SET record_count=record_count-1,total_bytes=total_bytes-OLD.bytes WHERE id=1 AND tenant_id=OLD.tenant_id;
+                        UPDATE "{schema}".journal_usage SET record_count=record_count+1,total_bytes=total_bytes+NEW.bytes WHERE id=1 AND tenant_id=NEW.tenant_id;
+                    END IF;
+                    RETURN NULL;
+                END $$"#)).execute(&mut **tx).await?;
+            sqlx::query("DROP TRIGGER journal_usage_change ON events")
+                .execute(&mut **tx)
+                .await?;
+            sqlx::query(&format!("CREATE TRIGGER journal_usage_change AFTER INSERT OR DELETE OR UPDATE OF bytes,tenant_id ON events FOR EACH ROW EXECUTE FUNCTION \"{schema}\".maintain_journal_usage()")).execute(&mut **tx).await?;
+        } else {
+            for name in ["insert", "delete", "update"] {
+                sqlx::query(&format!("DROP TRIGGER journal_usage_{name}"))
+                    .execute(&mut **tx)
+                    .await?;
+            }
+            sqlx::query("CREATE TRIGGER journal_usage_insert AFTER INSERT ON events BEGIN UPDATE journal_usage SET record_count=record_count+1,total_bytes=total_bytes+NEW.bytes WHERE id=1 AND tenant_id=NEW.tenant_id; END").execute(&mut **tx).await?;
+            sqlx::query("CREATE TRIGGER journal_usage_delete AFTER DELETE ON events BEGIN UPDATE journal_usage SET record_count=record_count-1,total_bytes=total_bytes-OLD.bytes WHERE id=1 AND tenant_id=OLD.tenant_id; END").execute(&mut **tx).await?;
+            sqlx::query("CREATE TRIGGER journal_usage_update AFTER UPDATE OF bytes,tenant_id ON events BEGIN UPDATE journal_usage SET record_count=record_count-1,total_bytes=total_bytes-OLD.bytes WHERE id=1 AND tenant_id=OLD.tenant_id; UPDATE journal_usage SET record_count=record_count+1,total_bytes=total_bytes+NEW.bytes WHERE id=1 AND tenant_id=NEW.tenant_id; END").execute(&mut **tx).await?;
+        }
+        sqlx::query("INSERT INTO journal_access_schema VALUES(1,1)")
+            .execute(&mut **tx)
+            .await?;
         Ok(())
     }
 
@@ -347,6 +483,7 @@ impl Storage {
         }
         sqlx::query("CREATE TABLE IF NOT EXISTS request_keys (key TEXT PRIMARY KEY, fingerprint TEXT NOT NULL, owner TEXT NOT NULL, expires INTEGER NOT NULL, decision_id TEXT)").execute(&mut *tx).await?;
         sqlx::query("CREATE INDEX IF NOT EXISTS pending_request_expiry ON request_keys(expires) WHERE decision_id IS NULL").execute(&mut *tx).await?;
+        self.upgrade_tenant_columns(&mut tx, config, None).await?;
         tx.commit().await?;
         Ok(())
     }

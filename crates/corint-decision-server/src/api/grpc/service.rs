@@ -34,11 +34,11 @@ impl DecisionGrpcService {
     pub fn new(engine: Arc<EngineManager>, access: crate::access::AccessPolicy) -> Self {
         Self { engine, access }
     }
-    fn authorized<T>(&self, request: &Request<T>, publisher: bool) -> bool {
+    async fn authorized<T>(&self, request: &Request<T>, publisher: bool) -> bool {
         let values = request.metadata().get_all("authorization");
         let mut values = values.iter();
         let token = values.next().and_then(|v| v.to_str().ok());
-        if values.next().is_some() || !self.access.permits(token, publisher) {
+        if values.next().is_some() || !self.access.permits(token, publisher).await {
             return false;
         }
         true
@@ -51,7 +51,7 @@ impl DecisionService for DecisionGrpcService {
         &self,
         request: Request<DecideRequest>,
     ) -> Result<Response<DecideResponse>, Status> {
-        if !self.authorized(&request, false) {
+        if !self.authorized(&request, false).await {
             return Err(Status::unauthenticated("UNAUTHORIZED"));
         }
         let req = request.into_inner();
@@ -239,7 +239,7 @@ impl DecisionService for DecisionGrpcService {
         &self,
         request: Request<ReloadRepositoryRequest>,
     ) -> Result<Response<ReloadRepositoryResponse>, Status> {
-        if !self.authorized(&request, true) {
+        if !self.authorized(&request, true).await {
             return Err(Status::unauthenticated("UNAUTHORIZED"));
         }
         let expected = request

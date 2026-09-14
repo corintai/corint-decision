@@ -13,6 +13,7 @@ use std::time::{Duration, Instant};
 
 /// Unified data source client
 pub struct DataSourceClient {
+    scope: Option<super::scope::DataAccessScope>,
     /// Data source configuration
     config: DataSourceConfig,
 
@@ -30,6 +31,21 @@ impl DataSourceClient {
     }
     /// Create a new data source client
     pub async fn new(config: DataSourceConfig) -> Result<Self> {
+        Self::new_scoped(config, None).await
+    }
+
+    pub async fn new_scoped(
+        config: DataSourceConfig,
+        scope: Option<super::scope::DataAccessScope>,
+    ) -> Result<Self> {
+        if let Some(scope) = &scope {
+            scope.validate()?;
+            if !matches!(config.source_type, DataSourceType::SQL(_)) {
+                return Err(RuntimeError::InvalidOperation(
+                    "E_RESOURCE_SCOPE: scoped client requires SQL".into(),
+                ));
+            }
+        }
         let client: Box<dyn DataSourceImpl> = match &config.source_type {
             DataSourceType::FeatureStore(fs_config) => {
                 if matches!(fs_config.provider, FeatureStoreProvider::RisingWave) {
@@ -50,12 +66,16 @@ impl DataSourceClient {
             DataSourceType::OLAP(olap_config) => {
                 Box::new(OLAPClient::new(olap_config.clone()).await?)
             }
-            DataSourceType::SQL(sql_config) => {
-                Box::new(SQLClient::new(sql_config.clone(), config.pool_size).await?)
-            }
+            DataSourceType::SQL(sql_config) => Box::new(if scope.is_some() {
+                SQLClient::new_with_scope(sql_config.clone(), config.pool_size, scope.clone())
+                    .await?
+            } else {
+                SQLClient::new(sql_config.clone(), config.pool_size).await?
+            }),
         };
 
         Ok(Self {
+            scope,
             config,
             cache: Arc::new(Mutex::new(FeatureCache::new())),
             query_cache: Mutex::new(HashMap::new()),
@@ -64,7 +84,10 @@ impl DataSourceClient {
     }
 
     /// Execute a query
-    pub async fn query(&self, query: Query) -> Result<QueryResult> {
+    pub async fn query(&self, mut query: Query) -> Result<QueryResult> {
+        if let Some(scope) = &self.scope {
+            scope.apply(&mut query)?;
+        }
         let ttl = Duration::from_secs(self.config.query_cache_ttl_secs);
         let cache_key = self.generate_cache_key(&query);
         if !ttl.is_zero() {
@@ -221,7 +244,8 @@ impl DataSourceClient {
     /// Generate cache key for a query
     fn generate_cache_key(&self, query: &Query) -> String {
         // Includes query_type, filters, windows, grouping, aliases and limits.
-        serde_json::to_string(query).expect("Query is serializable")
+        serde_json::to_string(&(self.scope.as_ref().map(|s| &s.namespace), query))
+            .expect("Query is serializable")
     }
 
     /// Get data source name

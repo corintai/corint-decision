@@ -4,6 +4,8 @@
 
 面向配置严格 Core 服务、决策存储和结果导出的开发者与运维人员。
 
+单租户 Journal 省略 `tenant_id` 时默认 `local`，可显式覆盖。[多租户宿主](multi-tenancy.md)在此存储协议之上增加完整部署 Scope、权限与生命周期管理；已经绑定 Scope 的 Journal 不能由原单租户入口打开。
+
 ## Feature Overview
 
 每个实例独立执行已验收的策略快照，repo 是唯一策略来源；Journal 可选择 SQLite 或 PostgreSQL。

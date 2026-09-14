@@ -801,3 +801,187 @@ async fn metrics_export_is_bounded_authorized_and_respects_switch_after_reload()
         }
     }
 }
+
+#[tokio::test]
+async fn database_credentials_are_shared_by_http_grpc_and_management() {
+    use corint_decision_server::access::AccessPolicy;
+    let repo = repository();
+    let manager = manager(repo.path()).await;
+    let auth = tempfile::tempdir().unwrap();
+    let env_name = format!("CORINT_AUTH_TEST_{}", uuid::Uuid::new_v4().simple());
+    struct EnvGuard(String);
+    impl Drop for EnvGuard {
+        fn drop(&mut self) {
+            std::env::remove_var(&self.0);
+        }
+    }
+    let _guard = EnvGuard(env_name.clone());
+    let admin = "synthetic-database-admin-token-at-least-32-characters";
+    std::env::set_var(&env_name, admin);
+    let scope = json!({"tenant_id":"test","environment":"demo","deployment":"default"});
+    std::fs::write(auth.path().join("seed.json"),json!({"format_version":"1","principals":[{"id":"admin","token_env":env_name,"platform_admin":true}]}).to_string()).unwrap();
+    let config = auth.path().join("auth.json");
+    std::fs::write(&config,json!({"scope":scope,"credentials":"seed.json","control_store":{"type":"sqlite","path":"auth.db"}}).to_string()).unwrap();
+    let access = AccessPolicy::from_database_config(&config).await.unwrap();
+    let app = create_router(manager.clone(), access.clone());
+    let grpc = DecisionGrpcService::new(manager.clone(), access.clone());
+    async fn call(app: &Router, path: &str, token: &str, body: Value) -> (StatusCode, Value) {
+        let response = app
+            .clone()
+            .oneshot(
+                Request::post(path)
+                    .header("authorization", format!("Bearer {token}"))
+                    .header("content-type", "application/json")
+                    .body(Body::from(body.to_string()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let status = response.status();
+        let bytes = response.into_body().collect().await.unwrap().to_bytes();
+        (
+            status,
+            serde_json::from_slice(&bytes).unwrap_or(Value::Null),
+        )
+    }
+    let endpoint = "/v1/tenancy/credentials";
+    let body = json!({"action":"create","id":"client","grants":[{"scope":scope,"permissions":["decide"]}]});
+    let created = call(&app, endpoint, admin, body).await;
+    assert_eq!(created.0, StatusCode::OK);
+    let token = created.1["token"].as_str().unwrap().to_owned();
+    let decision = json!({"event":{"amount":100}});
+    assert_eq!(
+        call(&app, "/v1/decide", &token, decision.clone()).await.0,
+        StatusCode::OK
+    );
+    let req = || pb::DecideRequest {
+        event: [(
+            "amount".into(),
+            pb::Value {
+                kind: Some(pb::value::Kind::IntValue(100)),
+            },
+        )]
+        .into(),
+        ..Default::default()
+    };
+    assert!(grpc.decide(authorized_request(req(), &token)).await.is_ok());
+    assert_eq!(
+        call(&app, "/v1/decide", admin, decision.clone()).await.0,
+        StatusCode::UNAUTHORIZED
+    );
+    assert_eq!(
+        call(
+            &app,
+            endpoint,
+            &token,
+            json!({"action":"revoke","id":"admin"})
+        )
+        .await
+        .0,
+        StatusCode::FORBIDDEN
+    );
+    assert_eq!(
+        grpc.reload_repository(authorized_request(pb::ReloadRepositoryRequest {}, &token))
+            .await
+            .unwrap_err()
+            .code(),
+        tonic::Code::Unauthenticated
+    );
+    let issued=call(&app,endpoint,admin,json!({"action":"create","id":"publisher","grants":[{"scope":scope,"permissions":["publish"]}]})).await;
+    assert_eq!(issued.0, StatusCode::OK);
+    let publisher = issued.1["token"].as_str().unwrap();
+    assert!(grpc
+        .reload_repository(authorized_request(
+            pb::ReloadRepositoryRequest {},
+            publisher
+        ))
+        .await
+        .is_ok());
+    assert_eq!(
+        grpc.decide(authorized_request(req(), publisher))
+            .await
+            .unwrap_err()
+            .code(),
+        tonic::Code::Unauthenticated
+    );
+    let changed = call(
+        &app,
+        endpoint,
+        admin,
+        json!({"action":"rotate","id":"client"}),
+    )
+    .await;
+    assert_eq!(changed.0, StatusCode::OK);
+    let rotated = changed.1["token"].as_str().unwrap();
+    assert_eq!(
+        grpc.decide(authorized_request(req(), &token))
+            .await
+            .unwrap_err()
+            .code(),
+        tonic::Code::Unauthenticated
+    );
+    assert_eq!(
+        call(&app, "/v1/decide", &token, decision.clone()).await.0,
+        StatusCode::UNAUTHORIZED
+    );
+    assert!(grpc
+        .decide(authorized_request(req(), rotated))
+        .await
+        .is_ok());
+    std::fs::remove_file(auth.path().join("seed.json")).unwrap();
+    std::env::remove_var(&env_name);
+    let restarted = AccessPolicy::from_database_config(&config).await.unwrap();
+    assert!(
+        restarted
+            .permits(Some(&format!("Bearer {rotated}")), false)
+            .await
+    );
+    assert_eq!(
+        call(
+            &app,
+            endpoint,
+            admin,
+            json!({"action":"revoke","id":"client"})
+        )
+        .await
+        .0,
+        StatusCode::OK
+    );
+    assert_eq!(
+        grpc.decide(authorized_request(req(), rotated))
+            .await
+            .unwrap_err()
+            .code(),
+        tonic::Code::Unauthenticated
+    );
+    let second_app = create_router(manager, restarted.clone());
+    assert_eq!(
+        call(
+            &second_app,
+            "/v1/tenancy/credentials/reload",
+            admin,
+            json!({})
+        )
+        .await
+        .0,
+        StatusCode::OK
+    );
+    assert!(
+        !restarted
+            .permits(Some(&format!("Bearer {rotated}")), false)
+            .await
+    );
+    let pool = sqlx::SqlitePool::connect(&format!(
+        "sqlite://{}",
+        auth.path().join("auth.db").display()
+    ))
+    .await
+    .unwrap();
+    let stored: String = sqlx::query_scalar("SELECT document FROM tenant_credentials WHERE id=1")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    for secret in [admin, token.as_str(), rotated, publisher] {
+        assert!(!stored.contains(secret));
+    }
+}
