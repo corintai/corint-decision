@@ -10,7 +10,7 @@
     "dev": "node server/index.mjs",
     "build": "tsc -b && vite build",
     "start": "node server/index.mjs --production",
-    "test": "tsx --test src/model.test.ts src/components/yamlHighlighting.test.ts src/components/conditionLabel.test.ts src/components/flowLayout.test.ts && node --test server/validation.test.mjs server/repository.test.mjs"
+    "test": "tsx --test src/repositorySync.test.ts src/model.test.ts src/components/yamlHighlighting.test.ts src/components/conditionLabel.test.ts src/components/flowLayout.test.ts && node --test server/validation.test.mjs server/repository.test.mjs"
   },
   "dependencies": {
     "@codemirror/commands": "^6.11.0",

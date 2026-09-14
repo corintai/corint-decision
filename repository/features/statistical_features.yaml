@@ -119,18 +119,17 @@ features:
 
   # ============================================================================
   # Time-Based Features
-  # NOTE: time_check and day_check operators are not yet implemented in the DSL
-  # Commented out until supported
+  # Request-context lookups must be populated by the upstream feature producer.
+  # event.event_id identifies the current event; temporal values exclude it.
+  # No fallback is supplied: missing data must not become a safe default.
+  # day_check remains unsupported; the weekend example stays commented out.
   # ============================================================================
 
-  # - name: is_off_hours
-  #   description: "Is event during off-hours (22:00-06:00)?"
-  #   type: Expression  # Not yet implemented
-  #   method: time_check
-  #   datasource: computed
-  #   time_ranges:
-  #     - start: "22:00"
-  #       end: "06:00"
+  - name: is_off_hours
+    description: "Precomputed boolean: event occurs during 22:00-06:00 in the business timezone"
+    type: lookup
+    datasource: lookup_datasource
+    key: "event_context:${event.event_id}:is_off_hours"
 
   # - name: is_weekend
   #   description: "Is event on weekend?"
@@ -144,66 +143,38 @@ features:
   # ============================================================================
 
   - name: hours_since_last_login
-    description: "Hours since user's last login"
-    type: state
-    method: time_since
-    datasource: events_datasource
-    entity: events
-    dimension: user_id
-    dimension_value: event.user_id
-    field: event_timestamp
-    when: event_type == "login"
-    unit: hours
+    description: "Precomputed hours since the latest login before this event"
+    type: lookup
+    datasource: lookup_datasource
+    key: "login_context:${event.user_id}:${event.event_id}:hours_since_last_login"
 
   - name: geo_distance_from_last_login
-    description: "Distance (km) from last login location (placeholder)"
-    type: expression
-    expression: "0"  # Placeholder - always returns 0 (geo_distance not yet implemented)
-    when: event_type == "login"
+    description: "Precomputed distance in km from the latest login location"
+    type: lookup
+    datasource: lookup_datasource
+    key: "login_context:${event.user_id}:${event.event_id}:geo_distance_from_last_login"
 
-  # - name: country_changed
-  #   description: "Has user's country changed since last login?"
-  #   type: Expression  # Not yet implemented
-  #   method: value_changed
-  #   datasource: sqlite_events
-  #   entity: events
-  #   dimension: user_id
-  #   dimension_value: event.user_id
-  #   field: country
-  #   when:
-  #     - field: event_type
-  #       operator: eq
-  #       value: "login"
+  - name: country_changed
+    description: "Precomputed boolean: country differs from the previous login"
+    type: lookup
+    datasource: lookup_datasource
+    key: "login_context:${event.user_id}:${event.event_id}:country_changed"
 
   # ============================================================================
   # Device Features
   # ============================================================================
 
-  # - name: is_new_device
-  #   description: "Is this device new for the user?"
-  #   type: Expression  # Not yet implemented
-  #   method: is_new_value
-  #   datasource: sqlite_events
-  #   entity: events
-  #   dimension: user_id
-  #   dimension_value: event.user_id
-  #   field: device_id
-  #   window:
-  #     value: 30
-  #     unit: days
+  - name: is_new_device
+    description: "Precomputed boolean: this device has not been seen for this user in the previous 30 days"
+    type: lookup
+    datasource: lookup_datasource
+    key: "device_context:${event.user_id}:${event.device_id}:${event.event_id}:is_new_device"
 
-  # - name: device_fingerprint_changed_24h
-  #   description: "Has device fingerprint changed in last 24h?"
-  #   type: Expression  # Not yet implemented
-  #   method: value_changed
-  #   datasource: sqlite_events
-  #   entity: events
-  #   dimension: device_id
-  #   dimension_value: event.device_id
-  #   field: device_fingerprint
-  #   window:
-  #     value: 24
-  #     unit: hours
+  - name: device_fingerprint_changed_24h
+    description: "Precomputed count of device fingerprint changes in the preceding 24 hours"
+    type: lookup
+    datasource: lookup_datasource
+    key: "device_context:${event.device_id}:${event.event_id}:device_fingerprint_changed_24h"
 
   # Note: failed_login_count_1h is defined in user_features.yaml
   # Removed duplicate definition to avoid conflicts
@@ -213,17 +184,7 @@ features:
   # NOTE: Using count_distinct as workaround for cross_dimension_count
   # ============================================================================
 
-  - name: devices_per_ip_5h
-    description: "Number of distinct devices from same IP (5h window)"
-    type: aggregation
-    method: distinct
-    datasource: events_datasource
-    entity: events
-    dimension: ip_address
-    dimension_value: event.ip_address
-    field: device_id
-    window: 5h
-    timestamp_field: event_timestamp
+  # devices_per_ip_5h is defined once in ip_features.yaml.
 
   - name: users_per_ip_5h
     description: "Number of distinct users from same IP (5h window)"

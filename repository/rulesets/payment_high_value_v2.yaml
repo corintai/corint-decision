@@ -18,7 +18,7 @@ ruleset:
 
   # Add additional rules beyond what payment_base provides
   rules:
-    - amount_outlier  # This gets merged with inherited rules
+    - amount_outlier_pattern  # This gets merged with inherited rules
 
   # Override decision logic with stricter thresholds
   conclusion:
@@ -26,7 +26,7 @@ ruleset:
     - when: |
         triggered_rules contains "card_testing" ||
         triggered_rules contains "new_account_risk" ||
-        triggered_rules contains "amount_outlier"
+        triggered_rules contains "amount_outlier_pattern"
       signal: decline
       reason: "Critical fraud pattern detected for high-value transaction"
 

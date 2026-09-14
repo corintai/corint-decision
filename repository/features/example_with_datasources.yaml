@@ -50,19 +50,9 @@ features:
   # Note: Lookup features retrieve pre-computed values only; no computation
   # All lookups use lookup_datasource (logical name, mapped to actual datasource in server.yaml)
 
-  - name: user_kyc_status
-    description: "User KYC verification status"
-    type: lookup
-    datasource: lookup_datasource
-    key: "user_profiles:${event.user_id}:kyc_status"
-    fallback: "unknown"
+  # user_kyc_status is defined once in user_features.yaml.
 
-  - name: user_is_verified
-    description: "Is user identity verified?"
-    type: lookup
-    datasource: lookup_datasource
-    key: "user_profiles:${event.user_id}:is_verified"
-    fallback: false
+  # user_is_verified is defined once in user_features.yaml.
 
   - name: user_account_type
     description: "User account type (individual/business)"
@@ -78,12 +68,7 @@ features:
     key: "device_registry:${event.device_id}:is_suspicious"
     fallback: false
 
-  - name: user_risk_score
-    description: "Pre-computed user risk score from feature store"
-    type: lookup
-    datasource: lookup_datasource
-    key: "user_features:${event.user_id}:risk_score"
-    fallback: 0.0
+  # user_risk_score is defined once in user_features.yaml.
 
   - name: user_lifetime_transaction_avg
     description: "User's historical average transaction amount"
@@ -100,14 +85,14 @@ features:
     fallback: 50.0
 
   # ==========================================================================
-  # Features Using Default Data Source (No datasource specified)
+  # Features Using the Explicit Default Data Source
   # ==========================================================================
 
-  - name: ip_event_count_1h
+  - name: example_ip_event_count_1h
     description: "Events from this IP in last 1 hour (uses default datasource)"
     type: aggregation
     method: count
-    # datasource not specified, will use "default"
+    datasource: default  # Host binding required; no implicit datasource selection
     entity: user_events
     dimension: ip_address
     dimension_value: event.ip_address

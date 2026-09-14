@@ -173,8 +173,9 @@ features:
 
   - name: account_first_seen
     description: "Timestamp of first user event"
-    type: state
-    method: first_seen
+    type: aggregation
+    method: min
+    field: event_timestamp
     datasource: events_datasource
     entity: events
     dimension: user_id
@@ -182,8 +183,9 @@ features:
 
   - name: last_login_at
     description: "Timestamp of last login"
-    type: state
-    method: last_seen
+    type: aggregation
+    method: max
+    field: event_timestamp
     datasource: events_datasource
     entity: events
     dimension: user_id

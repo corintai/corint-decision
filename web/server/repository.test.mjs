@@ -20,11 +20,19 @@ test("repository reads nested source files verbatim without following symlinks",
       path.join(root, "linked.yaml"),
     );
     await symlink(temporary, path.join(root, "linked-directory"));
-    const { files } = await readRepository(root);
+    const { files, revision } = await readRepository(root);
     assert.deepEqual(files, [
       { path: "registry.yaml", source: "registry: []\n" },
       { path: "rules/payment/check.yaml", source },
     ]);
+    assert.equal((await readRepository(root)).revision, revision);
+    await writeFile(
+      path.join(root, "rules/payment/check.yaml"),
+      source + "# changed\n",
+    );
+    assert.notEqual((await readRepository(root)).revision, revision);
+    await rm(path.join(root, "rules/payment/check.yaml"));
+    assert.notEqual((await readRepository(root)).revision, revision);
   } finally {
     await rm(temporary, { recursive: true, force: true });
   }

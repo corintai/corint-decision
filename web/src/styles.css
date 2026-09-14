@@ -1638,3 +1638,15 @@ a {
     transition: none !important;
   }
 }
+
+.repository-sync-notice {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 20px;
+  color: var(--cc-text-soft);
+  background: var(--cc-primary-soft);
+  border-bottom: 1px solid var(--cc-border);
+  font-size: 12px;
+}

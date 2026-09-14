@@ -21,7 +21,7 @@ version: "0.1"
 # ----------------------------------------------------------------------------
 
 rule:
-  id: high_value_transaction
+  id: demo_high_value_transaction
   name: High Value Transaction Detection
   description: Detect transactions with unusually high amounts
 
@@ -177,7 +177,7 @@ rule:
 # ----------------------------------------------------------------------------
 
 rule:
-  id: velocity_check
+  id: demo_velocity_check
   name: Transaction Velocity Check
   description: Arithmetic operations in conditions
 
@@ -230,8 +230,8 @@ ruleset:
   description: Monitor transaction patterns and anomalies
 
   rules:
-    - high_value_transaction
-    - velocity_check
+    - demo_high_value_transaction
+    - demo_velocity_check
     - payment_method_check
 
   conclusion:

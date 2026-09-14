@@ -112,8 +112,9 @@ features:
 
   - name: ip_first_seen
     description: "First time this IP was seen"
-    type: state
-    method: first_seen
+    type: aggregation
+    method: min
+    field: event_timestamp
     datasource: events_datasource
     entity: events
     dimension: ip_address

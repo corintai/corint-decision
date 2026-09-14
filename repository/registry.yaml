@@ -27,7 +27,7 @@ registry:
       Detects account takeover, velocity abuse, and suspicious patterns.
 
   # Payment events - Payment Processing Pipeline
-  - pipeline: payment_pipeline
+  - pipeline: payment_risk_pipeline
     when: event.type == "payment"
     description: |
       Payment risk assessment pipeline with high-value checks,
@@ -41,10 +41,6 @@ registry:
   - pipeline: comprehensive_risk_assessment
     when: event.type == "test1"
     description: Comprehensive risk assessment for test1 event
-
-  - pipeline: no_separator_demo_pipeline
-    when: event.type == "no_sep_demo"
-    description: Demo pipeline without --- separators
 
   - pipeline: service_pipeline
     when: event.type == "api"

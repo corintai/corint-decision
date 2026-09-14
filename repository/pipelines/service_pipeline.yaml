@@ -1,8 +1,9 @@
+version: "0.1"
+
 pipeline:
   id: service_pipeline
   name: Service Pipeline
   description: Service Pipeline
-  version: "1.0.0"
 
   entry: ip_lookup
 

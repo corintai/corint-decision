@@ -24,6 +24,7 @@ import {
   PanelRightClose,
   Plus,
   Redo2,
+  RefreshCw,
   Search,
   ShieldCheck,
   Trash2,
@@ -54,8 +55,16 @@ import {
   type Value,
 } from "./model";
 
+import {
+  fetchRepository,
+  parseDraft,
+  syncRepository,
+  type DraftWorkspace,
+} from "./repositorySync";
+
 // Keep earlier example-workspace drafts separate from the real repository.
 const STORAGE_KEY = "corint.cdl-studio.repository.v1";
+const BACKUP_KEY = "corint.cdl-studio.repository.reload-backup.v1";
 const PipelineCanvas = lazy(() => import("./components/PipelineCanvas"));
 const SourceEditor = lazy(() => import("./components/SourceEditor"));
 interface History {
@@ -121,6 +130,10 @@ export default function App() {
     future: [],
   });
   const { files } = history;
+  const latestFiles = useRef(files);
+  useEffect(() => {
+    latestFiles.current = files;
+  }, [files]);
   const [activePath, setActivePath] = useState("registry.yaml");
   const [pipelineIndex, setPipelineIndex] = useState(0);
   const [selected, setSelected] = useState<string | null>(null);
@@ -130,6 +143,10 @@ export default function App() {
   const [error, setError] = useState("");
   const [saved, setSaved] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [reloading, setReloading] = useState(false);
+  const [repositoryRevision, setRepositoryRevision] = useState<string>();
+  const [syncNotice, setSyncNotice] = useState("");
+  const [draftBackup, setDraftBackup] = useState<PolicyFile[] | null>(null);
   const [report, setReport] = useState<{
     value: Report;
     snapshot: string;
@@ -187,34 +204,33 @@ export default function App() {
   useEffect(() => {
     let cancelled = false;
     async function load() {
+      let cached: DraftWorkspace | null = null;
       try {
-        const saved = localStorage.getItem(STORAGE_KEY);
-        if (saved) {
-          const workspace: unknown = JSON.parse(saved);
-          if (validWorkspace(workspace)) {
-            if (!cancelled) {
-              dispatch({ type: "set", files: workspace.files, initial: true });
-              setLoading(false);
-            }
-            return;
-          }
-        }
+        cached = parseDraft(
+          JSON.parse(localStorage.getItem(STORAGE_KEY) || "null"),
+        );
+        const backup = parseDraft(
+          JSON.parse(localStorage.getItem(BACKUP_KEY) || "null"),
+        );
+        if (!cancelled && backup) setDraftBackup(backup.files);
       } catch {
-        /* A corrupt/unavailable local cache must not prevent opening the editor. */
+        /* Invalid storage must not prevent opening disk files. */
       }
       try {
-        const response = await fetch("/api/repository");
-        if (!response.ok) {
-          const result = await response.json();
-          throw new Error(result.error || "无法读取 repository 目录。");
-        }
-        const workspace: unknown = await response.json();
-        if (!validWorkspace(workspace))
-          throw new Error("repository 文件格式错误。");
-        if (!cancelled)
-          dispatch({ type: "set", files: workspace.files, initial: true });
+        const disk = await fetchRepository();
+        if (cancelled) return;
+        const result = syncRepository(disk, cached);
+        if (result.backup) preserveDraft(result.backup);
+        setRepositoryRevision(result.revision);
+        dispatch({ type: "set", files: result.files, initial: true });
       } catch (error) {
-        if (!cancelled) setError((error as Error).message);
+        if (!cancelled) {
+          if (cached) {
+            dispatch({ type: "set", files: cached.files, initial: true });
+            setRepositoryRevision(cached.revision);
+          }
+          setError((error as Error).message);
+        }
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -231,7 +247,7 @@ export default function App() {
       try {
         localStorage.setItem(
           STORAGE_KEY,
-          JSON.stringify({ version: 1, files }),
+          JSON.stringify({ version: 1, files, revision: repositoryRevision }),
         );
         setSaved(true);
       } catch {
@@ -239,7 +255,7 @@ export default function App() {
       }
     }, 350);
     return () => clearTimeout(timer);
-  }, [files, loading]);
+  }, [files, loading, repositoryRevision]);
   useEffect(() => {
     const handler = (e: BeforeUnloadEvent) => {
       if (!saved && files.length) e.preventDefault();
@@ -294,21 +310,75 @@ export default function App() {
       setSelected(value);
     } else patch(path, value);
   };
+  function preserveDraft(previous: PolicyFile[]) {
+    try {
+      localStorage.setItem(
+        BACKUP_KEY,
+        JSON.stringify({ version: 1, files: previous }),
+      );
+    } catch {
+      throw new Error(
+        "旧草稿备份失败，已保留当前草稿。请先导出工作区再重新加载。",
+      );
+    }
+    setDraftBackup(previous);
+    setSyncNotice("已从磁盘加载最新 repository，旧草稿已备份。");
+  }
+  async function reloadRepository() {
+    setReloading(true);
+    setError("");
+    try {
+      const workspace = await fetchRepository();
+      if (latestFiles.current !== files)
+        throw new Error("读取期间草稿已修改，请重新加载。");
+      if (
+        !window.confirm(
+          `从磁盘 repository 重新加载 ${workspace.files.length} 个文件？当前浏览器草稿将被替换，可通过「撤销」恢复。`,
+        )
+      )
+        return;
+      preserveDraft(files);
+      setRepositoryRevision(workspace.revision);
+      dispatch({ type: "set", files: workspace.files });
+      setReport(null);
+      setShowReport(false);
+      setSelected(null);
+      setPipelineIndex(0);
+    } catch (error) {
+      setError((error as Error).message);
+    } finally {
+      setReloading(false);
+    }
+  }
   async function validate() {
     setBusy(true);
     setReport(null);
     setError("");
     setShowReport(true);
-    const current = snapshot;
     try {
+      const disk = await fetchRepository();
+      if (latestFiles.current !== files)
+        throw new Error("读取期间草稿已修改，请重新校验。");
+      const result = syncRepository(disk, {
+        files,
+        revision: repositoryRevision,
+      });
+      if (result.backup) preserveDraft(result.backup);
+      if (result.files !== files) {
+        dispatch({ type: "set", files: result.files });
+        setSelected(null);
+        setPipelineIndex(0);
+      }
+      setRepositoryRevision(result.revision);
+      const current = JSON.stringify(result.files);
       const response = await fetch("/api/validate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ files }),
+        body: JSON.stringify({ files: result.files }),
       });
-      const result = await response.json();
-      if (!response.ok) throw new Error(result.error || "静态校验失败。");
-      setReport({ value: result, snapshot: current });
+      const validation = await response.json();
+      if (!response.ok) throw new Error(validation.error || "静态校验失败。");
+      setReport({ value: validation, snapshot: current });
     } catch (error) {
       setError((error as Error).message);
     } finally {
@@ -600,7 +670,7 @@ export default function App() {
             </div>
             <button
               className="button primary"
-              disabled={busy || !files.length}
+              disabled={busy || reloading || loading || !files.length}
               onClick={() => void validate()}
             >
               {busy ? (
@@ -612,6 +682,25 @@ export default function App() {
             </button>
           </div>
         </header>
+        {(syncNotice || draftBackup) && (
+          <div className="repository-sync-notice" role="status">
+            <span>{syncNotice || "已保留重新加载前的草稿备份。"}</span>
+            {draftBackup && (
+              <button
+                className="text-button"
+                onClick={() =>
+                  download(
+                    "repository-draft-backup.cdl.json",
+                    JSON.stringify({ version: 1, files: draftBackup }, null, 2),
+                    "application/json",
+                  )
+                }
+              >
+                导出旧草稿
+              </button>
+            )}
+          </div>
+        )}
         {error && (
           <div className="app-error" role="alert">
             <span>{error}</span>
@@ -636,16 +725,27 @@ export default function App() {
                 : `使用 YAML 源码编辑${titles[kind]}。`}
             </p>
           </div>
-          <button
-            className="text-button"
-            onClick={() => {
-              directoryInput.current?.setAttribute("webkitdirectory", "");
-              directoryInput.current?.click();
-            }}
-          >
-            <FolderOpen size={15} />
-            导入文件夹
-          </button>
+          <div className="header-actions">
+            <button
+              className="text-button"
+              disabled={reloading || busy || loading}
+              onClick={() => void reloadRepository()}
+              title="从磁盘 repository 更新文件，替换浏览器草稿（可撤销）"
+            >
+              <RefreshCw size={15} className={reloading ? "spin" : undefined} />
+              {reloading ? "正在重新加载…" : "重新加载 repository"}
+            </button>
+            <button
+              className="text-button"
+              onClick={() => {
+                directoryInput.current?.setAttribute("webkitdirectory", "");
+                directoryInput.current?.click();
+              }}
+            >
+              <FolderOpen size={15} />
+              导入文件夹
+            </button>
+          </div>
         </section>
         <div className="editor-toolbar">
           <div className="view-tabs">

@@ -1,5 +1,6 @@
 import { readdir, readFile, stat } from "node:fs/promises";
 import path from "node:path";
+import { createHash } from "node:crypto";
 import { checkFiles } from "./validation.mjs";
 
 // The root is fixed by the server, never supplied by the browser. Do not follow
@@ -36,5 +37,8 @@ export async function readRepository(root) {
   await visit(root);
   if (!files.length) throw new Error("repository 中没有 YAML 或 JSON 文件。");
   checkFiles(files);
-  return { files };
+  const revision = createHash("sha256")
+    .update(JSON.stringify(files))
+    .digest("hex");
+  return { files, revision };
 }
