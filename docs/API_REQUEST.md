@@ -70,6 +70,21 @@ FFI 原生响应结构不同，不能直接套用本页的 HTTP 响应格式。
 兼容 PostgreSQL 写入不自动重试，避免不确定提交重复产生明细；Core 的幂等 journal 支持有界重试，见 [运行保障](contracts/core-operations.md)。
 正常服务停机先停止请求，再最多等待 30 秒排空；崩溃或强制退出可能丢失尚未落库记录。该行为不提供“响应成功必已持久化”的保证。
 
+## 运行指标
+
+`GET /v1/metrics` 使用 publisher 凭据，返回 JSON：`revision` 表示当前策略版本，
+`metrics` 包含 `enabled`、`rejected_registrations`、`counters` 和 `histograms`。
+这是聚合数据接口，不是 Prometheus 文本端点。耗时指标名称以 `_duration` 结尾，数值单位为秒。
+每个 histogram 返回 `name`、`count`、`sum` 和累计 `buckets`；最后一个桶的 `upper_bound: null`
+表示正无穷，其 `count` 等于总样本数。接口不返回逐请求样本或业务输入。
+
+兼容服务的 `server.enable_metrics: false`（SDK 为 `.enable_metrics(false)`）关闭采集；
+查询仍返回 `enabled: false` 和空指标列表。开关在创建引擎时确定，修改服务配置需要重启。
+每个 histogram 固定保存 23 个桶；每个 collector 最多注册 128 个 counter 和 128 个 histogram，
+名称限 1–128 UTF-8 字节。超限的新指标被忽略，并增加 `rejected_registrations`，已有指标继续更新。
+兼容服务重载复用 collector，统计可以跨策略版本累计；进程重启或显式重置后归零。
+各指标分别读取，整个导出不是跨指标的原子快照。
+
 ## 错误与管理
 
 非法 JSON、非法字段或不支持的异步请求返回 400；认证与角色不足分别返回 401/403。
@@ -87,4 +102,5 @@ FFI 原生响应结构不同，不能直接套用本页的 HTTP 响应格式。
 
 | 日期 | 变更 |
 |---|---|
+| 2026-09-14 | 增加有界运行指标、采集开关和管理侧 JSON 导出契约。 |
 | 2026-09-14 | 更新 Base62 请求 ID 格式、异步保存状态、队列限制和停机语义。 |

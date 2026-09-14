@@ -42,6 +42,12 @@ pub struct PipelineExecutor {
 }
 
 impl PipelineExecutor {
+    /// Select the collector before sharing the executor with request handlers.
+    pub fn with_metrics(mut self, metrics: Arc<MetricsCollector>) -> Self {
+        self.metrics = metrics;
+        self
+    }
+
     /// Create a new pipeline executor without storage
     pub fn new() -> Self {
         Self {

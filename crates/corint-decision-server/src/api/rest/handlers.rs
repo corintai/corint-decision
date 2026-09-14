@@ -30,6 +30,14 @@ pub(super) async fn persistence_status(State(state): State<AppState>) -> Json<se
     Json(serde_json::json!({"persistence":snapshot.engine.persistence_status()}))
 }
 
+/// Publisher-only aggregate metrics for the current policy snapshot.
+pub(super) async fn metrics(State(state): State<AppState>) -> Json<serde_json::Value> {
+    let snapshot = state.engine.snapshot().await;
+    Json(
+        serde_json::json!({"revision": snapshot.revision, "metrics": snapshot.engine.metrics().snapshot()}),
+    )
+}
+
 /// Decision endpoint
 #[axum::debug_handler]
 pub(super) async fn decide(

@@ -88,6 +88,15 @@ impl DecisionEngine {
         sources: &[corint_decision_compiler::core::CoreSource],
         input_schema: corint_decision_model::types::Schema,
     ) -> Result<Self> {
+        Self::from_core_with_metrics(sources, input_schema, true)
+    }
+
+    /// Build strict Core with an explicit runtime metrics switch.
+    pub fn from_core_with_metrics(
+        sources: &[corint_decision_compiler::core::CoreSource],
+        input_schema: corint_decision_model::types::Schema,
+        enable_metrics: bool,
+    ) -> Result<Self> {
         let compiled = corint_decision_compiler::core::compile_core(sources, input_schema)?;
         let mut rule_map = HashMap::new();
         let mut ruleset_map = HashMap::new();
@@ -116,6 +125,7 @@ impl DecisionEngine {
         }
         let executor = Arc::new(
             PipelineExecutor::new_offline()
+                .with_metrics(Arc::new(MetricsCollector::with_enabled(enable_metrics)))
                 .with_ruleset_programs(calls)
                 .with_core_programs(compiled.programs.clone()),
         );
@@ -128,7 +138,7 @@ impl DecisionEngine {
             registry: Some(compiled.registry),
             executor,
             metrics,
-            config: EngineConfig::new(),
+            config: EngineConfig::new().enable_metrics(enable_metrics),
             core_input_schema: Some(compiled.input_schema),
             core_registry_guards: compiled.registry_guards,
             result_writer: None,
@@ -268,8 +278,11 @@ impl DecisionEngine {
                 }
             }
         }
-        let mut pipeline_executor =
-            PipelineExecutor::new().with_http_service_client(Arc::new(http_client));
+        let mut pipeline_executor = PipelineExecutor::new()
+            .with_metrics(Arc::new(MetricsCollector::with_enabled(
+                config.enable_metrics,
+            )))
+            .with_http_service_client(Arc::new(http_client));
         for (name, client) in services {
             pipeline_executor = pipeline_executor.with_service(name, client)?;
         }

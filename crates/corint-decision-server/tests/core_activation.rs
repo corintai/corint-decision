@@ -1545,3 +1545,56 @@ async fn sigterm_drains_queued_decision_before_server_exits() {
         response["record"]
     );
 }
+
+#[tokio::test]
+async fn core_metrics_export_respects_operator_switch_and_reload() {
+    for enabled in [true, false] {
+        let (dir, mut config) = setup(&["initial", "second"]);
+        if !enabled {
+            config["enable_metrics"] = false.into();
+        }
+        let app = app(dir.path(), &config).await;
+        for round in 0..2 {
+            if round == 1 {
+                let state = current(&app).await;
+                let (status, _) = call(
+                    &app,
+                    "POST",
+                    "/v1/core/repo/reload",
+                    Some(PUBLISHER),
+                    candidate(dir.path(), &state, "second"),
+                )
+                .await;
+                assert_eq!(status, StatusCode::OK);
+            }
+            assert_eq!(
+                call(
+                    &app,
+                    "POST",
+                    "/v1/core/decide",
+                    Some(DECISION),
+                    json!({"event":{"amount":1001}})
+                )
+                .await
+                .0,
+                StatusCode::OK
+            );
+            for token in [None, Some(DECISION), Some(PUBLISHER)] {
+                let (status, body) = call(&app, "GET", "/v1/core/metrics", token, json!({})).await;
+                if token != Some(PUBLISHER) {
+                    assert_eq!(status, StatusCode::UNAUTHORIZED);
+                    continue;
+                }
+                assert_eq!(status, StatusCode::OK);
+                assert_eq!(body["revision"], current(&app).await["revision"]);
+                assert_eq!(body["metrics"]["enabled"], enabled);
+                let histograms = body["metrics"]["histograms"].as_array().unwrap();
+                assert_eq!(histograms.is_empty(), !enabled);
+                for histogram in histograms {
+                    assert!(histogram["count"].as_u64().unwrap() > 0);
+                    assert_eq!(histogram["buckets"].as_array().unwrap().len(), 23);
+                }
+            }
+        }
+    }
+}

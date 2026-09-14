@@ -42,6 +42,8 @@ const MAX_BYTES: usize = 8 * 1024 * 1024;
 #[serde(deny_unknown_fields)]
 pub struct CoreConfig {
     pub config_version: String,
+    #[serde(default = "metrics_enabled_by_default")]
+    pub enable_metrics: bool,
     pub listen: SocketAddr,
     pub context: PathBuf,
     pub target: PathBuf,
@@ -81,6 +83,7 @@ struct Active {
     policy: Policy,
 }
 struct Gate {
+    enable_metrics: bool,
     root: PathBuf,
     business_evidence: Option<EvidenceConfig>,
     repository: crate::repo_source::Source,
@@ -98,6 +101,10 @@ struct CoreState {
 }
 #[derive(Clone)]
 struct Credential([u8; 32]);
+
+fn metrics_enabled_by_default() -> bool {
+    true
+}
 
 fn hash(bytes: &[u8]) -> String {
     format!("{:x}", Sha256::digest(bytes))
@@ -213,6 +220,7 @@ pub async fn create_router(
     let cases = read(&root.join(&config.cases))?;
     behavior::validate_suite(&cases)?;
     let gate = Arc::new(Gate {
+        enable_metrics: config.enable_metrics,
         root: root.to_owned(),
         business_evidence: config.business_evidence,
         repository: crate::repo_source::Source::configure(
@@ -248,6 +256,7 @@ pub async fn create_router(
     let control = Router::new()
         .route("/v1/core/target", get(target_state))
         .route("/v1/core/persistence", get(persistence_status))
+        .route("/v1/core/metrics", get(metrics))
         .route("/v1/core/repo/reload", post(reload))
         .route_layer(middleware::from_fn_with_state(
             credential(publisher_token),
@@ -377,9 +386,10 @@ impl Gate {
                 "E_CORE_BEHAVIOR_REJECTED",
             ));
         }
-        let engine = DecisionEngine::from_core(
+        let engine = DecisionEngine::from_core_with_metrics(
             &bundle.sources,
             parse_core_input_schema(&bundle.input_schema)?,
+            self.enable_metrics,
         )
         .map_err(|_| ApiError::new(StatusCode::INTERNAL_SERVER_ERROR, "E_CORE_ENGINE"))?;
         self.repository
@@ -582,6 +592,11 @@ async fn persistence_status(
     State(state): State<CoreState>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     Ok(Json(json!(journal(&state)?.persistence_status())))
+}
+
+async fn metrics(State(state): State<CoreState>) -> Json<serde_json::Value> {
+    let active = state.active.read().await.clone();
+    Json(json!({"revision":active.revision,"metrics":active.policy.engine.metrics().snapshot()}))
 }
 async fn outbox_claim(State(state): State<CoreState>) -> Result<Json<serde_json::Value>, ApiError> {
     journal(&state)?

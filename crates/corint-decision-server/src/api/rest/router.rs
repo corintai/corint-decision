@@ -32,6 +32,7 @@ pub fn create_router(engine: Arc<EngineManager>, access: AccessPolicy) -> Router
         .route("/health", get(health))
         .route("/v1/decide", post(decide))
         .route("/v1/persistence", get(persistence_status))
+        .route("/v1/metrics", get(metrics))
         .route("/v1/repo/reload", post(reload_repository)) // Changed from GET to POST
         .route_layer(middleware::from_fn_with_state(access, authenticate))
         .with_state(state)
@@ -58,7 +59,10 @@ async fn authenticate(
     if values.next().is_some()
         || !access.permits(
             token,
-            matches!(request.uri().path(), "/v1/repo/reload" | "/v1/persistence"),
+            matches!(
+                request.uri().path(),
+                "/v1/repo/reload" | "/v1/persistence" | "/v1/metrics"
+            ),
         )
     {
         return (StatusCode::UNAUTHORIZED, "UNAUTHORIZED").into_response();

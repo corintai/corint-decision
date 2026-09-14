@@ -748,3 +748,56 @@ async fn persistence_status_requires_publisher_and_disabled_state_is_explicit() 
         "disabled"
     );
 }
+
+#[tokio::test]
+async fn metrics_export_is_bounded_authorized_and_respects_switch_after_reload() {
+    for enabled in [true, false] {
+        let repo = repository();
+        let engine = DecisionEngineBuilder::new()
+            .with_repository(RepositoryConfig::file_system(repo.path().to_string_lossy()))
+            .enable_metrics(enabled)
+            .build()
+            .await
+            .unwrap();
+        let manager = Arc::new(EngineManager::new(Arc::new(engine)).unwrap());
+        let app = create_router(manager.clone(), access());
+        for round in 0..2 {
+            if round == 1 {
+                manager.reload(None).await.unwrap();
+            }
+            http_decide(&app).await;
+            for token in [None, Some(DECISION_TOKEN), Some(PUBLISHER_TOKEN)] {
+                let mut request = Request::get("/v1/metrics");
+                if let Some(token) = token {
+                    request = request.header("authorization", format!("Bearer {token}"));
+                }
+                let response = app
+                    .clone()
+                    .oneshot(request.body(Body::empty()).unwrap())
+                    .await
+                    .unwrap();
+                if token != Some(PUBLISHER_TOKEN) {
+                    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+                    continue;
+                }
+                assert_eq!(response.status(), StatusCode::OK);
+                let body: Value = serde_json::from_slice(
+                    &response.into_body().collect().await.unwrap().to_bytes(),
+                )
+                .unwrap();
+                assert_eq!(body["revision"], manager.snapshot().await.revision);
+                assert_eq!(body["metrics"]["enabled"], enabled);
+                let histograms = body["metrics"]["histograms"].as_array().unwrap();
+                assert_eq!(histograms.is_empty(), !enabled);
+                for histogram in histograms {
+                    assert!(histogram["count"].as_u64().unwrap() > 0);
+                    assert_eq!(histogram["buckets"].as_array().unwrap().len(), 23);
+                    assert_eq!(
+                        histogram["buckets"].as_array().unwrap().last().unwrap()["count"],
+                        histogram["count"]
+                    );
+                }
+            }
+        }
+    }
+}

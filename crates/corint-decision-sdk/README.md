@@ -298,6 +298,24 @@ are not automatically retried because its rule-detail inserts are not retry-idem
 Keep the Tokio runtime alive and call `shutdown_persistence` before stopping the host.
 An abrupt shutdown can lose buffered records; queue admission is not durable storage.
 
+## Runtime metrics
+
+`.enable_metrics(false)` now disables executor collection, including writes through
+handles obtained from `engine.metrics()`. `engine.metrics().snapshot()` exports
+bounded aggregate counters and histograms as a serializable snapshot. Execution
+durations use seconds. Histograms store 23 fixed buckets, count and sum, with no
+raw sample history. Each collector accepts at most 128 counter names and 128
+histogram names, each 1–128 UTF-8 bytes; further registrations become no-ops and
+increment `rejected_registrations`. Disabled collection does not count rejections.
+
+`Histogram::percentile` is approximate bucket interpolation; 0/100 return exact
+extrema, and intermediate percentiles in the final infinite bucket return its
+lower bound. Nonfinite or negative observations and sum-overflowing samples are
+ignored. `reset_all()` clears aggregates and rejection counts but keeps registered
+names. Compatibility reloads share the collector; strict Core rebuilds it on reload.
+Use `DecisionEngine::from_core_with_metrics(sources, schema, false)` to construct
+strict Core without metrics; the existing `from_core` constructor enables them.
+
 ## Configuration
 
 ### EngineConfig

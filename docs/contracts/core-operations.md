@@ -96,6 +96,24 @@ SQLite 使用 WAL、`synchronous=FULL`；后台仍在一个事务中保存决策
 显式调用底层 `DecisionResultWriter::write_decision` 仍等待事务提交；SDK 宿主退出前应调用 `engine.shutdown_persistence(timeout)`，并保持 Tokio runtime 存活直到排空。
 兼容表格式保留原协议，不冒充上述 Core 版本化记录/反馈日志。
 
+## 有界运行指标
+
+Core 配置 v2/v3 支持顶层 `enable_metrics`，缺省为 `true`；设置 `false` 后执行器不采集指标，
+该设置在策略重载后仍然生效。修改操作员配置需要重启服务。
+`GET /v1/core/metrics` 仅允许 publisher，返回当前 `revision` 和 `metrics` 聚合快照。
+关闭时仍可查询，返回 `enabled: false` 及空指标列表。
+
+耗时以秒记录到固定 23 个桶，保留总次数与总耗时，不保留原始样本。每个 collector 的 counter 和
+histogram 分别最多 128 个，名称限制为 1–128 UTF-8 字节；超限注册被忽略并计入
+`rejected_registrations`。指标格式与[兼容 HTTP 指标](../API_REQUEST.md#运行指标)相同，
+最后一个桶用 `upper_bound: null` 表示正无穷，各桶计数累计到上界（含上界）。
+负数、非有限样本和导致总和溢出的样本不计入统计。
+
+Core 成功重载会创建新 collector，统计从零开始；旧版本在途请求继续更新旧 collector，
+其后续指标不再从当前版本接口导出。兼容服务重载则复用 collector。导出无跨指标原子性。
+SDK 的 `Histogram::percentile` 改为桶内线性插值的近似值，0/100 分位保留精确最小/最大值，
+落入最后无穷桶的中间分位返回桶下界；不应依赖它得到精确的逐样本排名。
+
 ## 评估与审批门禁
 
 需要业务证据的部署额外配置：
@@ -165,3 +183,5 @@ SQLite/PostgreSQL 的单文档查询有事务快照；文件、HTTP 后端发布
 - 2026-09-14：在线 journal 改为单条决策校验、唯一索引查重和事务插入；移除在线反馈管理和全历史账本重建，结果导出凭据改为可选；增加旧库一次性升级与索引/计数。
 
 - 2026-09-14：响应与数据库提交解耦，增加有界后台写入、状态与失败统计、Core 幂等重试及正常停机排空；明确异步内存队列的丢失窗口。
+
+- 2026-09-14：运行指标采用固定桶并限制名称基数，接入采集开关及 publisher 专用 JSON 导出，明确重载和近似分位语义。
