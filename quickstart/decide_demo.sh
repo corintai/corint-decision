@@ -70,6 +70,10 @@ PROTOCOL=""
 DATASOURCE=""
 SERVER_PID=""
 TEST_FAILURES=0
+SUMMARY_NAMES=()
+SUMMARY_EXPECTED=()
+SUMMARY_ACTUAL=()
+SUMMARY_RESULTS=()
 RISINGWAVE_SCHEMA=""
 RISINGWAVE_SCHEMA_CREATED=false
 
@@ -940,6 +944,45 @@ grpc_health_check() {
 # Test Scenarios
 # ============================================================================
 
+reset_test_summary() {
+    SUMMARY_NAMES=()
+    SUMMARY_EXPECTED=()
+    SUMMARY_ACTUAL=()
+    SUMMARY_RESULTS=()
+}
+
+record_test_result() {
+    SUMMARY_NAMES+=("$1")
+    SUMMARY_EXPECTED+=("${2:-—}")
+    SUMMARY_ACTUAL+=("${3:-—}")
+    SUMMARY_RESULTS+=("$4")
+    if [ "$4" != PASS ]; then
+        TEST_FAILURES=$((TEST_FAILURES + 1))
+    fi
+}
+
+print_test_summary() {
+    local total=${#SUMMARY_RESULTS[@]}
+    [ "$total" -gt 1 ] || return 0
+    local i passed=0 failed=0 errors=0
+
+    print_section "Test Results Summary"
+    printf '%-4s %-48s %-10s %-10s %s\n' '#' 'Scenario' 'Expected' 'Actual' 'Result'
+    for ((i = 0; i < total; i++)); do
+        printf '%-4s %-48s %-10s %-10s %s\n' "$((i + 1))" \
+            "${SUMMARY_NAMES[$i]}" "${SUMMARY_EXPECTED[$i]}" \
+            "${SUMMARY_ACTUAL[$i]}" "${SUMMARY_RESULTS[$i]}"
+        case "${SUMMARY_RESULTS[$i]}" in
+            PASS) passed=$((passed + 1)) ;;
+            FAIL) failed=$((failed + 1)) ;;
+            ERROR) errors=$((errors + 1)) ;;
+        esac
+    done
+    echo ""
+    printf 'Total: %s | Passed: %s | Failed: %s | Errors: %s\n' \
+        "$total" "$passed" "$failed" "$errors"
+}
+
 run_test() {
     local name="$1"
     local user_id="$2"
@@ -959,6 +1002,7 @@ run_test() {
     local response=""
     local request=""
     local actual_decision expected_decision upper_actual upper_expected
+    expected_decision=${expected%% *}
     if [ "$PROTOCOL" = "http" ]; then
         request=$(cat <<EOF
 {
@@ -986,7 +1030,7 @@ EOF
 
         if ! response=$(http_post_decision "$request"); then
             print_error "RESULT: ERROR - ${name} (request failed)"
-            TEST_FAILURES=$((TEST_FAILURES + 1))
+            record_test_result "$name" "$expected_decision" "—" ERROR
             return 0
         fi
     else
@@ -1005,7 +1049,7 @@ EOF
 
         if ! response=$(grpc_decide "$user_id" "$event_type" "$amount" "$device_id" "$ip_address"); then
             print_error "RESULT: ERROR - ${name} (gRPC request failed)"
-            TEST_FAILURES=$((TEST_FAILURES + 1))
+            record_test_result "$name" "$expected_decision" "—" ERROR
             return 0
         fi
     fi
@@ -1017,7 +1061,7 @@ EOF
         ' >/dev/null 2>&1; then
             echo "$response" | jq . 2>/dev/null || echo "$response"
             print_error "RESULT: ERROR - Response has no decision.result"
-            TEST_FAILURES=$((TEST_FAILURES + 1))
+            record_test_result "$name" "$expected_decision" "—" ERROR
             return 0
         fi
         echo "$response" | jq '{
@@ -1038,22 +1082,20 @@ EOF
     
     # Compare actual vs expected decision
     if [ -n "$expected" ] && [ -n "$actual_decision" ]; then
-        # Extract just the decision type (APPROVE, DECLINE, REVIEW) from expected string
-        expected_decision=$(echo "$expected" | cut -d' ' -f1)
-        
         # Convert both to uppercase for case-insensitive comparison
         upper_actual=$(echo "$actual_decision" | tr '[:lower:]' '[:upper:]')
         upper_expected=$(echo "$expected_decision" | tr '[:lower:]' '[:upper:]')
         
         if [ "$upper_actual" = "$upper_expected" ]; then
             echo -e "${GREEN}RESULT: PASS - Expected '${expected_decision}', got '${actual_decision}'${NC}"
+            record_test_result "$name" "$expected_decision" "$actual_decision" PASS
         else
             echo -e "${RED}RESULT: FAIL - Expected '${expected_decision}', got '${actual_decision}'${NC}"
-            TEST_FAILURES=$((TEST_FAILURES + 1))
+            record_test_result "$name" "$expected_decision" "$actual_decision" FAIL
         fi
     else
         echo -e "${YELLOW}WARNING: Could not compare decisions (expected: '$expected', actual: '$actual_decision')${NC}"
-        TEST_FAILURES=$((TEST_FAILURES + 1))
+        record_test_result "$name" "$expected_decision" "$actual_decision" ERROR
     fi
     
     echo ""
@@ -1226,6 +1268,7 @@ run_all_scenarios() {
         test_risingwave_velocity
         return
     fi
+    reset_test_summary
     test_normal_user
     test_normal_user_2
     test_high_frequency_login
@@ -1239,10 +1282,11 @@ run_all_scenarios() {
     test_stats_user
 
     print_section "All Scenarios Completed"
-    echo "Review the results above to verify expected decisions."
+    print_test_summary
 }
 
 test_risingwave_velocity() {
+    reset_test_summary
     print_section "RisingWave: Live Materialized View Lookup"
     print_info "RisingWave maintains the one-hour count; CORINT looks it up by user_id."
     print_info "Each FLUSH makes the fixture update visible before requesting a decision."
@@ -1270,32 +1314,39 @@ FLUSH;
 SQL_MISSING
     run_test "RisingWave: missing row uses fallback -1" "risingwave_demo_user" \
         "transaction" "100" "rw_device" "192.0.2.1" "US" "Seattle" "REVIEW"
+    print_test_summary
 }
 
 run_approve_scenarios() {
+    reset_test_summary
     test_normal_user
     test_normal_user_2
     test_vip_user
     test_stats_user
 
     print_section "APPROVE Scenarios Completed"
+    print_test_summary
 }
 
 run_decline_scenarios() {
+    reset_test_summary
     test_failed_login
     test_multi_device
     test_suspicious_user
 
     print_section "DECLINE Scenarios Completed"
+    print_test_summary
 }
 
 run_review_scenarios() {
+    reset_test_summary
     test_high_frequency_login
     test_high_transaction_volume
     test_multi_ip
     test_new_user
 
     print_section "REVIEW Scenarios Completed"
+    print_test_summary
 }
 
 # ============================================================================
