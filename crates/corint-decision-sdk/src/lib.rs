@@ -31,6 +31,11 @@ pub use corint_decision_engine::{
     ValidationResult, Value,
 };
 
+pub use corint_decision_engine::decision_host::{
+    DecisionHost, FeatureDatasource, FeatureHostConfig, HostExecution,
+};
+pub use corint_decision_engine::feature_pipeline::{FeatureInput, FeaturePlan};
+
 pub use corint_decision_engine::{
     HttpServiceConfig, ServiceAuth, ServiceClient, ServiceOperation, ServiceRequest,
     ServiceResponse, ServiceResponseMapping,

@@ -221,9 +221,12 @@
       "status": "experimental",
       "implementation_status": "implemented_in_declared_scope",
       "entry_point": "corint_decision_engine::feature_pipeline::FeaturePipeline",
-      "scope": "sdk_fixed_cutoff_aggregation_expression_before_core",
+      "scope": "sdk_and_core_http_fixed_cutoff_aggregation_expression_before_core",
       "evidence": "../../../crates/corint-decision-engine/tests/feature_pipeline.rs",
-      "http_enabled": false,
+      "http_enabled": true,
+      "http_entry_point": "/v1/core/decide",
+      "host_entry_point": "corint_decision_engine::decision_host::DecisionHost",
+      "http_evidence": "../../../crates/corint-decision-server/tests/core_activation.rs",
       "live_work_integration": false
     },
     "capacity_benchmark": {

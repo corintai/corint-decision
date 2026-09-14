@@ -14,7 +14,10 @@ use axum::{
     Json, Router,
 };
 use corint_decision_compiler::core::{parse_core_input_schema, CoreError, CoreSource};
-use corint_decision_engine::{DecisionEngine, DecisionRequest, Value};
+use corint_decision_engine::{
+    decision_host::{DecisionHost, FeatureHostConfig},
+    Value,
+};
 use corint_decision_toolchain::{
     behavior,
     contracts::{CompatibilityReport, TargetContracts},
@@ -44,6 +47,9 @@ pub struct CoreConfig {
     pub config_version: String,
     #[serde(default = "metrics_enabled_by_default")]
     pub enable_metrics: bool,
+    /// Operator-owned JSON FeatureHostConfig, re-read for each candidate reload.
+    #[serde(default)]
+    pub feature_pipeline: Option<PathBuf>,
     pub listen: SocketAddr,
     pub context: PathBuf,
     pub target: PathBuf,
@@ -70,10 +76,12 @@ pub struct OperatorApproval {
     pub context_sha256: String,
     pub target_sha256: String,
     pub cases_sha256: String,
+    #[serde(default)]
+    pub feature_binding_sha256: Option<String>,
 }
 
 struct Policy {
-    engine: DecisionEngine,
+    host: DecisionHost,
     compatibility: CompatibilityReport,
     repository: RepositoryIdentity,
     subject: serde_json::Value,
@@ -84,6 +92,8 @@ struct Active {
 }
 struct Gate {
     enable_metrics: bool,
+    feature_pipeline: Option<PathBuf>,
+    runtime: tokio::runtime::Handle,
     root: PathBuf,
     business_evidence: Option<EvidenceConfig>,
     repository: crate::repo_source::Source,
@@ -191,6 +201,13 @@ pub async fn create_router(
             .all(|value| is_hash(value)),
             "Invalid operator approval fingerprint"
         );
+        anyhow::ensure!(
+            approval
+                .feature_binding_sha256
+                .as_ref()
+                .is_none_or(|value| is_hash(value)),
+            "Invalid feature approval fingerprint"
+        );
     }
     anyhow::ensure!(
         config.config_version != "3" || config.journal.is_some(),
@@ -221,6 +238,8 @@ pub async fn create_router(
     behavior::validate_suite(&cases)?;
     let gate = Arc::new(Gate {
         enable_metrics: config.enable_metrics,
+        feature_pipeline: config.feature_pipeline,
+        runtime: tokio::runtime::Handle::current(),
         root: root.to_owned(),
         business_evidence: config.business_evidence,
         repository: crate::repo_source::Source::configure(
@@ -337,12 +356,29 @@ impl IntoResponse for ApiError {
 }
 
 impl Gate {
-    fn check_evidence(&self, subject: &serde_json::Value) -> Result<(), ApiError> {
+    fn features(&self) -> Result<Option<FeatureHostConfig>, ApiError> {
+        self.feature_pipeline
+            .as_ref()
+            .map(|path| {
+                read(&self.root.join(path))
+                    .and_then(|source| Ok(serde_json::from_str(&source.yaml)?))
+                    .map_err(|_| {
+                        ApiError::new(StatusCode::UNPROCESSABLE_ENTITY, "E_FEATURE_CONFIG")
+                    })
+            })
+            .transpose()
+    }
+    fn check_evidence(
+        &self,
+        subject: &serde_json::Value,
+        resources: &[serde_json::Value],
+    ) -> Result<(), ApiError> {
         if let Some(config) = &self.business_evidence {
-            evidence::check(
+            evidence::check_with_features(
                 &self.root,
                 config,
                 subject,
+                resources,
                 chrono::Utc::now().timestamp_millis() as u64,
             )
             .map_err(|_| ApiError::new(StatusCode::FORBIDDEN, "E_PUBLICATION_EVIDENCE"))?;
@@ -362,20 +398,30 @@ impl Gate {
         let compatibility = self
             .contracts
             .check(&bundle.sources, &bundle.input_schema, None)?;
+        let features = self.features()?;
+        let feature_binding = features.as_ref().map(FeatureHostConfig::binding_sha256);
         if !self.approvals.iter().any(|approval| {
             approval.policy_sha256 == compatibility.policy_sha256
                 && approval.context_sha256 == compatibility.context.sha256
                 && approval.target_sha256 == compatibility.target.sha256
                 && approval.cases_sha256 == self.cases_sha256
+                && approval.feature_binding_sha256 == feature_binding
         }) {
             return Err(ApiError::new(
                 StatusCode::FORBIDDEN,
                 "E_OPERATOR_APPROVAL_REQUIRED",
             ));
         }
-        let subject = evidence::subject(&compatibility)
-            .map_err(|_| ApiError::new(StatusCode::INTERNAL_SERVER_ERROR, "E_CORE_SUBJECT"))?;
-        self.check_evidence(&subject)?;
+        let subject =
+            evidence::subject_with_features(&compatibility, feature_binding.as_deref())
+                .map_err(|_| ApiError::new(StatusCode::INTERNAL_SERVER_ERROR, "E_CORE_SUBJECT"))?;
+        self.check_evidence(
+            &subject,
+            &features
+                .as_ref()
+                .map(FeatureHostConfig::resources)
+                .unwrap_or_default(),
+        )?;
         // This worker owns a synchronous test runtime. Never use caller cases,
         // report booleans or imported historical package evidence here.
         let (package, _) = package::prepare(&bundle.sources, &bundle.input_schema, &self.cases)?;
@@ -386,17 +432,31 @@ impl Gate {
                 "E_CORE_BEHAVIOR_REJECTED",
             ));
         }
-        let engine = DecisionEngine::from_core_with_metrics(
-            &bundle.sources,
-            parse_core_input_schema(&bundle.input_schema)?,
-            self.enable_metrics,
-        )
-        .map_err(|_| ApiError::new(StatusCode::INTERNAL_SERVER_ERROR, "E_CORE_ENGINE"))?;
+        let host = self
+            .runtime
+            .block_on(DecisionHost::new(
+                &bundle.sources,
+                parse_core_input_schema(&bundle.input_schema)?,
+                features,
+                self.enable_metrics,
+            ))
+            .map_err(|_| ApiError::new(StatusCode::INTERNAL_SERVER_ERROR, "E_CORE_ENGINE"))?;
         self.repository
             .verify(&snapshot.identity)
             .map_err(|_| ApiError::new(StatusCode::CONFLICT, "E_REPOSITORY_CHANGED"))?;
+        if self
+            .features()?
+            .as_ref()
+            .map(FeatureHostConfig::binding_sha256)
+            != feature_binding
+        {
+            return Err(ApiError::new(
+                StatusCode::CONFLICT,
+                "E_FEATURE_CONFIG_CHANGED",
+            ));
+        }
         Ok(Policy {
-            engine,
+            host,
             compatibility,
             repository: snapshot.identity,
             subject,
@@ -411,6 +471,8 @@ struct ActiveReceipt<'a> {
     policy_sha256: &'a str,
     target_id: &'a str,
     binding_sha256: &'a str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    feature_binding_sha256: Option<&'a str>,
     context_sha256: &'a str,
     target_sha256: &'a str,
     cases_sha256: &'a str,
@@ -429,6 +491,7 @@ fn receipt<'a>(active: &'a Active, gate: &'a Gate) -> ActiveReceipt<'a> {
         policy_sha256: &report.policy_sha256,
         target_id: &report.target.id,
         binding_sha256: &report.binding_sha256,
+        feature_binding_sha256: active.policy.host.feature_binding_sha256(),
         context_sha256: &report.context.sha256,
         target_sha256: &report.target.sha256,
         cases_sha256: &gate.cases_sha256,
@@ -519,18 +582,19 @@ async fn decide(
     // Re-read trusted evidence so expiry/revocation also stops new decisions.
     let gate = state.gate.clone();
     let subject = active.policy.subject.clone();
-    tokio::task::spawn_blocking(move || gate.check_evidence(&subject))
+    let resources = active.policy.host.required_resources().to_vec();
+    tokio::task::spawn_blocking(move || gate.check_evidence(&subject, &resources))
         .await
         .map_err(|_| ApiError::new(StatusCode::INTERNAL_SERVER_ERROR, "E_CORE_WORKER"))??;
-    let mut input = json!(event.event);
-    input.sort_all_objects();
-    let mut request = DecisionRequest::new(event.event);
-    if event.enable_trace {
-        request = request.with_trace();
-    }
     let now = chrono::Utc::now().timestamp_millis();
     let started = std::time::Instant::now();
-    let result = active.policy.engine.decide(request).await;
+    let execution = active
+        .policy
+        .host
+        .decide(event.event, now.div_euclid(1000), event.enable_trace)
+        .await;
+    let input = execution.input_evidence;
+    let result = execution.result;
     let record = if let Some(journal) = &state.journal {
         let id = uuid::Uuid::new_v4().to_string();
         let (signal, pipeline, rules, reasons, actions, error) = match &result {
@@ -549,7 +613,7 @@ async fn decide(
             "input_evidence":{"reference":format!("journal:{id}"),"sha256":hash(input.to_string().as_bytes())},
             "runtime":{"revision":active.revision,"repository_revision":active.policy.repository.revision,
                 "repository_manifest_sha256":active.policy.repository.manifest_sha256,"pipeline_id":pipeline},
-            "resources":[],"triggered_rules":rules,"reasons":reasons,"result":signal,"error_code":error,
+            "resources":execution.resources,"triggered_rules":rules,"reasons":reasons,"result":signal,"error_code":error,
             "duration_ms":started.elapsed().as_millis() as u64,"actions":actions});
         journal
             .enqueue(record.clone(), input.clone())
@@ -570,13 +634,18 @@ async fn decide(
     };
     match result {
         Ok(response) => Ok(Json(
-            json!({"snapshot":receipt(&active, &state.gate),"decision":response,"record":record,"persistence":persistence}),
+            json!({"snapshot":receipt(&active, &state.gate),"decision":response,"record":record,"persistence":persistence,"feature_evidence":execution.feature_evidence}),
         )),
         Err(error) => Err(ApiError {
-            status: StatusCode::UNPROCESSABLE_ENTITY,
+            status: if matches!(&error, corint_decision_engine::EngineError::Core(error) if error.diagnostic.code == "E_HOST_BUSY")
+            {
+                StatusCode::SERVICE_UNAVAILABLE
+            } else {
+                StatusCode::UNPROCESSABLE_ENTITY
+            },
             code: "E_CORE_DECISION".into(),
             diagnostic: Some(
-                json!({"record":record,"persistence":persistence,"snapshot":receipt(&active,&state.gate),"cause":match error { corint_decision_engine::EngineError::Core(error) => Some(error.diagnostic), _ => None }}),
+                json!({"record":record,"persistence":persistence,"snapshot":receipt(&active,&state.gate),"feature_evidence":execution.feature_evidence,"cause":match error { corint_decision_engine::EngineError::Core(error) => Some(error.diagnostic), _ => None }}),
             ),
         }),
     }
@@ -596,7 +665,7 @@ async fn persistence_status(
 
 async fn metrics(State(state): State<CoreState>) -> Json<serde_json::Value> {
     let active = state.active.read().await.clone();
-    Json(json!({"revision":active.revision,"metrics":active.policy.engine.metrics().snapshot()}))
+    Json(json!({"revision":active.revision,"metrics":active.policy.host.metrics().snapshot()}))
 }
 async fn outbox_claim(State(state): State<CoreState>) -> Result<Json<serde_json::Value>, ApiError> {
     journal(&state)?

@@ -29,6 +29,19 @@ struct TrustFile {
 pub fn subject(report: &CompatibilityReport) -> anyhow::Result<Value> {
     corint_decision_toolchain::contracts::core_evidence_subject(report).map_err(Into::into)
 }
+/// Bind external input preparation as well as the unchanged pure Core subject.
+pub fn subject_with_features(
+    report: &CompatibilityReport,
+    feature_binding: Option<&str>,
+) -> anyhow::Result<Value> {
+    let mut subject = subject(report)?;
+    if let Some(binding) = feature_binding {
+        subject["bindings_sha256"] = corint_decision_engine::decision_host::canonical_sha256(
+            &serde_json::json!({"core_bindings_sha256":subject["bindings_sha256"], "feature_host_sha256":binding})
+        ).into();
+    }
+    Ok(subject)
+}
 fn read(path: &Path) -> anyhow::Result<String> {
     use std::io::Read;
     let file = std::fs::File::open(path)?;
@@ -42,6 +55,15 @@ pub fn check(
     root: &Path,
     config: &EvidenceConfig,
     subject: &Value,
+    now: u64,
+) -> anyhow::Result<()> {
+    check_with_features(root, config, subject, &[], now)
+}
+pub fn check_with_features(
+    root: &Path,
+    config: &EvidenceConfig,
+    subject: &Value,
+    required_features: &[Value],
     now: u64,
 ) -> anyhow::Result<()> {
     let contract = |kind, path: &Path| -> anyhow::Result<Contract> {
@@ -60,7 +82,7 @@ pub fn check(
         &evaluation,
         &approval,
         subject,
-        &[],
+        required_features,
         &EvidenceTrust {
             evaluations: trust.evaluations,
             approvals: trust.approvals,

@@ -1598,3 +1598,485 @@ async fn core_metrics_export_respects_operator_switch_and_reload() {
         }
     }
 }
+
+// A real SQLite input resource feeding the same strict policies as the other
+// server tests. Optional user_id keeps pure Core's existing boundary cases valid.
+async fn feature_host_setup() -> (
+    TempDir,
+    Value,
+    corint_decision_engine::decision_host::FeatureHostConfig,
+    sqlx::SqlitePool,
+    SourceBundle,
+) {
+    use corint_decision_engine::{
+        decision_host::FeatureHostConfig,
+        feature_pipeline::{FeatureInput, FeaturePlan},
+    };
+    use std::collections::BTreeMap;
+    let (dir, mut config) = setup(&["initial"]);
+    let mut sources = bundle("initial");
+    let mut schema: Value = serde_yaml::from_str(&sources.input_schema.yaml).unwrap();
+    schema["fields"]["user_id"] = json!({"name":"user_id","field_type":"string","required":false});
+    sources = SourceBundle::new(
+        CoreSource {
+            path: sources.input_schema.path,
+            yaml: serde_json::to_string(&schema).unwrap(),
+        },
+        sources.sources,
+    )
+    .unwrap();
+    publish(dir.path(), &sources, "feature-policy");
+    let mut context: Value =
+        serde_yaml::from_str(&std::fs::read_to_string(dir.path().join("context.yaml")).unwrap())
+            .unwrap();
+    context["input_schema"] = schema;
+    context["fields"]["user_id"] = json!({"description":"Synthetic account key", "unit":"identifier", "entity":"transaction", "time_basis":"Request time"});
+    context["fields"]["amount"]["description"] =
+        json!("Synthetic account volume from the bound feature plan");
+    let context = serde_json::to_string(&context).unwrap();
+    std::fs::write(dir.path().join("context.yaml"), &context).unwrap();
+    let mut target: Value =
+        serde_json::from_str(&std::fs::read_to_string(dir.path().join("target.json")).unwrap())
+            .unwrap();
+    target["context"]["sha256"] = hash(&context).into();
+    let target = serde_json::to_string(&target).unwrap();
+    std::fs::write(dir.path().join("target.json"), &target).unwrap();
+    config["approvals"][0]["policy_sha256"] = identity(&sources).into();
+    config["approvals"][0]["context_sha256"] = hash(&context).into();
+    config["approvals"][0]["target_sha256"] = hash(&target).into();
+    let db = dir.path().join("features.sqlite");
+    let pool = sqlx::SqlitePool::connect_with(
+        sqlx::sqlite::SqliteConnectOptions::new()
+            .filename(&db)
+            .create_if_missing(true),
+    )
+    .await
+    .unwrap();
+    sqlx::query("CREATE TABLE events(user_id TEXT, amount REAL, occurred_at TEXT)")
+        .execute(&pool)
+        .await
+        .unwrap();
+    for (user, amount, offset) in [
+        ("u1", 400, -2),
+        ("u1", 700, -2),
+        ("u2", 500, -2),
+        ("u1", 99999, 3600),
+        ("u1", 99999, -3600),
+    ] {
+        let timestamp = (chrono::Utc::now() + chrono::Duration::seconds(offset))
+            .format("%Y-%m-%d %H:%M:%S")
+            .to_string();
+        sqlx::query("INSERT INTO events VALUES(?,?,?)")
+            .bind(user)
+            .bind(amount)
+            .bind(timestamp)
+            .execute(&pool)
+            .await
+            .unwrap();
+    }
+    let plan = FeaturePlan { format_version:"1".into(), revision:"volume-v1".into(), datasource_revisions:BTreeMap::from([("events".into(), "db-v1".into())]), timeout_ms:1000,
+        outputs:vec![FeatureInput { field:"amount".into(), definition:serde_yaml::from_str("name: volume\ntype: aggregation\nmethod: sum\ndatasource: events\nentity: events\ndimension: user_id\ndimension_value: '${event.user_id}'\nfield: amount\nwindow: 60s\ntimestamp_field: occurred_at\n").unwrap() }] };
+    let features: FeatureHostConfig = serde_json::from_value(json!({"plan":plan,"datasources":{"events":{"revision":"db-v1","config":{"name":"events","type":"sql","provider":"sqlite","connection_string":db,"database":"test","pool_size":1,"timeout_ms":1000,"query_cache_ttl_secs":0}}}})).unwrap();
+    config["feature_pipeline"] = "features.json".into();
+    config["approvals"][0]["feature_binding_sha256"] = features.binding_sha256().into();
+    config["config_version"] = "3".into();
+    config["journal"] = json!({"path":"journal.sqlite","tenant_id":"test","max_records":1000,"max_bytes":10_000_000});
+    save(&dir.path().join("features.json"), &json!(features));
+    (dir, config, features, pool, sources)
+}
+async fn feature_request(router: &Router, event: Value) -> (StatusCode, Value) {
+    call(
+        router,
+        "POST",
+        "/v1/core/decide",
+        Some(DECISION),
+        json!({"business_event_id":"feature-test","event":event,"enable_trace":true}),
+    )
+    .await
+}
+async fn stored_feature_input(dir: &Path, id: &str) -> Value {
+    let pool = sqlx::SqlitePool::connect_with(
+        sqlx::sqlite::SqliteConnectOptions::new().filename(dir.join("journal.sqlite")),
+    )
+    .await
+    .unwrap();
+    let input: String =
+        sqlx::query_scalar("SELECT input FROM events WHERE json_extract(body,'$.decision_id')=?")
+            .bind(id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    serde_json::from_str(&input).unwrap()
+}
+
+#[tokio::test]
+async fn feature_host_http_records_actual_inputs_and_replays_without_database() {
+    let (dir, config, features, pool, sources) = feature_host_setup().await;
+    let router = app(dir.path(), &config).await;
+    let before = chrono::Utc::now().timestamp();
+    let (status, response) = feature_request(&router, json!({"user_id":"u1"})).await;
+    assert_eq!(status, StatusCode::OK, "{response}");
+    assert_eq!(response["decision"]["result"]["score"], 60);
+    assert_eq!(response["feature_evidence"]["values"]["amount"], 1100.0);
+    assert_eq!(response["feature_evidence"]["plan_revision"], "volume-v1");
+    assert_eq!(
+        response["feature_evidence"]["datasource_revisions"],
+        json!({"events":"db-v1"})
+    );
+    assert!(response["feature_evidence"]["as_of"].as_i64().unwrap() >= before);
+    assert!(
+        response["feature_evidence"]["as_of"].as_i64().unwrap() <= chrono::Utc::now().timestamp()
+    );
+    assert_eq!(
+        response["snapshot"]["feature_binding_sha256"],
+        features.binding_sha256()
+    );
+    assert_eq!(response["record"]["resources"], json!(features.resources()));
+    assert_eq!(response["persistence"], "queued");
+    assert_eq!(wait_for_writes(&router).await["failed"], 0);
+    let input = stored_feature_input(
+        dir.path(),
+        response["record"]["decision_id"].as_str().unwrap(),
+    )
+    .await;
+    assert_eq!(input["raw_event"], json!({"user_id":"u1"}));
+    assert_eq!(input["event"], json!({"user_id":"u1","amount":1100.0}));
+    assert_eq!(input["feature_evidence"], response["feature_evidence"]);
+    let mut canonical = input.clone();
+    canonical.sort_all_objects();
+    assert_eq!(
+        response["record"]["input_evidence"]["sha256"],
+        hash(&canonical.to_string())
+    );
+    sqlx::query("DROP TABLE events")
+        .execute(&pool)
+        .await
+        .unwrap();
+    let engine = corint_decision_engine::DecisionEngine::from_core(
+        &sources.sources,
+        corint_decision_compiler::core::parse_core_input_schema(&sources.input_schema).unwrap(),
+    )
+    .unwrap();
+    let replay = engine
+        .decide(corint_decision_engine::DecisionRequest::new(
+            serde_json::from_value(input["event"].clone()).unwrap(),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(replay.result.score, 60);
+    assert_eq!(replay.result.actions, vec!["BLOCK"]);
+}
+
+#[tokio::test]
+async fn feature_host_rejects_injection_and_records_source_failure_without_core_execution() {
+    let (dir, config, _, pool, _) = feature_host_setup().await;
+    let router = app(dir.path(), &config).await;
+    sqlx::query("DROP TABLE events")
+        .execute(&pool)
+        .await
+        .unwrap();
+    for (event, code) in [
+        (json!({"user_id":"u1","amount":0.0}), "E_INPUT_SCHEMA"),
+        (json!({"user_id":"u1"}), "E_FEATURE_EXECUTION"),
+    ] {
+        let (status, response) = feature_request(&router, event.clone()).await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{response}");
+        assert_eq!(response["diagnostic"]["record"]["result"], "error");
+        assert_eq!(response["diagnostic"]["record"]["error_code"], code);
+        assert_eq!(response["diagnostic"]["record"]["resources"], json!([]));
+        assert_eq!(wait_for_writes(&router).await["failed"], 0);
+        let input = stored_feature_input(
+            dir.path(),
+            response["diagnostic"]["record"]["decision_id"]
+                .as_str()
+                .unwrap(),
+        )
+        .await;
+        assert_eq!(input["raw_event"], event);
+        assert!(input["event"].is_null());
+    }
+    let (_, metrics) = call(
+        &router,
+        "GET",
+        "/v1/core/metrics",
+        Some(PUBLISHER),
+        json!({}),
+    )
+    .await;
+    assert_eq!(metrics["metrics"]["histograms"], json!([]));
+    assert_eq!(
+        call(
+            &router,
+            "POST",
+            "/v1/core/decide",
+            Some(DECISION),
+            json!({"business_event_id":"injected-time","event":{"user_id":"u1"},"as_of":0})
+        )
+        .await
+        .0,
+        StatusCode::BAD_REQUEST
+    );
+}
+
+#[tokio::test]
+async fn feature_host_resource_change_requires_approval_and_preserves_live_snapshot() {
+    let (dir, config, mut features, _pool, _) = feature_host_setup().await;
+    let router = app(dir.path(), &config).await;
+    let original = current(&router).await;
+    features.plan.revision = "unapproved-v2".into();
+    save(&dir.path().join("features.json"), &json!(features));
+    let (status, response) = call(
+        &router,
+        "POST",
+        "/v1/core/repo/reload",
+        Some(PUBLISHER),
+        json!({"expected_revision":original["revision"]}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+    assert_eq!(response["error"], "E_OPERATOR_APPROVAL_REQUIRED");
+    assert_eq!(current(&router).await, original);
+    let (status, response) = feature_request(&router, json!({"user_id":"u1"})).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(response["feature_evidence"]["plan_revision"], "volume-v1");
+    assert!(core::create_router(
+        serde_json::from_value(config).unwrap(),
+        dir.path(),
+        DECISION,
+        PUBLISHER
+    )
+    .await
+    .is_err());
+}
+
+#[tokio::test]
+async fn feature_host_timeout_is_recorded_and_does_not_run_core() {
+    let (dir, mut config, mut features, pool, _) = feature_host_setup().await;
+    features.plan.timeout_ms = 10;
+    config["approvals"][0]["feature_binding_sha256"] = features.binding_sha256().into();
+    save(&dir.path().join("features.json"), &json!(features));
+    let router = app(dir.path(), &config).await;
+    let mut writer = pool.acquire().await.unwrap();
+    sqlx::query("BEGIN EXCLUSIVE")
+        .execute(&mut *writer)
+        .await
+        .unwrap();
+    let (status, response) = feature_request(&router, json!({"user_id":"u1"})).await;
+    sqlx::query("ROLLBACK").execute(&mut *writer).await.unwrap();
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{response}");
+    assert_eq!(
+        response["diagnostic"]["record"]["error_code"],
+        "E_FEATURE_TIMEOUT"
+    );
+    assert_eq!(wait_for_writes(&router).await["failed"], 0);
+    let (_, metrics) = call(
+        &router,
+        "GET",
+        "/v1/core/metrics",
+        Some(PUBLISHER),
+        json!({}),
+    )
+    .await;
+    assert_eq!(metrics["metrics"]["histograms"], json!([]));
+}
+
+#[tokio::test]
+async fn feature_host_inflight_request_keeps_resource_snapshot_during_reload() {
+    use corint_decision_engine::DataSourceType;
+    let (dir, mut config, mut features, pool, _) = feature_host_setup().await;
+    features.plan.timeout_ms = 10_000;
+    features
+        .datasources
+        .get_mut("events")
+        .unwrap()
+        .config
+        .timeout_ms = 10_000;
+    config["approvals"][0]["feature_binding_sha256"] = features.binding_sha256().into();
+    save(&dir.path().join("features.json"), &json!(features));
+    let mut next = features.clone();
+    let second_path = dir.path().join("next.sqlite");
+    let second = sqlx::SqlitePool::connect_with(
+        sqlx::sqlite::SqliteConnectOptions::new()
+            .filename(&second_path)
+            .create_if_missing(true),
+    )
+    .await
+    .unwrap();
+    sqlx::query("CREATE TABLE events(user_id TEXT, amount REAL, occurred_at TEXT)")
+        .execute(&second)
+        .await
+        .unwrap();
+    sqlx::query("INSERT INTO events VALUES('u1',500,?)")
+        .bind(
+            (chrono::Utc::now() - chrono::Duration::seconds(2))
+                .format("%Y-%m-%d %H:%M:%S")
+                .to_string(),
+        )
+        .execute(&second)
+        .await
+        .unwrap();
+    if let DataSourceType::SQL(sql) = &mut next
+        .datasources
+        .get_mut("events")
+        .unwrap()
+        .config
+        .source_type
+    {
+        sql.connection_string = second_path.to_string_lossy().into();
+    }
+    // Even changing only the connection target (keeping declared revisions)
+    // produces a different required approval binding.
+    assert_ne!(next.binding_sha256(), features.binding_sha256());
+    let mut approval = config["approvals"][0].clone();
+    approval["feature_binding_sha256"] = next.binding_sha256().into();
+    config["approvals"].as_array_mut().unwrap().push(approval);
+    let router = app(dir.path(), &config).await;
+    let original = current(&router).await;
+    let mut writer = pool.acquire().await.unwrap();
+    sqlx::query("BEGIN EXCLUSIVE")
+        .execute(&mut *writer)
+        .await
+        .unwrap();
+    let pending = feature_request(&router, json!({"user_id":"u1"}));
+    tokio::pin!(pending);
+    assert!(
+        tokio::time::timeout(std::time::Duration::from_millis(30), &mut pending)
+            .await
+            .is_err()
+    );
+    save(&dir.path().join("features.json"), &json!(next));
+    let (status, updated) = call(
+        &router,
+        "POST",
+        "/v1/core/repo/reload",
+        Some(PUBLISHER),
+        json!({"expected_revision":original["revision"]}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{updated}");
+    sqlx::query("ROLLBACK").execute(&mut *writer).await.unwrap();
+    let (status, previous) = pending.await;
+    assert_eq!(status, StatusCode::OK, "{previous}");
+    assert_eq!(previous["snapshot"], original);
+    assert_eq!(previous["feature_evidence"]["values"]["amount"], 1100.0);
+    let (status, latest) = feature_request(&router, json!({"user_id":"u1"})).await;
+    assert_eq!(status, StatusCode::OK, "{latest}");
+    assert_eq!(latest["snapshot"], updated);
+    assert_eq!(latest["feature_evidence"]["values"]["amount"], 500.0);
+    assert_ne!(
+        original["subject"]["bindings_sha256"],
+        updated["subject"]["bindings_sha256"]
+    );
+    assert_eq!(wait_for_writes(&router).await["failed"], 0);
+}
+
+#[tokio::test]
+async fn feature_host_retains_enrichment_when_core_fails() {
+    let (dir, mut config, features, pool, sources) = feature_host_setup().await;
+    let broken = SourceBundle::new(sources.input_schema, bundle("arithmetic").sources).unwrap();
+    publish(dir.path(), &broken, "arithmetic");
+    config["approvals"][0]["policy_sha256"] = identity(&broken).into();
+    sqlx::query("UPDATE events SET amount=1000 WHERE user_id='u1' AND amount IN (400,700)")
+        .execute(&pool)
+        .await
+        .unwrap();
+    let router = app(dir.path(), &config).await;
+    let (status, response) = feature_request(&router, json!({"user_id":"u1"})).await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{response}");
+    let diagnostic = &response["diagnostic"];
+    assert_eq!(diagnostic["record"]["error_code"], "E_DIVISION_BY_ZERO");
+    assert_eq!(
+        diagnostic["record"]["resources"],
+        json!(features.resources())
+    );
+    assert_eq!(diagnostic["feature_evidence"]["values"]["amount"], 2000.0);
+    assert_eq!(wait_for_writes(&router).await["failed"], 0);
+    let input = stored_feature_input(
+        dir.path(),
+        diagnostic["record"]["decision_id"].as_str().unwrap(),
+    )
+    .await;
+    assert_eq!(input["event"]["amount"], 2000.0);
+}
+
+#[tokio::test]
+async fn feature_host_business_evidence_must_cover_exact_features_and_binding() {
+    use corint_decision_server::journal::contract;
+    let (dir, mut config, features, _pool, _) = feature_host_setup().await;
+    let router = app(dir.path(), &config).await;
+    let target = current(&router).await;
+    drop(router);
+    let fixture = |name: &str| -> Value {
+        serde_json::from_str(
+            &std::fs::read_to_string(root().join(format!("contracts/phase0/{name}.json"))).unwrap(),
+        )
+        .unwrap()
+    };
+    let attest = |resources: Vec<Value>| {
+        // Synthetic fixture attestations exercise the gate, not real business evaluation.
+        let mut evaluation = fixture("evaluation-evidence");
+        let sample = evaluation["samples"][0].clone();
+        evaluation["subject"] = target["subject"].clone();
+        evaluation["features"] = json!(resources);
+        evaluation["samples"] = json!(resources
+            .iter()
+            .map(|resource| {
+                let mut sample = sample.clone();
+                sample["feature"] = resource.clone();
+                sample["offline_definition_sha256"] = resource["sha256"].clone();
+                sample["online_definition_sha256"] = resource["sha256"].clone();
+                sample
+            })
+            .collect::<Vec<_>>());
+        let mut approval = fixture("approval-evidence");
+        approval["subject"] = target["subject"].clone();
+        approval["evaluation_sha256"] = contract("evaluation-evidence", &evaluation)
+            .unwrap()
+            .sha256()
+            .into();
+        approval["expires_at_ms"] = json!(chrono::Utc::now().timestamp_millis() + 60_000);
+        let approval_hash = contract("approval-evidence", &approval).unwrap().sha256();
+        save(&dir.path().join("evaluation.json"), &evaluation);
+        save(&dir.path().join("approval.json"), &approval);
+        save(
+            &dir.path().join("trust.json"),
+            &json!({"evaluations":{approval["evaluation_sha256"].as_str().unwrap():"fixture-author"},"approvals":{approval_hash:"fixture-reviewer"},"approvers":["fixture-reviewer"]}),
+        );
+    };
+    config["business_evidence"] =
+        json!({"evaluation":"evaluation.json","approval":"approval.json","trust":"trust.json"});
+    attest(vec![]);
+    assert!(core::create_router(
+        serde_json::from_value(config.clone()).unwrap(),
+        dir.path(),
+        DECISION,
+        PUBLISHER
+    )
+    .await
+    .is_err());
+    attest(features.resources());
+    let router = app(dir.path(), &config).await;
+    assert_eq!(
+        feature_request(&router, json!({"user_id":"u1"})).await.0,
+        StatusCode::OK
+    );
+    let mut changed = features;
+    changed.plan.revision = "new-feature-revision".into();
+    save(&dir.path().join("features.json"), &json!(changed));
+    config["approvals"][0]["feature_binding_sha256"] = changed.binding_sha256().into();
+    // A new local allowlist entry cannot reuse old business evidence.
+    assert!(core::create_router(
+        serde_json::from_value(config).unwrap(),
+        dir.path(),
+        DECISION,
+        PUBLISHER
+    )
+    .await
+    .is_err());
+    // Revoked/missing coverage is also checked for already-running requests.
+    attest(vec![]);
+    assert_eq!(
+        feature_request(&router, json!({"user_id":"u1"})).await.0,
+        StatusCode::FORBIDDEN
+    );
+}

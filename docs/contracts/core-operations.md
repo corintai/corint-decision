@@ -1,7 +1,7 @@
 # 单实例 Core 发布与在线决策持久化
 
 本轮 P0/P1 的交付范围是通用 Agent 可独立使用的单实例执行链路。repo 是唯一策略来源；
-在线主链路负责执行策略、将本次决策证据入队、立即返回结果，由后台保存；反馈关联、标签更正、动作回执管理和策略调优由外部 Agent 系统负责。事件日志只新增决策记录，可选提供结果投递。真实 Work、完整跨产品 PolicyPackage、在线 Feature/Model、
+在线主链路负责执行策略、将本次决策证据入队、立即返回结果，由后台保存；反馈关联、标签更正、动作回执管理和策略调优由外部 Agent 系统负责。事件日志只新增决策记录，可选提供结果投递。真实 Work、完整跨产品 PolicyPackage、在线 Model、
 企业身份联合、多节点发布及严格 Core 的其他协议适配仍属于后续阶段。
 
 ## 配置与角色
@@ -96,6 +96,12 @@ SQLite 使用 WAL、`synchronous=FULL`；后台仍在一个事务中保存决策
 显式调用底层 `DecisionResultWriter::write_decision` 仍等待事务提交；SDK 宿主退出前应调用 `engine.shutdown_persistence(timeout)`，并保持 Tokio runtime 存活直到排空。
 兼容表格式保留原协议，不冒充上述 Core 版本化记录/反馈日志。
 
+## 外部特征输入
+
+可通过操作员 `feature_pipeline` 文件配置公共 DecisionHost，在严格 Core 前执行固定截止点的 SQLite/PostgreSQL 聚合或表达式。
+策略和资源配置共同批准，成功与错误均可异步保存本次实际输入及特征证据，详见[Feature → Core 契约](feature-pipeline.md)。
+此时业务评估必须覆盖当前完整特征集合，不能复用没有资源绑定的旧批准。
+
 ## 有界运行指标
 
 Core 配置 v2/v3 支持顶层 `enable_metrics`，缺省为 `true`；设置 `false` 后执行器不采集指标，
@@ -185,3 +191,5 @@ SQLite/PostgreSQL 的单文档查询有事务快照；文件、HTTP 后端发布
 - 2026-09-14：响应与数据库提交解耦，增加有界后台写入、状态与失败统计、Core 幂等重试及正常停机排空；明确异步内存队列的丢失窗口。
 
 - 2026-09-14：运行指标采用固定桶并限制名称基数，接入采集开关及 publisher 专用 JSON 导出，明确重载和近似分位语义。
+
+- 2026-09-14：接入可选 DecisionHost 特征准备，绑定完整资源配置与业务证据，记录实际执行输入并保持异步落库。

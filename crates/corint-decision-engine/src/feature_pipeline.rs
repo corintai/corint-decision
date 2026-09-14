@@ -46,6 +46,8 @@ impl FeaturePlan {
 pub struct FeatureEvidence {
     pub format_version: &'static str,
     pub binding_sha256: String,
+    pub plan_revision: String,
+    pub datasource_revisions: BTreeMap<String, String>,
     pub as_of: i64,
     pub values: BTreeMap<String, Value>,
 }
@@ -56,6 +58,11 @@ pub struct FeatureDecision {
     /// Caller may explicitly retain this complete input with replay::capture.
     pub replay_event: HashMap<String, Value>,
 }
+pub(crate) struct PreparedFeatureInput {
+    pub event: HashMap<String, Value>,
+    pub evidence: FeatureEvidence,
+}
+
 pub struct FeaturePipeline {
     engine: DecisionEngine,
     raw_schema: Schema,
@@ -70,6 +77,17 @@ impl FeaturePipeline {
     /// contents or authenticated server attestations. They must match exactly.
     pub fn new(
         sources: &[CoreSource],
+        schema: Schema,
+        plan: FeaturePlan,
+        datasources: HashMap<String, (String, DataSourceClient)>,
+        expected_binding: &str,
+    ) -> Result<Self, EngineError> {
+        let engine = DecisionEngine::from_core(sources, schema.clone())?;
+        Self::from_engine(engine, schema, plan, datasources, expected_binding)
+    }
+
+    pub(crate) fn from_engine(
+        engine: DecisionEngine,
         schema: Schema,
         plan: FeaturePlan,
         datasources: HashMap<String, (String, DataSourceClient)>,
@@ -172,7 +190,6 @@ impl FeaturePipeline {
                     "Invalid feature definitions, dependencies or backend capability",
                 )
             })?;
-        let engine = DecisionEngine::from_core(sources, schema)?;
         Ok(Self {
             engine,
             raw_schema,
@@ -189,6 +206,28 @@ impl FeaturePipeline {
         as_of: i64,
         trace: bool,
     ) -> Result<FeatureDecision, EngineError> {
+        let prepared = self.prepare_input(event, as_of).await?;
+        let request = DecisionRequest::new(prepared.event.clone());
+        let response = self
+            .engine
+            .decide(if trace { request.with_trace() } else { request })
+            .await?;
+        Ok(FeatureDecision {
+            response,
+            replay_event: prepared.event,
+            evidence: prepared.evidence,
+        })
+    }
+
+    pub(crate) fn engine(&self) -> &DecisionEngine {
+        &self.engine
+    }
+
+    pub(crate) async fn prepare_input(
+        &self,
+        event: HashMap<String, Value>,
+        as_of: i64,
+    ) -> Result<PreparedFeatureInput, EngineError> {
         validate_core_input(&self.raw_schema, &event)?;
         let names: Vec<_> = self
             .plan
@@ -228,17 +267,13 @@ impl FeaturePipeline {
             enriched.insert(output.field.clone(), value.clone());
             evidence.insert(output.field.clone(), value.clone());
         }
-        let request = DecisionRequest::new(enriched.clone());
-        let response = self
-            .engine
-            .decide(if trace { request.with_trace() } else { request })
-            .await?;
-        Ok(FeatureDecision {
-            response,
-            replay_event: enriched,
+        Ok(PreparedFeatureInput {
+            event: enriched,
             evidence: FeatureEvidence {
                 format_version: "1",
                 binding_sha256: self.plan.binding_sha256(),
+                plan_revision: self.plan.revision.clone(),
+                datasource_revisions: self.plan.datasource_revisions.clone(),
                 as_of,
                 values: evidence,
             },

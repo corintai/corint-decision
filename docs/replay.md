@@ -32,3 +32,11 @@ Trace 中仍包含规则 ID、布尔结果和业务输出，应按调用方的�
 
 指纹不提供签名或来源认证，记录不能授予发布权限。不同可执行程序之间的升级比较须另行验收，不覆盖旧证据。
 验收：[工具链测试](../crates/corint-decision-toolchain/tests/replay.rs)、[真实 CLI 测试](../crates/corint-decision-cli/tests/replay.rs)。
+
+使用严格 Core HTTP 的 DecisionHost 时，journal 私有输入保存完整证据包；提取其 `event` 字段交给纯 Core 回放。`event: null` 表示输入准备失败，不能作为完整决策输入回放。
+
+## Revision History
+
+| Date | Changes |
+|---|---|
+| 2026-09-14 | Document extracting actual Core input from DecisionHost journal evidence for replay. |

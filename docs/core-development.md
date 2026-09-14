@@ -185,7 +185,8 @@ The [manual performance workflow](../.github/workflows/cdl-performance.yml) runs
 ### Deployment coverage
 
 Local PostgreSQL/SQLite, strict Core HTTP and existing compatibility-protocol tests have separate
-acceptance evidence. FeaturePipeline is an SDK entry point. Strict Core gRPC/FFI, live Work,
+acceptance evidence. FeaturePipeline input preparation is shared by the SDK and optional
+strict Core HTTP DecisionHost; see [input binding](contracts/feature-pipeline.md). Strict Core gRPC/FFI, live Work,
 online model inference and multi-node publication require their own target/version evidence
 with fixed policies, inputs and dependencies.
 
@@ -203,3 +204,4 @@ covers 12 workloads in debug mode and is not a production-throughput estimate.
 | Date | Changes |
 |---|---|
 | 2026-09-14 | Separate HTTP response latency from background persistence drain time and verify accepted records before benchmark cleanup. |
+| 2026-09-14 | Record shared SDK/Core HTTP input preparation and its separate resource acceptance scope. |

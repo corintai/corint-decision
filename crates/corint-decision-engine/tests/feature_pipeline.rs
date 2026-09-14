@@ -1,6 +1,7 @@
 #![cfg(feature = "sqlx")]
 use corint_decision_compiler::core::parse_core_input_schema;
 use corint_decision_engine::{
+    decision_host::{DecisionHost, FeatureDatasource, FeatureHostConfig},
     feature_pipeline::{FeatureInput, FeaturePipeline, FeaturePlan},
     CoreSource, FieldType, Schema, SchemaField, Value,
 };
@@ -38,9 +39,13 @@ fn plan(entity: &str) -> FeaturePlan {
     FeaturePlan { format_version:"1".into(), revision:"volume-v1".into(), datasource_revisions:BTreeMap::from([("events".into(), "test-v1".into())]), timeout_ms:1000,
         outputs:vec![FeatureInput { field:"amount".into(), definition:serde_yaml::from_str(&format!("name: volume\ntype: aggregation\nmethod: sum\ndatasource: events\nentity: {entity}\ndimension: user_id\ndimension_value: '${{event.user_id}}'\nfield: amount\nwindow: 60s\ntimestamp_field: occurred_at\n")).unwrap() }] }
 }
+fn source_config(provider: &str, connection: &str, ttl: u64) -> DataSourceConfig {
+    serde_json::from_value(serde_json::json!({"name":"events","type":"sql","provider":provider,"connection_string":connection,"database":"test","timeout_ms":100,"query_cache_ttl_secs":ttl})).unwrap()
+}
 async fn client(provider: &str, connection: &str, ttl: u64) -> DataSourceClient {
-    let config: DataSourceConfig = serde_json::from_value(serde_json::json!({"name":"events","type":"sql","provider":provider,"connection_string":connection,"database":"test","timeout_ms":100,"query_cache_ttl_secs":ttl})).unwrap();
-    DataSourceClient::new(config).await.unwrap()
+    DataSourceClient::new(source_config(provider, connection, ttl))
+        .await
+        .unwrap()
 }
 fn event(user: &str) -> HashMap<String, Value> {
     HashMap::from([("user_id".into(), Value::String(user.into()))])
@@ -67,6 +72,35 @@ async fn verify(provider: &str, connection: &str, entity: &str) {
     assert_eq!(decision.evidence.values["amount"], Value::Number(1100.0));
     assert_eq!(decision.response.result.score, 60);
     assert_eq!(decision.evidence.binding_sha256, binding);
+    // The public host used by Core HTTP must match the existing SDK path on
+    // both real SQLite and disposable PostgreSQL, without adapter-specific logic.
+    let host = DecisionHost::new(
+        &sources,
+        schema.clone(),
+        Some(FeatureHostConfig {
+            plan: plan.clone(),
+            datasources: BTreeMap::from([(
+                "events".into(),
+                FeatureDatasource {
+                    revision: "test-v1".into(),
+                    config: source_config(provider, connection, 0),
+                },
+            )]),
+        }),
+        true,
+    )
+    .await
+    .unwrap();
+    let hosted = host.decide(event("u1"), 120, true).await;
+    assert_eq!(
+        hosted.result.unwrap().result.score,
+        decision.response.result.score
+    );
+    assert_eq!(
+        hosted.feature_evidence.unwrap().values,
+        decision.evidence.values
+    );
+    assert_eq!(hosted.input_evidence["event"]["amount"], 1100.0);
     let replay = corint_decision_engine::DecisionEngine::from_core(&sources, schema.clone())
         .unwrap()
         .decide(corint_decision_engine::DecisionRequest::new(

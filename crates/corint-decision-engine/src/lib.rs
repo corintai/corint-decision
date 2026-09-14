@@ -8,6 +8,7 @@
 pub mod builder;
 pub mod config;
 pub mod decision_engine;
+pub mod decision_host;
 pub mod error;
 pub mod feature_pipeline;
 pub mod request_id;

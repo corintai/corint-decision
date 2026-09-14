@@ -298,6 +298,19 @@ are not automatically retried because its rule-detail inserts are not retry-idem
 Keep the Tokio runtime alive and call `shutdown_persistence` before stopping the host.
 An abrupt shutdown can lose buffered records; queue admission is not durable storage.
 
+## Shared strict decision host
+
+`DecisionHost` provides the same input preparation and strict execution used by the
+Core HTTP server. Construct it with sources, the complete input schema, optional
+`FeatureHostConfig` and a metrics switch; call `decide(raw_event, as_of, trace)`.
+The trusted embedding host supplies the cutoff in Unix seconds. SQLite/PostgreSQL
+aggregation and expression features are supported (enable the SDK `sqlx` feature
+for SQL sources); bound output fields cannot be
+injected by the caller. `HostExecution` retains input and feature evidence even if
+Core execution fails, and reports errors in its `result` field. SDK applications
+own authentication, approved configuration selection and saving this evidence.
+See [configuration and evidence](../../docs/contracts/feature-pipeline.md).
+
 ## Runtime metrics
 
 `.enable_metrics(false)` now disables executor collection, including writes through
