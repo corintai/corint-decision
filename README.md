@@ -1,5 +1,9 @@
 # CORINT Decision Engine
 
+**MCP 接入：** [本地 MCP Server](docs/mcp.md) 供 AI 客户端读取、校验和测试 CDL，进行 Core 决策试算与策略版本比较。
+
+**启动服务：** `./scripts/start.sh` 同时启动 Decision 与 HTTP MCP；`./scripts/restart.sh` 重启；`./scripts/stop.sh` 停止。配置及日志说明见 [MCP 启动指南](docs/mcp.md#同时启动-decision-与-mcp)。
+
 **可视化 CDL 编辑器：** 新增 [CDL Studio Web 应用](web/README.md)，支持 Pipeline 可视化编辑、其他资源 YAML 源码编辑和 CLI 静态校验。在 `web/` 运行 `npm ci && npm run dev` 启动；校验前需构建 `corint-decision-cli`。
 
 Service invocations use a unified `service + operation` node. See the

@@ -20,7 +20,8 @@ The [server configuration model](../crates/corint-decision-server/src/config.rs)
 `options.max_connections` to pool size and `options.connection_timeout` from seconds to
 runtime milliseconds. `options.query_cache_ttl_secs` defaults to zero; a nonzero TTL
 explicitly accepts stale query results. These settings are host configuration, not Feature DSL fields.
-Use the [server configuration example](../config/server-example.yaml) as the repository entry point.
+For local setup, copy the [SQLite quickstart configuration](../quickstart/config/server-sqlite.yaml)
+to `config/server.yaml` and adjust the repository path and datasources for your environment.
 
 ## Use cases and naming
 

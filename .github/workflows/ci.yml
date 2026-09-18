@@ -27,6 +27,12 @@ jobs:
         run: cargo test -p corint-decision-cli --locked
       - name: Run shared toolchain and phase-0 W04/W07/W08 contract checks
         run: cargo test -p corint-decision-toolchain --locked
+      - name: Run MCP stdio protocol and offline decision integration checks
+        run: cargo test -p corint-decision-mcp --locked
+      - name: Verify HTTP MCP and local service lifecycle scripts
+        run: |
+          python3 tests/scripts/test_mcp_http.py
+          python3 tests/scripts/test_services.py
       - name: Run strict generator contract checks with offline model responses
         run: cargo test -p corint-decision-llm --features core-generation --test core_generation --locked
       - name: Install Protocol Buffers compiler for server build

@@ -16,6 +16,7 @@
 ## 工具链与使用指南
 
 - [CLI 使用](cli.md)
+- [MCP：AI 策略开发与诊断接口](mcp.md)
 - [行为测试](testing.md)与[导入解析](resolution.md)
 - [源码包构建、验证与交换](packages.md)
 - [生成 API 与 Provider 配置](generation.md)与[决策回放](replay.md)

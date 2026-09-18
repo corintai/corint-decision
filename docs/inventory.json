@@ -3,6 +3,10 @@
   "note": "Page paths are repository-relative. CDL/ contains language definitions; docs/ contains tool, runtime and integration guides. Reading scope is not production acceptance. Documentation examples are bound to executable fixtures by tests/conformance/documentation/examples.json and executable_examples below.",
   "pages": [
     {
+      "path": "docs/mcp.md",
+      "scope": "contract"
+    },
+    {
       "path": "docs/contracts/multi-tenancy.md",
       "scope": "contract"
     },
@@ -148,6 +152,12 @@
     }
   ],
   "executable_examples": [
+    {
+      "page": "docs/mcp.md",
+      "id": "mcp-repository-discovery",
+      "test_file": "crates/corint-decision-mcp/tests/stdio.rs",
+      "test_name": "repository_discovery_tracks_changes_and_resolves_real_dependencies"
+    },
     {
       "page": "docs/API_REQUEST.md",
       "id": "decide-request",

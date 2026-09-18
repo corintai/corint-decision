@@ -1,5 +1,7 @@
 # Rust build artifacts
 /target
+/.run/
+/config/mcp.json
 **/target/
 
 # Cargo.lock for libraries (keep it for binaries)

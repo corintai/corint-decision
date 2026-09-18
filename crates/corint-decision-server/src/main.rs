@@ -29,6 +29,30 @@ use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 #[tokio::main]
 async fn main() -> Result<()> {
     let args: Vec<_> = std::env::args_os().collect();
+    if args.get(1).is_some_and(|v| v == "--repository-info") {
+        anyhow::ensure!(
+            args.len() == 2,
+            "usage: corint-decision-server --repository-info"
+        );
+        dotenvy::dotenv().ok();
+        anyhow::ensure!(
+            std::env::var_os("CORINT_CORE_CONFIG").is_none()
+                && std::env::var_os("CORINT_TENANT_CONFIG").is_none(),
+            "Automatic MCP repository discovery requires filesystem compatibility mode"
+        );
+        match ServerConfig::load()?.repository {
+            config::RepositoryType::FileSystem { path } => {
+                println!(
+                    "{}",
+                    serde_json::json!({"type": "filesystem", "path": path.canonicalize()?})
+                );
+            }
+            _ => anyhow::bail!(
+                "Automatic MCP discovery does not yet support database/API repositories"
+            ),
+        }
+        return Ok(());
+    }
     if args.get(1).is_some_and(|v| v == "--replay-journal") {
         anyhow::ensure!(
             args.len() == 4,

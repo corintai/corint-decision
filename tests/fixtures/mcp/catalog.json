@@ -1,0 +1,17 @@
+{
+  "policies": [
+    {
+      "id": "payment-demo",
+      "description": "Synthetic payment Core policy for local development; not a production release",
+      "root": "../../conformance/cdl_core",
+      "files": [
+        "rule.yaml",
+        "ruleset.yaml",
+        "pipeline.yaml",
+        "registry.yaml"
+      ],
+      "input_schema": "input-schema.yaml",
+      "cases": "behavior.yaml"
+    }
+  ]
+}
