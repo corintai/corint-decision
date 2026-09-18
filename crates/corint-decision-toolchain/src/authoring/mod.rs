@@ -21,6 +21,12 @@ pub const PROFILE: &str = "cdl-static-1";
 pub const SCHEMA: &str = include_str!("../../../../CDL/schema/authoring.json");
 pub const INPUT_SCHEMA: &str = include_str!("../../../../CDL/schema/authoring-input.json");
 
+/// Decode CDL source layout, preserving adjacent resource declarations and shared headers.
+/// This only normalizes source documents; use `validate` for semantic checks.
+pub fn parse_source(text: &str) -> Result<Vec<Value>, serde_yaml::Error> {
+    bundle::parse(text)
+}
+
 #[derive(Default, Clone)]
 pub struct Options {
     /// Explicit files or directories, recursively expanded before validation.

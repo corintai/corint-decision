@@ -87,6 +87,12 @@ ruleset:
       signal: decline
       reason: "Very high risk - clear security threat (score: {total_score})"
 
+    # Same user's failed logins in the last hour (cumulative, not consecutive).
+    # All existing decline conditions above retain priority; scores are unchanged.
+    - when: features.failed_login_count_1h >= 5
+      signal: review
+      reason: "At least 5 failed logins in the last hour - manual review required"
+
     # High Risk >= 70 - Requires additional verification
     - when: total_score >= 70
       signal: review

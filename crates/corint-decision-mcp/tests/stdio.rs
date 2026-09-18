@@ -547,3 +547,47 @@ fn repository_errors_never_fall_back_to_example_catalog() {
         assert!(CorintMcp::from_repository(dir.path()).is_err());
     }
 }
+
+#[tokio::test]
+async fn repository_supports_shared_cdl_files_without_losing_declarations() {
+    let rule = std::fs::read_to_string(fixture_root().join("rule.yaml")).unwrap();
+    let ruleset = std::fs::read_to_string(fixture_root().join("ruleset.yaml")).unwrap();
+    let pipeline = std::fs::read_to_string(fixture_root().join("pipeline.yaml")).unwrap();
+    for separator in ["\n", "\n---\n"] {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir(dir.path().join("pipelines")).unwrap();
+        let documents = [
+            pipeline.clone(),
+            rule.clone(),
+            rule.replace("large_amount", "second_amount"),
+            ruleset.clone(),
+            ruleset.replace("id: risk", "id: other_risk"),
+        ];
+        let shared = String::from("version: \"0.1\"\n")
+            + &documents
+                .iter()
+                .map(|s| s.replace("version: \"0.1\"\n", ""))
+                .collect::<Vec<_>>()
+                .join(separator);
+        std::fs::write(dir.path().join("pipelines/shared.yaml"), shared).unwrap();
+        let (client, child) = start_mode("--repository", dir.path()).await;
+        let listed = call(&client, "list_policies", json!({}), false).await;
+        let ids: Vec<_> = listed["policies"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|p| p["policy_id"].as_str().unwrap())
+            .collect();
+        assert_eq!(
+            ids,
+            ["pipeline/payment", "ruleset/other_risk", "ruleset/risk"]
+        );
+        for id in ids {
+            let snapshot = call(&client, "get_policy", json!({"policy_id": id}), false).await;
+            assert_eq!(snapshot["sources"].as_array().unwrap().len(), 1);
+            let report = call(&client, "validate_policy", json!({"policy_id": id}), false).await;
+            assert_eq!(report["valid"], true);
+        }
+        stop(client, child).await;
+    }
+}

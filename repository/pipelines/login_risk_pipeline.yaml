@@ -43,6 +43,24 @@ pipeline:
         ruleset: login_risk
         next: end
 
+  decision:
+    # Preserve all existing rejection conditions before manual review.
+    - when: results.login_risk.signal == "decline"
+      result: decline
+
+    # Uses the existing per-user cumulative count; it is not a consecutive streak.
+    - when: features.failed_login_count_1h >= 5
+      result: review
+      actions: ["manual_review"]
+      reason: "At least 5 failed logins in the last hour - manual review required"
+
+    # Preserve other review outcomes without adding a manual-review action.
+    - when: results.login_risk.signal == "review"
+      result: review
+
+    - default: true
+      result: approve
+
   metadata:
     # Required fields
     version: "1.0.0"

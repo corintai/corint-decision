@@ -105,9 +105,9 @@ impl Catalog {
             let source = reader.read(&label)?;
             total += source.yaml.len();
             anyhow::ensure!(total <= MAX_TOTAL, "Repository sources exceed 16 MiB");
-            for document in serde_yaml::Deserializer::from_str(&source.yaml) {
-                let value = serde_yaml::Value::deserialize(document)
-                    .with_context(|| format!("Invalid repository YAML: {label}"))?;
+            for value in corint_decision_toolchain::authoring::parse_source(&source.yaml)
+                .with_context(|| format!("Invalid repository CDL: {label}"))?
+            {
                 for kind in ["pipeline", "ruleset"] {
                     let Some(resource) = value.get(kind) else {
                         continue;

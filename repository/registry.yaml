@@ -38,10 +38,6 @@ registry:
     when: event.type == "login"
     description: Account takeover detection for login attempts
 
-  - pipeline: comprehensive_risk_assessment
-    when: event.type == "test1"
-    description: Comprehensive risk assessment for test1 event
-
   - pipeline: service_pipeline
     when: event.type == "api"
     description: API Pipeline
