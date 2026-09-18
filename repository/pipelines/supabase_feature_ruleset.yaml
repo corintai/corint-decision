@@ -20,7 +20,7 @@ pipeline:
   when:
     all:
       - event.type == "transaction"
-      - event.source == "supabase" 
+      - event.source == "supabase"
 
   steps:
     # Execute the transaction risk assessment ruleset
@@ -67,13 +67,13 @@ rule:
   id: high_transaction_volume
   name: High Transaction Volume
   description: Detect users with unusually high transaction volume in 7 days
-  
+
   # No need to repeat event.type here - guaranteed by pipeline
   when:
     all:
       - features.transaction_sum_7d > 5000
       - features.transaction_count_24h > 10
-  
+
   score: 50
 
 
@@ -167,4 +167,3 @@ ruleset:
     - default: true
       signal: approve
       reason: "No significant risk indicators"
-
