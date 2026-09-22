@@ -53,7 +53,7 @@ description: "根据业务需求创建、修改或修复完整 CDL：Rule、Rule
 
 以下流程均不属于默认策略编写范围。仅在用户明确要求或此前已明确授权相应检查时使用；策略存在行为变更本身不构成额外授权：
 
-- **Core 编译与行为测试**：读取[Core Schema](../../CDL/schema/core.json)、[测试契约](../../docs/testing.md)，先运行 `validate --profile cdl-core-risk-draft-1`，再运行 `test`。这一路径要求完整 Core 闭包、输入 Schema 和独立预期用例，不能直接承接外部扩展资源。`test` 会运行 Trace 开关两种模式。
+- **Core 编译与行为测试**：读取[Core Schema](../../CDL/schema/core.json)、[测试契约](../../docs/testing.md)，静态校验后运行 `test`，该命令在执行用例前完成 Core 编译。这一路径要求完整 Core 闭包、输入 Schema 和独立预期用例，不能直接承接外部扩展资源。`test` 会运行 Trace 开关两种模式。
 - **在线集成**：依据 Feature/List/Service 契约和用户提供的运行环境设计集成测试；静态通过不证明数据源、名单内容或 HTTP 服务可用。
 - **Core 导入、目标检查、打包或回放**：读取[CLI 流程](references/cli-workflow.md)对应入口。静态 `--root` 导入不等于 Core `resolve`，也不改变执行能力。
 

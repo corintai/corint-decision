@@ -111,13 +111,7 @@ fn cli(dir: &Path, label: &str, args: &[&str], expected: i32) -> Value {
     command
         .env_clear()
         .current_dir(dir)
-        .args(args.iter().take(1))
-        .args(if args.first() == Some(&"validate") {
-            vec!["--profile", "cdl-core-risk-draft-1"]
-        } else {
-            vec![]
-        })
-        .args(args.iter().skip(1))
+        .args(args)
         .args(["--format", "json"]);
     let mut process = Process::spawn(command, dir, label);
     assert_eq!(process.wait().code(), Some(expected), "{}", process.logs());
@@ -128,7 +122,17 @@ fn cli(dir: &Path, label: &str, args: &[&str], expected: i32) -> Value {
     );
     let value = read(&process.stdout);
     assert_eq!(value["valid"], expected == 0);
-    assert_eq!(value["business_evaluation"], "not_performed");
+    if args.first() == Some(&"validate") {
+        assert_eq!(value["profile"], "cdl-static-1");
+        assert_eq!(value["scope"], "static");
+        assert_eq!(value["execution_checked"], false);
+        assert!(value["unchecked"]
+            .as_array()
+            .unwrap()
+            .contains(&json!("business_behavior")));
+    } else {
+        assert_eq!(value["business_evaluation"], "not_performed");
+    }
     value
 }
 

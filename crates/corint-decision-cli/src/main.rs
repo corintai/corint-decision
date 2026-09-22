@@ -6,7 +6,7 @@ mod validate;
 use corint_decision_toolchain::{behavior, contracts, package, resolve, transfer};
 
 use corint_decision_compiler::core::{
-    compile_core, diagnostic, parse_core_input_schema, CoreError, CoreSource, PROFILE,
+    diagnostic, parse_core_input_schema, CoreError, CoreSource, PROFILE,
 };
 use corint_decision_compiler::Diagnostic;
 use serde::Serialize;
@@ -20,7 +20,6 @@ const HELP: &str = "corint — offline CDL authoring validator and Core toolchai
 
 Usage:
   corint validate [--root DIR] [--input-schema PATH] [--format text|json] [PATH...]
-  corint validate --profile cdl-core-risk-draft-1 --input-schema PATH [--format text|json] FILE...
   corint test --input-schema PATH --cases PATH [--format text|json] FILE...
   corint build --input-schema PATH --cases PATH --output PATH [--format text|json] FILE...
   corint verify --package PATH --cases PATH [--format text|json]
@@ -34,7 +33,7 @@ Usage:
   corint --help
   corint --version
 
-Validate defaults to full CDL static checks (Rule, Ruleset, Pipeline, Registry,
+Validate performs full CDL static checks (Rule, Ruleset, Pipeline, Registry,
 Feature, List, Service). PATHs may be files or directories; directories recursively
 include all YAML/JSON resources, regardless of layout. All inputs check resource
 references. Single-file validation infers the policy root and recursively validates
@@ -43,12 +42,12 @@ multiple files without --root check the selected collection. With no FILEs, --ro
 directories and registry.yaml/yml/json. No external resources are contacted.
 An optional input Schema adds event field checks. JSON reports list unchecked scope.
 
-The following applies to the explicit Core profile and Core execution commands:
+The following applies to Core execution commands:
 Supply the complete resource closure, including exactly one Registry.
 PATH is the strict model Schema in YAML or JSON; FILEs are CDL YAML resources.
 Paths are relative to the current directory. Use -- before dash-prefixed FILEs.
 Except resolve and prepare-repository, only explicit local regular files are read. No imports, discovery, network access,
-business evaluation or publication is performed. Validate compiles only; test
+business evaluation or publication is performed. Test compiles and
 executes declared cases through the real engine, with trace off/on. Build writes
 a new source package after tests pass (never overwrites); verify checks bindings
 and reruns the supplied cases. Packages do not embed case inputs or authorization.
@@ -166,7 +165,6 @@ fn usage(message: impl Into<String>) -> CoreError {
 // Keep this bounded grammar dependency-free; reject unknown/duplicate flags.
 fn parse_args(args: &[OsString], options: &mut Options) -> Result<(), CoreError> {
     match args.first().and_then(|arg| arg.to_str()) {
-        Some("validate") => (),
         Some("resolve") => options.resolve = true,
         Some("check-target") => options.check_target = true,
         Some("test") => options.test = true,
@@ -308,7 +306,7 @@ fn parse_args(args: &[OsString], options: &mut Options) -> Result<(), CoreError>
             Some("--cases") => {
                 if !options.test || options.cases.is_some() {
                     return Err(usage(
-                        "--cases is required once for test/build/verify/import, not allowed for validate/export",
+                        "--cases is required once for test/build/verify/import, not allowed for export",
                     ));
                 }
                 let value = args.next().ok_or_else(|| usage("--cases needs a path"))?;
@@ -485,22 +483,11 @@ fn render(report: &Report, json: bool) -> String {
     output
 }
 
-fn run(mut args: Vec<OsString>) -> (u8, String) {
-    // Preserve strict compilation behind an explicit profile, without broadening
-    // any engine, test, package or deployment admission boundary.
-    let mut core_validate = false;
-    if args.first().is_some_and(|arg| arg == "validate") {
-        let option_count = args.iter().take_while(|arg| *arg != "--").count();
-        if let Some(index) = args[..option_count]
-            .windows(2)
-            .position(|pair| pair[0] == "--profile" && pair[1] == PROFILE)
-        {
-            args.drain(index..index + 2);
-            core_validate = true;
-        }
-        if !core_validate && args != [OsString::from("validate"), OsString::from("--help")] {
-            return validate::run(&args[1..]);
-        }
+fn run(args: Vec<OsString>) -> (u8, String) {
+    if args.first().is_some_and(|arg| arg == "validate")
+        && args != [OsString::from("validate"), OsString::from("--help")]
+    {
+        return validate::run(&args[1..]);
     }
 
     if args
@@ -618,22 +605,18 @@ fn run(mut args: Vec<OsString>) -> (u8, String) {
             return Ok(());
         }
         let schema = parse_core_input_schema(&input)?;
-        if options.test {
-            let (_, suite) = read_source(options.cases.as_ref().expect("checked args"))?;
-            if options.build {
-                let (package, tests) = package::prepare(&sources, &input, &suite)?;
-                test_results = Some(tests);
-                if let Some(package) = package {
-                    artifact = Some(package::write(
-                        &package,
-                        options.output.as_ref().expect("checked args"),
-                    )?);
-                }
-            } else {
-                test_results = Some(behavior::test(&sources, schema, &suite)?);
+        let (_, suite) = read_source(options.cases.as_ref().expect("checked args"))?;
+        if options.build {
+            let (package, tests) = package::prepare(&sources, &input, &suite)?;
+            test_results = Some(tests);
+            if let Some(package) = package {
+                artifact = Some(package::write(
+                    &package,
+                    options.output.as_ref().expect("checked args"),
+                )?);
             }
         } else {
-            compile_core(&sources, schema)?;
+            test_results = Some(behavior::test(&sources, schema, &suite)?);
         }
         Ok(())
     });

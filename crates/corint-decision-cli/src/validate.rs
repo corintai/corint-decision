@@ -22,7 +22,7 @@ pub fn run(args: &[OsString]) -> (u8, String) {
         }
         match arg.to_str() {
             Some("--") => positional = true,
-            Some("--root" | "--input-schema" | "--format" | "--profile") => {
+            Some("--root" | "--input-schema" | "--format") => {
                 if !seen.insert(arg.clone()) {
                     report.error(
                         "",
@@ -48,13 +48,6 @@ pub fn run(args: &[OsString]) -> (u8, String) {
                     "--format" if value != "text" && value != "json" => {
                         report.error("", "", "usage", "E_ARGUMENT", "Format must be text or json")
                     }
-                    "--profile" if value != authoring::PROFILE => report.error(
-                        "",
-                        "",
-                        "usage",
-                        "E_ARGUMENT",
-                        "Profile must be cdl-static-1 or cdl-core-risk-draft-1",
-                    ),
                     _ => (),
                 }
             }

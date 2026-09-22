@@ -58,14 +58,11 @@ cdl validate "$POLICY_DIR/rules/blocked.yaml" "$POLICY_DIR/features" --format js
 set -- "$POLICY_DIR/rule.yaml" "$POLICY_DIR/ruleset.yaml" \
   "$POLICY_DIR/pipeline.yaml" "$POLICY_DIR/registry.yaml"
 
-cdl validate --profile cdl-core-risk-draft-1 \
-  --input-schema "$INPUT_SCHEMA" --format json "$@"
-
 cdl test --input-schema "$INPUT_SCHEMA" \
   --cases "$CASES_FILE" --format json "$@"
 ```
 
-仅在 Core 编译通过后执行行为测试。行为报告要求 `valid: true`、`execution_checked: true`、`test_results.executed == total`、`passed == total`、`failed == 0`，并检查各用例 `passed` 和 `trace_parity`。
+`test` 内部先完成 Core 编译，通过后才执行行为测试。行为报告要求 `valid: true`、`execution_checked: true`、`test_results.executed == total`、`passed == total`、`failed == 0`，并检查各用例 `passed` 和 `trace_parity`。
 预期运行错误可能出现在通过的用例中，不能仅按诊断是否为空判断行为失败。
 
 ## 明确要求编写用例时的区别
@@ -74,7 +71,7 @@ cdl test --input-schema "$INPUT_SCHEMA" \
 
 - 行为文件有自己的版本与 Profile，不使用资源的语言版本作为测试格式版本。
 - 用例输入为 `input: {event: {...}}`。成功断言包含 `pipeline_id`、`score`、`signal`、`actions`、`triggered_rules`、`steps`、`calls`、`local_results`；只有 `explanation` 可省略。
-- `expect` 与 `expect_error` 二选一。`expect_error` 只能使用测试 Schema 接受的运行阶段/错误码；资源语法、引用或类型编译错误通过 `validate` 单独验证。
+- `expect` 与 `expect_error` 二选一。`expect_error` 只能使用测试 Schema 接受的运行阶段/错误码；资源语法、引用或静态类型错误通过 `validate` 检查；执行 Profile 的编译错误由 `test` 在运行用例前报告。
 - 数组顺序和局部结果键集需要完整匹配；不能只断言最终信号。嵌套调用的父级局部结果不包含子级内部调用结果。
 - 测试输入的 `event` 包装与 `record --event` 所读的裸事件对象不同。只有需要回放时才读取[回放契约](../../../docs/replay.md)。
 

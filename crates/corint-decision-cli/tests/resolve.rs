@@ -60,13 +60,7 @@ fn imported_flow_rule_lists_are_rejected_before_normalization() {
 }
 fn run(args: &[&str], exit: i32) -> Value {
     let result = Command::new(env!("CARGO_BIN_EXE_corint"))
-        .args(args.iter().take(1))
-        .args(if args.first() == Some(&"validate") {
-            vec!["--profile", "cdl-core-risk-draft-1"]
-        } else {
-            vec![]
-        })
-        .args(args.iter().skip(1))
+        .args(args)
         .args(["--format", "json"])
         .output()
         .unwrap();
@@ -477,7 +471,7 @@ fn paths_symlinks_directories_and_depth_limits_are_confined() {
 }
 
 #[test]
-fn cli_requires_explicit_profile_is_no_clobber_and_old_core_still_rejects_imports() {
+fn resolve_requires_profile_and_is_no_clobber_while_validate_accepts_imports() {
     let dir = setup();
     let output = dir.path().join("resolved.json");
     cli(dir.path(), &output, 0);
@@ -498,7 +492,8 @@ fn cli_requires_explicit_profile_is_no_clobber_and_old_core_still_rejects_import
         2,
     );
     run(&["resolve", "--source-profile", "unknown"], 2);
-    run(&["validate", "--root", dir.path().to_str().unwrap()], 2);
+    let validation = run(&["validate", "--root", dir.path().to_str().unwrap()], 0);
+    assert_eq!(validation["scope"], "static");
     let files = repo();
     let resources: Vec<_> = files[1..].to_vec();
     assert!(compile_core(&resources, parse_core_input_schema(&files[0]).unwrap()).is_err());

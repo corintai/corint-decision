@@ -239,16 +239,6 @@
         "python3 tests/scripts/run_core_benchmark.py",
         "python3 tests/scripts/run_core_http_benchmark.py"
       ]
-    },
-    "core_validate_cli": {
-      "status": "experimental",
-      "command": "corint validate --profile cdl-core-risk-draft-1 --input-schema PATH --format json FILE...",
-      "entry_point": "compile_core",
-      "scope": "compile_only",
-      "execution_checked": false,
-      "business_evaluation": "not_performed",
-      "evidence": "../../../crates/corint-decision-cli/tests/validate.rs",
-      "implementation_status": "implemented_in_declared_scope"
     }
   },
   "evidence_scope": "Named executable profiles and evidence only; maturity is independent of scoped implementation status",

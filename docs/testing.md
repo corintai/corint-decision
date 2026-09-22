@@ -1,10 +1,18 @@
 # Offline behavior testing with `corint test`
 
+## Audience
+
+For policy authors and developers verifying declared Core decision behavior.
+
+## Feature Overview
+
 Status: experimental, `cdl-core-risk-draft-1`. This command runs **declared
 examples through the real DecisionEngine**, not a second expression interpreter.
 It does not evaluate business effectiveness, execute action intents or publish policies.
 
-## Run the checked-in examples
+## Steps
+
+### Run the checked-in examples
 
 From the repository root (omit `--offline` when build dependencies are not cached):
 
@@ -21,8 +29,8 @@ cargo build -p corint-decision-cli --locked --offline
 
 The [example suite](../tests/conformance/cdl_core/behavior.yaml) has three
 threshold cases and two expected input failures. It is synthetic, not a real-data
-evaluation. The [explicit Core validation CLI](cli.md#explicit-core-compilation) documents the same explicit file loading,
-input schema, path handling, complete resource closure and strict Core rules.
+evaluation. Execution input requirements are described below;
+[`corint validate`](cli.md) independently checks full CDL syntax and references.
 `--cases` is required exactly once for `test` and is rejected by `validate`.
 
 The suite and bundle must both validate before any case runs. The command uses
@@ -35,9 +43,9 @@ Compatibility engine constructors retain their existing behavior.
 ## Rule, Ruleset and Pipeline example coverage
 
 The [Rule](../CDL/rule.md) and [Ruleset](../CDL/ruleset.md) examples share the payment
-bundle and commands above. A lone Rule is not a complete CLI bundle: supply its
-Pipeline, dependencies and exactly one Registry. `validate --profile cdl-core-risk-draft-1` checks compilation;
-`test` checks the declared behavior.
+bundle and commands above. A lone Rule is not a complete execution bundle: supply its
+Pipeline, dependencies and exactly one Registry. `validate` checks full CDL syntax
+and references; `test` compiles the execution bundle and checks declared behavior.
 
 For policy changes, cover threshold equality, negative/zero scores, overlapping
 conclusions, the final default, input failures, optional fields, explicit null,
@@ -51,6 +59,32 @@ conditions, skipped operands, local scores and actual calls. Run the
 [Core conformance suite](core-development.md#conformance-and-document-checks) for these
 manifest cases; the behavior-suite file above contains the payment cases only.
 Synthetic examples do not establish real-world threshold quality or business effectiveness.
+
+## Inputs and Outputs
+
+### Execution inputs
+
+`corint test` compiles the complete bundle before executing any cases. Supply all
+resource files explicitly, including exactly one Registry, plus `--input-schema`
+and `--cases`. Paths are relative to the current working directory; use `--`
+before dash-prefixed resource filenames and `./` for dash-prefixed option values.
+Sources must be local, regular UTF-8 files. Symlinks to regular files are accepted,
+but duplicate canonical source paths fail. Directories, stdin, URLs, import
+resolution and implicit schema inference are not supported by this execution command.
+Use [`corint resolve`](resolution.md) for the separate import workflow.
+
+The input schema is YAML or JSON in the existing model `Schema` format, not JSON
+Schema. See the [input fixture](../tests/conformance/cdl_core/input-schema.yaml)
+and [format schema](../CDL/schema/input.json). Field map keys omit the `event.`
+prefix. Each field has a matching `name`, a `field_type` and an explicit boolean
+`required`. The Core execution profile supports number, string, boolean and closed
+nested objects. Optional fields can be omitted but are not nullable; arrays, open
+objects and non-null defaults are not enabled. See [Core input rules](../CDL/context.md#strict-core-input-and-results).
+These execution constraints do not restrict the full CDL static validator.
+
+`parse_core_input_schema` and `compile_core` own the shared execution gates.
+Compilation failures abort before any case runs and preserve the shared compiler's
+stage, code, source and field path in the report.
 
 ## Versioned suite format
 
@@ -116,7 +150,8 @@ compared or included in the projection. Error parity compares stage/code.
 This does not claim full operand-level tracing or production audit replay.
 
 All valid cases run, even after an assertion fails. Results use the same JSON
-envelope as explicit Core `validate`, with `scope: "behavior"`, `cases_file`, and `test_results`:
+Core execution envelope used by `build` and `verify`, with `scope: "behavior"`,
+`cases_file`, and `test_results`:
 
 - `total`, `executed`, `passed`, `failed` count cases, **not** engine invocations.
   `executed` means both engine-entry calls were attempted; expected input failures
@@ -150,7 +185,7 @@ approval or deployment binding and are not publication authorization.
 
 ## Agent workflow and verification
 
-After each policy edit: run `corint validate --profile cdl-core-risk-draft-1`, then `corint test` with independent
+After each policy edit: run `corint validate`, then `corint test` with independent
 expected results derived from the user's requirements. Inspect failed assertions
 before changing either policy or expectations; never rewrite expectations merely
 to make the test green. A passing suite establishes only those examples, not
@@ -189,8 +224,15 @@ Redis instance or model. It checks documented decisions, Core input failures, me
 boundaries, import composition, score/action isolation and Trace parity. The test-only toolchain
 dependency ensures imports use the production resolver.
 
+## FAQ
+
+**Why can `validate` pass while `test` fails?** Static validation checks full CDL
+syntax and references. `test` additionally compiles for its execution profile and
+compares actual decisions against the supplied expectations.
+
 ## Revision History
 
 | Date | Changes |
 |---|---|
+| 2026-09-22 | Use unified static validation before behavior tests; document execution inputs. |
 | 2026-09-07 | Clarify that behavior workflows use explicit Core compilation. |

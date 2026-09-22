@@ -35,13 +35,7 @@ fn save(dir: &Path, suite: &Value) {
 fn command(dir: &Path, args: &[&str]) -> Output {
     Command::new(env!("CARGO_BIN_EXE_corint"))
         .current_dir(dir)
-        .args(args.iter().take(1))
-        .args(if args.first() == Some(&"validate") {
-            vec!["--profile", "cdl-core-risk-draft-1"]
-        } else {
-            vec![]
-        })
-        .args(args.iter().skip(1))
+        .args(args)
         .output()
         .unwrap()
 }
@@ -343,7 +337,7 @@ fn suite_file_io_and_command_errors_are_distinct() {
     assert_eq!(output.status.code(), Some(2));
     assert_eq!(
         serde_json::from_slice::<Value>(&output.stdout).unwrap()["diagnostics"][0]["code"],
-        "E_USAGE"
+        "E_ARGUMENT"
     );
 }
 

@@ -6,12 +6,13 @@ For Agents, Skill authors and developers writing or modifying CDL files.
 
 ## Feature Overview
 
-`corint validate` is the static syntax checker for Agent/Skill authoring. Its default
-profile is `cdl-static-1`, covering **Rule, Ruleset, Pipeline, Registry, Feature,
+`corint validate` is the full CDL static syntax checker for Agent/Skill authoring,
+covering **Rule, Ruleset, Pipeline, Registry, Feature,
 List and Service**. It checks files without starting the decision engine, connecting
 to a database, reading list data, making HTTP requests or executing actions.
 The [authoring resource schema](../CDL/schema/authoring.json) defines accepted shapes.
-Strict Core compilation remains available through an explicit profile below.
+Validation has one static path and accepts no `--profile` option. The JSON report
+keeps `profile: "cdl-static-1"` as a machine-readable format identifier.
 
 ## Steps
 
@@ -44,7 +45,7 @@ commands retain their execution profiles and contracts.
 
 ### Static inputs and scope
 
-`corint validate [--profile cdl-static-1] [--root DIR] [--input-schema PATH] [--format text|json] [PATH...]`
+`corint validate [--root DIR] [--input-schema PATH] [--format text|json] [PATH...]`
 
 | Input | Checks |
 |---|---|
@@ -165,103 +166,33 @@ appear once in `sources`, even when a file contains several resources.
 Both single-file and repository validation check referenced resources. Supplying an input Schema adds checks but is not a prerequisite.
 The [authoring Skill](../skills/cdl-policy-authoring/SKILL.md) follows this workflow.
 
-Static success does not prove execution-profile compatibility or expected business
-behavior. When requested, use explicit Core compilation and
-[`corint test`](testing.md) for supported Core resources and declared expectations.
+Static success does not prove target compatibility or expected business behavior.
+Use [`corint check-target`](contracts/README.md) to check declared target compatibility
+and [`corint test`](testing.md) to compile and execute supported Core resources
+against declared expectations.
 Validation does not publish, activate or authorize a policy.
-
-## Explicit Core compilation
-
-`corint validate --profile cdl-core-risk-draft-1 --input-schema PATH [--format text|json] FILE...`
-
-- Supply **all** resource files explicitly, including exactly one Registry.
-  A lone syntactically valid Rule is not a valid complete bundle.
-- Paths are relative to the current working directory, not the schema's directory.
-  Use quoted paths for spaces; put `--` before dash-prefixed resource filenames.
-  Prefix a dash-prefixed schema path with `./`.
-- Files must be local, regular, UTF-8 text files. Symlinks to regular files are
-  allowed; duplicate source paths, including canonical/symlink aliases, fail.
-- Directories, stdin, URLs, import resolution, repository discovery, and implicit
-  schema/field inference are not supported. Unknown and repeated options fail.
-- Resource YAML uses the same strict [resource schema](../CDL/schema/core.json), parser,
-  reference/type/control-flow checks and compiler as `DecisionEngine::from_core`.
-  Registry selection conditions are also compiled by that shared gate.
-- No input files are changed and no policy conditions or action intents are executed.
-
-The input schema is YAML or JSON representing the existing model `Schema`, not
-JSON Schema and not a new BusinessContext definition. See the runnable
-[input-schema fixture](../tests/conformance/cdl_core/input-schema.yaml) and its
-[file-format JSON Schema](../CDL/schema/input.json). Field map keys use `amount`, not
-`event.amount`; expressions still use `event.amount`. Every field must specify its
-matching `name`, a `field_type`, and an explicit boolean `required`. Scalar types are
-`number`, `string` and `boolean`; closed objects use
-`{"object":{"schema":{"name":"payment","fields":{...}}}}`. `required: false` permits
-omission, including omission of an entire nested object; a present object must
-satisfy its own child schema. Optional fields are not nullable. Arrays, open objects
-and non-null defaults are not enabled. See the [nested input fixture](../tests/conformance/core_extensions/input-schema.yaml)
-and [Core input rules](../CDL/context.md#strict-core-input-and-results). Descriptions are optional and have no
-execution semantics. Duplicate keys, multiple YAML documents, unknown fields and
-unsupported types are rejected rather than silently ignored.
-
-`parse_core_input_schema` in the compiler owns this file gate. It checks the
-embedded public schema, deserializes the existing model and applies the same
-semantic input constraints as `compile_core`. Legacy model deserialization is unchanged.
-
-### Core output and exit codes
-
-`--format json` emits exactly one JSON object to stdout, including on usage or
-file errors. No logs or banners are mixed in. Default text output also goes to
-stdout; failure to write stdout is reported to stderr with exit code 2.
-
-| Exit | Meaning |
-|---|---|
-| `0` | All supplied resources and Registry conditions compiled successfully. |
-| `1` | Invalid CDL/input schema, duplicate source or incomplete/invalid resource closure. |
-| `2` | Invalid command/options or file/output I/O failure; validation could not complete. |
-
-The experimental JSON envelope has `report_version: "1"`, `tool_version`, `profile`,
-`scope: "compile"`, `valid`, `input_schema`, `sources` and `diagnostics`. It always
-includes `execution_checked: false` and `business_evaluation: "not_performed"`.
-`valid: true` means only that this compile-time gate passed. Help/version exit 0
-does not mean a policy was validated.
-
-Diagnostics are fail-fast: an unsuccessful validation emits the first error,
-not a complete list of every defect. Each diagnostic preserves the shared Core
-`severity`, `code`, `message`, `stage`, `source`, and `field_path` (JSON pointer).
-YAML errors include 1-based `line`/`column` when available. Locations not available
-from the parser are not invented. Source labels use supplied file paths;
-`<bundle>` denotes closure-wide errors and `<command-line>` denotes option errors.
-
-The adapter adds `E_USAGE` (`usage`), `E_IO` (`load`) and `E_DUPLICATE_SOURCE`
-(`resolve`). Input semantic errors point into the actual schema file, e.g.
-`/fields/amount`. Resource diagnostics are identical to the library gate for
-the same source labels/content and input schema. Treat error codes and pointers
-as machine-readable; message wording is explanatory, not a stable parsing API.
-
-This envelope is **not** a signed/version-bound ValidationReport or publication
-authorization: it has no artifact hash, evaluation evidence, approval or business
-data lineage. Do not reuse it as proof for a changed file or a different target.
-Those cross-product contracts remain planned work.
-
 
 ## Evidence
 
 [Static CLI tests](../crates/corint-decision-cli/tests/authoring.rs) cover all resource
 kinds, public online examples, imports, diagnostics, type/reference failures and
-absence of HTTP calls. [Core CLI tests](../crates/corint-decision-cli/tests/validate.rs)
-continue to enforce compiler diagnostic parity under the explicit Core profile.
+absence of HTTP calls. [CLI contract tests](../crates/corint-decision-cli/tests/validate.rs)
+cover the single static path and reject removed profile options.
+[Execution preflight tests](../crates/corint-decision-cli/tests/core_preflight.rs)
+continue to enforce compiler diagnostic parity through `corint test`.
 
 ## FAQ
 
-An individual resource can pass without its dependencies; inspect
-`references_checked` before treating it as a checked collection. A static success
-with `execution_checked: false` is expected. Use an explicit execution profile
-and behavior tests when runtime compatibility or decisions need verification.
+Single-file validation loads and checks referenced dependencies; missing references
+fail. Inspect `references_checked` and `input_schema_checked` for the reported scope.
+A static success with `execution_checked: false` is expected. Use `check-target`
+for declared target compatibility and `test` for expected decisions.
 
 ## Revision History
 
 | Date | Changes |
 |---|---|
+| 2026-09-22 | Remove validation profile selection; all validation uses the full CDL static checker. |
 | 2026-09-07 | List passed resource paths in directory text output alongside skip reasons and errors. |
 | 2026-09-07 | Identify auxiliary documents during directory discovery and report skipped files; explicit inputs remain strict. |
 | 2026-09-07 | Accept files, recursive directories and mixed paths; keep imports opt-in with `--root`. |

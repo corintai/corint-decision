@@ -68,13 +68,7 @@ fn bind_context(dir: &Path) {
 fn report(dir: &Path, args: &[&str], exit: i32) -> Value {
     let output = Command::new(env!("CARGO_BIN_EXE_corint"))
         .current_dir(dir)
-        .args(args.iter().take(1))
-        .args(if args.first() == Some(&"validate") {
-            vec!["--profile", "cdl-core-risk-draft-1"]
-        } else {
-            vec![]
-        })
-        .args(args.iter().skip(1))
+        .args(args)
         .args(["--format", "json"])
         .output()
         .unwrap();
@@ -468,7 +462,7 @@ fn relocation_preserves_binding_and_direct_library_uses_same_policy_identity() {
 }
 
 #[test]
-fn cli_flags_and_failures_are_explicit_and_do_not_change_legacy_validate() {
+fn target_flags_are_separate_from_static_validation() {
     let dir = setup();
     for args in [
         vec!["check-target"],
@@ -481,7 +475,6 @@ fn cli_flags_and_failures_are_explicit_and_do_not_change_legacy_validate() {
         ],
         vec!["check-target", "--context", "x", "--context", "y"],
         vec!["check-target", "--expected-binding", "not-a-hash"],
-        vec!["validate", "--context", "context.yaml"],
         vec!["check-target", "--cases", "behavior.yaml"],
         vec!["check-target", "--output", "out.json"],
     ] {
@@ -489,8 +482,13 @@ fn cli_flags_and_failures_are_explicit_and_do_not_change_legacy_validate() {
     }
     let mut args = vec!["validate", "--input-schema", "input-schema.yaml"];
     args.extend(FILES);
-    let legacy = report(dir.path(), &args, 0);
-    assert!(legacy.get("compatibility").is_none());
+    let validation = report(dir.path(), &args, 0);
+    assert_eq!(validation["scope"], "static");
+    assert!(validation.get("compatibility").is_none());
+    error(
+        &report(dir.path(), &["validate", "--context", "context.yaml"], 2),
+        "E_ARGUMENT",
+    );
     std::fs::remove_file(dir.path().join("target.json")).unwrap();
     error(&check(dir.path(), None, 2), "E_IO");
 }

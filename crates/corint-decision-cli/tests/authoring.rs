@@ -268,27 +268,6 @@ fn single_file_loads_declared_imports_and_checks_cycles() {
     has(&run(dir.path(), &["a.yaml"], 1), "E_CYCLE");
 }
 #[test]
-fn static_success_does_not_admit_extensions_to_core() {
-    let dir = setup();
-    let out = Command::new(env!("CARGO_BIN_EXE_corint"))
-        .current_dir(dir.path())
-        .args([
-            "validate",
-            "--profile",
-            "cdl-core-risk-draft-1",
-            "--format",
-            "json",
-            "--input-schema",
-            "input-schema.yaml",
-            "features/payment.yaml",
-        ])
-        .output()
-        .unwrap();
-    assert_eq!(out.status.code(), Some(1));
-    let report: Value = serde_json::from_slice(&out.stdout).unwrap();
-    assert_eq!(report["profile"], "cdl-core-risk-draft-1");
-}
-#[test]
 fn schema_errors_have_actionable_paths_without_echoing_service_secrets() {
     let dir = setup();
     mutate(
