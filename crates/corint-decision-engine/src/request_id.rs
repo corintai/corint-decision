@@ -1,6 +1,6 @@
-//! Shared request IDs: `rq_<6 random Base62 characters>_<11 Base62 snowflake characters>`.
+//! Shared request IDs: `rq_<6 process Base62 characters>_<11 Base62 snowflake characters>`.
 //!
-//! Generation is local to the process. Random node IDs and random request segments
+//! Generation is local to the process. Random node IDs and random process segments
 //! reduce cross-process collisions; they do not guarantee global uniqueness.
 
 use rand::distributions::{Alphanumeric, DistString};
@@ -50,10 +50,13 @@ impl Snowflake {
 
 static GENERATOR: LazyLock<Mutex<Snowflake>> =
     LazyLock::new(|| Mutex::new(Snowflake::new(OsRng.gen_range(0..=MAX_NODE))));
+static PROCESS_SEGMENT: LazyLock<String> =
+    LazyLock::new(|| Alphanumeric.sample_string(&mut OsRng, 6));
 
 /// Generate a 21-character, case-sensitive request ID without external services.
 ///
-/// The random segment is sampled independently for every call. The snowflake
+/// The process segment is sampled once on first use and shared by all threads.
+/// A fresh process samples a new segment; it is not persisted. The snowflake
 /// uses 41 timestamp bits, 10 process-local random node bits and 12 sequence bits.
 /// Callers must store and compare the complete ID, preserving case.
 ///
@@ -61,7 +64,7 @@ static GENERATOR: LazyLock<Mutex<Snowflake>> =
 /// Panics if OS entropy is unavailable, the clock is outside the supported epoch
 /// range, or generator state is poisoned; never wraps into previously used IDs.
 pub fn generate_request_id() -> String {
-    let random = Alphanumeric.sample_string(&mut OsRng, 6);
+    let process_segment = PROCESS_SEGMENT.as_str();
     let snowflake = loop {
         let mut generator = GENERATOR.lock().expect("request ID generator poisoned");
         let timestamp = SystemTime::now()
@@ -78,7 +81,7 @@ pub fn generate_request_id() -> String {
         drop(generator);
         std::thread::sleep(Duration::from_millis(1));
     };
-    format!("rq_{random}_{}", encode_base62(snowflake))
+    format!("rq_{process_segment}_{}", encode_base62(snowflake))
 }
 
 fn encode_base62(mut value: u64) -> String {
@@ -151,10 +154,13 @@ mod tests {
     }
 
     #[test]
-    fn concurrent_requests_have_distinct_snowflakes_and_case_sensitive_random_segments() {
+    fn concurrent_requests_share_process_segment_and_have_distinct_snowflakes() {
+        let barrier = std::sync::Arc::new(std::sync::Barrier::new(8));
         let threads: Vec<_> = (0..8)
             .map(|_| {
-                std::thread::spawn(|| {
+                let barrier = barrier.clone();
+                std::thread::spawn(move || {
+                    barrier.wait();
                     (0..4_000)
                         .map(|_| generate_request_id())
                         .collect::<Vec<_>>()
@@ -162,7 +168,7 @@ mod tests {
             })
             .collect();
         let mut snowflakes = HashSet::new();
-        let mut random_characters = HashSet::new();
+        let mut process_segments = HashSet::new();
         for id in threads
             .into_iter()
             .flat_map(|thread| thread.join().unwrap())
@@ -181,11 +187,13 @@ mod tests {
                 snowflakes.insert(parts[2].to_owned()),
                 "snowflake reused: {id}"
             );
-            random_characters.extend(parts[1].bytes());
+            process_segments.insert(parts[1].to_owned());
         }
         assert_eq!(snowflakes.len(), 32_000);
-        // Across 192,000 independent random characters, all 62 symbols should
-        // occur; this also catches accidentally retaining the old hex alphabet.
-        assert_eq!(random_characters.len(), 62);
+        assert_eq!(
+            process_segments.len(),
+            1,
+            "process segment changed between requests"
+        );
     }
 }

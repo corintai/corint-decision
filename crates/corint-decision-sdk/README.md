@@ -415,22 +415,23 @@ Without registry, pipelines are matched by `event_type` metadata in pipeline def
 
 Request IDs are automatically generated using the format:
 ```
-rq_<6 random Base62 characters>_<11 Base62 snowflake characters>
+rq_<6 process Base62 characters>_<11 Base62 snowflake characters>
 ```
 
 Example shape: `rq_a3F2eZ_9oVW9PpkHy8` (21 characters including separators).
 
 Components:
 - `rq`: request business prefix.
-- Random segment: six independently sampled characters from `0-9A-Za-z`, refreshed
-  for every request using OS entropy.
+- Process segment: six random characters from `0-9A-Za-z`, sampled once on first
+  use using OS entropy and shared by every request and thread in the process.
+  A fresh process samples a new segment; it is not persisted across restarts.
 - Snowflake: 41 milliseconds-since-2024 timestamp bits, a 10-bit random node ID
   selected once per process, and a 12-bit sequence, encoded as 11 Base62 characters.
 
 The generator is shared within the process and needs no external service. Clock
 rollback retains the last timestamp and sequence; sequence exhaustion waits for
 the clock to advance. Generator state is not persisted across restarts. Random
-node IDs and request segments reduce cross-process collisions, but do not provide
+node IDs and process segments reduce cross-process collisions, but do not provide
 an absolute uniqueness guarantee. Base62 is case-sensitive: preserve the entire
 ID, including case, in storage, comparison and transport. Request IDs are not
 business idempotency keys. OS entropy failure or a clock outside the supported
