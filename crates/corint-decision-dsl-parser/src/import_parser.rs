@@ -128,74 +128,64 @@ impl ImportParser {
     ///   id: ruleset1
     /// ```
     pub fn parse_with_imports(yaml_str: &str) -> Result<(Option<Imports>, YamlValue)> {
+        Self::select_definition(yaml_str, None)
+    }
+
+    /// Singular resource APIs must not silently select one item from a list.
+    pub fn parse_resource_with_imports(
+        yaml_str: &str,
+        kind: &str,
+    ) -> Result<(Option<Imports>, YamlValue)> {
+        Self::select_definition(yaml_str, Some(kind))
+    }
+
+    fn select_definition(
+        yaml_str: &str,
+        kind: Option<&str>,
+    ) -> Result<(Option<Imports>, YamlValue)> {
         let documents = YamlParser::parse_multi_document(yaml_str)?;
-
-        match documents.len() {
-            1 => {
-                // Single document - check if it has imports section
-                let doc = &documents[0];
-                let imports = Self::parse_from_yaml(doc)?;
-                Ok((imports, doc.clone()))
+        let first = documents
+            .first()
+            .ok_or_else(|| ParseError::ParseError("Expected a resource document".into()))?;
+        let imports = documents
+            .iter()
+            .find(|doc| doc.get("import").is_some())
+            .map(Self::parse_from_yaml)
+            .transpose()?
+            .flatten();
+        let mut definition = if let Some(kind) = kind {
+            let candidates: Vec<_> = documents
+                .iter()
+                .filter(|doc| doc.get(kind).is_some())
+                .collect();
+            if candidates.len() != 1 {
+                return Err(ParseError::ParseError(format!(
+                    "Expected exactly one {kind}; use a collection loader for multiple resources"
+                )));
             }
-            2 => {
-                // Two documents - first contains version + imports, second contains definition
-                let first_doc = &documents[0];
-                let second_doc = &documents[1];
-
-                // Parse imports from first document
-                let imports = Self::parse_from_yaml(first_doc)?;
-
-                // Merge version from first document if present
-                let mut definition = second_doc.clone();
-                if let Some(version) = YamlParser::get_optional_string(first_doc, "version") {
-                    if let Some(def_map) = definition.as_mapping_mut() {
-                        def_map.insert(
-                            YamlValue::String("version".to_string()),
-                            YamlValue::String(version),
-                        );
-                    }
+            candidates[0].clone()
+        } else {
+            documents
+                .iter()
+                .find(|doc| doc.get("pipeline").is_some())
+                .or_else(|| {
+                    documents.iter().find(|doc| {
+                        ["rule", "ruleset", "template"]
+                            .iter()
+                            .any(|key| doc.get(*key).is_some())
+                    })
+                })
+                .unwrap_or(first)
+                .clone()
+        };
+        if definition.get("version").is_none() {
+            if let Some(version) = first.get("version") {
+                if let Some(mapping) = definition.as_mapping_mut() {
+                    mapping.insert(YamlValue::String("version".into()), version.clone());
                 }
-
-                Ok((imports, definition))
-            }
-            _ => {
-                // Multiple documents (3+) - first contains version/imports, rest are inline definitions
-                // This supports the format where pipeline, rules, and rulesets are in the same file
-                let first_doc = &documents[0];
-
-                // Parse imports from first document
-                let imports = Self::parse_from_yaml(first_doc)?;
-
-                // Find the pipeline definition (should be in one of the documents)
-                let mut pipeline_doc = None;
-                for doc in &documents {
-                    if doc.get("pipeline").is_some() {
-                        pipeline_doc = Some(doc.clone());
-                        break;
-                    }
-                }
-
-                // If pipeline found, use it as the definition
-                // Otherwise, use the first document that has a definition (rule, ruleset, template)
-                let definition = if let Some(mut pipeline) = pipeline_doc {
-                    // Merge version from first document if present
-                    if let Some(version) = YamlParser::get_optional_string(first_doc, "version") {
-                        if let Some(def_map) = pipeline.as_mapping_mut() {
-                            def_map.insert(
-                                YamlValue::String("version".to_string()),
-                                YamlValue::String(version),
-                            );
-                        }
-                    }
-                    pipeline
-                } else {
-                    // No pipeline found, use first document
-                    first_doc.clone()
-                };
-
-                Ok((imports, definition))
             }
         }
+        Ok((imports, definition))
     }
 }
 

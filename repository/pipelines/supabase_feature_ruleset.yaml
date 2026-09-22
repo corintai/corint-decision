@@ -64,57 +64,54 @@ pipeline:
 
 # Rule 1: High Transaction Volume Detection
 rule:
-  id: high_transaction_volume
-  name: High Transaction Volume
-  description: Detect users with unusually high transaction volume in 7 days
+  - id: high_transaction_volume
+    name: High Transaction Volume
+    description: Detect users with unusually high transaction volume in 7 days
 
-  # No need to repeat event.type here - guaranteed by pipeline
-  when:
-    all:
-      - features.transaction_sum_7d > 5000
-      - features.transaction_count_24h > 10
+    # No need to repeat event.type here - guaranteed by pipeline
+    when:
+      all:
+        - features.transaction_sum_7d > 5000
+        - features.transaction_count_24h > 10
 
-  score: 50
-
-
-# Rule 2: High-Value Transaction Pattern
-rule:
-  id: high_value_transaction
-  name: High-Value Transaction Pattern
-  description: Large transaction amount detected
-
-  when:
-    all:
-      - event.amount >= 500
-
-  score: 35
+    score: 50
 
 
-# Rule 3: Rapid Transaction Frequency
-rule:
-  id: rapid_transactions
-  name: Rapid Transaction Frequency
-  description: Too many transactions in short time window
+  # Rule 2: High-Value Transaction Pattern
+  - id: high_value_transaction
+    name: High-Value Transaction Pattern
+    description: Large transaction amount detected
 
-  when:
-    all:
-      - features.transaction_count_24h > 20
+    when:
+      all:
+        - event.amount >= 500
 
-  score: 45
+    score: 35
 
 
-# Rule 4: Suspicious Device Pattern
-rule:
-  id: suspicious_device_pattern
-  name: Suspicious Device Pattern
-  description: User accessing from multiple devices with high transaction volume
+  # Rule 3: Rapid Transaction Frequency
+  - id: rapid_transactions
+    name: Rapid Transaction Frequency
+    description: Too many transactions in short time window
 
-  when:
-    all:
-      - features.device_event_count_3mo >= 2
-      - features.device_transaction_count_6mo >= 4
+    when:
+      all:
+        - features.transaction_count_24h > 20
 
-  score: 60
+    score: 45
+
+
+  # Rule 4: Suspicious Device Pattern
+  - id: suspicious_device_pattern
+    name: Suspicious Device Pattern
+    description: User accessing from multiple devices with high transaction volume
+
+    when:
+      all:
+        - features.device_event_count_3mo >= 2
+        - features.device_transaction_count_6mo >= 4
+
+    score: 60
 
 
 # ========================================
@@ -123,47 +120,47 @@ rule:
 # Ruleset produces signals (risk levels), pipeline makes final decisions
 
 ruleset:
-  id: supabase_risk_assessment
-  name: Supabase Transaction Risk Assessment
-  description: |
-    Risk assessment ruleset that uses features calculated from Supabase PostgreSQL database.
-    Features are computed in real-time from event data stored in Supabase.
-    This ruleset produces signals, which are consumed by the pipeline's decision section.
+    id: supabase_risk_assessment
+    name: Supabase Transaction Risk Assessment
+    description: |
+      Risk assessment ruleset that uses features calculated from Supabase PostgreSQL database.
+      Features are computed in real-time from event data stored in Supabase.
+      This ruleset produces signals, which are consumed by the pipeline's decision section.
 
-  rules:
-    - high_transaction_volume
-    - high_value_transaction
-    - rapid_transactions
-    - suspicious_device_pattern
+    rules:
+      - high_transaction_volume
+      - high_value_transaction
+      - rapid_transactions
+      - suspicious_device_pattern
 
-  # Conclusion produces signals (initial decision: approve/decline/review/hold/pass)
-  conclusion:
-    # Critical risk - decline immediately
-    - when: triggered_rules contains "suspicious_device_pattern2"
-      signal: decline
-      reason: "Suspicious device pattern with high transaction volume detected"
+    # Conclusion produces signals (initial decision: approve/decline/review/hold/pass)
+    conclusion:
+      # Critical risk - decline immediately
+      - when: triggered_rules contains "suspicious_device_pattern2"
+        signal: decline
+        reason: "Suspicious device pattern with high transaction volume detected"
 
-    # High risk - decline
-    - when: total_score >= 100
-      signal: decline
-      reason: "High risk score threshold exceeded"
+      # High risk - decline
+      - when: total_score >= 100
+        signal: decline
+        reason: "High risk score threshold exceeded"
 
-    # High risk - multiple indicators
-    - when: triggered_count >= 3
-      signal: decline
-      reason: "Multiple risk indicators detected"
+      # High risk - multiple indicators
+      - when: triggered_count >= 3
+        signal: decline
+        reason: "Multiple risk indicators detected"
 
-    # Medium risk - hold for verification
-    - when: total_score >= 80
-      signal: hold
-      reason: "Medium-high risk score"
+      # Medium risk - hold for verification
+      - when: total_score >= 80
+        signal: hold
+        reason: "Medium-high risk score"
 
-    # Low risk - review
-    - when: total_score >= 35
-      signal: review
-      reason: "Low risk score"
+      # Low risk - review
+      - when: total_score >= 35
+        signal: review
+        reason: "Low risk score"
 
-    # Normal - approve (default)
-    - default: true
-      signal: approve
-      reason: "No significant risk indicators"
+      # Normal - approve (default)
+      - default: true
+        signal: approve
+        reason: "No significant risk indicators"

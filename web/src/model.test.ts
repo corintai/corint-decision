@@ -119,7 +119,7 @@ test("co-located resource declarations and document streams retain every resourc
     const source = [
       "version: '0.1'\npipeline:\n  id: payment\n  entry: check\n  steps: []\n  decision: []\n",
       "rule:\n  id: first\n  name: First\n  when: 'true'\n  score: 10 # keep first\n",
-      "rule:\n  id: second\n  when: 'true'\n  score: 20 # keep second\n",
+      (separator === "\n" ? "---\n" : "") + "rule:\n  id: second\n  when: 'true'\n  score: 20 # keep second\n",
       "ruleset:\n  id: combined\n  rules:\n    - first\n    - second\n",
     ].join(separator);
     const parsed = parseSource(source);
@@ -145,7 +145,7 @@ test("co-located resource declarations and document streams retain every resourc
 
 test("editing the second Pipeline does not overwrite the first or its neighboring Rule", () => {
   const source =
-    "# shared header\nversion: '0.1'\npipeline: {id: first, name: First, entry: end, steps: []}\n# neighbor\nrule: {id: risk, when: 'true', score: 5}\npipeline: {id: second, name: Second, entry: end, steps: []}\n";
+    "# shared header\nversion: '0.1'\npipeline: {id: first, name: First, entry: end, steps: []}\n# neighbor\nrule: {id: risk, when: 'true', score: 5}\n---\npipeline: {id: second, name: Second, entry: end, steps: []}\n";
   const parsed = parseSource(source, 1);
   assert.equal(parsed.error, null);
   assert.equal((parsed.data?.pipeline as ObjectValue).id, "second");
@@ -181,7 +181,7 @@ test("resource bundles keep nested duplicate and conflicting header checks", () 
 
 test("document-local versions and cross-resource anchors survive normalization", () => {
   const source =
-    "version: '0.1'\nrule: {id: first, when: &condition 'event.amount > 1', score: 1}\nrule: {id: second, when: *condition, score: 2}\n---\nversion: '0.2'\nfeatures: [{name: amount, type: expression, expression: event.amount}]\n";
+    "version: '0.1'\nrule:\n  - {id: first, when: &condition 'event.amount > 1', score: 1}\n  - {id: second, when: *condition, score: 2}\n---\nversion: '0.2'\nfeatures: [{name: amount, type: expression, expression: event.amount}]\n";
   const parsed = parseSource(source);
   assert.equal(parsed.error, null);
   assert.equal(parsed.resources.length, 3);
@@ -190,4 +190,35 @@ test("document-local versions and cross-resource anchors survive normalization",
     "event.amount > 1",
   );
   assert.equal(parsed.resources[2].data.version, "0.2");
+});
+
+test("standard resource lists preserve every item and comments when editing", () => {
+  const source = "version: '0.1'\nrule:\n  - id: first\n    score: 10 # first score\n  - id: second\n    score: 20 # second score\nruleset:\n  - id: one\n    rules:\n      - first\n  - id: two\n    rules:\n      - second\n";
+  const parsed = parseSource(source);
+  assert.equal(parsed.error, null);
+  assert.equal(parsed.resources.length, 4);
+  assert.deepEqual(parsed.resources.map((r) => (r.data[r.kind] as ObjectValue).id), ["first", "second", "one", "two"]);
+  const patched = patchSource(source, ["rule", "score"], 15);
+  const result = parseSource(patched);
+  assert.equal((result.resources[0].data.rule as ObjectValue).score, 15);
+  assert.deepEqual(result.resources.slice(1).map((r) => r.data), parsed.resources.slice(1).map((r) => r.data));
+  assert.match(patched, /# first score/);
+  assert.match(patched, /# second score/);
+  assert.throws(() => patchSource(source, [], {}));
+  const withPipeline = `${source}pipeline: {id: payment, entry: check}\n`;
+  const changed = parseSource(patchSource(withPipeline, ["pipeline", "entry"], "end"));
+  assert.deepEqual(changed.resources.slice(0, 4).map((r) => r.data), parsed.resources.map((r) => r.data));
+  for (const source of ["rule: []", "ruleset: []", "rule: [null]", "ruleset: [bad]"])
+    assert.ok(parseSource(source).error, source);
+});
+
+test("duplicate resource keys fail before normalization or editing", () => {
+  for (const key of ["rule", "ruleset", "pipeline", "registry", "features", "lists"]) {
+    for (const value of ["{id: first}", "[{id: first}]"]) {
+      const source = `${key}: ${value}\n${key}: ${value}\n`;
+      assert.match(parseSource(source).error!, /unique/i);
+      assert.throws(() => patchSource(source, [key, "id"], "changed"));
+      assert.equal(parseSource(`${key}: ${value}\n---\n${key}: ${value}\n`).error, null);
+    }
+  }
 });

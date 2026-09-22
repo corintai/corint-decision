@@ -157,7 +157,7 @@ in schema diagnostics.
 
 The default Skill loop is: **write or edit → validate → repair diagnostics → validate
 again**. Read exit status and `valid`, and retain the reported `unchecked` scope.
-Resources may share one source file (adjacent declarations or `---` documents),
+Resources may share one source file (`rule` / `ruleset` object lists or `---` documents),
 use separate files, or mix both layouts; see [authoring source layout](../CDL/overall.md#authoring-source-layout).
 All declarations are checked and indexed for imports and ID references. File paths
 appear once in `sources`, even when a file contains several resources.

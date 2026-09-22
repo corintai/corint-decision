@@ -17,28 +17,27 @@ impl YamlParser {
         serde_yaml::from_str(yaml_str).map_err(|e| ParseError::ParseError(e.to_string()))
     }
 
-    /// Parse YAML string containing multiple documents (separated by --- or auto-detected)
+    /// Parse standard YAML documents and expand resource lists.
     /// Returns a vector of YAML values, one for each document
     ///
-    /// This function supports two formats:
-    /// 1. Traditional YAML multi-document format with explicit `---` separators
-    /// 2. Auto-detection of `rule:`, `ruleset:`, `pipeline:` keywords at line start
-    ///    (automatically inserts `---` before these keywords)
+    /// Supports object or nonempty object-list values for `rule` and `ruleset`,
+    /// and YAML documents with explicit `---` separators. Duplicate keys are errors.
     pub fn parse_multi_document(yaml_str: &str) -> Result<Vec<YamlValue>> {
         use serde::Deserialize;
 
-        // Preprocess: auto-insert --- before rule:/ruleset:/pipeline: at line start
-        let preprocessed = Self::preprocess_multi_document(yaml_str);
-        crate::source_format::validate_rules_format(&preprocessed)
+        crate::source_format::validate_rules_format(yaml_str)
             .map_err(|e| ParseError::ParseError(e.to_string()))?;
-
-        let deserializer = serde_yaml::Deserializer::from_str(&preprocessed);
+        // Decode each document before normalization, preserving anchors and rejecting
+        // duplicate keys instead of turning them into extra resource documents.
+        let decode = |source: &str| {
+            serde_yaml::Deserializer::from_str(source)
+                .map(YamlValue::deserialize)
+                .collect::<std::result::Result<Vec<_>, _>>()
+        };
+        let values = decode(yaml_str).map_err(|e| ParseError::ParseError(e.to_string()))?;
         let mut documents = Vec::new();
-
-        for document in deserializer {
-            let value = YamlValue::deserialize(document)
-                .map_err(|e| ParseError::ParseError(e.to_string()))?;
-            documents.push(value);
+        for value in values {
+            Self::expand_resource_lists(value, &mut documents)?;
         }
 
         // If no documents were parsed, try parsing as single document
@@ -50,63 +49,46 @@ impl YamlParser {
         Ok(documents)
     }
 
-    /// Preprocess YAML content to auto-insert `---` separators
-    /// before `rule:`, `ruleset:`, `pipeline:` keywords at line start
-    fn preprocess_multi_document(yaml_str: &str) -> String {
-        let mut result = String::with_capacity(yaml_str.len() + 100);
-        let mut seen_definition = false;
-        let mut has_content_before_first_def = false;
-        let mut recent_separator = false;
-
-        for line in yaml_str.lines() {
-            let trimmed = line.trim();
-
-            // Check if this line starts a new definition (rule/ruleset/pipeline at column 0)
-            let is_definition_start = !line.starts_with(' ')
-                && !line.starts_with('\t')
-                && (trimmed.starts_with("rule:")
-                    || trimmed.starts_with("ruleset:")
-                    || trimmed.starts_with("pipeline:"));
-
-            // Track if there's meaningful content before first definition
-            // (not just comments, empty lines, or version header)
-            if !seen_definition
-                && !is_definition_start
-                && !trimmed.is_empty()
-                && !trimmed.starts_with('#')
-            {
-                // Check if it's a YAML key (like "version:")
-                if trimmed.contains(':') {
-                    has_content_before_first_def = true;
+    fn expand_resource_lists(value: YamlValue, documents: &mut Vec<YamlValue>) -> Result<()> {
+        let Some(mapping) = value.as_mapping() else {
+            documents.push(value);
+            return Ok(());
+        };
+        let keys = ["rule", "ruleset", "pipeline"];
+        let mut common = mapping.clone();
+        for key in keys {
+            common.remove(YamlValue::String(key.into()));
+        }
+        let mut found = false;
+        for (key, resource) in mapping {
+            let Some(kind) = key.as_str().filter(|kind| keys.contains(kind)) else {
+                continue;
+            };
+            found = true;
+            let items = if matches!(kind, "rule" | "ruleset") {
+                if let Some(items) = resource.as_sequence() {
+                    if items.is_empty() || items.iter().any(|item| !item.is_mapping()) {
+                        return Err(ParseError::ParseError(format!(
+                            "{kind} must be an object or a nonempty sequence of objects"
+                        )));
+                    }
+                    items.as_slice()
+                } else {
+                    std::slice::from_ref(resource)
                 }
-            }
-
-            // Insert --- before definitions:
-            // - Before first definition if there's content before it (like version:)
-            // - Before subsequent definitions (unless we recently saw ---)
-            if is_definition_start
-                && !recent_separator
-                && (seen_definition || has_content_before_first_def)
-            {
-                result.push_str("\n---\n");
-            }
-
-            if is_definition_start {
-                seen_definition = true;
-            }
-
-            result.push_str(line);
-            result.push('\n');
-
-            // Track if we've seen a separator; only reset on meaningful content
-            if trimmed == "---" {
-                recent_separator = true;
-            } else if !trimmed.is_empty() && !trimmed.starts_with('#') {
-                recent_separator = false;
+            } else {
+                std::slice::from_ref(resource)
+            };
+            for item in items {
+                let mut normalized = common.clone();
+                normalized.insert(key.clone(), item.clone());
+                documents.push(YamlValue::Mapping(normalized));
             }
         }
-
-        result
+        if !found {
+            documents.push(value);
+        }
+        Ok(())
     }
 
     /// Get a required string field from YAML object
@@ -597,49 +579,18 @@ name: test
     }
 
     #[test]
-    fn test_parse_multi_document_without_separators() {
-        let yaml_str = r#"
-version: "0.1"
-
-rule:
-  id: rule_1
-  name: Rule 1
-
-rule:
-  id: rule_2
-  name: Rule 2
-
-ruleset:
-  id: ruleset_1
-  name: Ruleset 1
-
-pipeline:
-  id: pipeline_1
-  name: Pipeline 1
-"#;
-
-        let docs = YamlParser::parse_multi_document(yaml_str).unwrap();
-        // Should produce 5 documents: version header, 2 rules, 1 ruleset, 1 pipeline
-        assert_eq!(docs.len(), 5);
-
-        // First document contains version
-        assert!(docs[0].get("version").is_some());
-
-        // Second document is rule_1
-        assert!(docs[1].get("rule").is_some());
-        let rule1 = docs[1].get("rule").unwrap();
-        assert_eq!(rule1.get("id").unwrap().as_str(), Some("rule_1"));
-
-        // Third document is rule_2
-        assert!(docs[2].get("rule").is_some());
-        let rule2 = docs[2].get("rule").unwrap();
-        assert_eq!(rule2.get("id").unwrap().as_str(), Some("rule_2"));
-
-        // Fourth document is ruleset_1
-        assert!(docs[3].get("ruleset").is_some());
-
-        // Fifth document is pipeline_1
-        assert!(docs[4].get("pipeline").is_some());
+    fn repeated_resource_keys_are_rejected() {
+        for key in [
+            "rule", "ruleset", "pipeline", "registry", "features", "lists",
+        ] {
+            for body in ["{id: first}", "[{id: first}]"] {
+                let source = format!("{key}: {body}\n{key}: {body}\n");
+                let error = YamlParser::parse_multi_document(&source).unwrap_err();
+                assert!(error.to_string().contains("duplicate"), "{error}");
+                let separated = format!("{key}: {body}\n---\n{key}: {body}\n");
+                assert!(YamlParser::parse_multi_document(&separated).is_ok());
+            }
+        }
     }
 
     #[test]
@@ -657,6 +608,40 @@ ruleset:
         let docs = YamlParser::parse_multi_document(yaml_str).unwrap();
         // Should produce 3 documents (explicit --- separators)
         assert_eq!(docs.len(), 3);
+    }
+
+    #[test]
+    fn resource_lists_expand_without_losing_items() {
+        let source = "version: '0.1'\nrule:\n  - {id: first, name: First, when: 'true', score: 10}\n  - {id: second, name: Second, when: 'false', score: 20}\nruleset:\n  - id: one\n    rules:\n      - first\n  - id: two\n    rules:\n      - second\n";
+        // The preferred authoring form also decodes as ordinary YAML.
+        let plain: YamlValue = serde_yaml::from_str(source).unwrap();
+        assert_eq!(plain["rule"].as_sequence().unwrap().len(), 2);
+        let docs = YamlParser::parse_multi_document(source).unwrap();
+        let rules: Vec<_> = docs.iter().filter_map(|doc| doc.get("rule")).collect();
+        let rulesets: Vec<_> = docs.iter().filter_map(|doc| doc.get("ruleset")).collect();
+        assert_eq!(rules.len(), 2);
+        assert_eq!(rules[1]["id"].as_str(), Some("second"));
+        assert_eq!(rulesets.len(), 2);
+        assert_eq!(rulesets[1]["rules"][0].as_str(), Some("second"));
+        assert!(crate::RuleParser::parse_with_imports(source).is_err());
+        assert!(crate::RulesetParser::parse_with_imports(source).is_err());
+        for source in ["rule: []", "ruleset: []", "rule: [null]", "ruleset: [bad]"] {
+            assert!(
+                YamlParser::parse_multi_document(source).is_err(),
+                "{source}"
+            );
+        }
+    }
+
+    #[test]
+    fn standard_documents_keep_cross_resource_anchors() {
+        let source = "version: '0.1'\nrule:\n  - id: first\n    when: &condition 'event.amount > 1'\n  - id: second\n    when: *condition\npipeline:\n  id: payment\n  when: *condition\n";
+        let docs = YamlParser::parse_multi_document(source).unwrap();
+        assert_eq!(docs.len(), 3);
+        assert_eq!(docs[1]["rule"]["when"], docs[2]["pipeline"]["when"]);
+        assert!(docs
+            .iter()
+            .all(|doc| doc["version"].as_str() == Some("0.1")));
     }
 
     #[test]

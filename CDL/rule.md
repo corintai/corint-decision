@@ -9,6 +9,10 @@ when it matches. It does not invoke an LLM or a service, select a final decision
 or emit actions. Rulesets aggregate rule scores; the selected [Pipeline decision](pipeline.md)
 chooses the final result and action intents.
 
+For static authoring and CDL Studio, `rule` also accepts a nonempty list of
+resource objects; see [authoring source layout](overall.md#authoring-source-layout).
+The strict Core resource shape below remains a single normalized object.
+
 Writing `version: "0.1"` does not enable strict Core at a compatibility entry point.
 
 ## 1. Document and fields

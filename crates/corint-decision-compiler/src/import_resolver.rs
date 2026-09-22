@@ -5,7 +5,7 @@
 //! transitively, and validates ID uniqueness.
 
 use crate::error::{CompileError, Result};
-use corint_decision_dsl_parser::{RuleParser, RulesetParser};
+use corint_decision_dsl_parser::{ImportParser, RuleParser, RulesetParser, YamlParser};
 use corint_decision_model::ast::{CdlDocument, Rule, Ruleset};
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
@@ -15,11 +15,11 @@ pub struct ImportResolver {
     /// Base path for library files (e.g., "repository" or "examples")
     library_base_path: PathBuf,
 
-    /// Cached loaded rules (path -> (Rule, source_path))
-    rule_cache: HashMap<String, (Rule, String)>,
+    /// Cached loaded rules (path -> (rules, source_path))
+    rule_cache: HashMap<String, (Vec<Rule>, String)>,
 
-    /// Cached loaded rulesets (path -> (Ruleset, source_path))
-    ruleset_cache: HashMap<String, (Ruleset, String)>,
+    /// Cached loaded rulesets (path -> (rulesets, source_path))
+    ruleset_cache: HashMap<String, (Vec<Ruleset>, String)>,
 
     /// Track loading stack to detect circular dependencies
     loading_stack: Vec<String>,
@@ -51,8 +51,8 @@ impl ImportResolver {
         if let Some(imports) = &document.imports {
             // Load imported rules
             for rule_path in &imports.rules {
-                let (rule, _) = self.load_rule(rule_path)?;
-                resolved_rules.push(rule);
+                let (rule, _) = self.load_rules(rule_path)?;
+                resolved_rules.extend(rule);
             }
 
             // Load imported rulesets (with their dependencies)
@@ -63,7 +63,7 @@ impl ImportResolver {
                 resolved_rules.extend(deps.rules);
 
                 // Add the ruleset itself
-                resolved_rulesets.push(ruleset);
+                resolved_rulesets.extend(ruleset);
             }
         }
 
@@ -95,8 +95,8 @@ impl ImportResolver {
         if let Some(imports) = &document.imports {
             // Load imported rules
             for rule_path in &imports.rules {
-                let (rule, _) = self.load_rule(rule_path)?;
-                resolved_rules.push(rule);
+                let (rule, _) = self.load_rules(rule_path)?;
+                resolved_rules.extend(rule);
             }
 
             // Load imported rulesets (with their dependencies)
@@ -107,7 +107,7 @@ impl ImportResolver {
                 resolved_rules.extend(deps.rules);
 
                 // Add the ruleset itself
-                resolved_rulesets.push(ruleset);
+                resolved_rulesets.extend(ruleset);
             }
         }
 
@@ -131,7 +131,7 @@ impl ImportResolver {
     }
 
     /// Load a rule from file with caching
-    fn load_rule(&mut self, path: &str) -> Result<(Rule, String)> {
+    fn load_rules(&mut self, path: &str) -> Result<(Vec<Rule>, String)> {
         // Check cache first
         if let Some(cached) = self.rule_cache.get(path) {
             return Ok(cached.clone());
@@ -147,13 +147,27 @@ impl ImportResolver {
                 source: e,
             })?;
 
-        let document =
-            RuleParser::parse_with_imports(&content).map_err(|e| CompileError::ParseError {
-                path: path.to_string(),
+        let documents =
+            YamlParser::parse_multi_document(&content).map_err(|e| CompileError::ParseError {
+                path: path.into(),
                 message: e.to_string(),
             })?;
-
-        let rule = document.definition;
+        let rule = documents
+            .iter()
+            .filter(|doc| doc.get("rule").is_some())
+            .map(RuleParser::parse_from_yaml)
+            .collect::<std::result::Result<Vec<_>, _>>()
+            .map_err(|e| CompileError::ParseError {
+                path: path.into(),
+                message: e.to_string(),
+            })?;
+        if rule.is_empty() {
+            return Err(CompileError::ParseError {
+                path: path.into(),
+                message: "Expected at least one rule".into(),
+            });
+        }
+        self.validate_unique_ids(&rule, &[])?;
 
         // Cache it
         self.rule_cache
@@ -163,7 +177,7 @@ impl ImportResolver {
     }
 
     /// Load a ruleset with its dependencies (recursive loading)
-    fn load_ruleset_with_deps(&mut self, path: &str) -> Result<(Ruleset, Dependencies)> {
+    fn load_ruleset_with_deps(&mut self, path: &str) -> Result<(Vec<Ruleset>, Dependencies)> {
         // Check for circular dependencies
         if self.loading_stack.contains(&path.to_string()) {
             return Err(CompileError::CircularDependency {
@@ -190,20 +204,45 @@ impl ImportResolver {
                 source: e,
             })?;
 
-        let document =
-            RulesetParser::parse_with_imports(&content).map_err(|e| CompileError::ParseError {
-                path: path.to_string(),
+        let documents =
+            YamlParser::parse_multi_document(&content).map_err(|e| CompileError::ParseError {
+                path: path.into(),
                 message: e.to_string(),
             })?;
+        let imports = documents
+            .iter()
+            .find(|doc| doc.get("import").is_some())
+            .map(ImportParser::parse_from_yaml)
+            .transpose()
+            .map_err(|e| CompileError::ParseError {
+                path: path.into(),
+                message: e.to_string(),
+            })?
+            .flatten();
+        let mut rulesets = documents
+            .iter()
+            .filter(|doc| doc.get("ruleset").is_some())
+            .map(RulesetParser::parse_from_yaml)
+            .collect::<std::result::Result<Vec<_>, _>>()
+            .map_err(|e| CompileError::ParseError {
+                path: path.into(),
+                message: e.to_string(),
+            })?;
+        if rulesets.is_empty() {
+            return Err(CompileError::ParseError {
+                path: path.into(),
+                message: "Expected at least one ruleset".into(),
+            });
+        }
 
         // 2. Recursively resolve ruleset's imports (dependency propagation)
         let mut deps_rules = Vec::new();
-        if let Some(imports) = &document.imports {
+        if let Some(imports) = &imports {
             // Load imported rules
             if !imports.rules.is_empty() {
                 for rule_path in &imports.rules {
-                    let (rule, _) = self.load_rule(rule_path)?;
-                    deps_rules.push(rule);
+                    let (rule, _) = self.load_rules(rule_path)?;
+                    deps_rules.extend(rule);
                 }
             }
 
@@ -216,22 +255,30 @@ impl ImportResolver {
             }
         }
 
-        // 3. Extract ruleset
-        let mut ruleset = document.definition;
-
-        // 4. Handle inheritance if ruleset extends another
-        if let Some(extends_id) = ruleset.extends.clone() {
-            ruleset = self.apply_inheritance(ruleset, &extends_id, path)?;
+        // Include co-located rules as well as every ruleset in the source list.
+        let local_rules = documents
+            .iter()
+            .filter(|doc| doc.get("rule").is_some())
+            .map(RuleParser::parse_from_yaml)
+            .collect::<std::result::Result<Vec<_>, _>>()
+            .map_err(|e| CompileError::ParseError {
+                path: path.into(),
+                message: e.to_string(),
+            })?;
+        self.validate_unique_ids(&local_rules, &rulesets)?;
+        deps_rules.extend(local_rules);
+        for ruleset in &mut rulesets {
+            if let Some(extends_id) = ruleset.extends.clone() {
+                *ruleset = self.apply_inheritance(ruleset.clone(), &extends_id, path)?;
+            }
         }
-
-        // Cache it
         self.ruleset_cache
-            .insert(path.to_string(), (ruleset.clone(), path.to_string()));
+            .insert(path.to_string(), (rulesets.clone(), path.to_string()));
 
         // Remove from loading stack
         self.loading_stack.pop();
 
-        Ok((ruleset, Dependencies { rules: deps_rules }))
+        Ok((rulesets, Dependencies { rules: deps_rules }))
     }
 
     /// Apply inheritance from parent ruleset to child ruleset
@@ -299,8 +346,8 @@ impl ImportResolver {
 
     /// Find a ruleset by ID in the cache
     fn find_ruleset_by_id(&self, id: &str) -> Option<Ruleset> {
-        for (ruleset, _) in self.ruleset_cache.values() {
-            if ruleset.id == id {
+        for (rulesets, _) in self.ruleset_cache.values() {
+            if let Some(ruleset) = rulesets.iter().find(|ruleset| ruleset.id == id) {
                 return Some(ruleset.clone());
             }
         }
@@ -417,7 +464,7 @@ impl ImportResolver {
     /// Get the source file path for a rule (used for error messages)
     fn get_rule_source(&self, rule_id: &str) -> Option<String> {
         for (path, (rule, _)) in &self.rule_cache {
-            if rule.id == rule_id {
+            if rule.iter().any(|rule| rule.id == rule_id) {
                 return Some(path.clone());
             }
         }
@@ -427,7 +474,7 @@ impl ImportResolver {
     /// Get the source file path for a ruleset (used for error messages)
     fn get_ruleset_source(&self, ruleset_id: &str) -> Option<String> {
         for (path, (ruleset, _)) in &self.ruleset_cache {
-            if ruleset.id == ruleset_id {
+            if ruleset.iter().any(|ruleset| ruleset.id == ruleset_id) {
                 return Some(path.clone());
             }
         }

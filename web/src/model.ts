@@ -1,9 +1,8 @@
 import {
   isMap,
-  isScalar,
+  isSeq,
   parseAllDocuments,
   stringify,
-  visit,
   type YAMLMap,
 } from "yaml";
 import authoringSchema from "../../CDL/schema/authoring.json";
@@ -95,11 +94,12 @@ const resourceKeys = new Set([
 ]);
 export function parseSource(source: string, pipelineIndex = 0) {
   try {
-    const documents = parseAllDocuments(source, { uniqueKeys: false });
+    const documents = parseAllDocuments(source, { uniqueKeys: true });
     const resources: {
       data: ObjectValue;
       documentIndex: number;
       itemIndex: number;
+      sequenceIndex: number | null;
       kind: Kind;
     }[] = [];
     let shared: ObjectValue = {};
@@ -108,19 +108,6 @@ export function parseSource(source: string, pipelineIndex = 0) {
       if (!isMap(document.contents))
         throw new Error("CDL 顶层必须是一个对象。");
       const root = document.contents;
-      visit(document, {
-        Map(_, node) {
-          const seen = new Set<string>();
-          for (const item of node.items) {
-            const key = isScalar(item.key)
-              ? String(item.key.value)
-              : String(item.key);
-            if (seen.has(key) && !(node === root && resourceKeys.has(key)))
-              throw new Error(`重复字段「${key}」：只有顶层资源声明可以重复。`);
-            seen.add(key);
-          }
-        },
-      });
       const keyAt = (index: number) => String(root.items[index].key);
       const declarations = root.items
         .map((_, index) => index)
@@ -175,12 +162,32 @@ export function parseSource(source: string, pipelineIndex = 0) {
             ("base_url" in data || "backend" in data || "datasource" in data))
         )
           delete data.version;
-        resources.push({
-          data,
-          documentIndex,
-          itemIndex,
-          kind: detectKind(data),
-        });
+        const kind = detectKind(data);
+        const value = data[kind];
+        if ((kind === "rule" || kind === "ruleset") && Array.isArray(value)) {
+          if (
+            !value.length ||
+            value.some((item) => !item || typeof item !== "object" || Array.isArray(item))
+          )
+            throw new Error(`${kind} 必须是对象或非空对象列表。`);
+          value.forEach((item, sequenceIndex) => {
+            resources.push({
+              data: { ...data, [kind]: item },
+              documentIndex,
+              itemIndex,
+              sequenceIndex,
+              kind,
+            });
+          });
+        } else {
+          resources.push({
+            data,
+            documentIndex,
+            itemIndex,
+            sequenceIndex: null,
+            kind,
+          });
+        }
       }
     });
     if (!resources.length) throw new Error("文件中没有 CDL 资源。");
@@ -242,6 +249,7 @@ export function patchSource(
   if (!path.length) {
     if (
       documents.length > 1 ||
+      selected.sequenceIndex !== null ||
       document.contents.items.filter((pair) =>
         resourceKeys.has(String(pair.key)),
       ).length > 1
@@ -251,7 +259,12 @@ export function patchSource(
   }
   const pair = (document.contents as YAMLMap).items[selected.itemIndex];
   if (pair && String(pair.key) === path[0]) {
-    if (path.length === 1) {
+    if (selected.sequenceIndex !== null) {
+      if (!isSeq(pair.value)) throw new Error("当前资源不是可编辑的列表。");
+      const itemPath = [selected.sequenceIndex, ...path.slice(1)];
+      if (value === undefined) pair.value.deleteIn(itemPath);
+      else pair.value.setIn(itemPath, value);
+    } else if (path.length === 1) {
       if (value === undefined)
         document.contents.items.splice(selected.itemIndex, 1);
       else pair.value = document.createNode(value);

@@ -12,6 +12,7 @@ pub struct RulesFormatError {
 #[derive(Clone, Copy, PartialEq)]
 enum Path {
     Root,
+    Rulesets,
     Ruleset,
     Rules,
     Other,
@@ -66,6 +67,8 @@ pub fn validate_rules_format(source: &str) -> Result<(), RulesFormatError> {
                             (Path::Ruleset, Some("rules")) => Path::Rules,
                             _ => Path::Other,
                         }
+                    } else if parent.path == Path::Rulesets {
+                        Path::Ruleset
                     } else {
                         Path::Other
                     }
@@ -82,6 +85,11 @@ pub fn validate_rules_format(source: &str) -> Result<(), RulesFormatError> {
                         column: mark.col() + 1,
                     });
                 }
+                let path = if path == Path::Ruleset && matches!(event, Event::SequenceStart(..)) {
+                    Path::Rulesets
+                } else {
+                    path
+                };
                 if matches!(event, Event::MappingStart(..) | Event::SequenceStart(..)) {
                     stack.push(Frame {
                         path,
@@ -108,6 +116,7 @@ mod tests {
             "import: {rules: [rules/a.yaml]}\n---\nruleset:\n  rules: &ids\n    - first\n",
             "ruleset:\n  extends: base\n  description: |\n    rules: [example]\n",
             "metadata: {rules: [example]}\nruleset:\n  rules:\n    - first\n",
+            "ruleset:\n  - id: one\n    rules:\n      - first\n  - id: two\n    rules:\n      - second\n",
         ] {
             assert!(validate_rules_format(source).is_ok(), "{source}");
         }
@@ -126,6 +135,9 @@ mod tests {
             "base: &base {rules: [first]}\nruleset: *base\n",
             "{\"ruleset\": {\"rules\": [\"first\"]}}",
             "version: '0.1'\n---\nruleset:\n  rules: [first]\n",
+            "ruleset:\n  - rules:\n      - first\n  - rules: [second]\n",
+            "ruleset:\n  - rules: []\n",
+            "base: &base {rules: [first]}\nruleset:\n  - *base\n",
         ] {
             assert!(validate_rules_format(source).is_err(), "{source}");
         }

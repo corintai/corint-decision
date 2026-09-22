@@ -90,3 +90,14 @@ test("missing CLI produces setup instructions instead of a successful report", a
     /cargo build/,
   );
 });
+
+test("Studio validation rejects repeated rule declarations through the real CLI", async () => {
+  const source = "rule:\n  - {id: first, name: First, when: 'true', score: 10}\nrule:\n  - {id: second, name: Second, when: 'true', score: 20}\n";
+  const report = await validateFiles([{ path: "rules/repeated.yaml", source }], binary);
+  assert.equal(report.valid, false);
+  assert.equal(report.exit_code, 1);
+  assert.ok(report.diagnostics.some((d) => d.code === "E_YAML" && /duplicate field rule/.test(d.message)));
+  const fixed = source.replace("\nrule:\n", "\n");
+  const valid = await validateFiles([{ path: "rules/repeated.yaml", source: fixed }], binary);
+  assert.equal(valid.valid, true);
+});

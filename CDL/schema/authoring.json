@@ -1355,7 +1355,7 @@
       ]
     }
   },
-  "description": "Normalized resource syntax. Authoring sources may contain multiple adjacent declarations or YAML documents; each declaration is normalized and validated against this schema. Static validation does not select an execution profile or establish external connectivity.",
+  "description": "Normalized resource syntax. Authoring sources may contain rule/ruleset objects or nonempty lists of objects, mixed resource keys, or YAML documents. All mapping keys, including top-level resource keys, must be unique within each document. Each resource is normalized to one object and validated against this schema. Static validation does not select an execution profile or establish external connectivity.",
   "oneOf": [
     {
       "type": "object",

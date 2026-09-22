@@ -29,7 +29,8 @@ impl RulesetParser {
     ///
     /// Returns a CdlDocument<Ruleset> containing both the ruleset and its imports (if any)
     pub fn parse_with_imports(yaml_str: &str) -> Result<CdlDocument<Ruleset>> {
-        let (imports, definition_yaml) = ImportParser::parse_with_imports(yaml_str)?;
+        let (imports, definition_yaml) =
+            ImportParser::parse_resource_with_imports(yaml_str, "ruleset")?;
 
         // Parse the ruleset from the definition document
         let ruleset = Self::parse_from_yaml(&definition_yaml)?;

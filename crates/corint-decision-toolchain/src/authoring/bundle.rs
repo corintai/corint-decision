@@ -1,5 +1,5 @@
 //! Normalize source layout before validating individual CDL resources.
-//! Repeated resource declarations are retained; ordinary mapping fields stay unique.
+//! Resource lists are expanded; all mapping keys must be unique.
 use serde::de::{Error, MapAccess, Visitor};
 use serde::{Deserialize, Deserializer};
 use serde_json::{Map, Value};
@@ -23,7 +23,7 @@ impl<'de> Deserialize<'de> for Entries {
                 let mut entries = vec![];
                 let mut seen = BTreeSet::new();
                 while let Some(key) = map.next_key::<String>()? {
-                    if !seen.insert(key.clone()) && !RESOURCES.contains(&key.as_str()) {
+                    if !seen.insert(key.clone()) {
                         return Err(M::Error::custom(format!("duplicate field {key}")));
                     }
                     // serde_yaml::Value rejects nested duplicates instead of losing data.
@@ -38,7 +38,7 @@ impl<'de> Deserialize<'de> for Entries {
     }
 }
 
-/// Accept adjacent top-level declarations or explicit YAML document separators.
+/// Accept resource lists, distinct resource keys or YAML document separators.
 /// The first document's version/import header is inherited by following resources.
 /// Bare service/list documents retain their existing representation.
 pub(super) fn parse(text: &str) -> Result<Vec<Value>, serde_yaml::Error> {
@@ -81,13 +81,26 @@ pub(super) fn parse(text: &str) -> Result<Vec<Value>, serde_yaml::Error> {
         let mut declarations = 0;
         for (key, value) in entries {
             if RESOURCES.contains(&key.as_str()) {
+                let values = if matches!(key.as_str(), "rule" | "ruleset") && value.is_array() {
+                    let values = value.as_array().unwrap();
+                    if values.is_empty() || values.iter().any(|item| !item.is_object()) {
+                        return Err(serde_yaml::Error::custom(format!(
+                            "{key} must be an object or a nonempty sequence of objects"
+                        )));
+                    }
+                    values.clone()
+                } else {
+                    vec![value]
+                };
                 let mut resource = common.clone();
                 if key == "lists" {
                     resource.remove("version");
                 }
-                resource.insert(key, value);
-                output.push(Value::Object(resource));
-                declarations += 1;
+                for value in values {
+                    resource.insert(key.clone(), value);
+                    output.push(Value::Object(resource.clone()));
+                    declarations += 1;
+                }
             }
         }
         if declarations == 0 {

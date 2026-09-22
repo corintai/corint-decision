@@ -30,7 +30,8 @@ impl RuleParser {
     ///
     /// Returns a CdlDocument<Rule> containing both the rule and its import (if any)
     pub fn parse_with_imports(yaml_str: &str) -> Result<CdlDocument<Rule>> {
-        let (imports, definition_yaml) = ImportParser::parse_with_imports(yaml_str)?;
+        let (imports, definition_yaml) =
+            ImportParser::parse_resource_with_imports(yaml_str, "rule")?;
 
         // Parse the rule from the definition document
         let rule = Self::parse_from_yaml(&definition_yaml)?;

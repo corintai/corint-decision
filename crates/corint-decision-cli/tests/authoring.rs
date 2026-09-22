@@ -971,7 +971,7 @@ fn shared_files_and_split_files_resolve_the_same_resources() {
     for separator in ["\n", "\n---\n"] {
         let dir = tempfile::tempdir().unwrap();
         let content = format!(
-            "version: '0.1'\n{pipeline}{separator}{rule_a}{separator}{rule_b}{separator}{ruleset}"
+            "version: '0.1'\n{pipeline}{separator}{rule_a}---\n{rule_b}{separator}{ruleset}"
         );
         std::fs::write(dir.path().join("policy.yaml"), content).unwrap();
         let report = run(dir.path(), &["policy.yaml"], 0);
@@ -981,7 +981,11 @@ fn shared_files_and_split_files_resolve_the_same_resources() {
     }
     let dir = tempfile::tempdir().unwrap();
     std::fs::write(dir.path().join("pipeline.yaml"), pipeline).unwrap();
-    std::fs::write(dir.path().join("rules.yaml"), format!("{rule_a}{rule_b}")).unwrap();
+    std::fs::write(
+        dir.path().join("rules.yaml"),
+        format!("{rule_a}---\n{rule_b}"),
+    )
+    .unwrap();
     std::fs::write(dir.path().join("ruleset.yaml"), ruleset).unwrap();
     let report = run(dir.path(), &["pipeline.yaml"], 0);
     assert_eq!(report["sources"].as_array().unwrap().len(), 3);
@@ -997,11 +1001,11 @@ fn shared_files_and_split_files_resolve_the_same_resources() {
 #[test]
 fn shared_files_never_silently_overwrite_duplicate_ids_or_fields() {
     for (source, code) in [
-        ("rule: {id: same, name: Same, when: 'true', score: 1}\nrule: {id: same, name: Same, when: 'false', score: 2}", "E_DUPLICATE_ID"),
+        ("rule: {id: same, name: Same, when: 'true', score: 1}\n---\nrule: {id: same, name: Same, when: 'false', score: 2}", "E_DUPLICATE_ID"),
         ("rule: {id: same, name: Same, when: 'true', score: 1, score: 2}", "E_YAML"),
         ("version: '0.1'\nversion: '0.1'\nrule: {id: a, name: A, when: 'true', score: 1}", "E_YAML"),
         ("version: '0.1'\n---\nversion: '99'\nrule: {id: a, name: A, when: 'true', score: 1}", "E_INVALID_STRUCTURE"),
-        ("rule: {id: a, name: A, when: 'true', score: 1}\nrule: {id: b, name: B, when: 'true', unknown: 2, score: 1}", "E_UNKNOWN_FIELD"),
+        ("rule: {id: a, name: A, when: 'true', score: 1}\n---\nrule: {id: b, name: B, when: 'true', unknown: 2, score: 1}", "E_UNKNOWN_FIELD"),
     ] {
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(dir.path().join("policy.yaml"), source).unwrap();
@@ -1021,4 +1025,67 @@ fn all_seven_kinds_can_share_a_document_stream_with_their_own_versions() {
     std::fs::write(dir.path().join("all.yaml"), contents).unwrap();
     let report = run(dir.path(), &["all.yaml"], 0);
     assert_eq!(report["sources"].as_array().unwrap().len(), 1);
+}
+
+#[test]
+fn resource_lists_validate_every_item_and_resolve_imports() {
+    let dir = tempfile::tempdir().unwrap();
+    let rules = "rule:\n  - {id: first, name: First, when: 'true', score: 10}\n  - {id: second, name: Second, when: 'true', score: 20}\n";
+    let rulesets = "ruleset:\n  - id: one\n    rules:\n      - first\n    conclusion:\n      - default: true\n        signal: pass\n  - id: two\n    rules:\n      - second\n    conclusion:\n      - default: true\n        signal: pass\n";
+    std::fs::write(dir.path().join("rules.yaml"), rules).unwrap();
+    std::fs::write(dir.path().join("rulesets.yaml"), rulesets).unwrap();
+    let pipeline = "import:\n  rules: [rules.yaml]\n  rulesets: [rulesets.yaml]\npipeline:\n  id: test\n  name: Test\n  entry: check\n  steps:\n    - step: {id: check, name: Check, type: ruleset, ruleset: two, next: end}\n  decision:\n    - default: true\n      result: approve\n";
+    std::fs::write(dir.path().join("pipeline.yaml"), pipeline).unwrap();
+    let report = run(dir.path(), &["pipeline.yaml"], 0);
+    assert_eq!(report["sources"].as_array().unwrap().len(), 3);
+    assert_eq!(report["references_checked"], true);
+    for (source, code) in [
+        (rules.replace("id: second", "id: first"), "E_DUPLICATE_ID"),
+        (
+            rules.replace("score: 20", "score: bad"),
+            "E_INVALID_STRUCTURE",
+        ),
+        ("rule: []".into(), "E_YAML"),
+        ("rule: [{id: first}, null]".into(), "E_YAML"),
+    ] {
+        std::fs::write(dir.path().join("rules.yaml"), source).unwrap();
+        has(&run(dir.path(), &["pipeline.yaml"], 1), code);
+    }
+    std::fs::write(dir.path().join("rules.yaml"), rules).unwrap();
+    for (source, code) in [
+        (rulesets.replace("id: two", "id: one"), "E_DUPLICATE_ID"),
+        (
+            rulesets.replace("- second", "- missing"),
+            "E_UNRESOLVED_REFERENCE",
+        ),
+        (
+            rulesets.replace("rules:\n      - second", "rules: [second]"),
+            "E_RULES_FORMAT",
+        ),
+        ("ruleset: []".into(), "E_YAML"),
+    ] {
+        std::fs::write(dir.path().join("rulesets.yaml"), source).unwrap();
+        has(&run(dir.path(), &["pipeline.yaml"], 1), code);
+    }
+}
+
+#[test]
+fn duplicate_resource_keys_fail_instead_of_creating_documents() {
+    for key in [
+        "rule", "ruleset", "pipeline", "registry", "features", "lists",
+    ] {
+        for value in ["{id: first}", "[{id: first}]"] {
+            let dir = tempfile::tempdir().unwrap();
+            let source = format!("{key}: {value}\n{key}: {value}\n");
+            std::fs::write(dir.path().join("policy.yaml"), source).unwrap();
+            let report = run(dir.path(), &["policy.yaml"], 1);
+            has(&report, "E_YAML");
+            assert!(report["diagnostics"].as_array().unwrap().iter().any(|d| {
+                d["message"]
+                    .as_str()
+                    .unwrap()
+                    .contains(&format!("duplicate field {key}"))
+            }));
+        }
+    }
 }

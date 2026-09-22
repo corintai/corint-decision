@@ -9,6 +9,10 @@ score, and selects the first matching conclusion. It returns a local signal to
 its caller. The [Pipeline decision](pipeline.md#3-results-decisions-and-actions)
 selects the final result and action intents.
 
+For static authoring and CDL Studio, `ruleset` also accepts a nonempty list of
+resource objects; see [authoring source layout](overall.md#authoring-source-layout).
+The strict Core resource shape below remains a single normalized object.
+
 Writing `version: "0.1"` does not enable strict Core at a compatibility entry point.
 
 ## 1. Document and fields

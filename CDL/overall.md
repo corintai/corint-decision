@@ -30,11 +30,44 @@ This authoring gate does not execute resources or change their execution profile
 
 For `cdl-static-1` and CDL Studio, file layout is independent of resource identity.
 Resources may be stored in separate files, together in one file, or in a mixture
-of both. A shared source can contain adjacent top-level `pipeline:`, `rule:`,
-`ruleset:`, `registry:`, `features:` and `lists:` declarations, including repeated
-resource kinds. Explicit YAML `---` document separators are also supported.
-Repeated declarations are a CDL source extension: a generic YAML mapping loader
-must not be used to decode them into a single last-value-wins object.
+of both. Use a single top-level `rule` or `ruleset` key with a nonempty sequence
+of objects when declaring multiple resources of that kind. A single resource
+can still use an object. Each list item is a complete resource definition:
+
+```yaml
+version: "0.1"
+rule:
+  - id: high_amount
+    name: High amount
+    when: event.amount > 1000
+    score: 50
+  - id: high_frequency
+    name: High frequency
+    when: event.count > 10
+    score: 30
+ruleset:
+  - id: amount_check
+    rules:
+      - high_amount
+    conclusion:
+      - default: true
+        signal: pass
+  - id: frequency_check
+    rules:
+      - high_frequency
+    conclusion:
+      - default: true
+        signal: pass
+```
+
+Different resource keys may share a mapping. Explicit YAML `---` document
+separators are also supported. These forms use standard YAML with unique keys.
+Empty resource lists and non-object list items are rejected. The existing array
+shapes of `registry`, `features` and `lists` are unchanged. Resource lists are
+normalized into individual objects before the authoring resource schema runs.
+Repeated keys, including top-level resource keys, are rejected within a YAML
+document. Use one `rule` / `ruleset` list or separate documents with `---`;
+resource boundaries are never inferred from duplicate keys.
 
 The first document's `version` and `import` fields provide defaults for subsequent
 resource documents. An explicit document version overrides the default and is checked

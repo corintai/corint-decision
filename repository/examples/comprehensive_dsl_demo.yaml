@@ -21,313 +21,304 @@ version: "0.1"
 # ----------------------------------------------------------------------------
 
 rule:
-  id: demo_high_value_transaction
-  name: High Value Transaction Detection
-  description: Detect transactions with unusually high amounts
+  - id: demo_high_value_transaction
+    name: High Value Transaction Detection
+    description: Detect transactions with unusually high amounts
 
-  when:
-    all:
-      - event.transaction.amount > 10000
-      - event.transaction.currency == "USD"
+    when:
+      all:
+        - event.transaction.amount > 10000
+        - event.transaction.currency == "USD"
 
-  score: 75
+    score: 75
 
-  metadata:
-    # Required fields
-    version: "1.0.0"
-    author: "Risk Engineering Team"
-    updated: "2025-12-20 10:00:00"
+    metadata:
+      # Required fields
+      version: "1.0.0"
+      author: "Risk Engineering Team"
+      updated: "2025-12-20 10:00:00"
 
-    # Custom fields
-    category: transaction_monitoring
-    severity: high
-    tags: [high_value, aml]
+      # Custom fields
+      category: transaction_monitoring
+      severity: high
+      tags: [high_value, aml]
 
-# ----------------------------------------------------------------------------
-# Rule 2: Suspicious User Behavior (OR logic)
-# ----------------------------------------------------------------------------
+  # ----------------------------------------------------------------------------
+  # Rule 2: Suspicious User Behavior (OR logic)
+  # ----------------------------------------------------------------------------
 
-rule:
-  id: suspicious_user_behavior
-  name: Suspicious User Behavior Pattern
-  description: Detect various suspicious behaviors using OR logic
+  - id: suspicious_user_behavior
+    name: Suspicious User Behavior Pattern
+    description: Detect various suspicious behaviors using OR logic
 
-  when:
-    any: 
-      - event.user.login_attempts > 5
-      - event.user.session_duration < 60
-      - event.user.ip_country != event.user.registered_country
+    when:
+      any:
+        - event.user.login_attempts > 5
+        - event.user.session_duration < 60
+        - event.user.ip_country != event.user.registered_country
 
-  score: 60
+    score: 60
 
-  metadata:
-    # Required fields
-    version: "1.0.0"
-    author: "Risk Engineering Team"
-    updated: "2025-12-20 10:00:00"
+    metadata:
+      # Required fields
+      version: "1.0.0"
+      author: "Risk Engineering Team"
+      updated: "2025-12-20 10:00:00"
 
-    # Custom fields
-    category: user_behavior
-    severity: medium
-    tags: [behavior, suspicious]
+      # Custom fields
+      category: user_behavior
+      severity: medium
+      tags: [behavior, suspicious]
 
-# ----------------------------------------------------------------------------
-# Rule 3: Confirmed Fraud Pattern (AND logic)
-# ----------------------------------------------------------------------------
+  # ----------------------------------------------------------------------------
+  # Rule 3: Confirmed Fraud Pattern (AND logic)
+  # ----------------------------------------------------------------------------
 
-rule:
-  id: confirmed_fraud_pattern
-  name: Confirmed Fraud Pattern
-  description: Multiple indicators must all be present
+  - id: confirmed_fraud_pattern
+    name: Confirmed Fraud Pattern
+    description: Multiple indicators must all be present
 
-  when:
-    all:
-      - event.transaction.amount > 5000
-      - event.user.account_age_days < 7
-      - event.transaction.recipient_new == true
+    when:
+      all:
+        - event.transaction.amount > 5000
+        - event.user.account_age_days < 7
+        - event.transaction.recipient_new == true
 
-  score: 95
+    score: 95
 
-  metadata:
-    # Required fields
-    version: "1.0.0"
-    author: "Fraud Prevention Team"
-    updated: "2025-12-20 10:00:00"
- 
+    metadata:
+      # Required fields
+      version: "1.0.0"
+      author: "Fraud Prevention Team"
+      updated: "2025-12-20 10:00:00"
 
-# ----------------------------------------------------------------------------
-# Rule 4: Complex Fraud Detection (Nested logic)
-# ----------------------------------------------------------------------------
 
-rule:
-  id: complex_fraud_detection
-  name: Complex Fraud Detection Logic
-  description: Nested AND/OR conditions
+  # ----------------------------------------------------------------------------
+  # Rule 4: Complex Fraud Detection (Nested logic)
+  # ----------------------------------------------------------------------------
 
-  when:
-    all:
-      - event.transaction.amount > 1000
-      - any:
-          - all:
-              - event.user.vip_status == false
-              - event.transaction.international == true
-          - all:
-              - event.user.verified == false
-              - event.transaction.payment_method == "crypto"
+  - id: complex_fraud_detection
+    name: Complex Fraud Detection Logic
+    description: Nested AND/OR conditions
 
-  score: 80
+    when:
+      all:
+        - event.transaction.amount > 1000
+        - any:
+            - all:
+                - event.user.vip_status == false
+                - event.transaction.international == true
+            - all:
+                - event.user.verified == false
+                - event.transaction.payment_method == "crypto"
 
-  metadata:
-    # Required fields
-    version: "1.0.0"
-    author: "Fraud Prevention Team"
-    updated: "2025-12-20 10:00:00"
- 
+    score: 80
 
-# ----------------------------------------------------------------------------
-# Rule 5: Risk Threshold Check (Comparison operators)
-# ----------------------------------------------------------------------------
+    metadata:
+      # Required fields
+      version: "1.0.0"
+      author: "Fraud Prevention Team"
+      updated: "2025-12-20 10:00:00"
 
-rule:
-  id: risk_threshold_check
-  name: Risk Threshold Validation
-  description: Various comparison operators
 
-  when:
-    all:
-      - event.risk_score >= 70
-      - event.risk_score <= 90
-      - event.confidence_level != "low"
-      - event.transaction.count < 100
+  # ----------------------------------------------------------------------------
+  # Rule 5: Risk Threshold Check (Comparison operators)
+  # ----------------------------------------------------------------------------
 
-  score: 65
+  - id: risk_threshold_check
+    name: Risk Threshold Validation
+    description: Various comparison operators
 
-  metadata:
-    # Required fields
-    version: "1.0.0"
-    author: "Risk Engineering Team"
-    updated: "2025-12-20 10:00:00"
- 
+    when:
+      all:
+        - event.risk_score >= 70
+        - event.risk_score <= 90
+        - event.confidence_level != "low"
+        - event.transaction.count < 100
 
-# ----------------------------------------------------------------------------
-# Rule 6: Payment Method Check (String operations)
-# ----------------------------------------------------------------------------
+    score: 65
 
-rule:
-  id: payment_method_check
-  name: Restricted Payment Method Detection
-  description: Check for restricted payment methods
+    metadata:
+      # Required fields
+      version: "1.0.0"
+      author: "Risk Engineering Team"
+      updated: "2025-12-20 10:00:00"
 
-  when:
-    any:
-      - event.transaction.payment_method in ["crypto", "gift_card", "money_order"]
-      - event.transaction.description contains "urgent"
 
-  score: 70
+  # ----------------------------------------------------------------------------
+  # Rule 6: Payment Method Check (String operations)
+  # ----------------------------------------------------------------------------
 
-  metadata:
-    # Required fields
-    version: "1.0.0"
-    author: "Risk Engineering Team"
-    updated: "2025-12-20 10:00:00"
- 
+  - id: payment_method_check
+    name: Restricted Payment Method Detection
+    description: Check for restricted payment methods
 
-# ----------------------------------------------------------------------------
-# Rule 7: Velocity Check (Arithmetic in conditions)
-# ----------------------------------------------------------------------------
+    when:
+      any:
+        - event.transaction.payment_method in ["crypto", "gift_card", "money_order"]
+        - event.transaction.description contains "urgent"
 
-rule:
-  id: demo_velocity_check
-  name: Transaction Velocity Check
-  description: Arithmetic operations in conditions
+    score: 70
 
-  when:
-    all:
-      # Transaction amount is more than 3x user's average
-      - event.transaction.amount > event.user.average_transaction * 3
-      # Transaction count is more than 2x user's daily average
-      - event.transaction.count_24h > event.user.avg_daily_count * 2
+    metadata:
+      # Required fields
+      version: "1.0.0"
+      author: "Risk Engineering Team"
+      updated: "2025-12-20 10:00:00"
 
-  score: 55
 
-  metadata:
-    # Required fields
-    version: "1.0.0"
-    author: "Risk Engineering Team"
-    updated: "2025-12-20 10:00:00"
- 
+  # ----------------------------------------------------------------------------
+  # Rule 7: Velocity Check (Arithmetic in conditions)
+  # ----------------------------------------------------------------------------
 
-# ----------------------------------------------------------------------------
-# Rule 8: Trusted User Bonus (Negative scoring)
-# ----------------------------------------------------------------------------
+  - id: demo_velocity_check
+    name: Transaction Velocity Check
+    description: Arithmetic operations in conditions
 
-rule:
-  id: trusted_user_bonus
-  name: Trusted User Negative Score
-  description: Reduce risk score for trusted users
+    when:
+      all:
+        # Transaction amount is more than 3x user's average
+        - event.transaction.amount > event.user.average_transaction * 3
+        # Transaction count is more than 2x user's daily average
+        - event.transaction.count_24h > event.user.avg_daily_count * 2
 
-  when:
-    all:
-      - event.user.verified == true
-      - event.user.account_age_days > 365
-      - event.user.dispute_count == 0
+    score: 55
 
-  score: -20
+    metadata:
+      # Required fields
+      version: "1.0.0"
+      author: "Risk Engineering Team"
+      updated: "2025-12-20 10:00:00"
 
-  metadata:
-    # Required fields
-    version: "1.0.0"
-    author: "Risk Engineering Team"
-    updated: "2025-12-20 10:00:00"
- 
+
+  # ----------------------------------------------------------------------------
+  # Rule 8: Trusted User Bonus (Negative scoring)
+  # ----------------------------------------------------------------------------
+
+  - id: trusted_user_bonus
+    name: Trusted User Negative Score
+    description: Reduce risk score for trusted users
+
+    when:
+      all:
+        - event.user.verified == true
+        - event.user.account_age_days > 365
+        - event.user.dispute_count == 0
+
+    score: -20
+
+    metadata:
+      # Required fields
+      version: "1.0.0"
+      author: "Risk Engineering Team"
+      updated: "2025-12-20 10:00:00"
+
 # ----------------------------------------------------------------------------
 # Ruleset 1: Transaction Monitoring
 # ----------------------------------------------------------------------------
 
 ruleset:
-  id: transaction_monitoring_ruleset
-  name: Transaction Monitoring
-  description: Monitor transaction patterns and anomalies
+  - id: transaction_monitoring_ruleset
+    name: Transaction Monitoring
+    description: Monitor transaction patterns and anomalies
 
-  rules:
-    - demo_high_value_transaction
-    - demo_velocity_check
-    - payment_method_check
+    rules:
+      - demo_high_value_transaction
+      - demo_velocity_check
+      - payment_method_check
 
-  conclusion:
-    # High score threshold
-    - when: total_score >= 100
-      signal: review
-      reason: "High transaction risk score"
+    conclusion:
+      # High score threshold
+      - when: total_score >= 100
+        signal: review
+        reason: "High transaction risk score"
 
-    # Default
-    - default: true
-      signal: approve
-      reason: "Transaction monitoring passed"
+      # Default
+      - default: true
+        signal: approve
+        reason: "Transaction monitoring passed"
 
-  metadata:
-    # Required fields
-    version: "1.0.0"
-    author: "Risk Engineering Team"
-    updated: "2025-12-20 10:00:00"
+    metadata:
+      # Required fields
+      version: "1.0.0"
+      author: "Risk Engineering Team"
+      updated: "2025-12-20 10:00:00"
 
-    # Custom fields
-    domain: transactions
-    owner: risk_team
+      # Custom fields
+      domain: transactions
+      owner: risk_team
 
-# ----------------------------------------------------------------------------
-# Ruleset 2: User Behavior Analysis
-# ----------------------------------------------------------------------------
+  # ----------------------------------------------------------------------------
+  # Ruleset 2: User Behavior Analysis
+  # ----------------------------------------------------------------------------
 
-ruleset:
-  id: user_behavior_ruleset
-  name: User Behavior Analysis
-  description: Analyze user behavioral patterns
+  - id: user_behavior_ruleset
+    name: User Behavior Analysis
+    description: Analyze user behavioral patterns
 
-  rules:
-    - suspicious_user_behavior
-    - trusted_user_bonus
+    rules:
+      - suspicious_user_behavior
+      - trusted_user_bonus
 
-  conclusion:
-    # Suspicious behavior
-    - when: total_score >= 50
-      signal: review
-      reason: "Suspicious user behavior detected"
+    conclusion:
+      # Suspicious behavior
+      - when: total_score >= 50
+        signal: review
+        reason: "Suspicious user behavior detected"
 
-    # Default
-    - default: true
-      signal: approve
-      reason: "User behavior normal"
+      # Default
+      - default: true
+        signal: approve
+        reason: "User behavior normal"
 
-  metadata:
-    # Required fields
-    version: "1.0.0"
-    author: "Risk Engineering Team"
-    updated: "2025-12-20 10:00:00"
+    metadata:
+      # Required fields
+      version: "1.0.0"
+      author: "Risk Engineering Team"
+      updated: "2025-12-20 10:00:00"
 
-    # Custom fields
-    domain: user_behavior
-    owner: fraud_team
+      # Custom fields
+      domain: user_behavior
+      owner: fraud_team
 
-# ----------------------------------------------------------------------------
-# Ruleset 3: Fraud Detection
-# ----------------------------------------------------------------------------
+  # ----------------------------------------------------------------------------
+  # Ruleset 3: Fraud Detection
+  # ----------------------------------------------------------------------------
 
-ruleset:
-  id: fraud_detection_ruleset
-  name: Fraud Detection
-  description: Comprehensive fraud detection rules
+  - id: fraud_detection_ruleset
+    name: Fraud Detection
+    description: Comprehensive fraud detection rules
 
-  rules:
-    - confirmed_fraud_pattern
-    - complex_fraud_detection
-    - risk_threshold_check
+    rules:
+      - confirmed_fraud_pattern
+      - complex_fraud_detection
+      - risk_threshold_check
 
-  conclusion:
-    # Critical fraud
-    - when: total_score >= 90
-      signal: decline
-      reason: "Critical fraud risk detected"
+    conclusion:
+      # Critical fraud
+      - when: total_score >= 90
+        signal: decline
+        reason: "Critical fraud risk detected"
 
-    # High fraud risk
-    - when: total_score >= 70
-      signal: review
-      reason: "High fraud risk - requires review"
+      # High fraud risk
+      - when: total_score >= 70
+        signal: review
+        reason: "High fraud risk - requires review"
 
-    # Default
-    - default: true
-      signal: approve
-      reason: "Fraud checks passed"
+      # Default
+      - default: true
+        signal: approve
+        reason: "Fraud checks passed"
 
-  metadata:
-    # Required fields
-    version: "1.0.0"
-    author: "Fraud Prevention Team"
-    updated: "2025-12-20 10:00:00"
+    metadata:
+      # Required fields
+      version: "1.0.0"
+      author: "Fraud Prevention Team"
+      updated: "2025-12-20 10:00:00"
 
-    # Custom fields
-    domain: fraud
-    owner: fraud_team
+      # Custom fields
+      domain: fraud
+      owner: fraud_team
 
 # ----------------------------------------------------------------------------
 # PIPELINE: Comprehensive Risk Assessment
@@ -434,7 +425,7 @@ pipeline:
         type: ruleset
         ruleset: transaction_monitoring_ruleset
         next: end
- 
+
 
   # Pipeline metadata
   metadata:
