@@ -1,13 +1,11 @@
-# CORINT Decision Engine
-
 <div align="center">
 
-**High-performance, AI-augmented risk decision engine with unified DSL**
+**Corint Decision: High-performance, AI-augmented risk decision engine with unified DSL**
 
 [![License](https://img.shields.io/badge/license-Elastic-blue.svg)](LICENSE)
 [![Documentation](https://img.shields.io/badge/docs-latest-green.svg)](CDL/)
 
-*Part of the **CORINT – Cognitive Risk Intelligence Framework***
+*Part of the **CORINT AI – Agentic Risk Operations Platform***
 
 [Overview](#-overview) •
 [Key Features](#-key-features) •
