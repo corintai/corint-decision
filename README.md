@@ -1,9 +1,8 @@
 <div align="center">
 
-**Corint Decision: High-performance, AI-augmented risk decision engine with unified DSL**
+# Corint Decision
 
-[![License](https://img.shields.io/badge/license-Elastic-blue.svg)](LICENSE)
-[![Documentation](https://img.shields.io/badge/docs-latest-green.svg)](CDL/)
+**High-performance, AI-augmented risk decision engine with unified DSL**
 
 *Part of the **CORINT AI – Agentic Risk Operations Platform***
 
@@ -11,6 +10,9 @@
 [Key Features](#-key-features) •
 [Quick Start](#-quick-start) •
 [Documentation](#-documentation)
+
+[![License](https://img.shields.io/badge/license-Elastic-blue.svg)](LICENSE)
+[![Documentation](https://img.shields.io/badge/docs-latest-green.svg)](CDL/)
 
 </div>
 
