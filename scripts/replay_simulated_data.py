@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Replay simulated-data.csv through POST /v1/decide (stdlib only).
+"""Replay tests/data/simulated-data.csv through POST /v1/decide (stdlib only).
 
 Preview without sending requests:
   python3 scripts/replay_simulated_data.py --dry-run --limit 3
@@ -174,7 +174,7 @@ def temporary_token(args):
 def arguments(argv=None):
     parser = argparse.ArgumentParser(description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("csv_file", nargs="?", type=Path, default=ROOT / "simulated-data.csv")
+    parser.add_argument("csv_file", nargs="?", type=Path, default=ROOT / "tests/data/simulated-data.csv")
     run_dir = Path(os.environ.get("CORINT_RUN_DIR", ROOT / ".run")).expanduser().resolve()
     base = (os.environ.get("CORINT_SERVER_URL") or local_service(run_dir) or "http://127.0.0.1:8080").rstrip("/")
     parser.add_argument("--url", help="existing endpoint; disables local database/service setup")
