@@ -1,15 +1,5 @@
 # CORINT Decision Engine
 
-**MCP 接入：** [本地 MCP Server](docs/mcp.md) 供 AI 客户端读取、校验和测试 CDL，进行 Core 决策试算与策略版本比较。
-
-**启动服务：** `./scripts/start.sh` 同时启动 Decision 与 HTTP MCP；`./scripts/restart.sh` 重启；`./scripts/stop.sh` 停止。配置及日志说明见 [MCP 启动指南](docs/mcp.md#同时启动-decision-与-mcp)。
-
-**可视化 CDL 编辑器：** 新增 [CDL Studio Web 应用](web/README.md)，支持 Pipeline 可视化编辑、其他资源 YAML 源码编辑和 CLI 静态校验。在 `web/` 运行 `npm ci && npm run dev` 启动；校验前需构建 `corint-decision-cli`。
-
-Service invocations use a unified `service + operation` node. See the
-[CDL Service contract](CDL/service.md) for HTTP bindings and custom adapters.
-
-
 <div align="center">
 
 **High-performance, AI-augmented risk decision engine with unified DSL**
@@ -22,8 +12,7 @@ Service invocations use a unified `service + operation` node. See the
 [Overview](#-overview) •
 [Key Features](#-key-features) •
 [Quick Start](#-quick-start) •
-[Comparison](#-comparison-with-alternatives) • 
-[Documentation](#-documentation) 
+[Documentation](#-documentation)
 
 </div>
 
@@ -38,71 +27,22 @@ For Agent/Skill authoring across all seven CDL resource kinds, use the
 and [language references](CDL/overall.md). Compile-time validation is
 not behavior testing, business evaluation or production certification.
 
-**CORINT Decision** is a modern, real-time risk decision engine that uniquely combines:
+**CORINT Decision** is a Rust decision engine with YAML policies, HTTP/gRPC APIs,
+online feature computation, and tools for authoring and testing policies.
 
-- 🎯 **Unified DSL** - Define features, rules, and decision logic in a single, expressive YAML-based language designed for LLM comprehension, enabling AI-powered rule generation, modification, and autonomous agent integration
-- 🤖 **AI-Augmented** - Native LLM integration for cognitive reasoning alongside traditional rules
-- ⚡ **Real-time Performance** - Millisecond-level latency for high-throughput decision-making
-- 🦀 **Minimal Resource Footprint** - Built with Rust for low memory and CPU usage, enabling cost-effective deployment at scale
-- 📊 **Feature Engineering** - Built-in statistical analysis with time-window aggregations and association metrics
-- 🔍 **Full Observability** - Complete audit trails, distributed tracing, and explainable decisions
+A Registry selects a Pipeline. Rules contribute scores, Rulesets turn rule results
+into signals, and the Pipeline chooses the final decision and action intents.
+Applications consume those intents to perform actions such as blocking a payment
+or opening a review case.
 
-### What Makes CORINT Different?
+The default server runs the compatibility engine with online Feature, List and
+Service integrations. Strict CDL Core and the multi-tenant host use separate
+configuration and admission paths; their capabilities are documented separately.
 
-Unlike traditional rule engines (Drools, Easy Rules) that are just frameworks requiring extensive integration work, CORINT is a **production-ready, complete system** that you can deploy and use immediately—no custom development needed.
-
-**Key Differentiators:**
-
-- 🚀 **Ready-to-Deploy System** - Not a framework, but a complete decision engine with HTTP/gRPC APIs, database integration, and observability built-in. Deploy and start making decisions in minutes.
-
-- 🎯 **Unified DSL for Everything** - Single declarative language for features, rules, decisions, and orchestration. No need to learn multiple DSLs or stitch together different systems.
-
-- 🔌 **Powerful Extensibility** - Modular architecture with ruleset inheritance, parameterized rules, decision templates, and plugin system. Extend without modifying core code.
-
-- 🤖 **LLM-Native Design** - DSL specifically designed for AI comprehension. LLMs can generate, modify, and optimize rules autonomously—perfect for AI agent workflows and automated risk management.
-
-```yaml
-# One unified DSL for everything
-
-# Define rules that reference features
-rule:
-  id: high_velocity
-  when:
-    all:
-      - transaction_velocity > 10
-  score: 75
-
----
-
-# Ruleset produces signals based on rules
-ruleset:
-  id: fraud_detection
-  rules:
-    - high_velocity
-  conclusion:
-    - when: total_score >= 100
-      signal: decline
-      reason: "High risk detected"
-
----
-
-# Pipeline orchestrates the flow
-pipeline:
-  id: fraud_pipeline
-  entry: fraud_check
-  when:
-    all:
-      - event.type == "transaction"
-  steps:
-    - step:
-        id: fraud_check
-        type: ruleset
-        ruleset: fraud_detection
-  decision:
-    - when: results.fraud_detection.signal == "decline"
-      result: decline
-      reason: "${results.fraud_detection.reason}"
-```
+For a complete runnable example, see the
+[simulated transaction policy](tests/policies/simulated-data/pipelines/transactions.yaml)
+and its [Registry](tests/policies/simulated-data/registry.yaml). It defines two rules,
+one Ruleset and one Pipeline, with explicit approval, review and decline outcomes.
 
 ---
 
@@ -110,401 +50,142 @@ pipeline:
 
 ### 🎯 Corint Definition Language (CDL)
 
-Define your entire risk stack in a single, declarative language:
+CDL covers seven resource kinds: Rule, Ruleset, Pipeline, Registry, Feature, List
+and Service. The [language overview](CDL/overall.md) describes their roles and the
+separate static-validation and execution profiles.
 
-- **Rules** - Pattern matching with complex conditions
-- **Features** - Statistical aggregations and transformations
-- **Pipelines** - Orchestrated decision flows
-- **LLM Integration** - Cognitive reasoning as first-class citizens
-- **Decision Logic** - Score-based, pattern-based, or hybrid decisions
+Multiple rules or rulesets in one YAML document use a single `rule:` or `ruleset:`
+key with a sequence of resource objects. A single resource may use an object.
+Repeated keys are rejected; explicit `---` document separators are also supported
+by the authoring loader.
 
-### 📊 Advanced Feature Engineering
+Imports compose resources across files. Compatibility Rulesets can use `extends`:
+parent rules precede additional child rules (duplicate IDs are removed), and a child's nonempty `conclusion` replaces the
+parent conclusion. See [imports and inheritance](CDL/import.md) for profile limits.
 
-Built-in support for risk control analytics:
+### 📊 Feature Engineering
 
-**✅ Currently Implemented:**
-- **Aggregation Features**: count, sum, avg, min, max, distinct
-- **Expression Features**: Compute from other features
-- **Lookup Features**: Pre-computed values from feature stores
+The [Feature executor](crates/corint-decision-runtime/src/feature/executor.rs)
+implements the following methods; the configured datasource must also support them:
 
-**📋 Planned Features:**
-- **State Features**: z_score, outlier detection, baseline comparison
-- **Sequence Features**: Pattern matching, consecutive counts, trends
-- **Graph Features**: Network analysis, centrality, community detection
-- **Advanced Statistics**: percentile, stddev, median, mode (SQL support exists, feature orchestration in progress)
+| Feature type | Implemented behavior |
+| --- | --- |
+| Aggregation | `count`, `sum`, `avg`, `min`, `max`, `distinct`, `stddev`, `median`, `percentile` |
+| State | `time_since`: elapsed time since the earliest matching timestamp |
+| Expression | Arithmetic over Feature values and numeric event fields, with dependency resolution |
+| Lookup | Read a value from a configured Feature Store, with optional fallback |
 
-```yaml
-features:
-  # ✅ Implemented: Behavioral patterns
-  - name: login_count_24h
-    description: "Number of login events in last 24 hours"
-    type: aggregation
-    method: count
-    datasource: supabase_events
-    entity: events
-    dimension: user_id
-    dimension_value: "${event.user_id}"
-    window: 24h
-    timestamp_field: event_timestamp
-    when: event.event_type == "login"
+Features can be computed on demand and cached according to their cache settings.
+Sequence, Graph, statistical State methods and model inference are not implemented
+in this Feature contract. See [Feature syntax and backend constraints](CDL/feature.md)
+and the [authoring examples](tests/conformance/cdl_authoring/features/payment.yaml).
 
-  # ✅ Implemented: Association analysis (unique counts)
-  - name: unique_devices_7d
-    description: "Number of distinct devices used in last 7 days"
-    type: aggregation
-    method: distinct
-    datasource: supabase_events
-    entity: events
-    dimension: user_id
-    dimension_value: "${event.user_id}"
-    field: device_id
-    window: 7d
-    timestamp_field: event_timestamp
+### 📋 Custom Lists
 
-  # ✅ Implemented: Aggregation features
-  - name: transaction_sum_7d
-    description: "Total transaction amount in last 7 days"
-    type: aggregation
-    method: sum
-    datasource: supabase_events
-    entity: events
-    dimension: user_id
-    dimension_value: "${event.user_id}"
-    field: amount
-    window: 7d
-    timestamp_field: event_timestamp
-    when: event.event_type == "transaction"
+Rules can test membership using `in list.<id>` and `not in list.<id>`.
+The runtime implements Memory, File, SQLite and PostgreSQL list backends;
+PostgreSQL requires the SQL support feature and a configured pool. Redis appears
+in the configuration enum but its loader currently returns an unsupported error.
+Expiration, caching and update support depend on the backend. The Decision server
+does not expose a list-management REST API.
 
-  # ✅ Implemented: Lookup features
-  - name: user_risk_score
-    description: "Pre-computed user risk score from feature store"
-    type: lookup
-    datasource: redis_features
-    key: "user_features:${event.user_id}:risk_score"
-    fallback: 0.0
+See the [List contract](CDL/list.md) for declarations and lookup behavior. Event
+fields in rule conditions use `event.<field>`; caller-supplied `user` context is not
+accepted by the Decision HTTP API.
 
-  # 📋 Planned: Expression features for complex calculations
-  # - name: amount_zscore
-  #   type: expression
-  #   value: (amount - avg(amounts, last_30d)) / stddev(amounts, last_30d)
+### 🤖 LLM Authoring and Service Integrations
 
-  # 📋 Planned: Statistical anomaly detection
-  # - name: is_outlier
-  #   type: expression
-  #   value: amount > percentile(amounts, last_90d, p=95)
-```
- 
+The [LLM crate](crates/corint-decision-llm/src/lib.rs) supplies OpenAI, Anthropic,
+Gemini and DeepSeek adapters for policy generation and offline analysis. Its
+response cache belongs to these authoring workflows; it is not a decision-result
+cache. Provider access and credentials must be configured by the host.
 
-### 🔄 Three-Layer Decision Architecture
-
-Clean separation of concerns:
-
-```
-┌─────────────────────────────────────┐
-│ Layer 1: Rules (Detectors)         │
-│ - Detect risk patterns             │
-│ - Produce scores                   │
-│ - No actions defined               │
-└─────────────────────────────────────┘
-              ↓ scores
-┌─────────────────────────────────────┐
-│ Layer 2: Rulesets                  │
-│         (Decision Suggestions)     │
-│ - Evaluate rule combinations       │
-│ - Analyze risk levels              │
-│ - Produce signals (suggestions)    │
-│   (approve/decline/review/hold)    │
-└─────────────────────────────────────┘
-              ↓ signals
-┌─────────────────────────────────────┐
-│ Layer 3: Pipeline (Orchestrator)   │
-│ - Orchestrate execution flow       │
-│ - Make final decisions             │
-│ - Control actions and routing      │
-└─────────────────────────────────────┘
-```
-
-### ⚡ High Performance
-
-- **Low Latency**: < 10ms p99 for pure rule evaluation
-- **High Throughput**: 10,000+ decisions per second per instance
-- **Multi-level Caching**: Feature cache, LLM response cache, result cache
-- **Parallel Execution**: Concurrent feature extraction and external API calls
-- **Lazy Evaluation**: Short-circuit optimization for rules
-
-### 🔍 Full Observability
-
-- **Structured Logging**: With sampling and filtering
-- **Metrics**: Counters and histograms (basic implementation)
-- **Distributed Tracing**: Basic span and tracer support
-- **Audit Trails**: Complete decision history
-- **Explainability**: Rule-by-rule breakdown of decisions
+Online integrations use a logical `service` and `operation` with a runtime binding.
+See the [Service contract](CDL/service.md). A generated policy still needs static
+validation and appropriate behavior tests before use.
 
 ### 🔄 Modular Architecture
 
-CORINT provides modularity at two levels: system architecture and DSL composition.
+| Component | Responsibility |
+| --- | --- |
+| `corint-decision-model`, `corint-decision-dsl-parser`, `corint-decision-compiler` | Language types, parsing, validation and compilation |
+| `corint-decision-runtime` | Execution, features, lists and datasource integrations |
+| `corint-decision-repository` | Policy loading from filesystem, PostgreSQL or HTTP |
+| `corint-decision-engine` | Decision orchestration, request IDs and shared policy snapshots |
+| `corint-decision-sdk`, `corint-decision-ffi` | Rust API and foreign-language integration |
+| `corint-decision-server` | HTTP/gRPC endpoints, authentication and server lifecycle |
+| `corint-decision-cli`, `corint-decision-toolchain`, `corint-decision-mcp` | Validation, testing, packages and MCP tools |
+| `corint-decision-llm` | LLM clients and policy generation |
 
-#### System Architecture Modularity
+The repository includes C FFI and Python, Java and Node.js/TypeScript binding
+sources. See [FFI setup and examples](crates/corint-decision-ffi/README.md) for their
+build requirements. The workspace has no browser/WASM execution entry point.
 
-Clean separation of concerns with independent, reusable crates:
+### 🗄️ Policy Storage and Reload
 
-```
-┌─────────────────────────────────────────────────────────┐
-│ corint-decision-server (HTTP/gRPC API Server)                   │
-│   ├─ REST API endpoints                                │
-│   └─ gRPC service implementation                       │
-└────────────────────┬────────────────────────────────────┘
-                     │
-┌────────────────────▼────────────────────────────────────┐
-│ corint-decision-sdk (High-level Decision API)                   │
-│   ├─ Decision engine interface                         │
-│   ├─ Feature calculation                               │
-│   └─ FFI bindings (C/C++/Python/Node.js)              │
-└────────────────────┬────────────────────────────────────┘
-                     │
-        ┌────────────┼────────────┐
-        │            │            │
-┌───────▼──────┐ ┌──▼────────┐ ┌─▼──────────┐
-│ corint-      │ │ corint-   │ │ corint-    │
-│ compiler     │ │ runtime   │ │ repository │
-│              │ │           │ │            │
-│ - Parse DSL  │ │ - Execute │ │ - Load     │
-│ - Compile IR │ │ - VM      │ │ - Save     │
-└──────┬───────┘ └───────────┘ └────────────┘
-       │
-┌──────▼───────┐
-│ corint-      │
-│ parser       │
-│ - Tokenize   │
-│ - Parse AST  │
-└──────┬───────┘
-       │
-┌──────▼───────┐
-│ corint-decision-model  │
-│ - Types      │
-│ - IR         │
-└──────────────┘
-```
+The compatibility repository layer supports:
 
-**Multi-Language Support via FFI:**
-- **Rust SDK**: Native performance with zero-cost abstractions
-- **C/C++ Bindings**: Direct FFI integration for system-level applications
-- **Python/Node.js**: Language bindings for web and data science workflows
-- **Any Language**: Standard C FFI interface for custom integrations
+| Backend | Implementation and requirements |
+| --- | --- |
+| Filesystem | `FileSystemRepository`; local YAML resources and ID lookup |
+| PostgreSQL | `PostgresRepository`; enable the `postgres` Cargo feature and prepare its tables |
+| HTTP API | `ApiRepository`; manifest-based resource discovery and optional Bearer authentication |
 
-#### DSL Composition Modularity
+The server includes HTTP repository support. For PostgreSQL policy storage, build
+with `cargo build --locked -p corint-decision-server --features postgres`.
+Repository loads return the parsed resource and its raw source text. PostgreSQL
+saves increment a version column on the current row; this is not an append-only
+history of all policy versions or tenant isolation by itself.
 
-Reusable rule definitions with inheritance and import system:
+An authenticated repository reload prepares a replacement engine and atomically
+switches the shared HTTP/gRPC snapshot. In-flight decisions retain their original
+snapshot. Use reload explicitly after policy changes; restarting is required for
+server listener or authentication configuration changes. Strict Core publication
+and tenant isolation have [separate contracts](docs/contracts/multi-tenancy.md).
 
-```yaml
-# Define reusable rules in separate files
-# File: repository/rules/velocity_check.yaml
-rule:
-  id: velocity_check
-  name: High Velocity Detection
-  when:
-    all:
-      - features.transaction_count_1h > 10
-  score: 75
+### 🔍 Observability and Performance
 
----
+- Structured logging controlled by `RUST_LOG` and HTTP request tracing.
+- Optional execution traces and triggered-rule evidence in decision responses.
+- Publisher-only metrics and persistence-status endpoints.
+- Optional PostgreSQL result persistence through a background write queue.
+- Feature caching and short-circuit condition evaluation.
 
-# File: repository/rules/geo_mismatch.yaml
-rule:
-  id: geo_mismatch
-  name: Geographic Mismatch
-  when:
-    all:
-      - features.country_change_detected == true
-  score: 60
+Persistence requires `database_url` or `DATABASE_URL` and SQL support. The
+`x-corint-persistence: queued` response header reports queue admission, not a
+confirmed database commit. Check `/v1/persistence` for background write status.
 
----
-
-# Base ruleset with core fraud checks
-# File: repository/rulesets/fraud_detection_base.yaml
-ruleset:
-  id: fraud_detection_base
-  name: Base Fraud Detection
-  rules:
-    - velocity_check      # References imported rule
-    - geo_mismatch        # References imported rule
-  conclusion:
-    - when: total_score >= 100
-      signal: decline
-      reason: "High risk detected"
-
----
-
-# Specialized ruleset extending base
-# File: repository/rulesets/payment_fraud.yaml
-ruleset:
-  id: payment_fraud_detection
-  extends: fraud_detection_base    # Inherits all rules and conclusion logic
-  rules:
-    - high_amount_check            # Additional payment-specific rule
-```
-
-**Key Features:**
-- **Ruleset Inheritance** (`extends`) - Build hierarchies of specialized rulesets
-- **Import System** - Reference rules/rulesets from separate files, automatic dependency resolution
-- **Single Responsibility** - Each file defines one rule or ruleset for clarity
-- **Version Control Friendly** - Modular files enable better collaboration and change tracking
-
-### 🗄️ Flexible Storage Backend
-
-CORINT supports multiple repository backends, enabling flexible deployment strategies from local development to distributed cloud environments:
-
-```
-┌────────────────────────────────────────┐
-│      Repository Interface (Trait)      │
-│   - load_rule / save_rule              │
-│   - load_ruleset / save_ruleset        │
-│   - load_pipeline / save_pipeline      │
-└──────────────┬─────────────────────────┘
-               │
-       ┌───────┼────────┐
-       │       │        │
-┌──────▼──┐ ┌─▼──────┐ ┌▼────────────┐
-│ File    │ │Database│ │Remote API   │
-│ System  │ │        │ │             │
-│         │ │        │ │             │
-│ YAML    │ │Postgres│ │HTTP/gRPC    │
-│ files   │ │        │ │endpoints    │
-└─────────┘ └────────┘ └─────────────┘
-```
-
-#### 1. Filesystem Repository
-
-**Use Case:** Local development, version control, GitOps workflows
-
-```rust
-// Load rules from local YAML files
-let repo = FileSystemRepository::new("repository")?;
-let (rule, _) = repo.load_rule("fraud_check").await?;
-```
-
-**Benefits:**
-- **Version Control Friendly**: Track rule changes in Git
-- **Human Readable**: Direct YAML editing
-- **Fast Local Development**: No database required
-- **GitOps Ready**: Deploy rules via CI/CD pipelines
-
-#### 2. Database Repository
-
-**Use Case:** Production environments requiring versioning, audit trails, and dynamic updates
-
-```rust
-// PostgreSQL with automatic versioning
-let mut repo = PostgresRepository::new(database_url).await?;
-
-// Save with auto-versioning
-repo.save_rule(&rule).await?;        // Version auto-incremented
-repo.save_ruleset(&ruleset).await?;  // Audit logged
-
-// Load latest version
-let (rule, version) = repo.load_rule("fraud_check").await?;
-```
-
-**Features:**
-- **Automatic Versioning**: Every update creates a new version
-- **Audit Trail**: Full history of rule changes with timestamps
-- **Transaction Support**: ACID guarantees for rule updates
-- **Multi-tenancy**: Isolate rules by organization/tenant
-- **Hot Reload**: Update rules without server restart
-
-#### 3. Remote API Repository 📋 *Planned*
-
-**Use Case:** Distributed systems, microservices, centralized rule management
-
-```rust
-// Load rules from remote API (planned)
-let repo = HttpRepository::new("https://rule-api.example.com")?;
-let (rule, _) = repo.load_rule("fraud_check").await?;
-```
-
-Browser-side risk scoring was another proposed use case, but
-[WASM implementation is postponed](docs/ARCHITECTURE.md#2-wasm-browseredge).
-The current workspace has no browser execution entry point.
-
-**Additional Benefits:**
-- **Centralized Management**: Single source of truth for multiple services
-- **Dynamic Loading**: Fetch rules on-demand from remote endpoints
-- **API Gateway Integration**: Load rules via existing API infrastructure
-- **Cloud-Native**: Integrate with managed rule services
-- **Smart Caching**: Built-in HTTP cache to reduce API calls
-
-**Common Features Across All Backends:**
-- ✅ **Unified Interface**: Same API regardless of backend
-- ✅ **Async I/O**: Non-blocking operations with Tokio
-- ✅ **Caching Layer**: Built-in TTL-based caching for performance
-- ✅ **Error Handling**: Basic error types and fallback support (advanced features planned)
-- ✅ **Hot Reload**: Reload rules without restarting the server
-
-### 📋 Custom Lists (Blocklists/Allowlists)
-
-Efficient membership checks against predefined sets:
-
-```yaml
-# Check if email is in blocklist
-rule:
-  id: blocked_email_check
-  when:
-    all:
-      - user.email in list.email_blocklist
-  score: 500
-
-# VIP user bypass
-rule:
-  id: vip_bypass
-  when:
-    all:
-      - user.id in list.vip_users
-  score: -100
-
-# Multiple list checks
-rule:
-  id: sanctions_check
-  when:
-    any:
-      - user.name in list.ofac_sanctions
-      - user.country in list.high_risk_countries
-  score: 200
-```
-
-**Supported Backends:**
-- **PostgreSQL** - Persistent storage with metadata and expiration
-- **Redis** - High-performance lookups for hot data
-- **File** - Static read-only lists (country codes, domains)
-- **Memory** - Small frequently-used lists
-- **SQLite** - Embedded database for local deployments
-
-**Features:**
-- Simple `in list.xxx` and `not in list.xxx` syntax
-- Multiple backend support for different use cases
-- Automatic caching for performance
-- Expiration support for temporary entries
-- REST API for list management
+Latency and throughput depend on policies, datasource calls, caching, hardware
+and client concurrency. Use the simulation workflow below to measure your setup;
+this README does not prescribe a fixed p99 or requests-per-second guarantee.
 
 ---
 
 ## 🎯 Use Cases
 
+Policies and connected data can support the following workflows. Verification,
+biometric processing and model scoring require application-specific integrations.
+
 ### Fraud Detection
+
 - Real-time transaction monitoring
 - Account takeover detection
 - Payment fraud prevention
 
 ### Identity Verification
+
 - KYC risk assessment
 - Document verification
 - Behavioral biometrics
 
 ### Credit Risk
+
 - Loan application evaluation
 - Credit scoring
 - Income verification
 
 ### Compliance & AML
+
 - Transaction monitoring
 - Sanctions screening
 - PEP detection
@@ -513,7 +194,8 @@ rule:
 
 ## 🚀 Quick Start
 
-CORINT Decision Engine provides two ways to get started quickly:
+Start with the interactive demo or manual setup, then replay simulated transactions
+to test decisions and concurrent requests.
 
 ### Option 1: Interactive Demo (Recommended)
 
@@ -521,18 +203,19 @@ The quickest way to see CORINT in action is using the interactive demo script:
 
 ```bash
 # Clone repository
-git clone https://github.com/corint/corint-decision.git
+git clone https://github.com/corintai/corint-decision.git
 cd corint-decision
 
-# Install dependencies (Rust)
-cargo build
+# Requires Rust, protoc, jq, curl and lsof; SQLite mode also needs sqlite3
+# The demo builds the server itself
 
 # Run the interactive demo
 ./quickstart/decide_demo.sh
 ```
 
 **The demo script will:**
-- ✅ Let you choose data source (SQLite/PostgreSQL/ClickHouse/Redis)
+
+- ✅ Let you choose data source (SQLite/PostgreSQL/ClickHouse/Redis/RisingWave)
 - ✅ Automatically initialize test data
 - ✅ Build and start the server
 - ✅ Provide an interactive menu with 11 pre-configured fraud detection scenarios
@@ -559,177 +242,273 @@ and run `python3 quickstart/tenant_demo.py --output /tmp/corint-tenants-demo`.
 
 ### Option 2: Manual Setup
 
-For manual control and custom configuration:
+For a minimal local server, use the bundled amount-screening policy. It needs no
+external datasource and does not modify `repository/`. From the repository root,
+stop any running workspace Decision service, back up any existing
+`config/server.yaml`, then use this configuration:
+
+```yaml
+server:
+  host: "127.0.0.1"
+  port: 8080
+  grpc_port: 50051
+repository:
+  type: filesystem
+  path: "tests/policies/simulated-data"
+datasource: {}
+```
+
+Install Rust, `protoc`, Python 3, `curl` and `lsof`. In a local shell without
+previous CORINT or database configuration overrides, start the server with two
+distinct credentials (each must contain 32–1024 printable non-space characters):
 
 ```bash
-# Clone repository
-git clone https://github.com/corint/corint-decision.git
-cd corint-decision
+export CORINT_DECISION_TOKEN="$(python3 -c 'import secrets; print(secrets.token_hex(32))')"
+export CORINT_PUBLISHER_TOKEN="$(python3 -c 'import secrets; print(secrets.token_hex(32))')"
 
-# Install dependencies (Rust)
-cargo build
+# Builds the server and waits for readiness; leaves it running in the background
+./scripts/start.sh --only decision
 
-# Run tests
-cargo test
+curl http://127.0.0.1:8080/health
 
-# Initialize SQLite database
-# If you want to use PostgreSQL/ClickHouse/Redis as the datasource backend,
-# please install them first, then run the corresponding script init_xxx.sh
-# If PostgreSQL, please set your passowrd in init_postgresql.yaml
-./quickstart/init_sqlite.sh
-
-# Setup the server config (customize as needed)
-cp quickstart/config/server-sqlite.yaml config/server.yaml
-
-# Start the server
-cargo run -p corint-decision-server
-
-# Health check
-curl http://localhost:8080/health
-
-# Make a decision
-curl -X POST http://localhost:8080/v1/decide \
+# This transaction matches the test policy's manual-review rule
+curl -X POST http://127.0.0.1:8080/v1/decide \
+  -H "Authorization: Bearer ${CORINT_DECISION_TOKEN}" \
   -H "Content-Type: application/json" \
-  -d '{
-    "event": {
-      "user_id": "user_001",
-      "type": "transaction"
-    }
-  }'
+  -d '{"event":{"TRANSACTION_ID":1,"TX_AMOUNT":180}}'
+
+# Stop when finished
+./scripts/stop.sh --only decision
+unset CORINT_DECISION_TOKEN CORINT_PUBLISHER_TOKEN
 ```
+
+`CORINT_AUTH_CONFIG` selects database authentication instead of these environment
+credentials. This minimal environment-auth setup does not initialize the SQLite
+credential database required by managed CSV replay below; use Option 1 for that.
+For the default `repository/` policies, configure their datasources and external
+services before starting. See [service startup](docs/mcp.md#同时启动-decision-与-mcp)
+for process management, logs and environment handling.
+
+### Simulated Transaction Replay
+
+Use [the replay script](scripts/replay_simulated_data.py) to send transactions from
+[tests/data/simulated-data.csv](tests/data/simulated-data.csv) to `/v1/decide`.
+It preserves the original field names and removes `TX_FRAUD` and
+`TX_FRAUD_SCENARIO` before each request.
+
+Run these commands from the repository root with Python 3 and the Rust toolchain:
+
+```bash
+# Build the local Decision server
+cargo build --locked -p corint-decision-server
+
+# Preview three request payloads without starting a server or sending requests
+python3 scripts/replay_simulated_data.py --dry-run --limit 3
+```
+
+**Authentication setup:** Local replay requires an initialized SQLite credential
+database. If you have not created one, run the interactive demo above with SQLite,
+wait for the server and credentials to be ready, then choose `0` to exit and stop
+the demo. Its authentication configuration and database remain under
+`temp/demo_auth_*/`. Pass that run's `auth.json` using
+`--auth-config /absolute/path/to/auth.json` on each replay command below. This
+option can be omitted when your managed local service already has a SQLite
+authentication configuration; the script reuses it automatically.
+
+```bash
+# Use local managed mode, with automatic credentials and test policy loading
+unset CORINT_SERVER_URL
+
+# Replay the first 100 rows in order, with a 0.1-second delay between requests
+python3 scripts/replay_simulated_data.py --limit 100 --interval 0.1
+
+# Replay 4,000 rows with up to 8 requests in flight and no additional delay
+python3 scripts/replay_simulated_data.py --limit 4000 --concurrency 8 --interval 0
+```
+
+Before sending requests, the script registers a temporary decide-only credential
+in SQLite, sets `CORINT_DECISION_TOKEN` for its own process, and starts or restarts
+Decision with the [dedicated test policy repository](tests/policies/simulated-data/).
+It does not modify the default `repository/` policies. On completion, errors, or
+Ctrl+C, it stops the test service, removes the temporary credential, restores the
+previous token environment, and restarts the original service if it was running.
+There is no need to set a test token manually. Passing `--url` selects an existing
+service instead and skips this automatic credential, service, and policy setup.
+
+The test policy uses only `TX_AMOUNT`, in the dataset's amount units:
+
+| Amount | Decision |
+| --- | --- |
+| `TX_AMOUNT > 220` | `decline` |
+| `150 < TX_AMOUNT <= 220` | `review` |
+| `TX_AMOUNT <= 150` | `approve` |
+
+Each completed request produces a JSON result on stdout. The final summary on
+stderr prints decision counts, rule hit counts and rates, throughput, and average
+and maximum request latency. With the bundled dataset and test policy, the first
+100 rows are all approved with no rule hits. The first 4,000 rows yield 3,907
+approvals, 92 reviews, and 1 decline: 93 transactions hit a rule.
+
+Concurrency defaults to `1`; higher values allow responses to finish out of order.
+Use `--start-row` to select a different starting data row, or a positional CSV path
+to replay another file with the same schema. Omitting `--limit` replays the entire
+dataset of 1,754,155 transactions. Run
+`python3 scripts/replay_simulated_data.py --help` for all options.
 
 ### API Endpoints
 
 #### REST API
 
-**GET** `/health` - Health check endpoint
+These endpoints describe the default compatibility server. `/health` is public;
+other endpoints require `Authorization: Bearer <token>` with the indicated role.
 
-**POST** `/v1/decide` - Execute decision rules
+| Method | Path | Purpose | Permission |
+| --- | --- | --- | --- |
+| GET | `/health` | Health and policy revision | None |
+| POST | `/v1/decide` | Execute the selected Pipeline | `decide` |
+| POST | `/v1/repo/reload` | Prepare and activate a replacement policy snapshot | `publish` |
+| GET | `/v1/metrics` | Metrics for the current snapshot | `publish` |
+| GET | `/v1/persistence` | Background persistence status | `publish` |
 
-**POST** `/v1/repo/reload` - Reload rules and configurations
+With database authentication, `/v1/tenancy/credentials` also provides credential
+management under its own authorization rules. See the
+[credential and tenancy contract](docs/contracts/multi-tenancy.md).
 
-**Request Example:**
+**Request example** for the test repository used in Manual Setup:
+
 ```json
 {
   "event": {
-    "user_id": "user_001",
-    "device_id": "device_001",
-    "type": "transaction",
-    "source": "supabase" 
+    "TRANSACTION_ID": 1,
+    "TX_AMOUNT": 180
   }
 }
 ```
 
-**Response Example:**
+Only `event` is caller-owned. The optional `options.enable_trace` and
+`options.return_features` flags request additional output. Non-null `user`,
+`features`, `service`, `llm` or `vars` inputs, `event.tenant_id`, and
+`options.async: true` are rejected.
+
+**Response example** (request ID and elapsed time vary):
+
 ```json
 {
-  "request_id": "req_20251229060953_f4fabb",
+  "request_id": "rq_qy1Gj3_0QdetsUXNJo",
   "status": 200,
-  "process_time_ms": 1162,
-  "pipeline_id": "supabase_transaction_pipeline",
+  "process_time_ms": 1,
+  "pipeline_id": "simulated_transaction_risk",
   "decision": {
-    "result": "REVIEW",
-    "actions": [
-      "KYC",
-      "2FA"
-    ],
+    "result": "review",
+    "actions": [],
     "scores": {
-      "canonical": 12,
-      "raw": 60
+      "canonical": 11,
+      "raw": 50
     },
     "evidence": {
-      "triggered_rules": [
-        "suspicious_device_pattern"
-      ]
+      "triggered_rules": ["simulated_amount_review_band"]
     },
     "cognition": {
-      "summary": "suspicious device pattern matched",
+      "summary": "TX_AMOUNT is greater than 150 and at most 220",
       "reason_codes": []
     }
   }
 }
 ```
 
+Results are lowercase: `approve`, `decline`, `review`, `hold` or `pass`.
+The canonical score uses the server's sigmoid normalization on a 0–1000 scale.
+Request IDs have the form `rq_<6-character process segment>_<11-character ID>`;
+the process segment is shared by requests generated within one process.
 
 #### gRPC API
 
-**Service:** `corint.decision.v1.DecisionService`
+The compatibility server starts gRPC when `server.grpc_port` is configured.
+Service `corint.decision.v1.DecisionService` provides `Decide`, `HealthCheck` and
+`ReloadRepository`. Decide and reload use the same Bearer roles as HTTP, supplied
+as `authorization` metadata; health is public.
 
-**Methods:**
-- `Decide(DecideRequest) → DecideResponse` - Make a decision
-- `HealthCheck(HealthCheckRequest) → HealthCheckResponse` - Health check
-- `ReloadRepository(ReloadRepositoryRequest) → ReloadRepositoryResponse` - Reload rules
+With `grpcurl` installed and the Manual Setup server running, use the same
+`CORINT_DECISION_TOKEN` in your shell:
 
-**Example using grpcurl:**
 ```bash
-# Health check
 grpcurl -plaintext localhost:50051 corint.decision.v1.DecisionService/HealthCheck
 
-# Make a decision
-grpcurl -plaintext -d '{
+grpcurl -plaintext -H "authorization: Bearer ${CORINT_DECISION_TOKEN}" -d '{
   "event": {
-    "user_id": {"string_value": "user_001"},
-    "type": {"string_value": "transaction"},
-    "amount": {"double_value": 100.0}
+    "TRANSACTION_ID": {"int_value": "1"},
+    "TX_AMOUNT": {"double_value": 180.0}
   }
 }' localhost:50051 corint.decision.v1.DecisionService/Decide
 ```
 
-For detailed gRPC documentation, see [crates/corint-decision-server/GRPC.md](crates/corint-decision-server/GRPC.md).
-
-### Server Features
-
-- ✅ **REST API**: Execute decision rules via HTTP endpoints
-- ✅ **gRPC API**: High-performance Protocol Buffers-based API
-- ✅ **Auto Rule Loading**: Automatically loads rules from configured directory
-- ✅ **Lazy Feature Calculation**: Features are calculated on-demand from data sources during rule execution
-- ✅ **Feature Caching**: Calculated feature values are cached for performance
-- ✅ **Decision Result Persistence**: Automatically saves decision results to PostgreSQL for audit and analysis
-- ✅ **Health Check**: Health check endpoint for monitoring
-- ✅ **CORS Support**: Cross-origin resource sharing enabled
-- ✅ **Request Tracing**: Built-in request/response tracing
-- ✅ **Hot Reload**: Reload rules and configurations without server restart
+See the [gRPC protocol definition](crates/corint-decision-server/proto/decision.proto)
+for message shapes. Server handlers enforce supported fields and options in
+addition to the Protocol Buffers schema.
 
 ### Configuration
 
-The server is primarily configured via the `config/server.yaml` file, with environment variables for sensitive credentials.
- 
-**Note:** All datasources (including feature calculation datasources) are configured in `config/server.yaml` under the `datasource` section. Features use logical datasource names (`events_datasource`, `lookup_datasource`) which are automatically mapped to actual datasources.
+The compatibility server reads `config/server.yaml` (if present), `.env` and
+`CORINT_*` environment settings. Nested `server:` settings take precedence over
+legacy top-level listener settings. HTTP defaults to port 8080; gRPC is disabled
+unless a port is configured. Use the actual startup endpoints when ports differ.
 
+- `CORINT_AUTH_CONFIG` selects the authentication database configuration; otherwise
+  `CORINT_DECISION_TOKEN` and `CORINT_PUBLISHER_TOKEN` are required.
+- `CORINT_REPOSITORY_PATH` overrides the filesystem policy repository for one
+  process without changing the saved configuration.
+- `CORINT_CORE_CONFIG` and `CORINT_TENANT_CONFIG` select separate server modes and
+  cannot be enabled together. The compatibility examples above do not apply to
+  their full API and configuration contracts.
+- Feature datasource names bind to entries under `datasource:`. Server-supplied
+  entries take precedence over repository datasource configuration. Names such as
+  `events_datasource` are bindings you configure, not automatic database discovery.
+
+The HTTP router installs CORS middleware to expose policy/persistence headers,
+but does not configure permissive cross-origin access for arbitrary browser sites.
 
 ### Logging
 
+With configuration and credentials already set, run a foreground server with:
+
 ```bash
 # Basic log levels
-RUST_LOG=info cargo run -p corint-decision-server      # Info (default)
+RUST_LOG=info cargo run -p corint-decision-server      # Info
 RUST_LOG=debug cargo run -p corint-decision-server     # Debug (detailed)
 RUST_LOG=trace cargo run -p corint-decision-server     # Trace (all details)
- 
 ```
- 
+
 ### Troubleshooting
 
 **Server won't start:**
+
+- Ensure credentials are configured for the selected authentication mode.
 - Check if port is in use: `lsof -i :8080`
-- Verify rules directory exists: `ls -la repository`
+- Verify the configured repository directory and its `registry.yaml` exist.
 - View detailed logs: `RUST_LOG=debug cargo run -p corint-decision-server`
 
 **Rules not loading:**
+
 - Ensure rule files have `.yaml` or `.yml` extension
 - Check rule file syntax
 - View server startup logs for rule loading information
 
 **Feature calculation fails:**
+
 - Verify the database connection
 - Check data source configuration in `config/server.yaml` (datasource section)
 - Check features configuration (`repository/features/*.yaml`)
 - Verify test data exists in database
 - Ensure logical datasource names (`events_datasource`, `lookup_datasource`) are properly mapped
 
-**API returns 500 error:**
-- Check server logs for error stack traces
-- Verify request body format is correct
-- Ensure `event` object contains all required fields
+**API errors:**
+
+- `401`: supply a valid credential with the endpoint's required permission.
+- `400`: check request fields and supported options; computed namespaces are server-owned.
+- Execution errors: check the response and server logs, required event fields,
+  datasource bindings and external dependencies.
+- `pass` or no rule hits: check Registry routing, Pipeline decision defaults and
+  the input values; an HTTP 200 alone does not mean a rule matched.
 
 ---
 
@@ -740,13 +519,13 @@ RUST_LOG=trace cargo run -p corint-decision-server     # Trace (all details)
 #### CDL Overview
 
 | Document | Description |
-|----------|-------------| 
+|----------|-------------|
 | [**overall.md**](CDL/overall.md) | Resource roles, execution flow, capability boundaries and a complete Core example |
 
 #### CDL Core Concepts
 
 | Document | Description |
-|----------|-------------| 
+|----------|-------------|
 | [**expression.md**](CDL/expression.md) | Expression language reference |
 | [**rule.md**](CDL/rule.md) | Rule specification and patterns |
 | [**ruleset.md**](CDL/ruleset.md) | Ruleset and decision logic |
@@ -761,96 +540,21 @@ RUST_LOG=trace cargo run -p corint-decision-server     # Trace (all details)
 | [**context.md**](CDL/context.md) | Context and variable management |
 | [**feature.md**](CDL/feature.md) ⭐ | **Feature definitions and supported semantics** |
 | [**list.md**](CDL/list.md) ⭐ | **Custom lists (blocklists/allowlists)** |
-| [**service.md**](CDL/service.md) | External API defination|
-| [**service.md**](CDL/service.md) | Internal services defination |
+| [**service.md**](CDL/service.md) | Service operations, HTTP bindings and custom adapters |
 
-### Extensible
+### Tools and Integration
 
 | Document | Description |
-|----------|-------------| 
+|----------|-------------|
 | [**Architecture**](docs/ARCHITECTURE.md) | System architecture reference |
-| [**API Request**](docs/API_REQUEST.md) | Rule specification and patterns |
+| [**API Request**](docs/API_REQUEST.md) | Request namespaces and compatibility API reference |
+| [**Static CLI**](docs/cli.md) | Validate all seven CDL resource kinds |
+| [**Behavior testing**](docs/testing.md) | Strict Core behavior testing and execution limits |
+| [**MCP**](docs/mcp.md) | Local MCP tools and service startup |
+| [**CDL Studio**](web/README.md) | Pipeline visualization and source editing |
+| [**Multi-tenancy**](docs/contracts/multi-tenancy.md) | Tenant scopes, credentials and publication |
 
 ---
-
-
-
-## 🔄 Comparison with Alternatives
-
-### vs. Traditional Rule Engines (Drools, Easy Rules)
-
-| Feature | Drools/Easy Rules | CORINT |
-|---------|------------------|---------|
-| Rules Definition | ✅ Yes (DRL/Java) | ✅ Yes (YAML) |
-| Feature Engineering | ❌ External | ✅ Built-in |
-| LLM Integration | ❌ Manual | ✅ Native |
-| Statistical Functions | ❌ No | ✅ Yes (count_distinct, percentile, etc.) |
-| Time-window Queries | ❌ Manual | ✅ Built-in (last_7d, last_5h, etc.) |
-| Modern DSL | ❌ Java-like | ✅ Declarative YAML |
-
-### vs. Feature Stores (Feast, Tecton)
-
-| Feature | Feast/Tecton | CORINT |
-|---------|-------------|---------|
-| Feature Definition | ✅ Yes | ✅ Yes (Aggregation/Expression/Lookup) |
-| Online Features | ✅ Yes | ✅ Yes (cached) |
-| Feature Caching | ✅ Yes | ✅ Yes |
-| Advanced Analytics | ✅ Full support | 🟡 Partial (State/Sequence/Graph planned) |
-| Rules Engine | ❌ No | ✅ Built-in |
-| Decision Logic | ❌ External | ✅ Integrated |
-| LLM Integration | ❌ No | ✅ Native |
-| Real-time Decisions | ❌ Separate service needed | ✅ End-to-end |
-
-
-
-### vs. Cloud Services (AWS Fraud Detector, Stripe Radar)
-
-| Feature | Cloud Services | CORINT |
-|---------|---------------|---------|
-| Hosted Solution | ✅ Yes | ❌ Self-hosted |
-| Customization | ⚠️ Limited | ✅ Full control |
-| Cost | 💰 Per-decision pricing | ✅ Open source |
-| Data Privacy | ⚠️ Cloud | ✅ On-premise |
-| Vendor Lock-in | ❌ Yes | ✅ Open source |
-| LLM Choice | ❌ Predefined | ✅ Any provider |
----
-
-## 🛣️ Roadmap
-
-### Completed ✅
-
-- ✅ Core DSL (Rules, Rulesets, Pipelines)
-- ✅ Expression language with rich operators
-- ✅ Feature engineering with statistical functions
-- ✅ LLM integration framework
-- ✅ Type system and schema validation
-- ✅ Basic error handling (advanced retry strategies planned)
-- ✅ Testing framework
-- ✅ Comprehensive documentation
-- ✅ HTTP/REST API server (`corint-decision-server`)
-- ✅ gRPC API server
-- ✅ Supabase PostgreSQL integration
-- ✅ Lazy feature calculation
-- ✅ Decision result persistence
-- ✅ Custom lists (blocklists/allowlists/watchlists)
-- ✅ Multiple list backends (PostgreSQL, Redis, File, Memory, SQLite)
-- ✅ Modular architecture with inheritance
-- ✅ Flexible storage backend (File System, PostgreSQL)
-- ✅ FFI bindings for C/C++ integration
-
-### Planned 📋
-
-- 📋 Request event and decision result persistence
-- 📋 Python/TypeScript/Go client SDKs
-- 📋 Web UI for rule management
-- 📋 A/B testing framework
-- 📋 Machine learning model integration
-- 📋 Automatic rule generation
-- 📋 Prebuilt rule libraries for common scenarios
-- 📋 Standalone Risk Agent
-
----
- 
 
 ## 🤝 Contributing
 
@@ -864,8 +568,6 @@ We welcome contributions! Here's how you can help:
 ## 📄 License
 
 This project is licensed under the **Elastic License 2.0**.
-
-
 
 ---
 
