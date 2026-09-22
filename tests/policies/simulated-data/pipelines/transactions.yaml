@@ -1,0 +1,53 @@
+version: "0.1"
+
+# Test baseline: amounts use the CSV's original unit; no currency conversion.
+# Thresholds are user-selected, not fitted to fraud labels or historical data.
+pipeline:
+  id: simulated_transaction_risk
+  name: Simulated transaction amount screening
+  description: Dedicated stateless baseline for sequential CSV replay.
+  entry: screen_amount
+  steps:
+    - step:
+        id: screen_amount
+        name: Evaluate transaction amount rules
+        type: ruleset
+        ruleset: simulated_transaction_amount
+        next: end
+  decision:
+    - when: results.simulated_transaction_amount.signal == "decline"
+      result: decline
+      reason: TX_AMOUNT is greater than 220
+    - when: results.simulated_transaction_amount.signal == "review"
+      result: review
+      reason: TX_AMOUNT is greater than 150 and at most 220
+    - default: true
+      result: approve
+      reason: TX_AMOUNT is at most 150
+
+ruleset:
+  id: simulated_transaction_amount
+  name: Simulated transaction amount thresholds
+  rules:
+    - simulated_amount_above_220
+    - simulated_amount_review_band
+  conclusion:
+    - when: total_score >= 100
+      signal: decline
+    - when: total_score >= 50
+      signal: review
+    - default: true
+      signal: approve
+
+rule:
+  - id: simulated_amount_above_220
+    name: Amount above rejection threshold
+    when: event.TX_AMOUNT > 220
+    score: 100
+  - id: simulated_amount_review_band
+    name: Amount in review band
+    when:
+      all:
+        - event.TX_AMOUNT > 150
+        - event.TX_AMOUNT <= 220
+    score: 50

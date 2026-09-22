@@ -1,0 +1,9 @@
+version: "0.1"
+
+# Dedicated CSV replay repository; original uppercase fields need no event.type.
+registry:
+  - pipeline: simulated_transaction_risk
+    when:
+      all:
+        - exists(event.TRANSACTION_ID)
+        - exists(event.TX_AMOUNT)

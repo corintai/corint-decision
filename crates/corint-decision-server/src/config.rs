@@ -357,7 +357,7 @@ impl ServerConfig {
             .add_source(config::Environment::with_prefix("CORINT"))
             .build();
 
-        match config_result {
+        let config: Self = match config_result {
             Ok(cfg) => cfg
                 .try_deserialize()
                 .map_err(|_| anyhow::anyhow!("Failed to deserialize server configuration")),
@@ -366,7 +366,20 @@ impl ServerConfig {
                 tracing::info!("No config file found, using default configuration");
                 Ok(Self::default())
             }
+        }?;
+        config.with_repository_path(std::env::var_os("CORINT_REPOSITORY_PATH").map(PathBuf::from))
+    }
+
+    /// Override only the repository for this process; leave the saved config intact.
+    fn with_repository_path(mut self, path: Option<PathBuf>) -> anyhow::Result<Self> {
+        if let Some(path) = path {
+            anyhow::ensure!(
+                !path.as_os_str().is_empty(),
+                "CORINT_REPOSITORY_PATH cannot be empty"
+            );
+            self.repository = RepositoryType::FileSystem { path };
         }
+        Ok(self)
     }
 }
 
@@ -396,6 +409,22 @@ impl std::fmt::Debug for ServerConfig {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn repository_path_override_preserves_server_settings() {
+        let mut config = ServerConfig::default();
+        config.server.port = 18081;
+        let config = config
+            .with_repository_path(Some(PathBuf::from("test-policies")))
+            .unwrap();
+        assert_eq!(config.server.port, 18081);
+        assert!(
+            matches!(config.repository, RepositoryType::FileSystem { path } if path == PathBuf::from("test-policies"))
+        );
+        assert!(ServerConfig::default()
+            .with_repository_path(Some(PathBuf::new()))
+            .is_err());
+    }
 
     #[test]
     fn risingwave_lookup_config_preserves_bindings_and_freshness() {
