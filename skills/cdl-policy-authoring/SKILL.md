@@ -40,7 +40,7 @@ description: "根据业务需求创建、修改或修复完整 CDL：Rule、Rule
 
 ## 校验与修复
 
-读取[CLI 操作流程](references/cli-workflow.md)，使用当前源码构建的 CLI 或已确认版本的 `corint`。不要另写 YAML/表达式校验器替代 CLI。
+读取[CLI 操作流程](references/cli-workflow.md)，使用当前源码构建的 CLI 或已确认版本的 `corint`，通过 `corint cdl` 命令组调用。不要另写 YAML/表达式校验器替代 CLI。
 
 1. 对编写或修改的文件或目录运行 `validate PATH... --format json`。需要解析 imports 和检查跨文件引用时加 `--root`；需要字段检查时加 `--input-schema`。
 2. 同时检查进程退出码和报告 `valid`，按 `source`、`field_path`、`stage`、`code` 定位错误。解析器提供时还可用 `line`/`column`。

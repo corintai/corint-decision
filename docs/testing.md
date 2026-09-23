@@ -1,4 +1,4 @@
-# Offline behavior testing with `corint test`
+# Offline behavior testing with `corint cdl test`
 
 ## Audience
 
@@ -18,7 +18,7 @@ From the repository root (omit `--offline` when build dependencies are not cache
 
 ```sh
 cargo build -p corint-decision-cli --locked --offline
-./target/debug/corint test --format json \
+./target/debug/corint cdl test --format json \
   --input-schema tests/conformance/cdl_core/input-schema.yaml \
   --cases tests/conformance/cdl_core/behavior.yaml \
   tests/conformance/cdl_core/rule.yaml \
@@ -30,7 +30,7 @@ cargo build -p corint-decision-cli --locked --offline
 The [example suite](../tests/conformance/cdl_core/behavior.yaml) has three
 threshold cases and two expected input failures. It is synthetic, not a real-data
 evaluation. Execution input requirements are described below;
-[`corint validate`](cli.md) independently checks full CDL syntax and references.
+[`corint cdl validate`](cli.md) independently checks full CDL syntax and references.
 `--cases` is required exactly once for `test` and is rejected by `validate`.
 
 The suite and bundle must both validate before any case runs. The command uses
@@ -64,14 +64,14 @@ Synthetic examples do not establish real-world threshold quality or business eff
 
 ### Execution inputs
 
-`corint test` compiles the complete bundle before executing any cases. Supply all
+`corint cdl test` compiles the complete bundle before executing any cases. Supply all
 resource files explicitly, including exactly one Registry, plus `--input-schema`
 and `--cases`. Paths are relative to the current working directory; use `--`
 before dash-prefixed resource filenames and `./` for dash-prefixed option values.
 Sources must be local, regular UTF-8 files. Symlinks to regular files are accepted,
 but duplicate canonical source paths fail. Directories, stdin, URLs, import
 resolution and implicit schema inference are not supported by this execution command.
-Use [`corint resolve`](resolution.md) for the separate import workflow.
+Use [`corint cdl resolve`](resolution.md) for the separate import workflow.
 
 The input schema is YAML or JSON in the existing model `Schema` format, not JSON
 Schema. See the [input fixture](../tests/conformance/cdl_core/input-schema.yaml)
@@ -185,7 +185,7 @@ approval or deployment binding and are not publication authorization.
 
 ## Agent workflow and verification
 
-After each policy edit: run `corint validate`, then `corint test` with independent
+After each policy edit: run `corint cdl validate`, then `corint cdl test` with independent
 expected results derived from the user's requirements. Inspect failed assertions
 before changing either policy or expectations; never rewrite expectations merely
 to make the test green. A passing suite establishes only those examples, not
@@ -234,5 +234,6 @@ compares actual decisions against the supplied expectations.
 
 | Date | Changes |
 |---|---|
+| 2026-09-23 | Move CDL CLI examples into the `corint cdl` command group. |
 | 2026-09-22 | Use unified static validation before behavior tests; document execution inputs. |
 | 2026-09-07 | Clarify that behavior workflows use explicit Core compilation. |

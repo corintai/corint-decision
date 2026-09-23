@@ -110,6 +110,7 @@ fn cli(dir: &Path, label: &str, args: &[&str], expected: i32) -> Value {
     let mut command = Command::new(env!("CARGO_BIN_EXE_corint"));
     command
         .env_clear()
+        .arg("cdl")
         .current_dir(dir)
         .args(args)
         .args(["--format", "json"]);

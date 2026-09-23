@@ -1,10 +1,10 @@
-# Strict authoring imports: `corint resolve` (experimental)
+# Strict authoring imports: `corint cdl resolve` (experimental)
 
 Source profile: **`cdl-core-import-draft-1`**. Output execution profile:
 **`cdl-core-risk-draft-1`**. This is the bounded C08 authoring/load increment,
 not a new execution capability or completion of phase 0.
 
-`corint import` reads an already complete source bundle. `corint resolve` instead
+`corint cdl import` reads an already complete source bundle. `corint cdl resolve` instead
 loads explicit local entry files and their declared transitive imports, validates
 them and emits a **frozen source bundle v1**. Existing `compile_core`, validation,
 strict generation and runtime execution continue to reject unresolved imports.
@@ -57,13 +57,13 @@ Run from the repository root, choosing new output filenames:
 
 ```sh
 cargo build -p corint-decision-cli --locked --offline
-./target/debug/corint resolve \
+./target/debug/corint cdl resolve \
   --source-profile cdl-core-import-draft-1 \
   --root tests/conformance/cdl_imports \
   --input-schema input-schema.yaml \
   --output payment.resolved.json --format json registry.yaml
 
-./target/debug/corint import --bundle payment.resolved.json \
+./target/debug/corint cdl import --bundle payment.resolved.json \
   --cases tests/conformance/cdl_core/behavior.yaml \
   --output payment.core-package.json --format json
 ```

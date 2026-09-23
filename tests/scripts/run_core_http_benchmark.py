@@ -41,7 +41,7 @@ with tempfile.TemporaryDirectory(prefix="corint-http-bench-") as directory:
         shutil.copyfile(root / "tests/conformance/cdl_core" / name, author / name)
     for name, source in [("cases.yaml", "cdl_core/behavior.yaml"), ("context.yaml", "contracts/business-context.yaml"), ("target.json", "contracts/target-capabilities.json")]:
         shutil.copyfile(fixtures / source, directory / name)
-    command = [str(binary / "corint"), "prepare-repository", "--root", str(author), "--input-schema", "input-schema.yaml", "--cases", str(directory / "cases.yaml"), "--context", str(directory / "context.yaml"), "--target", str(directory / "target.json"), "--revision", "synthetic-benchmark-v1", "--output", str(directory / "repository"), "--format", "json", *resources]
+    command = [str(binary / "corint"), "cdl", "prepare-repository", "--root", str(author), "--input-schema", "input-schema.yaml", "--cases", str(directory / "cases.yaml"), "--context", str(directory / "context.yaml"), "--target", str(directory / "target.json"), "--revision", "synthetic-benchmark-v1", "--output", str(directory / "repository"), "--format", "json", *resources]
     candidate = json.loads(subprocess.check_output(command, cwd=directory))
     approval = {"policy_sha256": candidate["candidate"]["policy_sha256"]}
     for key, name in [("cases", "cases.yaml"), ("context", "context.yaml"), ("target", "target.json")]:

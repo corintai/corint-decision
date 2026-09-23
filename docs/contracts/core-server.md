@@ -43,7 +43,7 @@
 只读取声明可达的闭包，不扫描目录猜测入口。拒绝越界路径、符号链接、重复 ID、缺失引用和不支持语义。
 `published.json` 最大 64 KiB，必须是常规文件；重复字段、未知字段/版本、非法 revision 和指纹均拒绝。
 
-`policy_sha256` 必须使用针对**同一原始文件闭包**运行 `corint resolve` 得到的
+`policy_sha256` 必须使用针对**同一原始文件闭包**运行 `corint cdl resolve` 得到的
 `resolution.policy_sha256`，不能直接复用解析前的 source package 指纹。
 解析器将原始源码、路径和 import 图绑定到冻结源码身份，修改源码或图后必须重新解析并验收。
 该指纹用于检测混合版本和未发布编辑，不是签名或审批。
@@ -156,6 +156,7 @@ CDL 语言版本、source package/bundle v1 格式和兼容入口保持各自原
 
 | Date | Changes |
 |---|---|
+| 2026-09-23 | Move CDL CLI examples into the `corint cdl` command group. |
 | 2026-09-05 | 更新 repo 唯一来源、启动/重载、授权、回滚和配置迁移契约。 |
 | 2026-09-14 | 配置 v3 改为后台保存决策结果，结果导出可选，反馈管理迁至外部 Agent。 |
 | 2026-09-14 | 增加可选特征宿主入口及单独的资源配置批准绑定。 |

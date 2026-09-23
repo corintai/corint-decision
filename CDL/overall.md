@@ -20,7 +20,7 @@ online extensions. Historical syntax and examples do not enable an undeclared ca
 
 ## Static authoring validation
 
-The offline `corint validate` CLI defaults to `cdl-static-1` and validates all seven
+The offline `corint cdl validate` CLI defaults to `cdl-static-1` and validates all seven
 resource kinds using the [authoring schema](schema/authoring.json). A single resource
 needs no Registry or input Schema. Repository mode additionally resolves references;
 an optional [input Schema](schema/authoring-input.json) adds event field checks.

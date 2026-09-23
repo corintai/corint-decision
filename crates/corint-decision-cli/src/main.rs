@@ -16,21 +16,48 @@ use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
-const HELP: &str = "corint — offline CDL authoring validator and Core toolchain
+const HELP: &str = "corint — Corint command-line tools
 
 Usage:
-  corint validate [--root DIR] [--input-schema PATH] [--format text|json] [PATH...]
-  corint test --input-schema PATH --cases PATH [--format text|json] FILE...
-  corint build --input-schema PATH --cases PATH --output PATH [--format text|json] FILE...
-  corint verify --package PATH --cases PATH [--format text|json]
-  corint export --package PATH --output PATH [--format text|json]
-  corint import --bundle PATH --cases PATH --output PATH [--format text|json]
-  corint check-target --input-schema PATH --context PATH --target PATH [--expected-binding SHA256] [--format text|json] FILE...
-  corint resolve --source-profile cdl-core-import-draft-1 --root DIR --input-schema LABEL --output PATH [--format text|json] ENTRY...
-  corint prepare-repository --root DIR --input-schema LABEL --cases PATH --context PATH --target PATH --revision REV --output NEW_DIR [--format text|json] ENTRY...
-  corint record --bundle PATH --event PATH --output NEW_PATH [--visible-fields a,b] [--retain-input] [--trace]
-  corint replay --bundle PATH --record PATH
+  corint <COMMAND> [ARGS...]
   corint --help
+  corint --version
+
+Commands:
+  cdl   Validate, test, package and replay CDL policies
+
+Run corint cdl --help for CDL commands.
+";
+
+const CDL_COMMANDS: &[&str] = &[
+    "validate",
+    "test",
+    "build",
+    "verify",
+    "export",
+    "import",
+    "check-target",
+    "resolve",
+    "prepare-repository",
+    "record",
+    "replay",
+];
+
+const CDL_HELP: &str = "corint cdl — offline CDL authoring validator and Core toolchain
+
+Usage:
+  corint cdl validate [--root DIR] [--input-schema PATH] [--format text|json] [PATH...]
+  corint cdl test --input-schema PATH --cases PATH [--format text|json] FILE...
+  corint cdl build --input-schema PATH --cases PATH --output PATH [--format text|json] FILE...
+  corint cdl verify --package PATH --cases PATH [--format text|json]
+  corint cdl export --package PATH --output PATH [--format text|json]
+  corint cdl import --bundle PATH --cases PATH --output PATH [--format text|json]
+  corint cdl check-target --input-schema PATH --context PATH --target PATH [--expected-binding SHA256] [--format text|json] FILE...
+  corint cdl resolve --source-profile cdl-core-import-draft-1 --root DIR --input-schema LABEL --output PATH [--format text|json] ENTRY...
+  corint cdl prepare-repository --root DIR --input-schema LABEL --cases PATH --context PATH --target PATH --revision REV --output NEW_DIR [--format text|json] ENTRY...
+  corint cdl record --bundle PATH --event PATH --output NEW_PATH [--visible-fields a,b] [--retain-input] [--trace]
+  corint cdl replay --bundle PATH --record PATH
+  corint cdl --help
   corint --version
 
 Validate performs full CDL static checks (Rule, Ruleset, Pipeline, Registry,
@@ -183,7 +210,7 @@ fn parse_args(args: &[OsString], options: &mut Options) -> Result<(), CoreError>
         }
         _ => {
             return Err(usage(
-                "Expected validate, test, build, verify, export, import, check-target or resolve; use corint --help",
+                "Expected validate, test, build, verify, export, import, check-target or resolve; use corint cdl --help",
             ))
         }
     };
@@ -484,9 +511,65 @@ fn render(report: &Report, json: bool) -> String {
 }
 
 fn run(args: Vec<OsString>) -> (u8, String) {
-    if args.first().is_some_and(|arg| arg == "validate")
-        && args != [OsString::from("validate"), OsString::from("--help")]
+    if args.is_empty() || args == [OsString::from("--help")] || args == [OsString::from("-h")] {
+        return (0, HELP.into());
+    }
+    if args == [OsString::from("--version")] {
+        return (
+            0,
+            format!(
+                "corint {} (cdl-static-1; Core: {PROFILE})\n",
+                env!("CARGO_PKG_VERSION")
+            ),
+        );
+    }
+    if args.first().is_some_and(|arg| arg == "cdl") {
+        return run_cdl(&args[1..]);
+    }
+
+    let command = args[0].to_string_lossy();
+    let message = if CDL_COMMANDS.contains(&command.as_ref()) {
+        format!("Use corint cdl {command}; CDL commands belong to the cdl group")
+    } else {
+        "Expected a command group; use corint --help".into()
+    };
+    let option_args: Vec<_> = args.iter().take_while(|arg| *arg != "--").collect();
+    let json = option_args
+        .windows(2)
+        .any(|pair| pair[0] == "--format" && pair[1] == "json");
+    let output = if json {
+        serde_json::to_string_pretty(&serde_json::json!({
+            "report_version": "1",
+            "tool_version": env!("CARGO_PKG_VERSION"),
+            "scope": "usage",
+            "valid": false,
+            "diagnostics": [usage(message).diagnostic],
+        }))
+        .expect("serializable usage report")
+            + "\n"
+    } else {
+        format!("E_USAGE: {message}\n")
+    };
+    (2, output)
+}
+
+fn run_cdl(args: &[OsString]) -> (u8, String) {
+    if args.is_empty()
+        || args == [OsString::from("--help")]
+        || args == [OsString::from("-h")]
+        || (args.len() == 2
+            && args[0]
+                .to_str()
+                .is_some_and(|command| CDL_COMMANDS.contains(&command))
+            && (args[1] == "--help" || args[1] == "-h"))
     {
+        return match args.first().and_then(|arg| arg.to_str()) {
+            Some("record" | "replay") => (0, replay::HELP.into()),
+            Some("prepare-repository") => (0, candidate::HELP.into()),
+            _ => (0, CDL_HELP.into()),
+        };
+    }
+    if args.first().is_some_and(|arg| arg == "validate") {
         return validate::run(&args[1..]);
     }
 
@@ -494,23 +577,10 @@ fn run(args: Vec<OsString>) -> (u8, String) {
         .first()
         .is_some_and(|arg| arg == "record" || arg == "replay")
     {
-        return replay::run(&args);
+        return replay::run(args);
     }
     if args.first().is_some_and(|arg| arg == "prepare-repository") {
         return candidate::run(&args[1..]);
-    }
-    if args == [OsString::from("--help")]
-        || args == [OsString::from("-h")]
-        || args == [OsString::from("validate"), OsString::from("--help")]
-        || args == [OsString::from("test"), OsString::from("--help")]
-        || args == [OsString::from("build"), OsString::from("--help")]
-        || args == [OsString::from("verify"), OsString::from("--help")]
-        || args == [OsString::from("export"), OsString::from("--help")]
-        || args == [OsString::from("import"), OsString::from("--help")]
-        || args == [OsString::from("check-target"), OsString::from("--help")]
-        || args == [OsString::from("resolve"), OsString::from("--help")]
-    {
-        return (0, HELP.into());
     }
     if args == [OsString::from("--version")] {
         return (
@@ -533,7 +603,7 @@ fn run(args: Vec<OsString>) -> (u8, String) {
     let mut exported_bundle = None;
     let mut compatibility = None;
     let mut resolution = None;
-    let result = parse_args(&args, &mut options).and_then(|()| {
+    let result = parse_args(args, &mut options).and_then(|()| {
         if options.resolve {
             let output = options.output.as_ref().expect("checked args");
             package::check_output(output)?;

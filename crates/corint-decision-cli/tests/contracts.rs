@@ -67,6 +67,7 @@ fn bind_context(dir: &Path) {
 }
 fn report(dir: &Path, args: &[&str], exit: i32) -> Value {
     let output = Command::new(env!("CARGO_BIN_EXE_corint"))
+        .arg("cdl")
         .current_dir(dir)
         .args(args)
         .args(["--format", "json"])

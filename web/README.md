@@ -1,6 +1,6 @@
 # CDL Studio
 
-本地可视化 CDL 编辑应用。React + TypeScript 前端通过独立 Node 服务调用仓库的 `corint validate`，无需启动决策引擎或配置数据库。
+本地可视化 CDL 编辑应用。React + TypeScript 前端通过独立 Node 服务调用仓库的 `corint cdl validate`，无需启动决策引擎或配置数据库。
 
 视觉样式沿用 `corint-cognition` 的 WebUI 设计基线：`web/src/theme.css` 对齐其 `packages/webui/src/index.css` 与 `branding.css` 的品牌、面板、文字和流程图语义色；按钮、表单和分段视图切换沿用 `DesignButton`、`DesignInput`、`DesignSegmentedControl` 的外观。品牌图标使用同源 Corint 资产。支持浅色、深色与跟随系统主题，并保存选择。样式和资产存放于本应用，运行时不依赖相邻仓库。
 
@@ -27,7 +27,7 @@ npm run dev
 - **源码同步**：YAML 编辑器支持适配明暗主题的语法高亮、行号、两空格缩进及键盘撤销。表单更改写回 YAML AST，保留未修改位置的注释与字段；结构重排或整块替换会重新序列化该块。错误 YAML 保留原文，修复后恢复可视化编辑。工作区撤销/重做保留最近 60 次操作。
 - **文件导入**：支持多选 YAML / JSON，或导入文件夹保留相对路径。导入会合并工作区，同路径覆盖前确认。可编辑文件路径；修改路径后需同步相关 import。资源 ID 的跨文件引用通过校验检查，不自动改写。
 - **导出**：导出当前 YAML，或导出包含所有文件原文和相对路径的 `workspace.cdl.json`。完整工作区可重新导入；它是编辑器工作区格式，不是可执行 CDL 包。浏览器草稿不会修改仓库文件，也不会发布策略。
-- **校验**：将工作区写入临时目录，以 `cdl-static-1` 执行 `corint validate --format json --root <临时目录> .`，检查整个集合及跨文件引用，完成后清理目录。CLI 错误显示文件、字段、错误码，点击诊断可打开对应源码。编辑后旧结果标为过期。
+- **校验**：将工作区写入临时目录，以 `cdl-static-1` 执行 `corint cdl validate --format json --root <临时目录> .`，检查整个集合及跨文件引用，完成后清理目录。CLI 错误显示文件、字段、错误码，点击诊断可打开对应源码。编辑后旧结果标为过期。
 
 校验不会运行策略、调用外部数据源或执行动作。目前页面未提供 `--input-schema` 参数；导入的输入 Schema 作为辅助文件跳过，输入字段类型仍标为未检查。完整检查范围以报告的 `references_checked`、`input_schema_checked`、`skipped_sources` 和 `unchecked` 为准。
 

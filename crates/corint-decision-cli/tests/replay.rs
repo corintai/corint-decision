@@ -5,6 +5,7 @@ use std::{
 };
 fn run(args: &[&str], expected: i32) -> Value {
     let out = Command::new(env!("CARGO_BIN_EXE_corint"))
+        .arg("cdl")
         .args(args)
         .args(["--format", "json"])
         .output()

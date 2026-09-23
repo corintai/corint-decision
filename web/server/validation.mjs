@@ -50,9 +50,8 @@ export async function validateFiles(files, binary) {
       ({ stdout } = await execute(
         binary,
         [
+          "cdl",
           "validate",
-          "--profile",
-          "cdl-static-1",
           "--format",
           "json",
           "--root",

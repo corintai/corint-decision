@@ -53,7 +53,7 @@ draft-1 暂按整体 Profile 检查，不协商能力子集或跨版本兼容；
 
 ```sh
 cargo build -p corint-decision-cli --locked --offline
-./target/debug/corint check-target --format json \
+./target/debug/corint cdl check-target --format json \
   --input-schema tests/conformance/cdl_core/input-schema.yaml \
   --context tests/conformance/contracts/business-context.yaml \
   --target tests/conformance/contracts/target-capabilities.json \
@@ -66,7 +66,7 @@ cargo build -p corint-decision-cli --locked --offline
 这是本地声明 fixture，不是真实客户或在线环境。缺少依赖缓存时构建需去掉 `--offline`；运行不需要网络。
 命令不修改输入，不运行行为样例，不发布策略。CLI 输出一个 JSON 对象，`scope: compatibility`，
 成功时其 `compatibility` 字段包含上述报告。退出码 0 为声明兼容，1 为校验失败，2 为用法/I/O 错误。
-行为检查请另行运行 [`corint test`](../testing.md)。
+行为检查请另行运行 [`corint cdl test`](../testing.md)。
 
 ## 指纹与旧证据
 

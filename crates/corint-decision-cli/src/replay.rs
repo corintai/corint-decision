@@ -4,7 +4,7 @@ use corint_decision_toolchain::{replay, transfer};
 use serde_json::json;
 use std::{collections::BTreeMap, ffi::OsString, path::Path};
 
-pub const HELP: &str = "corint record --bundle PATH --event PATH --output NEW_PATH [--visible-fields a,b] [--retain-input] [--trace] [--format text|json]\ncorint replay --bundle PATH --record PATH [--format text|json]\nEvent is a JSON object of event fields, without an event wrapper.\nRecords are redacted by default. Retention requires all fields to be explicitly visible.\nReplay runs the same executable and frozen Core sources without external I/O or actions.\n";
+pub const HELP: &str = "corint cdl record --bundle PATH --event PATH --output NEW_PATH [--visible-fields a,b] [--retain-input] [--trace] [--format text|json]\ncorint cdl replay --bundle PATH --record PATH [--format text|json]\nEvent is a JSON object of event fields, without an event wrapper.\nRecords are redacted by default. Retention requires all fields to be explicitly visible.\nReplay runs the same executable and frozen Core sources without external I/O or actions.\n";
 
 pub fn run(args: &[OsString]) -> (u8, String) {
     if args.get(1).is_some_and(|a| a == "--help") && args.len() == 2 {

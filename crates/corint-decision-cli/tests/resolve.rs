@@ -60,6 +60,7 @@ fn imported_flow_rule_lists_are_rejected_before_normalization() {
 }
 fn run(args: &[&str], exit: i32) -> Value {
     let result = Command::new(env!("CARGO_BIN_EXE_corint"))
+        .arg("cdl")
         .args(args)
         .args(["--format", "json"])
         .output()

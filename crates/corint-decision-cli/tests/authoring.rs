@@ -60,6 +60,7 @@ fn setup() -> TempDir {
 }
 fn run(dir: &Path, args: &[&str], code: i32) -> Value {
     let output = Command::new(env!("CARGO_BIN_EXE_corint"))
+        .arg("cdl")
         .current_dir(dir)
         .args(["validate", "--format", "json"])
         .args(args)
@@ -866,6 +867,7 @@ fn an_auxiliary_only_directory_does_not_claim_validated_cdl() {
 
 fn text_report(dir: &Path, args: &[&str], code: i32) -> String {
     let output = Command::new(env!("CARGO_BIN_EXE_corint"))
+        .arg("cdl")
         .current_dir(dir)
         .arg("validate")
         .args(args)

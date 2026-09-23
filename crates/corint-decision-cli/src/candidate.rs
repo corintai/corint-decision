@@ -5,7 +5,7 @@ use corint_decision_toolchain::{candidate, contracts};
 use serde_json::json;
 use std::{collections::BTreeMap, ffi::OsString, path::Path};
 
-pub const HELP: &str = "corint prepare-repository --root DIR --input-schema LABEL --cases PATH --context PATH --target PATH --revision REV --output NEW_DIR [--format text|json] ENTRY...\n\nFreeze, strictly validate, check target declarations and execute behavior cases.\nWrite original sources, publication.json and published.json into a NEW candidate directory.\nNo active repository is modified, no server is contacted, no approval is granted.\nInput and entry labels are relative to --root; other paths are relative to cwd.\n";
+pub const HELP: &str = "corint cdl prepare-repository --root DIR --input-schema LABEL --cases PATH --context PATH --target PATH --revision REV --output NEW_DIR [--format text|json] ENTRY...\n\nFreeze, strictly validate, check target declarations and execute behavior cases.\nWrite original sources, publication.json and published.json into a NEW candidate directory.\nNo active repository is modified, no server is contacted, no approval is granted.\nInput and entry labels are relative to --root; other paths are relative to cwd.\n";
 
 pub fn run(args: &[OsString]) -> (u8, String) {
     if args == [OsString::from("--help")] {

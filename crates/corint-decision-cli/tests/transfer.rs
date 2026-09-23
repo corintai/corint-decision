@@ -72,6 +72,7 @@ fn setup() -> TempDir {
 }
 fn command(dir: &Path, args: &[&str]) -> Output {
     Command::new(env!("CARGO_BIN_EXE_corint"))
+        .arg("cdl")
         .current_dir(dir)
         .args(args)
         .output()
@@ -297,7 +298,10 @@ fn bundle_schema_and_capability_inventory_match_the_implemented_gate() {
     .unwrap();
     assert_eq!(inventory["source_bundle_schema"], "source-bundle.json");
     let tool = &inventory["tools"]["source_exchange_cli"];
-    assert_eq!(tool["commands"], json!(["corint export", "corint import"]));
+    assert_eq!(
+        tool["commands"],
+        json!(["corint cdl export", "corint cdl import"])
+    );
     assert_eq!(tool["historical_evidence_transferred"], false);
     assert_eq!(
         tool["evidence"],

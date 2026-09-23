@@ -155,7 +155,7 @@ Core HTTP 保留 `E_CORE_DECISION` 外层错误，`diagnostic.cause` 提供具�
 完整合成示例位于 [core_extensions](../tests/conformance/core_extensions/pipeline.yaml)，包含父子 Pipeline、单 Rule、Ruleset、Registry、[嵌套输入 schema](../tests/conformance/core_extensions/input-schema.yaml)、[业务上下文](../tests/conformance/core_extensions/business-context.yaml)和[独立行为样例](../tests/conformance/core_extensions/behavior.yaml)。JSON 是合法 YAML，这些 `.yaml` 文件采用 JSON 表示以精确对应公开 schema。
 
 ```sh
-./target/debug/corint prepare-repository \
+./target/debug/corint cdl prepare-repository \
   --root tests/conformance/core_extensions \
   --input-schema input-schema.yaml \
   --cases tests/conformance/core_extensions/behavior.yaml \

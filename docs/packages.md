@@ -1,7 +1,7 @@
 # Source packages and exchange (experimental)
 
-`corint build` / `corint verify` bind Core sources to fresh test evidence.
-`corint export` / `corint import` exchange editable sources and rebuild that evidence.
+`corint cdl build` / `corint cdl verify` bind Core sources to fresh test evidence.
+`corint cdl export` / `corint cdl import` exchange editable sources and rebuild that evidence.
 This is a bounded source-package increment, **not** the full cross-product
 PolicyPackage, portable IR, trusted historical report or deployment system.
 No new CDL top-level keyword is introduced.
@@ -12,7 +12,7 @@ From the repository root, choose a **new** output filename:
 
 ```sh
 cargo build -p corint-decision-cli --locked --offline
-./target/debug/corint build --format json \
+./target/debug/corint cdl build --format json \
   --input-schema tests/conformance/cdl_core/input-schema.yaml \
   --cases tests/conformance/cdl_core/behavior.yaml \
   --output payment.core-package.json \
@@ -21,7 +21,7 @@ cargo build -p corint-decision-cli --locked --offline
   tests/conformance/cdl_core/pipeline.yaml \
   tests/conformance/cdl_core/registry.yaml
 
-./target/debug/corint verify --format json \
+./target/debug/corint cdl verify --format json \
   --package payment.core-package.json \
   --cases tests/conformance/cdl_core/behavior.yaml
 ```
@@ -173,17 +173,17 @@ Export/import moves a policy between a generator host, an editor or Agent, and t
 The portable object is an editable source bundle. Starting with the package built above:
 
 ```sh
-./target/debug/corint export --package payment.core-package.json --output editable.json --format json
+./target/debug/corint cdl export --package payment.core-package.json --output editable.json --format json
 # Review or edit YAML source strings in editable.json.
-./target/debug/corint import --bundle editable.json --cases tests/conformance/cdl_core/behavior.yaml --output rebuilt.core-package.json --format json
-./target/debug/corint verify --package rebuilt.core-package.json --cases tests/conformance/cdl_core/behavior.yaml --format json
+./target/debug/corint cdl import --bundle editable.json --cases tests/conformance/cdl_core/behavior.yaml --output rebuilt.core-package.json --format json
+./target/debug/corint cdl verify --package rebuilt.core-package.json --cases tests/conformance/cdl_core/behavior.yaml --format json
 ```
 
 Output paths must be new and follow the no-overwrite rules in [Build and verify](#build-and-verify).
 Each output is one JSON file; no YAML directory is extracted and source labels are never used as
 filesystem destinations. These commands do not scan repositories, resolve file imports, fetch
-remote resources or deploy policies. Use [`corint resolve`](resolution.md) for authoring imports;
-`corint import` consumes an already frozen source bundle.
+remote resources or deploy policies. Use [`corint cdl resolve`](resolution.md) for authoring imports;
+`corint cdl import` consumes an already frozen source bundle.
 
 ### Editable bundle contract
 

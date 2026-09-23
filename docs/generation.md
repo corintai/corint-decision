@@ -42,8 +42,8 @@ See the [provider implementations](../crates/corint-decision-llm/src/provider/) 
 
 The opt-in Rust `CoreGenerator` creates or revises a **complete** CDL Core
 closure, not an isolated rule string. It reuses the same compiler, real-engine
-behavior tests and source-package builder as `corint test` and `corint build`.
-Use `corint validate` for full CDL static checks before execution.
+behavior tests and source-package builder as `corint cdl test` and `corint cdl build`.
+Use `corint cdl validate` for full CDL static checks before execution.
 It does not require Corint Work. Current evidence uses fixed, recorded model
 responses, not live-provider quality measurements or a Work product integration.
 
@@ -168,9 +168,9 @@ local checks only, without writing artifacts or deploying strategies.
 
 The package format and policy hashes are unchanged. Evidence binds the **host
 executable** running the shared toolchain, which is the CLI executable for CLI
-builds, or the embedding application for generator builds. `corint verify`
+builds, or the embedding application for generator builds. `corint cdl verify`
 therefore cannot certify evidence produced by a different host binary: it
-returns `E_TOOL_MISMATCH`. Use [`corint export / import`](packages.md#source-exchange) to
+returns `E_TOOL_MISMATCH`. Use [`corint cdl export / import`](packages.md#source-exchange) to
 export/review the embedded sources and rebuild with the target CLI and the
 caller-owned suite to create fresh evidence; do not
 remove or rewrite the fingerprint to bypass this check. Cross-host signed
@@ -222,5 +222,6 @@ built into generation, use `CoreGenerator`.
 
 | Date | Changes |
 |---|---|
+| 2026-09-23 | Move CDL CLI examples into the `corint cdl` command group. |
 | 2026-09-22 | Update CLI references after removal of validation profile selection. |
 | 2026-09-07 | Distinguish strict generator compilation from default static CLI validation. |

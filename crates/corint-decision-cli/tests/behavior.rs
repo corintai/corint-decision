@@ -34,6 +34,7 @@ fn save(dir: &Path, suite: &Value) {
 }
 fn command(dir: &Path, args: &[&str]) -> Output {
     Command::new(env!("CARGO_BIN_EXE_corint"))
+        .arg("cdl")
         .current_dir(dir)
         .args(args)
         .output()

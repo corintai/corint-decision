@@ -6,7 +6,7 @@ For Agents, Skill authors and developers writing or modifying CDL files.
 
 ## Feature Overview
 
-`corint validate` is the full CDL static syntax checker for Agent/Skill authoring,
+`corint cdl validate` is the full CDL static syntax checker for Agent/Skill authoring,
 covering **Rule, Ruleset, Pipeline, Registry, Feature,
 List and Service**. It checks files without starting the decision engine, connecting
 to a database, reading list data, making HTTP requests or executing actions.
@@ -16,28 +16,33 @@ keeps `profile: "cdl-static-1"` as a machine-readable format identifier.
 
 ## Steps
 
+CDL commands live under `corint cdl`, leaving the root CLI available for other
+command groups. Use `corint --help` to list groups and `corint cdl --help` to list
+CDL commands. Existing scripts must insert `cdl` before the command name; old
+root-level commands return a usage error with the corresponding new invocation.
+
 ```sh
 cargo build -p corint-decision-cli --locked
 
 # A single resource; no Registry or input Schema is required.
-./target/debug/corint validate --format json \
+./target/debug/corint cdl validate --format json \
   tests/conformance/cdl_authoring/features/payment.yaml
 
 # Multiple files/directories: include all referenced definitions.
-./target/debug/corint validate --format json \
+./target/debug/corint cdl validate --format json \
   tests/conformance/cdl_authoring/rules/blocked.yaml \
   tests/conformance/cdl_authoring/features \
   tests/conformance/cdl_authoring/lists
 
 # A repository: all seven resource kinds, references and optional input types.
-./target/debug/corint validate --format json \
+./target/debug/corint cdl validate --format json \
   --root tests/conformance/cdl_authoring \
   --input-schema tests/conformance/cdl_authoring/input-schema.yaml
 ```
 
 With cached dependencies, add `--offline` to the build. To install the executable,
 use `cargo install --path crates/corint-decision-cli --locked`. The command is named
-`corint`. `corint --help` describes all commands; help/version output is not a
+`corint`. `corint cdl --help` describes all CDL commands; help/version output is not a
 validation report. Existing `test`, `build`, `verify`, `resolve`, package and replay
 commands retain their execution profiles and contracts.
 
@@ -45,7 +50,7 @@ commands retain their execution profiles and contracts.
 
 ### Static inputs and scope
 
-`corint validate [--root DIR] [--input-schema PATH] [--format text|json] [PATH...]`
+`corint cdl validate [--root DIR] [--input-schema PATH] [--format text|json] [PATH...]`
 
 | Input | Checks |
 |---|---|
@@ -84,7 +89,7 @@ files appear in `sources`. Definitions must be local; no services are contacted.
 Directory/multiple-file selection without `--root` checks references within the
 selected collection. It does not infer extra search roots.
 
-For example, `corint validate repo2/ruleset.yaml` finds the rules under `repo2/rules`
+For example, `corint cdl validate repo2/ruleset.yaml` finds the rules under `repo2/rules`
 but rejects `customer_amount_spike_7` when the definition declares
 `customer_amount_spike_7d`. There is no syntax-only exception for single files.
 Discovering an input Schema does not enable input checks: supply `--input-schema`
@@ -167,8 +172,8 @@ Both single-file and repository validation check referenced resources. Supplying
 The [authoring Skill](../skills/cdl-policy-authoring/SKILL.md) follows this workflow.
 
 Static success does not prove target compatibility or expected business behavior.
-Use [`corint check-target`](contracts/README.md) to check declared target compatibility
-and [`corint test`](testing.md) to compile and execute supported Core resources
+Use [`corint cdl check-target`](contracts/README.md) to check declared target compatibility
+and [`corint cdl test`](testing.md) to compile and execute supported Core resources
 against declared expectations.
 Validation does not publish, activate or authorize a policy.
 
@@ -179,7 +184,7 @@ kinds, public online examples, imports, diagnostics, type/reference failures and
 absence of HTTP calls. [CLI contract tests](../crates/corint-decision-cli/tests/validate.rs)
 cover the single static path and reject removed profile options.
 [Execution preflight tests](../crates/corint-decision-cli/tests/core_preflight.rs)
-continue to enforce compiler diagnostic parity through `corint test`.
+continue to enforce compiler diagnostic parity through `corint cdl test`.
 
 ## FAQ
 
@@ -192,6 +197,7 @@ for declared target compatibility and `test` for expected decisions.
 
 | Date | Changes |
 |---|---|
+| 2026-09-23 | Move CDL CLI examples into the `corint cdl` command group. |
 | 2026-09-22 | Remove validation profile selection; all validation uses the full CDL static checker. |
 | 2026-09-07 | List passed resource paths in directory text output alongside skip reasons and errors. |
 | 2026-09-07 | Identify auxiliary documents during directory discovery and report skipped files; explicit inputs remain strict. |

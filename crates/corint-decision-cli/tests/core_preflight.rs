@@ -1,4 +1,4 @@
-//! Strict compilation remains an execution preflight check for `corint test`.
+//! Strict compilation remains an execution preflight check for `corint cdl test`.
 use corint_decision_compiler::core::{compile_core, parse_core_input_schema, CoreSource, PROFILE};
 use serde::Deserialize;
 use serde_json::Value;
@@ -60,6 +60,7 @@ fn source(dir: &Path, name: &str) -> CoreSource {
 
 fn preflight(dir: &Path, files: &[&str], code: i32) -> Value {
     let output = Command::new(env!("CARGO_BIN_EXE_corint"))
+        .arg("cdl")
         .current_dir(dir)
         .args([
             "test",

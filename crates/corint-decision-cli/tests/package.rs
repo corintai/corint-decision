@@ -32,6 +32,7 @@ fn hash(bytes: &[u8]) -> String {
 }
 fn cmd(dir: &Path, args: &[&str]) -> Output {
     Command::new(env!("CARGO_BIN_EXE_corint"))
+        .arg("cdl")
         .current_dir(dir)
         .args(args)
         .output()
@@ -569,6 +570,7 @@ fn concurrent_builds_cannot_replace_each_others_output() {
     let dir = setup();
     let spawn = || {
         Command::new(env!("CARGO_BIN_EXE_corint"))
+            .arg("cdl")
             .current_dir(dir.path())
             .args([
                 "build",
@@ -667,7 +669,10 @@ fn package_schema_and_capability_artifacts_are_in_sync() {
     assert_eq!(tool["authenticity"], "unsigned");
     assert_eq!(tool["publication_approval"], "not_granted");
     assert_eq!(tool["business_evaluation"], "not_performed");
-    assert_eq!(tool["commands"], json!(["corint build", "corint verify"]));
+    assert_eq!(
+        tool["commands"],
+        json!(["corint cdl build", "corint cdl verify"])
+    );
     assert_eq!(
         root()
             .join("../../../docs/contracts/schema")

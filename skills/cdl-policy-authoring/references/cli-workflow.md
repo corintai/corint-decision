@@ -1,7 +1,7 @@
 # CLI 操作流程
 
 以下命令使用已确认的 CDL 仓库和用户选择的策略目录。先替换示例绝对路径；不要改写仓库中的公共 fixture。命令直接在终端执行，不另建 `verify.sh` 等脚本；默认只交付必要的 CDL 资源文件。
-命令使用当前检出的源码构建 CLI，避免 PATH 中旧版 `corint` 与新规范不一致。不要求全局安装或运行服务。
+`cdl` 辅助函数调用 `corint cdl` 命令组。命令使用当前检出的源码构建 CLI，避免 PATH 中旧版 `corint` 与新规范不一致。不要求全局安装或运行服务。
 
 ## 准备资源与命令
 
@@ -12,7 +12,7 @@ POLICY_DIR="/absolute/path/to/policy"
 cdl() {
   CARGO_INCREMENTAL=0 cargo run --quiet --locked \
     --manifest-path "$CDL_REPO/Cargo.toml" \
-    -p corint-decision-cli --bin corint -- "$@"
+    -p corint-decision-cli --bin corint -- cdl "$@"
 }
 
 cdl --help

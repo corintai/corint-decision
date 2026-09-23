@@ -13,13 +13,13 @@
 ## Steps
 
 ```sh
-corint record --bundle sources.json --event event.json --output record.json --visible-fields amount --retain-input --trace --format json
-corint replay --bundle sources.json --record record.json --format json
+corint cdl record --bundle sources.json --event event.json --output record.json --visible-fields amount --retain-input --trace --format json
+corint cdl replay --bundle sources.json --record record.json --format json
 ```
 
 ## Inputs and Outputs
 
-`sources.json` 是 `corint export` / `corint resolve` 的冻结源码 bundle。
+`sources.json` 是 `corint cdl export` / `corint cdl resolve` 的冻结源码 bundle。
 `event.json` 是事件字段对象，例如 `{"amount":1001}`，不再包一层 `event`。
 默认记录对所有输入字段脱敏，不能回放。`--visible-fields` 选择可记录的顶层字段；选择 object 会保留其整个子树。
 只有显式选择全部字段并传入 `--retain-input` 才保留完整回放输入。
@@ -67,6 +67,7 @@ corint-decision-server --replay-journal sources.json export-item.json
 
 | Date | Changes |
 |---|---|
+| 2026-09-23 | Move CDL CLI examples into the `corint cdl` command group. |
 | 2026-09-14 | Document extracting actual Core input from DecisionHost journal evidence for replay. |
 
 | 2026-09-14 | 增加原服务器二进制的 journal 导出回放入口和完整响应/Trace 对比。 |

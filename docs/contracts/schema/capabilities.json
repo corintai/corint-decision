@@ -26,7 +26,7 @@
   "tools": {
     "prepare_repository_cli": {
       "status": "experimental",
-      "command": "corint prepare-repository --root DIR --input-schema LABEL --cases PATH --context PATH --target PATH --revision REV --output NEW_DIR ENTRY...",
+      "command": "corint cdl prepare-repository --root DIR --input-schema LABEL --cases PATH --context PATH --target PATH --revision REV --output NEW_DIR ENTRY...",
       "entry_point": "corint-decision-toolchain::candidate",
       "scope": "repository_candidate",
       "source_profile": "cdl-core-import-draft-1",
@@ -57,7 +57,7 @@
       "status": "experimental",
       "source_profile": "cdl-core-import-draft-1",
       "output_profile": "cdl-core-risk-draft-1",
-      "command": "corint resolve --source-profile cdl-core-import-draft-1 --root DIR --input-schema LABEL --output PATH ENTRY...",
+      "command": "corint cdl resolve --source-profile cdl-core-import-draft-1 --root DIR --input-schema LABEL --output PATH ENTRY...",
       "entry_point": "corint-decision-toolchain::resolve",
       "scope": "authoring_import_resolution",
       "cases": [
@@ -101,7 +101,7 @@
     },
     "target_check": {
       "status": "experimental",
-      "command": "corint check-target --input-schema PATH --context PATH --target PATH --format json FILE...",
+      "command": "corint cdl check-target --input-schema PATH --context PATH --target PATH --format json FILE...",
       "entry_point": "corint-decision-toolchain::contracts::TargetContracts",
       "scope": "declared_target_compatibility",
       "execution_checked": false,
@@ -114,8 +114,8 @@
     "source_exchange_cli": {
       "status": "experimental",
       "commands": [
-        "corint export",
-        "corint import"
+        "corint cdl export",
+        "corint cdl import"
       ],
       "entry_point": "corint-decision-toolchain::transfer",
       "scope": "editable_source_exchange_and_fresh_local_evidence",
@@ -129,7 +129,7 @@
     "validate_cli": {
       "status": "experimental",
       "profile": "cdl-static-1",
-      "command": "corint validate [--root DIR] [--input-schema PATH] --format json [PATH...]",
+      "command": "corint cdl validate [--root DIR] [--input-schema PATH] --format json [PATH...]",
       "entry_point": "corint_decision_toolchain::authoring::validate",
       "scope": "static",
       "resource_kinds": [
@@ -160,7 +160,7 @@
     },
     "test_cli": {
       "status": "experimental",
-      "command": "corint test --input-schema PATH --cases PATH --format json FILE...",
+      "command": "corint cdl test --input-schema PATH --cases PATH --format json FILE...",
       "entry_point": "DecisionEngine::from_core",
       "scope": "declared_examples_only",
       "trace_modes": [
@@ -194,8 +194,8 @@
     "source_package_cli": {
       "status": "experimental",
       "commands": [
-        "corint build",
-        "corint verify"
+        "corint cdl build",
+        "corint cdl verify"
       ],
       "entry_point": "DecisionEngine::from_core",
       "scope": "source_snapshot_and_fresh_example_evidence",
@@ -211,8 +211,8 @@
       "entry_point": "corint-decision-toolchain::replay",
       "scope": "same_executable_offline_core_replay",
       "commands": [
-        "corint record",
-        "corint replay"
+        "corint cdl record",
+        "corint cdl replay"
       ],
       "schema": "replay-record.json",
       "evidence": "../../../crates/corint-decision-toolchain/tests/replay.rs"

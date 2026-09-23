@@ -31,6 +31,7 @@ fn setup() -> TempDir {
 }
 fn run(root: &Path, extra: &[&str], exit: i32) -> Value {
     let output = Command::new(env!("CARGO_BIN_EXE_corint"))
+        .arg("cdl")
         .current_dir(root)
         .args([
             "prepare-repository",
