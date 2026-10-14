@@ -836,6 +836,17 @@ start_server() {
     # Build failures must not be hidden by tail's successful exit status.
     print_info "Building server (release mode)..."
     cd "$PROJECT_ROOT"
+    # A dangling target symlink (for example, one pointing to an unavailable
+    # external volume) prevents Cargo from creating its build directory.
+    if [ -L "${PROJECT_ROOT}/target" ] && [ ! -e "${PROJECT_ROOT}/target" ]; then
+        print_warn "Removing dangling build directory link: ${PROJECT_ROOT}/target"
+        rm "${PROJECT_ROOT}/target"
+    fi
+    if [ -e "${PROJECT_ROOT}/target" ] && [ ! -d "${PROJECT_ROOT}/target" ]; then
+        print_error "Build path is not a directory: ${PROJECT_ROOT}/target"
+        exit 1
+    fi
+    mkdir -p "${PROJECT_ROOT}/target"
     if ! (set -o pipefail; cargo build --release -p corint-decision-server 2>&1 | tail -10); then
         print_error "Failed to build server"
         exit 1
